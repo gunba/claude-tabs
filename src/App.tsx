@@ -190,8 +190,7 @@ export default function App() {
   return (
     <div className="app">
       {/* Tab bar — always visible */}
-      {regularSessions.length > 0 && (
-        <div className="tab-bar">
+      <div className="tab-bar">
           <div className="tab-bar-scroll">
             {regularSessions.map((session) => {
               const isActive = session.id === activeTabId;
@@ -229,15 +228,13 @@ export default function App() {
                     <span className="tab-name">{name}</span>
                     {summary && <span className="tab-summary">{summary}</span>}
                   </span>
-                  {!isDead && (
-                    <button
+                  <button
                       className="tab-close"
                       onClick={(e) => { e.stopPropagation(); closeSession(session.id); }}
                       title="Close"
                     >
                       ×
                     </button>
-                  )}
                 </button>
               );
             })}
@@ -257,7 +254,6 @@ export default function App() {
             +
           </button>
         </div>
-      )}
 
       {/* Subagent row — conditional, only for active session */}
       {activeSubs.length > 0 && (
@@ -310,31 +306,10 @@ export default function App() {
             />
           )}
 
-          {/* Empty state — no sessions, or only dead sessions with none active */}
-          {initialized && (regularSessions.length === 0 || (
-            regularSessions.every((s) => s.state === "dead") && !regularSessions.some((s) => s.id === activeTabId && s.state !== "dead")
-          )) && (
+          {/* Empty state — no active terminal visible */}
+          {initialized && !regularSessions.some((s) => s.id === activeTabId && s.state !== "dead") && (
             <div className="empty-state">
-              {regularSessions.length === 0
-                ? <>Press <kbd>Ctrl+T</kbd> to start a session</>
-                : (
-                  <>
-                    <div className="empty-state-title">Previous sessions</div>
-                    <div className="empty-state-grid">
-                      {regularSessions.filter(s => s.state === "dead").map(s => (
-                        <button key={s.id} className="empty-state-session" onClick={() => handleTabActivate(s.id)}>
-                          <span className="empty-state-name">{s.name || dirToTabName(s.config.workingDir)}</span>
-                          <span className="empty-state-summary">
-                            {s.metadata.nodeSummary || s.metadata.currentAction || "No activity yet"}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="empty-state-hint">
-                      <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+R</kbd> resume from history
-                    </div>
-                  </>
-                )}
+              <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+R</kbd> resume from history
             </div>
           )}
         </div>
