@@ -70,24 +70,27 @@ export function useClaudeState(sessionId: string | null) {
             lastStateRef.current = acc.state;
           }
 
-          // Update metadata (fingerprint-based change detection)
-          const metadata = {
-            costUsd: acc.costUsd,
-            currentAction: acc.currentAction,
-            currentToolName: acc.currentToolName,
-            subagentCount: acc.subagentCount,
-            subagentActivity: acc.subagentActivity,
-            recentOutput: acc.lastAssistantText,
-            contextWarning: acc.contextWarning,
-            taskProgress: acc.taskProgress,
-            inputTokens: acc.inputTokens,
-            outputTokens: acc.outputTokens,
-            assistantMessageCount: acc.assistantMessageCount,
-          };
-          const fp = JSON.stringify(metadata);
-          if (fp !== lastFingerprintRef.current) {
-            lastFingerprintRef.current = fp;
-            updateMetadata(sessionId, metadata);
+          // Update metadata — but suppress during replay burst to prevent
+          // recentOutput changes from flooding the activity feed
+          if (settledRef.current) {
+            const metadata = {
+              costUsd: acc.costUsd,
+              currentAction: acc.currentAction,
+              currentToolName: acc.currentToolName,
+              subagentCount: acc.subagentCount,
+              subagentActivity: acc.subagentActivity,
+              recentOutput: acc.lastAssistantText,
+              contextWarning: acc.contextWarning,
+              taskProgress: acc.taskProgress,
+              inputTokens: acc.inputTokens,
+              outputTokens: acc.outputTokens,
+              assistantMessageCount: acc.assistantMessageCount,
+            };
+            const fp = JSON.stringify(metadata);
+            if (fp !== lastFingerprintRef.current) {
+              lastFingerprintRef.current = fp;
+              updateMetadata(sessionId, metadata);
+            }
           }
         } catch {
           // Invalid JSON line — skip

@@ -36,6 +36,9 @@ export function ActivityFeed() {
   const addEntry = useCallback((entry: Omit<FeedEntry, "id">) => {
     setEntries((prev) => {
       const next = [...prev, { ...entry, id: `${entry.timestamp}-${Math.random()}` }];
+      // Expose for test harness
+      (globalThis as Record<string, unknown>).__feedEntryCount = next.length;
+      (globalThis as Record<string, unknown>).__feedLastEntry = entry;
       return next.length > MAX_ENTRIES ? next.slice(-MAX_ENTRIES) : next;
     });
   }, []);
@@ -64,12 +67,15 @@ export function ActivityFeed() {
         continue;
       }
 
-      // Detect active→idle transition to mark session as settled.
-      // A session is "settled" after it first transitions TO idle from an active state
-      // (thinking/toolUse). This suppresses JSONL replay floods and initial startup noise.
-      const prevState = existing.state;
-      const curState = session.state;
-      if (!existing.settled && (prevState === "thinking" || prevState === "toolUse") && curState === "idle") {
+      // Expose tracking state for test harness
+      (globalThis as Record<string, unknown>).__feedTracking = Object.fromEntries(
+        Array.from(prev.entries()).map(([id, p]) => [id.slice(0, 8), { settled: p.settled, state: p.state }])
+      );
+
+      // Mark as settled once the session has been through a real response cycle.
+      // A session coming from "starting" goes to "idle" — that's the PTY spawn, not a response.
+      // Settle when we see a thinking/toolUse state (meaning Claude is actually processing).
+      if (!existing.settled && (session.state === "thinking" || session.state === "toolUse")) {
         existing.settled = true;
       }
 
@@ -90,7 +96,7 @@ export function ActivityFeed() {
       }
 
       // Track state (for internal use) but don't spam the feed with transitions
-      existing.state = curState;
+      existing.state = session.state;
 
       // Summary update (from Haiku) — suppress until settled (revival/restore)
       const currentSummary = session.metadata.nodeSummary ?? null;

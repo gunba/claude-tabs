@@ -41,6 +41,9 @@ export interface TestState {
   recentDirCount: number;
   cliVersion: string | null;
   lastCommandResult?: unknown;
+  feedEntryCount: number;
+  feedLastEntry: unknown;
+  feedTracking: unknown;
 }
 
 function captureState(lastResult?: unknown): TestState {
@@ -78,6 +81,9 @@ function captureState(lastResult?: unknown): TestState {
     recentDirCount: settings.recentDirs.length,
     cliVersion: settings.cliVersion,
     lastCommandResult: lastResult,
+    feedEntryCount: (globalThis as Record<string, unknown>).__feedEntryCount as number ?? 0,
+    feedLastEntry: (globalThis as Record<string, unknown>).__feedLastEntry ?? null,
+    feedTracking: (globalThis as Record<string, unknown>).__feedTracking ?? null,
   };
 }
 
@@ -138,16 +144,17 @@ async function executeCommand(cmd: TestCommand): Promise<unknown> {
       const id = cmd.args?.sessionId as string;
       const text = cmd.args?.text as string;
       if (!id || !text) return { error: "sessionId and text required" };
-      // Retry a few times — the PTY writer might not be registered yet
       let ok = writeToPty(id, text);
+      let retries = 0;
       if (!ok) {
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 10; i++) {
           await new Promise((r) => setTimeout(r, 500));
           ok = writeToPty(id, text);
+          retries++;
           if (ok) break;
         }
       }
-      return { sent: ok };
+      return { sent: ok, retries };
     }
 
     default:
