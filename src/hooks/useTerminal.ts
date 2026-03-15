@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -169,10 +169,15 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     return lines.join("\n");
   }, []);
 
-  // Stable return object — prevents consumers' useEffect deps from
-  // re-triggering on every render when they depend on `terminal`.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => ({
-    attach, write, writeBytes, clear, focus, fit, getDimensions, getBufferText, termRef,
-  }), []);
+  return {
+    attach,
+    write,
+    writeBytes,
+    clear,
+    focus,
+    fit,
+    getDimensions,
+    getBufferText,
+    termRef,
+  };
 }
