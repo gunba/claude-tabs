@@ -1,0 +1,442 @@
+.launcher-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.launcher {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.launcher::-webkit-scrollbar { width: 6px; }
+.launcher::-webkit-scrollbar-track { background: transparent; }
+.launcher::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
+
+/* ── Path Input ───────────────────────────────────────────── */
+
+.launcher-path-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.launcher-path-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.launcher-path-input:focus { border-color: var(--accent); }
+.launcher-path-input::placeholder {
+  color: var(--text-muted);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.launcher-browse-btn {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.launcher-browse-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-surface-hover);
+}
+
+/* ── Recent Directories (inline chips) ───────────────────── */
+
+.launcher-recent {
+  margin-top: 8px;
+}
+
+.launcher-recent-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.recent-chip {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.recent-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+/* ── Select row (Model, Permissions, Effort, Skip, Save) ── */
+
+.launcher-selects {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.launcher-select {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 0;
+}
+
+.launcher-select:focus {
+  border-color: var(--accent);
+}
+
+.launcher-select option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.launcher-skip-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.launcher-skip-label input[type="checkbox"] {
+  accent-color: var(--error);
+  margin: 0;
+}
+
+.launcher-skip-text {
+  color: var(--error);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.launcher-save-defaults {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 3px 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.launcher-save-defaults:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.launcher-save-defaults-saved {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+/* ── CLI Options (collapsible grid) ──────────────────────── */
+
+.launcher-cli-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+
+.launcher-cli-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.launcher-cli-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+  padding: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.launcher-cli-pill {
+  padding: 2px 6px;
+  font-size: 9px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.launcher-cli-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-surface-hover);
+}
+
+.launcher-cli-pill-cmd {
+  color: var(--accent-secondary);
+  border-color: var(--border-subtle);
+}
+
+.launcher-cli-pill-cmd:hover {
+  border-color: var(--accent-secondary);
+  color: var(--accent-secondary);
+}
+
+/* ── Section (shared for CLI Options + Resume) ───────────── */
+
+.launcher-section {
+  margin-top: 10px;
+}
+
+/* ── Resume toggle ───────────────────────────────────────── */
+
+.launcher-resume-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+
+.launcher-resume-toggle:hover {
+  color: var(--text-secondary);
+}
+
+/* ── Resume Past Sessions ────────────────────────────────── */
+
+.launcher-resume-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.resume-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.resume-card:hover { border-color: var(--accent); background: var(--bg-surface-hover); }
+
+.resume-card-top { display: flex; justify-content: space-between; align-items: center; }
+
+.resume-card-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-card-size {
+  font-size: 9px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  padding: 1px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.resume-card-bottom { display: flex; justify-content: space-between; align-items: center; }
+
+.resume-card-dir {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.resume-card-date {
+  font-size: 9px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.resume-card-summary {
+  font-size: 10px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.resume-card-haiku-summary {
+  font-weight: 600;
+}
+
+.resume-card-first-msg {
+  font-style: italic;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-card-no-summary {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* ── Command Input (terminal-style) ──────────────────────── */
+
+.launcher-cmd {
+  margin-top: 12px;
+}
+
+.launcher-cmd-line {
+  display: flex;
+  align-items: flex-start;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.launcher-cmd-prefix {
+  color: var(--accent-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: all;
+}
+
+.launcher-cmd-input {
+  flex: 1;
+  min-width: 40px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+  padding: 0;
+  caret-color: var(--accent);
+  resize: none;
+  min-height: 36px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+.launcher-cmd-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Launch Hint ─────────────────────────────────────────── */
+
+.launcher-enter-hint {
+  text-align: center;
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.launcher-enter-hint::before,
+.launcher-enter-hint::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.launcher-enter-hint kbd {
+  background: var(--bg-selection);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: inherit;
+  color: var(--text-secondary);
+}
+
+/* ── Error State ─────────────────────────────────────────── */
+
+.launcher-error-content { text-align: center; padding: 20px 0; }
+.launcher-error-content h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.launcher-error-msg { color: var(--error); font-size: 14px; margin-bottom: 12px; }
+.launcher-error-content code { background: var(--bg-primary); padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--accent-secondary); }
+.launcher-error-close { margin-top: 16px; }
+
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--border);
+  background: var(--bg-selection);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover { background: var(--border); }

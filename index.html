@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Tabs</title>
+    <style>
+      :root {
+        --bg-primary: #1f1e1c;
+        --bg-surface: #262523;
+        --bg-surface-hover: #302f2c;
+        --bg-hover: #302f2c;
+        --bg-selection: #302f2c;
+        --border: #3d3a36;
+        --border-subtle: #33302c;
+        --text-primary: #f9f7f3;
+        --text-secondary: #bfbdb7;
+        --text-muted: #9a9893;
+        --text-on-accent: #ffffff;
+        --accent: #d4744a;
+        --accent-hover: #e08b67;
+        --accent-bg: #3d2a20;
+        --accent-secondary: #6ea8e0;
+        --accent-tertiary: #bc8cff;
+        --success: #5cb85c;
+        --warning: #b8860b;
+        --error: #d84b4b;
+        --info: #6ea8e0;
+        --permission: #e08b67;
+        --term-bg: #1f1e1c;
+        --term-fg: #f9f7f3;
+        --term-cursor: #d4744a;
+        --term-selection: #3d2a20;
+        --scroll-thumb: #3d3a36;
+        --scroll-track: #1f1e1c;
+      }
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      }
+      /* Pre-render skeleton that matches the app layout */
+      .app-skeleton {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      .app-skeleton-main {
+        flex: 1;
+        background: var(--bg-primary);
+      }
+      .app-skeleton-bar {
+        height: 24px;
+        background: var(--bg-surface);
+        border-top: 1px solid var(--border);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="app-skeleton">
+        <div class="app-skeleton-main"></div>
+        <div class="app-skeleton-bar"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

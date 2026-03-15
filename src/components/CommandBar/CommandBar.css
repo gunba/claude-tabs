@@ -1,0 +1,127 @@
+/* ── Command Bar ──────────────────────────────────────────── */
+
+.command-bar {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  padding: 4px 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.command-bar-scroll {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.command-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.command-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.command-btn-frequent {
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.command-btn-queued {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg);
+  font-weight: 600;
+  animation: queue-pulse 2s ease infinite;
+}
+
+@keyframes queue-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Queue indicator ─────────────────────────────────────── */
+
+.command-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-left: 4px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.command-bar-queue-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--accent);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.command-bar-queue-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: queue-pulse 2s ease infinite;
+}
+
+/* ── Discovering placeholder ────────────────────────────── */
+
+.command-bar-discovering {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  padding: 2px 8px;
+}
+
+/* ── Custom command input ───────────────────────────────── */
+
+.command-bar-custom {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--text-primary);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10px;
+  outline: none;
+  width: 90px;
+  min-width: 70px;
+  transition: border-color 0.12s;
+  box-sizing: border-box;
+}
+
+.command-bar-custom:focus {
+  border-color: var(--accent);
+  width: 120px;
+}
+
+.command-bar-custom::placeholder {
+  color: var(--text-muted);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 10px;
+}

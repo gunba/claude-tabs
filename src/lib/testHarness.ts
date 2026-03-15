@@ -1,0 +1,203 @@
+/**
+ * Test harness — bidirectional bridge between external test scripts and the app.
+ *
+ * STATE: Writes app state to %LOCALAPPDATA%/claude-tabs/test-state.json every 2s.
+ * COMMANDS: Polls %LOCALAPPDATA%/claude-tabs/test-commands.json for actions to execute.
+ *
+ * Commands are JSON: { "action": "createSession", "args": { ... } }
+ * After execution, result is written to test-state.json under __last_command_result__.
+ */
+
+import { invoke } from "@tauri-apps/api/core";
+import { useSessionStore } from "../store/sessions";
+import { useSettingsStore } from "../store/settings";
+import { writeToPty } from "./ptyRegistry";
+import type { SessionConfig } from "../types/session";
+import { DEFAULT_SESSION_CONFIG } from "../types/session";
+
+export interface TestState {
+  timestamp: number;
+  initialized: boolean;
+  claudePath: string | null;
+  sessionCount: number;
+  activeTabId: string | null;
+  sessions: Array<{
+    id: string;
+    name: string;
+    state: string;
+    workingDir: string;
+    sessionId: string | null;
+    resumeSession: string | null;
+    nodeSummary: string | null;
+    assistantMessageCount: number;
+    isMetaAgent: boolean;
+  }>;
+  subagents: Record<string, Array<{ id: string; state: string; description: string }>>;
+  subagentMapSize: number;
+  slashCommandCount: number;
+  cliOptionCount: number;
+  cliCommandCount: number;
+  commandUsageKeys: string[];
+  recentDirCount: number;
+  cliVersion: string | null;
+  lastCommandResult?: unknown;
+}
+
+function captureState(lastResult?: unknown): TestState {
+  const ss = useSessionStore.getState();
+  const settings = useSettingsStore.getState();
+
+  return {
+    timestamp: Date.now(),
+    initialized: ss.initialized,
+    claudePath: ss.claudePath,
+    sessionCount: ss.sessions.length,
+    activeTabId: ss.activeTabId,
+    sessions: ss.sessions.map((s) => ({
+      id: s.id,
+      name: s.name,
+      state: s.state,
+      workingDir: s.config.workingDir,
+      sessionId: s.config.sessionId,
+      resumeSession: s.config.resumeSession,
+      nodeSummary: s.metadata.nodeSummary ?? null,
+      assistantMessageCount: s.metadata.assistantMessageCount,
+      isMetaAgent: s.isMetaAgent ?? false,
+    })),
+    subagents: Object.fromEntries(
+      Array.from(ss.subagents.entries()).map(([sid, subs]) => [
+        sid,
+        subs.map((s) => ({ id: s.id, state: s.state, description: s.description })),
+      ])
+    ),
+    subagentMapSize: ss.subagents.size,
+    slashCommandCount: settings.slashCommands.length,
+    cliOptionCount: (settings.cliCapabilities.options || []).length,
+    cliCommandCount: (settings.cliCapabilities.commands || []).length,
+    commandUsageKeys: Object.keys(settings.commandUsage || {}),
+    recentDirCount: settings.recentDirs.length,
+    cliVersion: settings.cliVersion,
+    lastCommandResult: lastResult,
+  };
+}
+
+// ── Command executor ──────────────────────────────────────────────
+
+interface TestCommand {
+  action: string;
+  args?: Record<string, unknown>;
+}
+
+let lastResult: unknown = null;
+
+async function executeCommand(cmd: TestCommand): Promise<unknown> {
+  const store = useSessionStore.getState();
+
+  switch (cmd.action) {
+    case "createSession": {
+      const config: SessionConfig = {
+        ...DEFAULT_SESSION_CONFIG,
+        workingDir: (cmd.args?.workingDir as string) || ".",
+        model: (cmd.args?.model as string) || null,
+      };
+      const session = await store.createSession(
+        (cmd.args?.name as string) || "Test Session",
+        config
+      );
+      return { id: session.id, state: session.state };
+    }
+
+    case "closeSession": {
+      await store.closeSession(cmd.args?.id as string);
+      return { closed: true };
+    }
+
+    case "setActiveTab": {
+      store.setActiveTab(cmd.args?.id as string);
+      return { active: cmd.args?.id };
+    }
+
+    case "getSubagents": {
+      const subs = store.subagents;
+      const result: Record<string, number> = {};
+      for (const [sid, list] of subs.entries()) {
+        result[sid] = list.length;
+      }
+      return result;
+    }
+
+    case "listSessions": {
+      return store.sessions.map((s) => ({
+        id: s.id,
+        name: s.name,
+        state: s.state,
+      }));
+    }
+
+    case "sendInput": {
+      const id = cmd.args?.sessionId as string;
+      const text = cmd.args?.text as string;
+      if (!id || !text) return { error: "sessionId and text required" };
+      // Retry a few times — the PTY writer might not be registered yet
+      let ok = writeToPty(id, text);
+      if (!ok) {
+        for (let i = 0; i < 5; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          ok = writeToPty(id, text);
+          if (ok) break;
+        }
+      }
+      return { sent: ok };
+    }
+
+    default:
+      return { error: `Unknown action: ${cmd.action}` };
+  }
+}
+
+async function pollCommands(): Promise<void> {
+  try {
+    const raw = await invoke<string>("read_test_commands");
+    if (!raw) return;
+
+    const cmd = JSON.parse(raw) as TestCommand;
+    // Clear the command file immediately
+    await invoke("write_test_commands", { json: "" });
+
+    lastResult = await executeCommand(cmd);
+  } catch {
+    // No commands or parse error — ignore
+  }
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────────
+
+let intervalId: ReturnType<typeof setInterval> | null = null;
+
+export function startTestHarness(): void {
+  if (intervalId) return;
+
+  intervalId = setInterval(() => {
+    // Write state
+    const state = captureState(lastResult);
+    invoke("write_test_state", {
+      json: JSON.stringify({ __test_state__: state }, null, 2),
+    }).catch(() => {});
+
+    // Poll for commands
+    pollCommands();
+  }, 2000);
+
+  // Write immediately
+  const state = captureState();
+  invoke("write_test_state", {
+    json: JSON.stringify({ __test_state__: state }, null, 2),
+  }).catch(() => {});
+}
+
+export function stopTestHarness(): void {
+  if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+}

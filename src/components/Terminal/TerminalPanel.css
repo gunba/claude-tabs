@@ -1,0 +1,127 @@
+.terminal-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  overflow: hidden;
+  position: relative;
+}
+
+.terminal-container {
+  flex: 1;
+  padding: 4px;
+}
+
+.terminal-container .xterm {
+  height: 100%;
+}
+
+.terminal-container .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 4px;
+}
+
+/* ── State Banner Overlay ──────────────────────────────────────────── */
+
+.state-banner {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.terminal-panel:hover .state-banner {
+  opacity: 0.7;
+}
+
+@keyframes bannerFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.banner-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.banner-thinking {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.banner-tool {
+  background: color-mix(in srgb, var(--accent-secondary) 15%, transparent);
+  color: var(--accent-secondary);
+  border: 1px solid color-mix(in srgb, var(--accent-secondary) 30%, transparent);
+}
+
+/* Tool-specific banner colors */
+.banner-tool-bash {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+.banner-tool-write,
+.banner-tool-edit {
+  background: color-mix(in srgb, var(--accent-tertiary) 15%, transparent);
+  color: var(--accent-tertiary);
+  border-color: color-mix(in srgb, var(--accent-tertiary) 30%, transparent);
+}
+
+.banner-tool-read,
+.banner-tool-glob,
+.banner-tool-grep {
+  background: color-mix(in srgb, var(--accent-secondary) 15%, transparent);
+  color: var(--accent-secondary);
+  border-color: color-mix(in srgb, var(--accent-secondary) 30%, transparent);
+}
+
+.banner-tool-agent {
+  background: color-mix(in srgb, var(--accent-tertiary) 15%, transparent);
+  color: var(--accent-tertiary);
+  border-color: color-mix(in srgb, var(--accent-tertiary) 30%, transparent);
+}
+
+.banner-permission {
+  background: color-mix(in srgb, var(--permission) 15%, transparent);
+  color: var(--permission);
+  border: 1px solid color-mix(in srgb, var(--permission) 30%, transparent);
+  animation: bannerFadeIn 0.2s ease, pulse-border 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: color-mix(in srgb, var(--permission) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--permission) 70%, transparent); }
+}
+
+.banner-error {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+}
+
