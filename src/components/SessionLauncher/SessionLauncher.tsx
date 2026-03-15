@@ -177,30 +177,43 @@ export function SessionLauncher() {
     );
   }
 
+  const isResuming = !!config.resumeSession;
+
   // ── Main launcher ──
 
   return (
     <div className="launcher-overlay" onClick={() => setShowLauncher(false)}>
       <div className="launcher" onClick={(e) => e.stopPropagation()}>
 
-        {/* Path input */}
-        <div className="launcher-path-row">
-          <input
-            id="launcher-path"
-            className="launcher-path-input"
-            type="text"
-            value={config.workingDir}
-            onChange={(e) => updateConfig("workingDir", e.target.value)}
-            placeholder="Path to project..."
-            autoComplete="off"
-          />
-          <button className="launcher-browse-btn" onClick={handleBrowse} title="Browse" type="button">
-            📂
-          </button>
-        </div>
+        {/* Resume banner or path input */}
+        {isResuming ? (
+          <div className="launcher-resume-banner">
+            <span className="launcher-resume-banner-icon">↩</span>
+            <span className="launcher-resume-banner-text">
+              Resuming in <strong>{dirToTabName(config.workingDir)}</strong>
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="launcher-path-row">
+              <input
+                id="launcher-path"
+                className="launcher-path-input"
+                type="text"
+                value={config.workingDir}
+                onChange={(e) => updateConfig("workingDir", e.target.value)}
+                placeholder="Path to project..."
+                autoComplete="off"
+              />
+              <button className="launcher-browse-btn" onClick={handleBrowse} title="Browse" type="button">
+                📂
+              </button>
+            </div>
+          </>
+        )}
 
-        {/* Recent directories */}
-        {uniqueRecentDirs.length > 0 && (
+        {/* Recent directories — only for new sessions */}
+        {!isResuming && uniqueRecentDirs.length > 0 && (
           <div className="launcher-recent">
             <div className="launcher-recent-chips">
               {uniqueRecentDirs.slice(0, 6).map((dir) => (

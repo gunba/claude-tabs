@@ -32,6 +32,10 @@ export function useClaudeState(sessionId: string | null) {
   const lastFingerprintRef = useRef<string>("");
   const lastJsonlEventRef = useRef<number>(Date.now());
   const permissionRef = useRef("");
+  // Suppress rapid state flickering during JSONL replay on resume.
+  // Only start updating state after events slow down (>1s gap between events).
+  const settledRef = useRef(false);
+  const lastEventBurstRef = useRef<number>(Date.now());
 
   // Listen to JSONL events from Rust watcher
   useEffect(() => {
@@ -44,12 +48,24 @@ export function useClaudeState(sessionId: string | null) {
 
         try {
           const parsed = JSON.parse(event.payload.line);
-          lastJsonlEventRef.current = Date.now();
+          const now = Date.now();
+          const gap = now - lastJsonlEventRef.current;
+          lastJsonlEventRef.current = now;
+
+          // Detect when JSONL replay settles (events stop coming rapidly)
+          if (!settledRef.current) {
+            if (gap > 1000) {
+              settledRef.current = true;
+            } else {
+              lastEventBurstRef.current = now;
+            }
+          }
+
           accRef.current = processJsonlEvent(accRef.current, parsed);
           const acc = accRef.current;
 
-          // Update state if changed
-          if (acc.state !== lastStateRef.current) {
+          // Update state if changed — but suppress during replay burst
+          if (acc.state !== lastStateRef.current && settledRef.current) {
             updateState(sessionId, acc.state);
             lastStateRef.current = acc.state;
           }

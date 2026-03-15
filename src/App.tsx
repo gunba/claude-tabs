@@ -204,13 +204,16 @@ export default function App() {
                   className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}`}
                   onClick={(e) => {
                     if (e.shiftKey) {
-                      // Shift+Click any tab: open launcher pre-filled with this session's config
+                      // Shift+Click: relaunch with new settings, preserving conversation
+                      const resumeId = session.config.resumeSession || session.config.sessionId || session.id;
                       setLastConfig({
                         ...session.config,
                         workingDir: session.config.workingDir,
-                        resumeSession: null,
+                        resumeSession: resumeId,
                         continueSession: false,
                       });
+                      // Close the live session so we can relaunch
+                      if (!isDead) closeSession(session.id);
                       setShowLauncher(true);
                     } else {
                       handleTabActivate(session.id);
