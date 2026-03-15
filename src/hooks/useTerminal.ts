@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { getXtermTheme } from "../lib/theme";
 
@@ -90,9 +91,12 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       term.open(el);
       attachedRef.current = true;
 
-      // Skip WebGL renderer — causes visible flash on new content
-      // where the entire scrollback briefly renders from the top.
-      // The default canvas renderer is stable and fast enough.
+      // Try WebGL renderer after open
+      try {
+        term.loadAddon(new WebglAddon());
+      } catch {
+        // WebGL not available, canvas renderer is fine
+      }
     }
 
     // fit() can throw if container has zero dimensions (e.g. display:none parent)
