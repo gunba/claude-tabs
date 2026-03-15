@@ -115,10 +115,9 @@
   gap: 4px;
 }
 
-.launcher-select-label {
-  font-size: 9px;
-  color: var(--text-muted);
-  white-space: nowrap;
+.launcher-select-icon {
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .launcher-select {

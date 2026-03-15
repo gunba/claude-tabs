@@ -221,7 +221,7 @@ export function SessionLauncher() {
         {/* Compact selects row: Model, Permissions, Effort, Skip checkbox, Save defaults */}
         <div className="launcher-selects">
           <label className="launcher-select-group">
-            <span className="launcher-select-label">Model</span>
+            <span className="launcher-select-icon" title="Model">◈</span>
             <select
               className="launcher-select"
               value={config.model ?? ""}
@@ -236,7 +236,7 @@ export function SessionLauncher() {
           </label>
 
           <label className="launcher-select-group">
-            <span className="launcher-select-label">Perms</span>
+            <span className="launcher-select-icon" title="Permissions">🔒</span>
             <select
               className="launcher-select"
               value={config.permissionMode}
@@ -251,7 +251,7 @@ export function SessionLauncher() {
           </label>
 
           <label className="launcher-select-group">
-            <span className="launcher-select-label">Effort</span>
+            <span className="launcher-select-icon" title="Effort">⚡</span>
             <select
               className="launcher-select"
               value={config.effort ?? ""}
