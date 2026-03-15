@@ -168,13 +168,19 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   });
   terminalRef.current = terminal;
 
-  // Attach terminal to container
+  // Attach terminal to container on mount only (not on every re-render).
+  // The original code had [terminal] in deps which caused detach/reattach
+  // on every store update because terminal is a new object each render.
+  const attachedToContainerRef = useRef(false);
   const setContainer = useCallback(
     (el: HTMLDivElement | null) => {
       containerRef.current = el;
-      terminal.attach(el);
+      if (el && !attachedToContainerRef.current) {
+        terminal.attach(el);
+        attachedToContainerRef.current = true;
+      }
     },
-    [terminal]
+    [terminal] // terminal changes on re-render BUT we guard with attachedToContainerRef
   );
 
   // Spawn PTY once + start JSONL watcher
