@@ -87,33 +87,22 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     const fit = fitRef.current;
     if (!el || !term || !fit) return;
 
-    if (!attachedRef.current) {
-      term.open(el);
-      attachedRef.current = true;
+    if (attachedRef.current) return; // Already attached — skip fit/observer setup
 
-      // Try WebGL renderer after open
-      try {
-        term.loadAddon(new WebglAddon());
-      } catch {
-        // WebGL not available, canvas renderer is fine
-      }
-    }
+    term.open(el);
+    attachedRef.current = true;
 
-    // fit() can throw if container has zero dimensions (e.g. display:none parent)
+    try {
+      term.loadAddon(new WebglAddon());
+    } catch {}
+
     try {
       fit.fit();
-    } catch {
-      // Will be retried by ResizeObserver when container becomes visible
-    }
+    } catch {}
 
     // Observe container size changes
-    observerRef.current?.disconnect();
-    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(() => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        try { fit.fit(); } catch {}
-      }, 50);
+      try { fit.fit(); } catch {}
     });
     observer.observe(el);
     observerRef.current = observer;
