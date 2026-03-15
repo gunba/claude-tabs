@@ -32,10 +32,9 @@ export function useClaudeState(sessionId: string | null) {
   const lastFingerprintRef = useRef<string>("");
   const lastJsonlEventRef = useRef<number>(Date.now());
   const permissionRef = useRef("");
-  // Suppress rapid state flickering during JSONL replay on resume.
-  // Only start updating state after events slow down (>1s gap between events).
-  const settledRef = useRef(false);
-  const lastEventBurstRef = useRef<number>(Date.now());
+  // Suppress state/metadata updates until the JSONL watcher has caught up
+  // (finished reading all existing lines). This prevents replay floods on resume.
+  const caughtUpRef = useRef(false);
 
   // Listen to JSONL events from Rust watcher
   useEffect(() => {
@@ -48,49 +47,38 @@ export function useClaudeState(sessionId: string | null) {
 
         try {
           const parsed = JSON.parse(event.payload.line);
-          const now = Date.now();
-          const gap = now - lastJsonlEventRef.current;
-          lastJsonlEventRef.current = now;
-
-          // Detect when JSONL replay settles (events stop coming rapidly)
-          if (!settledRef.current) {
-            if (gap > 1000) {
-              settledRef.current = true;
-            } else {
-              lastEventBurstRef.current = now;
-            }
-          }
+          lastJsonlEventRef.current = Date.now();
 
           accRef.current = processJsonlEvent(accRef.current, parsed);
           const acc = accRef.current;
 
-          // Update state if changed — but suppress during replay burst
-          if (acc.state !== lastStateRef.current && settledRef.current) {
+          // Suppress state and metadata updates until the watcher has caught up.
+          // During JSONL replay, events arrive in rapid bursts. The Rust watcher
+          // emits "jsonl-caught-up" once it reaches the end of the file.
+          if (!caughtUpRef.current) return;
+
+          if (acc.state !== lastStateRef.current) {
             updateState(sessionId, acc.state);
             lastStateRef.current = acc.state;
           }
 
-          // Update metadata — but suppress during replay burst to prevent
-          // recentOutput changes from flooding the activity feed
-          if (settledRef.current) {
-            const metadata = {
-              costUsd: acc.costUsd,
-              currentAction: acc.currentAction,
-              currentToolName: acc.currentToolName,
-              subagentCount: acc.subagentCount,
-              subagentActivity: acc.subagentActivity,
-              recentOutput: acc.lastAssistantText,
-              contextWarning: acc.contextWarning,
-              taskProgress: acc.taskProgress,
-              inputTokens: acc.inputTokens,
-              outputTokens: acc.outputTokens,
-              assistantMessageCount: acc.assistantMessageCount,
-            };
-            const fp = JSON.stringify(metadata);
-            if (fp !== lastFingerprintRef.current) {
-              lastFingerprintRef.current = fp;
-              updateMetadata(sessionId, metadata);
-            }
+          const metadata = {
+            costUsd: acc.costUsd,
+            currentAction: acc.currentAction,
+            currentToolName: acc.currentToolName,
+            subagentCount: acc.subagentCount,
+            subagentActivity: acc.subagentActivity,
+            recentOutput: acc.lastAssistantText,
+            contextWarning: acc.contextWarning,
+            taskProgress: acc.taskProgress,
+            inputTokens: acc.inputTokens,
+            outputTokens: acc.outputTokens,
+            assistantMessageCount: acc.assistantMessageCount,
+          };
+          const fp = JSON.stringify(metadata);
+          if (fp !== lastFingerprintRef.current) {
+            lastFingerprintRef.current = fp;
+            updateMetadata(sessionId, metadata);
           }
         } catch {
           // Invalid JSON line — skip
@@ -98,8 +86,18 @@ export function useClaudeState(sessionId: string | null) {
       }
     );
 
+    // Listen for caught-up signal — watcher reached end of file
+    const unlistenCaughtUp = listen<{ sessionId: string }>(
+      "jsonl-caught-up",
+      (event) => {
+        if (event.payload.sessionId !== sessionId) return;
+        caughtUpRef.current = true;
+      }
+    );
+
     return () => {
       unlisten.then((fn) => fn());
+      unlistenCaughtUp.then((fn) => fn());
     };
   }, [sessionId, updateState, updateMetadata]);
 

@@ -142,6 +142,13 @@ pub fn start_jsonl_watcher(
                             line.clear();
                         }
                     }
+                    // Emit caught-up signal after processing all available lines.
+                    // On first read (offset was 0), this means replay is done.
+                    // On subsequent reads, it means we processed a batch of new events.
+                    app.emit(
+                        "jsonl-caught-up",
+                        serde_json::json!({ "sessionId": sid }),
+                    ).ok();
                     offset = len;
                 }
             } else {
