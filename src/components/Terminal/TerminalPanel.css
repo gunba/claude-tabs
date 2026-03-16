@@ -37,28 +37,24 @@
 .terminal-container {
   flex: 1;
   padding: 4px;
+  /* Match terminal background so the gap below the last row
+     (FitAddon sizes to exact rows) is invisible */
+  background: var(--term-bg, var(--bg-primary));
 }
 
 .terminal-container .xterm {
   height: 100%;
 }
 
-.terminal-container .xterm-viewport {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-track {
-  background: var(--scroll-track);
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+/* xterm.js 6.0 uses a VS Code-style custom scrollbar (.xterm-scrollable-element)
+   instead of the native viewport scrollbar. Style the new scrollbar. */
+.terminal-container .xterm .xterm-scrollable-element > .scrollbar > .scra {
   background: var(--scroll-thumb);
   border-radius: 4px;
+}
+
+.terminal-container .xterm .xterm-scrollable-element > .scrollbar {
+  background: var(--scroll-track);
 }
 
 /* ── State Banner Overlay ──────────────────────────────────────────── */
