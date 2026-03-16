@@ -91,10 +91,15 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       return false;
     });
     if (dirFilter.trim()) {
-      const dir = dirFilter.replace(/\\/g, "/").toLowerCase();
+      // Normalize both sides by collapsing all non-alphanumeric chars to hyphens.
+      // This handles the lossy decode_project_dir encoding where periods, spaces,
+      // and path separators all become hyphens (e.g. "Jordan.Graham" encodes as
+      // "Jordan-Graham" but decodes as "Jordan/Graham").
+      const normalize = (s: string) => s.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+      const filterNorm = normalize(dirFilter);
       list = list.filter((ps) => {
-        const psDir = ps.directory.replace(/\\/g, "/").toLowerCase();
-        return psDir.includes(dir) || dir.includes(psDir);
+        const dirNorm = normalize(ps.directory);
+        return dirNorm.includes(filterNorm) || filterNorm.includes(dirNorm);
       });
     }
     return list;
