@@ -30,7 +30,6 @@ export function useClaudeState(sessionId: string | null) {
   const accRef = useRef<JsonlAccumulator>(createAccumulator());
   const lastStateRef = useRef<string>("starting");
   const lastFingerprintRef = useRef<string>("");
-  const lastJsonlEventRef = useRef<number>(Date.now());
   const permissionRef = useRef("");
   // Suppress state/metadata updates until the JSONL watcher has caught up
   // (finished reading all existing lines). This prevents replay floods on resume.
@@ -47,7 +46,7 @@ export function useClaudeState(sessionId: string | null) {
 
         try {
           const parsed = JSON.parse(event.payload.line);
-          lastJsonlEventRef.current = Date.now();
+
 
           accRef.current = processJsonlEvent(accRef.current, parsed);
           const acc = accRef.current;
@@ -130,22 +129,6 @@ export function useClaudeState(sessionId: string | null) {
     };
   }, [sessionId, updateState, updateMetadata]);
 
-  // Timeout heuristic: if state is toolUse and no JSONL events for 10s, re-check PTY buffer
-  useEffect(() => {
-    if (!sessionId) return;
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - lastJsonlEventRef.current;
-      if (lastStateRef.current === 'toolUse' && elapsed > 10_000) {
-        if (PERMISSION_PATTERNS.some((p) => p.test(permissionRef.current))) {
-          if ((lastStateRef.current as string) !== 'waitingPermission') {
-            updateState(sessionId, 'waitingPermission');
-            lastStateRef.current = 'waitingPermission';
-          }
-        }
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [sessionId, updateState]);
 
   // Minimal PTY feed — ONLY for permission detection
   const feed = useCallback(

@@ -192,7 +192,11 @@ PTY data is debounce-batched in `useTerminal.ts` before writing to xterm.js (4ms
 ### Directory Encoding
 `encode_dir()` replaces ALL non-alphanumeric characters with hyphens (matching Claude Code). `decode_project_dir()` is lossy — can't distinguish periods from path separators. The resume filter normalizes both sides for comparison.
 
+### State Detection
+State MUST be derived from real signals (JSONL events, PTY output patterns), never from arbitrary timers. **DO NOT** use setTimeout/setInterval to guess state transitions (e.g. "if no JSONL for 15s, assume idle"). If you can't determine the state from the data, that's a gap in the data — fix the data source, don't paper over it with timers. Timer-based heuristics are unreliable, untestable, and always wrong in edge cases.
+
 ### Things that broke before (don't repeat)
+- **DO NOT** use arbitrary timers/timeouts to infer session state (see State Detection above)
 - **DO NOT** use Tauri event listeners for PTY data — use `tauri-pty` npm wrapper
 - **DO NOT** use React `key=` to swap terminals — destroys xterm.js + PTY
 - **DO NOT** pass `env: {}` to PTY spawn — wipes environment
