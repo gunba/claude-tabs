@@ -60,6 +60,12 @@ export function useClaudeState(sessionId: string | null) {
           if (acc.state !== lastStateRef.current) {
             updateState(sessionId, acc.state);
             lastStateRef.current = acc.state;
+            // When JSONL gives a definitive state (idle, thinking), clear the
+            // permission buffer so stale permission prompts don't re-trigger
+            // waitingPermission after the user has already responded.
+            if (acc.state === "idle" || acc.state === "thinking") {
+              permissionRef.current = "";
+            }
           }
 
           const metadata = {
@@ -148,8 +154,11 @@ export function useClaudeState(sessionId: string | null) {
       // Strip ANSI escape sequences before buffering
       const clean = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
       permissionRef.current = (permissionRef.current + clean).slice(-800);
-      if (PERMISSION_PATTERNS.some((p) => p.test(permissionRef.current))) {
-        if (lastStateRef.current !== "waitingPermission") {
+      // Only trigger waitingPermission from PTY scan when JSONL says we're
+      // in an active state (toolUse/thinking). Don't override idle — that
+      // means Claude finished and the permission text is stale.
+      if (lastStateRef.current === "toolUse" || lastStateRef.current === "thinking") {
+        if (PERMISSION_PATTERNS.some((p) => p.test(permissionRef.current))) {
           updateState(sessionId, "waitingPermission");
           lastStateRef.current = "waitingPermission";
         }
