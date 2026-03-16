@@ -115,7 +115,9 @@ export function SessionLauncher() {
     if (!launchConfig.workingDir.trim()) return;
     const name = dirToTabName(launchConfig.workingDir);
     addRecentDir(launchConfig.workingDir);
-    setLastConfig(launchConfig);
+    // Save config as defaults but strip one-shot resume fields —
+    // these are per-launch, not persistent defaults.
+    setLastConfig({ ...launchConfig, resumeSession: null, continueSession: false });
     try {
       // If relaunching an existing session, close it first
       const replaceId = useSettingsStore.getState().replaceSessionId;
@@ -145,6 +147,10 @@ export function SessionLauncher() {
       if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) handleLaunch();
       if (e.key === "Escape") {
         useSettingsStore.getState().setReplaceSessionId(null);
+        // Clear one-shot resume state so the launcher isn't stuck in resume mode
+        if (config.resumeSession) {
+          setLastConfig({ ...lastConfig, resumeSession: null, continueSession: false });
+        }
         setShowLauncher(false);
       }
     };
@@ -194,7 +200,7 @@ export function SessionLauncher() {
   // ── Main launcher ──
 
   return (
-    <div className="launcher-overlay" onClick={() => { useSettingsStore.getState().setReplaceSessionId(null); setShowLauncher(false); }}>
+    <div className="launcher-overlay" onClick={() => { useSettingsStore.getState().setReplaceSessionId(null); if (config.resumeSession) setLastConfig({ ...lastConfig, resumeSession: null, continueSession: false }); setShowLauncher(false); }}>
       <div className="launcher" onClick={(e) => e.stopPropagation()}>
 
         {/* Resume banner or path input */}
