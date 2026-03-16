@@ -87,14 +87,19 @@ export function useMetaAgent(): { isRunning: boolean } {
         const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data as unknown as number[]);
         const text = decoder.decode(bytes, { stream: true });
         // Strip ALL ANSI/VT escape sequences (CSI, OSC, DEC private modes, etc.)
+        // Respond to DSR (Device Status Report) queries — ink needs this
+        // to know the terminal size before it can render the prompt.
+        if (text.includes("\x1b[6n")) {
+          pty.write("\x1b[50;200R"); // Report cursor at row 50, col 200
+        }
+
         const clean = text.replace(/\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`]/g, "")
           .replace(/\x1b\][^\x07]*\x07/g, "") // OSC sequences
           .replace(/\x1b[()][0-9A-B]/g, ""); // Character set sequences
         responseBufferRef.current += clean;
-        console.log("[useMetaAgent] PTY chunk:", JSON.stringify(clean.slice(-100)));
 
-        // Check if response is complete (idle prompt appeared)
-        if (/❯\s*$/.test(responseBufferRef.current)) {
+        // Check if response is complete (idle prompt appeared anywhere in buffer)
+        if (responseBufferRef.current.includes("❯")) {
           if (responseResolveRef.current) {
             const response = responseBufferRef.current;
             responseBufferRef.current = "";
@@ -113,23 +118,17 @@ export function useMetaAgent(): { isRunning: boolean } {
         useSessionStore.getState().updateState(session.id, "dead");
       });
 
-      // Wait for initial idle prompt
+      // Wait for initial idle prompt (❯)
       await new Promise<void>((resolve) => {
         const check = setInterval(() => {
-          if (/❯\s*$/.test(responseBufferRef.current)) {
-            console.log("[useMetaAgent] Initial prompt detected, ready");
+          if (responseBufferRef.current.includes("❯")) {
             clearInterval(check);
             responseBufferRef.current = "";
             resolve();
           }
         }, 200);
-        // Timeout after 15s — log what we got
-        setTimeout(() => {
-          clearInterval(check);
-          console.log("[useMetaAgent] Initial prompt timeout. Buffer tail:", JSON.stringify(responseBufferRef.current.slice(-200)));
-          responseBufferRef.current = "";
-          resolve();
-        }, 15_000);
+        // Timeout after 15s
+        setTimeout(() => { clearInterval(check); responseBufferRef.current = ""; resolve(); }, 15_000);
       });
 
       metaReadyRef.current = true;
@@ -149,6 +148,7 @@ export function useMetaAgent(): { isRunning: boolean } {
 
     // Clear context — \r triggers Enter in the PTY (ink's input submit).
     // Wait for the idle prompt (❯) to confirm clear is complete before sending.
+    console.log("[useMetaAgent] Sending /clear to", sid.slice(0, 8));
     writeToPty(sid, "/clear\r");
     responseBufferRef.current = "";
     await new Promise<void>((resolve) => {
@@ -163,6 +163,7 @@ export function useMetaAgent(): { isRunning: boolean } {
     responseBufferRef.current = "";
 
     // Send prompt
+    console.log("[useMetaAgent] Sending prompt to", sid.slice(0, 8), "length:", prompt.length);
     writeToPty(sid, prompt + "\r");
 
     // Wait for response (idle prompt signals completion)
@@ -244,6 +245,8 @@ export function useMetaAgent(): { isRunning: boolean } {
     });
 
     if (needsNaming.length === 0 && needsSummary.length === 0) return;
+
+    console.log("[useMetaAgent] sendPrompt: naming=" + needsNaming.length + " summary=" + needsSummary.length);
 
     // Ensure persistent session exists
     const ready = await ensureMetaSession();
