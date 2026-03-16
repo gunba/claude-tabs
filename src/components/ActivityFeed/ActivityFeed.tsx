@@ -7,6 +7,7 @@ import "./ActivityFeed.css";
 interface FeedEntry {
   id: string;
   timestamp: number;
+  sessionId: string;
   sessionName: string;
   type: "output" | "summary" | "name" | "system";
   message: string;
@@ -72,10 +73,10 @@ export function ActivityFeed() {
         Array.from(prev.entries()).map(([id, p]) => [id.slice(0, 8), { settled: p.settled, state: p.state }])
       );
 
-      // Mark as settled once the session has been through a real response cycle.
-      // A session coming from "starting" goes to "idle" — that's the PTY spawn, not a response.
-      // Settle when we see a thinking/toolUse state (meaning Claude is actually processing).
-      if (!existing.settled && (session.state === "thinking" || session.state === "toolUse")) {
+      // Mark as settled once the session transitions INTO thinking/toolUse from
+      // a DIFFERENT state. This prevents resume replay (which pushes accumulated
+      // state in one shot) from immediately settling and leaking old output.
+      if (!existing.settled && (session.state === "thinking" || session.state === "toolUse") && existing.state !== session.state) {
         existing.settled = true;
       }
 
@@ -86,7 +87,7 @@ export function ActivityFeed() {
         if (existing.settled) {
           const trimmed = currentOutput.trim().slice(0, 500);
           if (trimmed) {
-            addEntry({ timestamp: now, sessionName, type: "output", message: trimmed });
+            addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "output", message: trimmed });
           }
         }
         // Always track the latest value (even before settled) so we don't
@@ -101,14 +102,14 @@ export function ActivityFeed() {
       const currentSummary = session.metadata.nodeSummary ?? null;
       if (currentSummary && currentSummary !== existing.summary) {
         if (existing.settled) {
-          addEntry({ timestamp: now, sessionName, type: "summary", message: currentSummary });
+          addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "summary", message: currentSummary });
         }
         existing.summary = currentSummary;
       }
 
       // Name change
       if (sessionName !== existing.name) {
-        addEntry({ timestamp: now, sessionName, type: "name", message: `Renamed → ${sessionName}` });
+        addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "name", message: `Renamed → ${sessionName}` });
         existing.name = sessionName;
       }
     }
@@ -141,7 +142,7 @@ export function ActivityFeed() {
           entries.map((entry) => (
             <div key={entry.id} className={`feed-entry feed-entry-${entry.type}`}>
               <span className="feed-time">{formatTime(entry.timestamp)}</span>
-              <span className="feed-nick" style={{ color: sessionColor(entry.sessionName) }}>{entry.sessionName}</span>
+              <span className="feed-nick" style={{ color: sessionColor(entry.sessionId) }}>{entry.sessionName}</span>
               <span className="feed-msg"><ReactMarkdown>{entry.message}</ReactMarkdown></span>
             </div>
           ))

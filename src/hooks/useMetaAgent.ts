@@ -86,17 +86,22 @@ export function useMetaAgent(): { isRunning: boolean } {
       pty.onData((data: Uint8Array) => {
         const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data as unknown as number[]);
         const text = decoder.decode(bytes, { stream: true });
-        // Strip ANSI sequences
-        const clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+        // Strip ALL ANSI/VT escape sequences (CSI, OSC, DEC private modes, etc.)
+        const clean = text.replace(/\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`]/g, "")
+          .replace(/\x1b\][^\x07]*\x07/g, "") // OSC sequences
+          .replace(/\x1b[()][0-9A-B]/g, ""); // Character set sequences
         responseBufferRef.current += clean;
+        console.log("[useMetaAgent] PTY chunk:", JSON.stringify(clean.slice(-100)));
 
         // Check if response is complete (idle prompt appeared)
-        if (responseResolveRef.current && /❯\s*$/.test(responseBufferRef.current)) {
-          const response = responseBufferRef.current;
-          responseBufferRef.current = "";
-          const resolve = responseResolveRef.current;
-          responseResolveRef.current = null;
-          resolve(response);
+        if (/❯\s*$/.test(responseBufferRef.current)) {
+          if (responseResolveRef.current) {
+            const response = responseBufferRef.current;
+            responseBufferRef.current = "";
+            const resolve = responseResolveRef.current;
+            responseResolveRef.current = null;
+            resolve(response);
+          }
         }
       });
 
@@ -112,13 +117,19 @@ export function useMetaAgent(): { isRunning: boolean } {
       await new Promise<void>((resolve) => {
         const check = setInterval(() => {
           if (/❯\s*$/.test(responseBufferRef.current)) {
+            console.log("[useMetaAgent] Initial prompt detected, ready");
             clearInterval(check);
             responseBufferRef.current = "";
             resolve();
           }
         }, 200);
-        // Timeout after 15s
-        setTimeout(() => { clearInterval(check); resolve(); }, 15_000);
+        // Timeout after 15s — log what we got
+        setTimeout(() => {
+          clearInterval(check);
+          console.log("[useMetaAgent] Initial prompt timeout. Buffer tail:", JSON.stringify(responseBufferRef.current.slice(-200)));
+          responseBufferRef.current = "";
+          resolve();
+        }, 15_000);
       });
 
       metaReadyRef.current = true;

@@ -103,10 +103,13 @@ async function executeCommand(cmd: TestCommand): Promise<unknown> {
 
   switch (cmd.action) {
     case "createSession": {
+      // Support both flat args (workingDir, model) and nested args.config
+      const argsConfig = (cmd.args?.config || {}) as Partial<SessionConfig>;
       const config: SessionConfig = {
         ...DEFAULT_SESSION_CONFIG,
-        workingDir: (cmd.args?.workingDir as string) || ".",
-        model: (cmd.args?.model as string) || null,
+        ...argsConfig,
+        workingDir: argsConfig.workingDir || (cmd.args?.workingDir as string) || ".",
+        model: argsConfig.model || (cmd.args?.model as string) || null,
       };
       const session = await store.createSession(
         (cmd.args?.name as string) || "Test Session",

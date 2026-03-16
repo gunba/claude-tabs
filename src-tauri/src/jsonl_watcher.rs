@@ -103,6 +103,8 @@ pub fn start_jsonl_watcher(
     let sid = session_id.clone();
     let state = watcher_state.inner().clone();
 
+    eprintln!("[jsonl_watcher] Starting watcher for session {} at {}", sid, path.display());
+
     // Mark as active
     if let Ok(mut s) = state.lock() {
         s.active.insert(sid.clone(), false);
@@ -126,6 +128,7 @@ pub fn start_jsonl_watcher(
                 retries = 0;
                 let len = file.metadata().map(|m| m.len()).unwrap_or(0);
                 if len > offset {
+                    eprintln!("[jsonl_watcher] Reading {} bytes from {} for session {}", len - offset, path.display(), sid);
                     let mut reader = BufReader::new(file);
                     if reader.seek(SeekFrom::Start(offset)).is_ok() {
                         let mut line = String::new();
@@ -144,6 +147,7 @@ pub fn start_jsonl_watcher(
                             line.clear();
                         }
                     }
+                    eprintln!("[jsonl_watcher] Emitting caught-up for session {}", sid);
                     // Emit caught-up signal after processing all available lines.
                     // On first read (offset was 0), this means replay is done.
                     // On subsequent reads, it means we processed a batch of new events.

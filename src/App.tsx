@@ -248,7 +248,7 @@ export default function App() {
                 >
                   <span className={`tab-dot state-${session.state}`} />
                   <span className="tab-label">
-                    <span className="tab-name" style={{ textShadow: `0 0 8px ${sessionColor(name)}40` }}>{name}</span>
+                    <span className="tab-name" style={{ textShadow: `0 0 12px ${sessionColor(session.id)}90, 0 0 4px ${sessionColor(session.id)}60` }}>{name}</span>
                     {summary && <span className="tab-summary">{summary}</span>}
                   </span>
                   <button
