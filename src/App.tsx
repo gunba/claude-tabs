@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
-import { dirToTabName, formatTokenCount, sessionColor } from "./lib/claude";
+import { dirToTabName, formatTokenCount, sessionColor, getSessionColorIndex, forceSessionColor } from "./lib/claude";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { SubagentInspector } from "./components/SubagentInspector/SubagentInspector";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
@@ -35,6 +35,7 @@ export default function App() {
   const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const updateSubagent = useSessionStore((s) => s.updateSubagent);
   const reorderTabs = useSessionStore((s) => s.reorderTabs);
+  const renameSession = useSessionStore((s) => s.renameSession);
   const showLauncher = useSettingsStore((s) => s.showLauncher);
   const setShowLauncher = useSettingsStore((s) => s.setShowLauncher);
   const setLastConfig = useSettingsStore((s) => s.setLastConfig);
@@ -44,6 +45,9 @@ export default function App() {
   const [showResumePicker, setShowResumePicker] = useState(false);
   const [inspectedSubagent, setInspectedSubagent] = useState<{ sessionId: string; subagentId: string } | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
+  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editingTabName, setEditingTabName] = useState("");
   const dragTabRef = useRef<string | null>(null);
   const initRef = useRef(false);
 
@@ -68,6 +72,13 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [sessions, persist]);
+
+  // Flush persist on window close so sessions survive app restart
+  useEffect(() => {
+    const handler = () => { persist(); };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [persist]);
 
   // Revive dead sessions or switch to live ones
   const handleTabActivate = useCallback(
@@ -94,8 +105,12 @@ export default function App() {
         // Preserve metadata (nodeSummary, tokens, etc.) across revival
         const savedMetadata = { ...session.metadata };
         try {
+          // Capture color before close releases it
+          const savedColorIdx = getSessionColorIndex(id);
           await closeSession(id);
           const newSession = await createSession(name, config, { insertAtIndex: idx });
+          // Preserve color across revival
+          if (savedColorIdx >= 0) forceSessionColor(newSession.id, savedColorIdx);
           // Restore the old session's summary and accumulated metadata
           updateMetadata(newSession.id, {
             nodeSummary: savedMetadata.nodeSummary,
@@ -203,11 +218,29 @@ export default function App() {
               return (
                 <button
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}`}
                   draggable
-                  onDragStart={() => { dragTabRef.current = session.id; }}
-                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDragStart={(e) => {
+                    dragTabRef.current = session.id;
+                    // Use a minimal drag image to reduce visual jank
+                    const ghost = document.createElement("div");
+                    ghost.textContent = name;
+                    ghost.style.cssText = "position:absolute;top:-999px;padding:4px 8px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;border-radius:4px;white-space:nowrap;";
+                    document.body.appendChild(ghost);
+                    e.dataTransfer.setDragImage(ghost, 0, 0);
+                    setTimeout(() => document.body.removeChild(ghost), 0);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (dragTabRef.current && dragTabRef.current !== session.id) {
+                      setDragOverTabId(session.id);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverTabId === session.id) setDragOverTabId(null);
+                  }}
                   onDrop={() => {
+                    setDragOverTabId(null);
                     const from = dragTabRef.current;
                     if (from && from !== session.id) {
                       const order = regularSessions.map((s) => s.id);
@@ -221,7 +254,7 @@ export default function App() {
                     }
                     dragTabRef.current = null;
                   }}
-                  onDragEnd={() => { dragTabRef.current = null; }}
+                  onDragEnd={() => { dragTabRef.current = null; setDragOverTabId(null); }}
                   onClick={(e) => {
                     if (e.shiftKey) {
                       const resumeId = session.config.resumeSession || session.config.sessionId || session.id;
@@ -246,9 +279,46 @@ export default function App() {
                 >
                   <span className={`tab-dot state-${session.state}`} />
                   <span className="tab-label">
-                    <span className="tab-name" style={{ textShadow: `0 0 12px ${sessionColor(session.id)}90, 0 0 4px ${sessionColor(session.id)}60` }}>{name}</span>
-                    {summary && <span className="tab-summary">{summary}</span>}
+                    {editingTabId === session.id ? (
+                      <input
+                        className="tab-name-input"
+                        value={editingTabName}
+                        onChange={(e) => setEditingTabName(e.target.value)}
+                        onBlur={() => {
+                          if (editingTabName.trim()) {
+                            renameSession(session.id, editingTabName.trim());
+                          }
+                          setEditingTabId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            if (editingTabName.trim()) {
+                              renameSession(session.id, editingTabName.trim());
+                            }
+                            setEditingTabId(null);
+                          }
+                          if (e.key === "Escape") setEditingTabId(null);
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="tab-name" style={{ textShadow: `0 0 12px ${sessionColor(session.id)}90, 0 0 4px ${sessionColor(session.id)}60` }}>{name}</span>
+                    )}
+                    {summary && editingTabId !== session.id && <span className="tab-summary">{summary}</span>}
                   </span>
+                  <button
+                    className="tab-edit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingTabId(session.id);
+                      setEditingTabName(name);
+                    }}
+                    title="Rename"
+                  >
+                    ✎
+                  </button>
                   <button
                       className="tab-close"
                       onClick={(e) => { e.stopPropagation(); closeSession(session.id); }}
@@ -317,8 +387,8 @@ export default function App() {
       {/* Main area: terminal + activity feed */}
       <div className="app-main">
         <div className="terminal-area">
-          {/* Terminal panels — always mounted, hidden via CSS */}
-          {regularSessions.filter((s) => s.state !== "dead").map((session) => (
+          {/* Terminal panels — always mounted, hidden via CSS (including dead ones so errors remain visible) */}
+          {regularSessions.map((session) => (
             <TerminalPanel
               key={session.id}
               session={session}
@@ -335,7 +405,7 @@ export default function App() {
           )}
 
           {/* Empty state — no active terminal visible */}
-          {initialized && !regularSessions.some((s) => s.id === activeTabId && s.state !== "dead") && (
+          {initialized && !regularSessions.some((s) => s.id === activeTabId) && (
             <div className="empty-state">
               <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+R</kbd> resume from history
             </div>
@@ -376,6 +446,17 @@ export default function App() {
               const isDead = ctxSession.state === "dead";
               return (
                 <>
+                  <button
+                    className="tab-context-menu-item"
+                    onClick={() => {
+                      const ctxName = ctxSession.name || dirToTabName(ctxSession.config.workingDir);
+                      setEditingTabId(ctxSession.id);
+                      setEditingTabName(ctxName);
+                      setTabContextMenu(null);
+                    }}
+                  >
+                    Rename
+                  </button>
                   <button
                     className="tab-context-menu-item"
                     onClick={() => {

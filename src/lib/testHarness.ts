@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
 import { writeToPty } from "./ptyRegistry";
+import { sessionColor, getSessionColorIndex, forceSessionColor } from "./claude";
 import type { SessionConfig } from "../types/session";
 import { DEFAULT_SESSION_CONFIG } from "../types/session";
 
@@ -25,11 +26,19 @@ export interface TestState {
     id: string;
     name: string;
     state: string;
+    colorIndex: number;
+    color: string;
     workingDir: string;
     sessionId: string | null;
     resumeSession: string | null;
     nodeSummary: string | null;
+    firstUserMessage: string | null;
+    currentAction: string | null;
+    costUsd: number;
+    inputTokens: number;
+    outputTokens: number;
     assistantMessageCount: number;
+    durationSecs: number;
     isMetaAgent: boolean;
   }>;
   subagents: Record<string, Array<{ id: string; state: string; description: string }>>;
@@ -61,11 +70,19 @@ function captureState(lastResult?: unknown): TestState {
       id: s.id,
       name: s.name,
       state: s.state,
+      colorIndex: getSessionColorIndex(s.id),
+      color: sessionColor(s.id),
       workingDir: s.config.workingDir,
       sessionId: s.config.sessionId,
       resumeSession: s.config.resumeSession,
       nodeSummary: s.metadata.nodeSummary ?? null,
+      firstUserMessage: s.metadata.nodeSummary ?? s.metadata.currentAction ?? null,
+      currentAction: s.metadata.currentAction ?? null,
+      costUsd: s.metadata.costUsd,
+      inputTokens: s.metadata.inputTokens,
+      outputTokens: s.metadata.outputTokens,
       assistantMessageCount: s.metadata.assistantMessageCount,
+      durationSecs: s.metadata.durationSecs,
       isMetaAgent: s.isMetaAgent ?? false,
     })),
     subagents: Object.fromEntries(
@@ -144,8 +161,10 @@ async function executeCommand(cmd: TestCommand): Promise<unknown> {
       const name = session.name;
       const idx = store.sessions.findIndex((s) => s.id === id);
       const savedMeta = { ...session.metadata };
+      const savedColorIdx = getSessionColorIndex(id);
       await store.closeSession(id);
       const newSession = await store.createSession(name, config, { insertAtIndex: idx });
+      if (savedColorIdx >= 0) forceSessionColor(newSession.id, savedColorIdx);
       store.updateMetadata(newSession.id, {
         nodeSummary: savedMeta.nodeSummary,
         inputTokens: savedMeta.inputTokens,

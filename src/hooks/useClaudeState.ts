@@ -81,6 +81,8 @@ export function useClaudeState(sessionId: string | null, _isResumed = false) {
             inputTokens: acc.inputTokens,
             outputTokens: acc.outputTokens,
             assistantMessageCount: acc.assistantMessageCount,
+            // Use first user message as tab summary (replaces removed Haiku summariser)
+            ...(acc.firstUserMessage ? { nodeSummary: acc.firstUserMessage } : {}),
           };
           const fp = JSON.stringify(metadata);
           if (fp !== lastFingerprintRef.current) {
@@ -133,6 +135,8 @@ export function useClaudeState(sessionId: string | null, _isResumed = false) {
           inputTokens: 0, // Reset — only count NEW tokens
           outputTokens: 0,
           assistantMessageCount: acc.assistantMessageCount,
+          // Preserve first user message from replay for tab naming
+          ...(acc.firstUserMessage ? { nodeSummary: acc.firstUserMessage } : {}),
         });
         // Reset token counts so only tokens from the NEW conversation are shown.
         // Historical tokens from the resumed session don't count against this run.

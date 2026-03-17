@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { trace, traceAsync } from "../lib/perfTrace";
+import { assignSessionColor, releaseSessionColor } from "../lib/claude";
 import type {
   Session,
   SessionConfig,
@@ -43,6 +44,11 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const sessions = await traceAsync("init: load_persisted_sessions", () =>
         invoke<Session[]>("load_persisted_sessions")
       );
+      // Assign colors sequentially to restored sessions
+      const allIds = sessions.map((s) => s.id);
+      for (const s of sessions) {
+        assignSessionColor(s.id, allIds);
+      }
       set({ sessions, activeTabId: null, initialized: true });
       trace("init: sessions set, initialized=true");
     } catch {
@@ -61,6 +67,9 @@ export const useSessionStore = create<SessionsState>((set) => ({
       ...session,
       isMetaAgent: opts.isMetaAgent ?? false,
     };
+    // Assign a color to the new session, avoiding colors of existing sessions
+    const existingIds = useSessionStore.getState().sessions.map((s) => s.id);
+    assignSessionColor(tagged.id, existingIds);
     set((s) => {
       let sessions;
       if (opts.insertAtIndex !== undefined && opts.insertAtIndex >= 0) {
@@ -79,6 +88,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
 
   closeSession: async (id) => {
     await invoke("close_session", { id });
+    releaseSessionColor(id);
     set((s) => {
       const sessions = s.sessions.filter((x) => x.id !== id);
       const activeTabId =
@@ -126,11 +136,13 @@ export const useSessionStore = create<SessionsState>((set) => ({
   persist: async () => {
     // Serialize from the frontend store (not the Rust session manager)
     // because the Rust side doesn't receive metadata updates.
+    // All sessions are persisted as "dead" — on reload, they can't have
+    // running PTYs, so active states (thinking/toolUse) would be stale.
     const snapshots = useSessionStore.getState().sessions.map((s) => ({
       id: s.id,
       name: s.name,
       config: s.config,
-      state: s.state,
+      state: "dead" as const,
       metadata: s.metadata,
       createdAt: s.createdAt,
       lastActive: s.lastActive,

@@ -15,6 +15,7 @@ export interface JsonlAccumulator {
   subagentCount: number;
   subagentActivity: string[];
   lastAssistantText: string;
+  firstUserMessage: string | null;
   inputTokens: number;
   outputTokens: number;
   assistantMessageCount: number;
@@ -31,6 +32,7 @@ export function createAccumulator(): JsonlAccumulator {
     subagentCount: 0,
     subagentActivity: [],
     lastAssistantText: "",
+    firstUserMessage: null,
     inputTokens: 0,
     outputTokens: 0,
     assistantMessageCount: 0,
@@ -54,10 +56,15 @@ export function processJsonlEvent(acc: JsonlAccumulator, event: any): JsonlAccum
     if (hasToolResult) {
       return { ...acc, state: "thinking", currentAction: null, currentToolName: null };
     }
+    // Capture first user message text for tab naming
+    let firstUserMessage = acc.firstUserMessage;
+    if (!firstUserMessage) {
+      firstUserMessage = extractUserText(event);
+    }
     // A user message with text (not a tool result) means the user typed a new
     // prompt. Claude must have been idle to accept it. If state was stuck in
     // thinking/toolUse (e.g. after an interrupt), this corrects it.
-    return { ...acc, state: "idle", currentAction: null, currentToolName: null };
+    return { ...acc, state: "idle", currentAction: null, currentToolName: null, firstUserMessage };
   }
 
   if (type === "progress") {
@@ -181,4 +188,28 @@ export function formatToolAction(block: any): string {
   if (name === "Glob") return `Glob ${input.pattern || ""}`.slice(0, 200);
   if (name === "Agent") return `Agent: ${(input.description || "").replace(/\n/g, " ")}`.slice(0, 200);
   return name;
+}
+
+/** Extract user text from a JSONL user event, filtering out CLI noise. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function extractUserText(event: any): string | null {
+  const content = event.message?.content;
+  // String content
+  if (typeof content === "string") {
+    if (content.length > 10 && !content.includes("command-name") && !content.includes("local-command")) {
+      return content.replace(/\n/g, " ").trim().slice(0, 150);
+    }
+  }
+  // Array content (text blocks)
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (block.type === "text" && typeof block.text === "string") {
+        const t = block.text;
+        if (t.length > 10 && !t.includes("command-name") && !t.includes("local-command")) {
+          return t.replace(/\n/g, " ").trim().slice(0, 150);
+        }
+      }
+    }
+  }
+  return null;
 }
