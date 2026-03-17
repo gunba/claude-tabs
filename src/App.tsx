@@ -223,9 +223,11 @@ export default function App() {
               const summary = session.metadata.nodeSummary ?? session.metadata.currentAction;
 
               return (
-                <button
+                <div
                   key={session.id}
                   className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}`}
+                  role="button"
+                  tabIndex={0}
                   draggable
                   onDragStart={(e) => {
                     dragTabRef.current = session.id;
@@ -274,6 +276,14 @@ export default function App() {
                       useSettingsStore.getState().setReplaceSessionId(session.id);
                       setShowLauncher(true);
                     } else {
+                      handleTabActivate(session.id);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    // Only activate on Enter/Space when not editing the rename input
+                    if (editingTabId === session.id) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
                       handleTabActivate(session.id);
                     }
                   }}
@@ -333,7 +343,7 @@ export default function App() {
                     >
                       ×
                     </button>
-                </button>
+                </div>
               );
             })}
           </div>
