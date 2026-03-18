@@ -93,7 +93,7 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
             inputTokens: acc.inputTokens,
             outputTokens: acc.outputTokens,
             assistantMessageCount: acc.assistantMessageCount,
-            // Use first user message as tab summary (replaces removed Haiku summariser)
+            // First user message as tab summary
             ...(acc.firstUserMessage ? { nodeSummary: acc.firstUserMessage } : {}),
           };
           const fp = JSON.stringify(metadata);
@@ -134,9 +134,8 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
           outputTokens: 0,
           assistantMessageCount: acc.assistantMessageCount,
         });
-        // Sync state and push accumulated metadata to the store so the
-        // summariser can see assistantMessageCount > 0. Without this,
-        // metadata from replay stays invisible to other hooks.
+        // Sync state and push accumulated metadata to the store.
+        // Without this, metadata from replay stays invisible to other hooks.
         lastStateRef.current = acc.state;
         updateState(sessionId, acc.state);
         updateMetadata(sessionId, {

@@ -78,6 +78,8 @@ React UI (WebView2) ←→ Tauri IPC ←→ Rust Backend ←→ ConPTY ←→ Cl
 | **Settings** | Zustand + `localStorage` | Recent dirs, CLI capabilities, command usage |
 | **Discovery** | `claude --help` + binary scan + plugin/skill file scan | Options, commands, slash commands, hooks |
 | **Colors** | Sequential assignment in `claude.ts` | Avoids collisions, preserved across revival |
+| **Background buffering** | TerminalPanel visibleRef + bgBufferRef | PTY data buffered when tab hidden, flushed on focus |
+| **Scrollback** | useTerminal onScroll handler | 5K default, grows 10K on scroll-to-top, shrinks at bottom |
 | **Dir encoding** | `encode_dir()` — ALL non-alphanumeric → hyphen | `decode_project_dir()` probes filesystem to resolve ambiguity |
 
 ### Rust Backend
@@ -126,7 +128,8 @@ src/
 │   ├── ptyRegistry.ts                   # Global PTY writer registry
 │   ├── terminalRegistry.ts             # Terminal buffer reader registry
 │   ├── testHarness.ts                   # Test bridge (writes state to JSON, accepts commands)
-│   └── uiConfig.ts                     # Persisted UI configuration (dead session age, resume settings)
+│   ├── uiConfig.ts                     # Persisted UI configuration (dead session age, resume settings)
+│   └── perfTrace.ts                    # Performance tracing utilities
 └── types/session.ts                     # TypeScript types mirroring Rust (camelCase)
 ```
 
@@ -216,10 +219,11 @@ Every fix must address the root cause. If a behavior can be derived from real da
 - **DO NOT** persist `resumeSession`/`continueSession` in `lastConfig` (one-shot fields, causes launcher to stick in resume mode)
 - **DO NOT** try to fix terminal flash by removing WebGL or memoizing useTerminal (the fix is xterm.js 6.0 DEC 2026 sync + debounced batching)
 - **DO NOT** use xterm.js 5.x — v6.0 is required for synchronized output support
+- **DO NOT** set xterm.js scrollback on every onScroll event (triggers buffer reconstruction, kills performance)
 
 ## Unit Tests
 
-- `jsonlState` 43, `claude` 22, `deadSession` 18, `theme` 4, `ptyRegistry` 6
+- `jsonlState` 50, `claude` 23, `deadSession` 18, `theme` 4, `ptyRegistry` 6
 
 Run with `npm test`. Add tests for any new pure-logic functions in `src/lib/`.
 

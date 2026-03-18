@@ -35,7 +35,7 @@ fn encode_dir(dir: &str) -> String {
 }
 
 fn jsonl_path(session_id: &str, working_dir: &str) -> PathBuf {
-    let home = dirs::home_dir().unwrap();
+    let home = match dirs::home_dir() { Some(h) => h, None => return PathBuf::new() };
     let encoded = encode_dir(working_dir);
     home.join(".claude")
         .join("projects")
@@ -234,7 +234,7 @@ pub fn stop_jsonl_watcher(
 }
 
 fn subagent_dir(session_id: &str, working_dir: &str) -> PathBuf {
-    let home = dirs::home_dir().unwrap();
+    let home = match dirs::home_dir() { Some(h) => h, None => return PathBuf::new() };
     let encoded = encode_dir(working_dir);
     home.join(".claude")
         .join("projects")
@@ -340,9 +340,8 @@ pub fn stop_subagent_watcher(
     session_id: String,
     watcher_state: tauri::State<'_, Arc<Mutex<WatcherState>>>,
 ) {
-    // Subagent watcher reuses the parent session's active flag —
-    // stopping the main watcher also stops the subagent watcher.
-    // This command is a no-op since stop_jsonl_watcher handles it.
+    // Clean up subagent tracking. The watcher thread exits when
+    // the parent session's active flag is set.
     if let Ok(mut s) = watcher_state.lock() {
         s.subagent_watchers.remove(&session_id);
     }

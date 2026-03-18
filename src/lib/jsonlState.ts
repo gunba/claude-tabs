@@ -196,7 +196,8 @@ export function extractUserText(event: any): string | null {
   // String content
   if (typeof content === "string") {
     if (content.length > 10 && !content.includes("command-name") && !content.includes("local-command")) {
-      return content.replace(/\n/g, " ").trim().slice(0, 150);
+      const result = content.replace(/\n/g, " ").trim().slice(0, 150);
+      return result || null;
     }
   }
   // Array content (text blocks)

@@ -145,4 +145,11 @@ describe("session color assignment", () => {
   it("SESSION_COLORS has 8 entries", () => {
     expect(SESSION_COLORS).toHaveLength(8);
   });
+
+  it("sessionColor is deterministic for same ID", () => {
+    const id = "deterministic-test-id";
+    const c1 = sessionColor(id);
+    const c2 = sessionColor(id);
+    expect(c1).toBe(c2);
+  });
 });

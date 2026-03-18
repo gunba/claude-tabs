@@ -132,7 +132,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
         console.error("Failed to resume session:", err);
       }
     },
-    [deadSessionMap, lastConfig, createSession, addRecentDir, onClose]
+    [deadSessionMap, createSession, addRecentDir, onClose]
   );
 
   // Open the main launcher with this session pre-filled (Shift+Click / Configure)

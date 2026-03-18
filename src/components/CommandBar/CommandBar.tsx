@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
-import type { Subagent } from "../../types/session";
 import "./CommandBar.css";
 
 // ── Component ───────────────────────────────────────────────────────
@@ -9,7 +8,6 @@ import "./CommandBar.css";
 interface CommandBarProps {
   sessionId: string | null;
   sessionState: string;
-  subagents: Subagent[];
 }
 
 export function CommandBar({ sessionId, sessionState }: CommandBarProps) {

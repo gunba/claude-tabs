@@ -462,7 +462,6 @@ export default function App() {
       <CommandBar
         sessionId={activeTabId}
         sessionState={activeSession?.state ?? "dead"}
-        subagents={activeSubs}
       />
 
       <StatusBar />

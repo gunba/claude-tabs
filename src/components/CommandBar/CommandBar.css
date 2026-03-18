@@ -97,31 +97,3 @@
   white-space: nowrap;
   padding: 2px 8px;
 }
-
-/* ── Custom command input ───────────────────────────────── */
-
-.command-bar-custom {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 2px 6px;
-  color: var(--text-primary);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
-  font-size: 10px;
-  outline: none;
-  width: 90px;
-  min-width: 70px;
-  transition: border-color 0.12s;
-  box-sizing: border-box;
-}
-
-.command-bar-custom:focus {
-  border-color: var(--accent);
-  width: 120px;
-}
-
-.command-bar-custom::placeholder {
-  color: var(--text-muted);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
-  font-size: 10px;
-}

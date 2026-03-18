@@ -80,7 +80,7 @@ export function SessionLauncher() {
   // Regenerate command line when config dropdowns change
   useEffect(() => {
     setCommandLine(buildFullCommand(config));
-  }, [config.model, config.permissionMode, config.effort, config.dangerouslySkipPermissions, config.projectDir, config.resumeSession, buildFullCommand, config]);
+  }, [config.model, config.permissionMode, config.effort, config.dangerouslySkipPermissions, config.projectDir, config.resumeSession, buildFullCommand]);
 
   useEffect(() => {
     const el = document.getElementById("launcher-path");

@@ -420,6 +420,70 @@ describe("extractUserText", () => {
     expect(extractUserText({ message: {} })).toBeNull();
     expect(extractUserText({})).toBeNull();
   });
+
+  it("returns null for empty string content", () => {
+    const event = { message: { content: "" } };
+    expect(extractUserText(event)).toBeNull();
+  });
+
+  it("returns null for whitespace-only content", () => {
+    const event = { message: { content: "           " } };
+    expect(extractUserText(event)).toBeNull();
+  });
+
+  it("skips non-text blocks in array content", () => {
+    const event = { message: { content: [{ type: "image", source: "data" }, { type: "text", text: "Actual user message here" }] } };
+    expect(extractUserText(event)).toBe("Actual user message here");
+  });
+
+  it("returns null when array has only non-text blocks", () => {
+    const event = { message: { content: [{ type: "tool_result", content: "output" }] } };
+    expect(extractUserText(event)).toBeNull();
+  });
+});
+
+describe("subagent activity formatting", () => {
+  it("replaces newlines in agent description", () => {
+    const acc = createAccumulator();
+    const result = processJsonlEvent(acc, {
+      type: "assistant",
+      message: {
+        model: "claude-opus-4-6",
+        content: [{ type: "tool_use", id: "t1", name: "Agent", input: { description: "Line one\nLine two" } }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    });
+    expect(result.subagentActivity[0]).not.toContain("\n");
+  });
+
+  it("defaults missing subagent_type to Agent", () => {
+    const acc = createAccumulator();
+    const result = processJsonlEvent(acc, {
+      type: "assistant",
+      message: {
+        model: "claude-opus-4-6",
+        content: [{ type: "tool_use", id: "t1", name: "Agent", input: { description: "test" } }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    });
+    expect(result.subagentActivity[0]).toMatch(/^Agent:/);
+  });
+
+  it("defaults missing description to working", () => {
+    const acc = createAccumulator();
+    const result = processJsonlEvent(acc, {
+      type: "assistant",
+      message: {
+        model: "claude-opus-4-6",
+        content: [{ type: "tool_use", id: "t1", name: "Agent", input: {} }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    });
+    expect(result.subagentActivity[0]).toContain("working");
+  });
 });
 
 describe("firstUserMessage accumulation", () => {

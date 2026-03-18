@@ -76,7 +76,7 @@ function captureState(lastResult?: unknown): TestState {
       sessionId: s.config.sessionId,
       resumeSession: s.config.resumeSession,
       nodeSummary: s.metadata.nodeSummary ?? null,
-      firstUserMessage: s.metadata.nodeSummary ?? s.metadata.currentAction ?? null,
+      firstUserMessage: s.metadata.nodeSummary ?? null,
       currentAction: s.metadata.currentAction ?? null,
       costUsd: s.metadata.costUsd,
       inputTokens: s.metadata.inputTokens,
@@ -244,7 +244,7 @@ const __origLog = console.log;
 const __origTrace = console.trace;
 console.log = (...args: unknown[]) => {
   const msg = args.map(String).join(" ");
-  if (msg.includes("[terminal]") || msg.includes("[TerminalPanel]") || msg.includes("[pty]") || msg.includes("[useClaudeState]") || msg.includes("[useMetaAgent]")) {
+  if (msg.includes("[terminal]") || msg.includes("[TerminalPanel]") || msg.includes("[pty]") || msg.includes("[useClaudeState]")) {
     __logs.push(msg);
     if (__logs.length > 200) __logs.shift();
   }

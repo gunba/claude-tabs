@@ -23,7 +23,7 @@ npm install
 npm run tauri build
 ```
 
-The installer is at `src-tauri/target/release/bundle/nsis/Claude Tabs_0.1.0_x64-setup.exe`.
+The installer is at `src-tauri/target/release/bundle/nsis/`.
 
 Or run the portable exe directly: `src-tauri/target/release/claude-tabs.exe`.
 
