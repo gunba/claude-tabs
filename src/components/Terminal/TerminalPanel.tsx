@@ -368,13 +368,15 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           ↓
         </button>
       ) : session.state === "idle" && visible ? (
-        <button
-          className="clear-input-btn"
-          onClick={() => pty.handle.current?.write("\x15")}
-          title="Clear input line (Ctrl+U)"
-        >
-          ⌫
-        </button>
+        <div className="clear-input-zone">
+          <button
+            className="clear-input-btn"
+            onClick={() => pty.handle.current?.write("\x15")}
+            title="Clear input line (Ctrl+U)"
+          >
+            ⌫
+          </button>
+        </div>
       ) : null}
     </div>
   );

@@ -263,7 +263,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
+  width: 48px;
+  height: 48px;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: var(--accent);
@@ -273,6 +274,7 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.15s;
+  align-self: center;
 }
 
 .tab-add:hover {
@@ -283,7 +285,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
+  width: 48px;
+  height: 48px;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: var(--bg-surface-hover);
@@ -292,6 +295,7 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
+  align-self: center;
 }
 
 .tab-resume:hover {

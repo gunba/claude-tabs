@@ -85,11 +85,20 @@
 
 /* ── Clear input button ──────────────────────────────────────────── */
 
+/* Invisible hover zone that triggers the clear button */
+.clear-input-zone {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 80px;
+  height: 60px;
+  z-index: 11;
+}
+
 .clear-input-btn {
   position: absolute;
   bottom: 8px;
   right: 28px;
-  z-index: 11;
   width: 28px;
   height: 28px;
   padding: 0;
@@ -99,12 +108,16 @@
   color: var(--text-secondary);
   font-size: 14px;
   cursor: pointer;
-  opacity: 0.5;
+  opacity: 0;
   transition: opacity 0.15s;
 }
 
+.clear-input-zone:hover .clear-input-btn {
+  opacity: 0.6;
+}
+
 .clear-input-btn:hover {
-  opacity: 1;
+  opacity: 1 !important;
   background: var(--bg-surface-hover);
   color: var(--text-primary);
 }
