@@ -88,9 +88,9 @@ export function forceSessionColor(sessionId: string, colorIndex: number): void {
   colorAssignments.set(sessionId, colorIndex % SESSION_COLORS.length);
 }
 
-/** Format token count compactly: <1K, 2.3K, 36K, 1.2M */
+/** Format token count compactly: 0, 42, 2.3K, 36K, 1.2M */
 export function formatTokenCount(n: number): string {
-  if (n < 1000) return n < 1 ? '<1' : `${n}`;
+  if (n < 1000) return `${Math.round(n)}`;
   if (n < 10_000) return `${(n / 1000).toFixed(1)}K`;
   if (n < 1_000_000) return `${Math.round(n / 1000)}K`;
   return `${(n / 1_000_000).toFixed(1)}M`;

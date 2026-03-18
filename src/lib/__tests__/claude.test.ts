@@ -57,8 +57,8 @@ describe("formatTokenCount", () => {
     expect(formatTokenCount(999)).toBe("999");
   });
 
-  it("returns <1 for zero", () => {
-    expect(formatTokenCount(0)).toBe("<1");
+  it("returns 0 for zero", () => {
+    expect(formatTokenCount(0)).toBe("0");
   });
 
   it("formats thousands with one decimal for 1K-9.9K", () => {

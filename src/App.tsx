@@ -132,11 +132,9 @@ export default function App() {
         try {
           // Capture color before close releases it
           const savedColorIdx = getSessionColorIndex(id);
-          await closeSession(id);
+          // Create new session first, THEN close old one — avoids visual gap
           const newSession = await createSession(name, config, { insertAtIndex: idx });
-          // Preserve color across revival
           if (savedColorIdx >= 0) forceSessionColor(newSession.id, savedColorIdx);
-          // Restore the old session's summary and accumulated metadata
           updateMetadata(newSession.id, {
             nodeSummary: savedMetadata.nodeSummary,
             inputTokens: savedMetadata.inputTokens,
@@ -144,9 +142,9 @@ export default function App() {
             assistantMessageCount: savedMetadata.assistantMessageCount,
           });
           setActiveTab(newSession.id);
-          // Keep reviving spinner until session leaves "starting" state
-          // (PTY spawned and first output received)
           setRevivingTabId(newSession.id);
+          // Close old dead tab after new one is visible
+          await closeSession(id);
         } catch (err) {
           console.error("Failed to revive session:", err);
           setRevivingTabId(null);
@@ -352,24 +350,26 @@ export default function App() {
                     )}
                     {summary && editingTabId !== session.id && <span className="tab-summary">{summary}</span>}
                   </span>
-                  <button
-                    className="tab-edit"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingTabId(session.id);
-                      setEditingTabName(name);
-                    }}
-                    title="Rename"
-                  >
-                    ✎
-                  </button>
-                  <button
+                  <span className="tab-actions">
+                    <button
+                      className="tab-edit"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingTabId(session.id);
+                        setEditingTabName(name);
+                      }}
+                      title="Rename"
+                    >
+                      ✎
+                    </button>
+                    <button
                       className="tab-close"
                       onClick={(e) => { e.stopPropagation(); closeSession(session.id); }}
                       title="Close"
                     >
                       ×
                     </button>
+                  </span>
                 </div>
               );
             })}

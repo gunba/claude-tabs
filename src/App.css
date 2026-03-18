@@ -159,14 +159,14 @@
 
 .tab-name {
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tab-summary {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   overflow: hidden;
   display: -webkit-box;
@@ -176,31 +176,52 @@
   word-break: break-word;
 }
 
+/* Edit/close buttons: absolutely positioned, overlaid on hover with fade */
+.tab-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  padding-left: 16px;
+  background: linear-gradient(to right, transparent, var(--bg-surface) 40%);
+  opacity: 0;
+  transition: opacity 0.1s;
+  pointer-events: none;
+}
+
+.tab:hover .tab-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Match active tab background in the gradient */
+.tab-active .tab-actions {
+  background: linear-gradient(to right, transparent, var(--bg-primary) 40%);
+}
+
 .tab-edit {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: none;
   border-radius: 3px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
   cursor: pointer;
   padding: 0;
-  opacity: 0;
-  flex-shrink: 0;
-  transition: opacity 0.1s;
-}
-
-.tab:hover .tab-edit {
-  opacity: 0.5;
+  transition: color 0.1s, background 0.1s;
 }
 
 .tab-edit:hover {
-  opacity: 1 !important;
   color: var(--accent-secondary);
+  background: var(--bg-selection);
 }
 
 .tab-name-input {
@@ -230,18 +251,10 @@
   font-size: 14px;
   cursor: pointer;
   padding: 0;
-  opacity: 0;
-  flex-shrink: 0;
-  margin-left: 4px;
-  transition: opacity 0.1s, background 0.1s;
-}
-
-.tab:hover .tab-close {
-  opacity: 0.6;
+  transition: color 0.1s, background 0.1s;
 }
 
 .tab-close:hover {
-  opacity: 1 !important;
   background: var(--error);
   color: var(--text-primary);
 }
