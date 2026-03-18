@@ -252,7 +252,7 @@ export default function App() {
               return (
                 <div
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "idle" && isActive ? " tab-idle" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}${revivingTabId === session.id ? " tab-reviving" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}${revivingTabId === session.id ? " tab-reviving" : ""}`}
                   role="button"
                   tabIndex={0}
                   draggable

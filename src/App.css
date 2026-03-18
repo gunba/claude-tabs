@@ -70,24 +70,23 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-/* Idle + active: orange bar with subtle blue pulse overlay when waiting for input */
-.tab-active.tab-idle {
-  box-shadow: inset 0 -2px 0 var(--accent);
-  animation: idle-pulse 3s ease-in-out infinite;
+/* Permission waiting: pulsing permission-colored bar matching the dot */
+.tab-active.tab-permission {
+  animation: permission-pulse 2s ease-in-out infinite;
 }
 
-@keyframes idle-pulse {
+@keyframes permission-pulse {
   0%, 100% { box-shadow: inset 0 -2px 0 var(--accent); }
-  50% { box-shadow: inset 0 -2px 0 var(--accent-secondary), 0 2px 6px color-mix(in srgb, var(--accent-secondary) 20%, transparent); }
+  50% { box-shadow: inset 0 -2px 0 var(--permission), 0 2px 6px color-mix(in srgb, var(--permission) 20%, transparent); }
 }
 
-/* Brief flash when a tab transitions to idle (finished working) */
-.tab-flash {
+/* Brief flash when a non-active tab transitions to idle (finished working) */
+.tab-flash:not(.tab-active) {
   animation: tab-done-flash 1.5s ease;
 }
 
 @keyframes tab-done-flash {
-  0% { background: color-mix(in srgb, var(--accent-secondary) 25%, var(--bg-surface)); }
+  0% { background: color-mix(in srgb, var(--success) 20%, var(--bg-surface)); }
   100% { background: transparent; }
 }
 
