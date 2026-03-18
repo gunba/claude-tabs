@@ -33,7 +33,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
       theme: getXtermTheme(),
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: 5000,
     });
 
     const fit = new FitAddon();
@@ -89,14 +89,14 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     }
 
     // Dynamic scrollback: grow by 10K when user scrolls near the top,
-    // shrink back to 10K when they return to the bottom.
+    // shrink back to 5K when they return to the bottom.
     disposables.push(term.onScroll(() => {
       const buf = term.buffer.active;
-      const current = term.options.scrollback ?? 10000;
+      const current = term.options.scrollback ?? 5000;
       if (buf.viewportY < 500) {
         term.options.scrollback = current + 10000;
-      } else if (buf.viewportY >= buf.baseY && current > 10000) {
-        term.options.scrollback = 10000;
+      } else if (buf.viewportY >= buf.baseY && current > 5000) {
+        term.options.scrollback = 5000;
       }
     }));
 

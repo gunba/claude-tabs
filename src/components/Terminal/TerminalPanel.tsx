@@ -336,16 +336,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         </div>
       )}
       <div className="terminal-container" ref={setContainer} />
-      {session.state === "idle" && visible && (
-        <button
-          className="clear-input-btn"
-          onClick={() => pty.handle.current?.write("\x15")}
-          title="Clear input line (Ctrl+U)"
-        >
-          ⌫
-        </button>
-      )}
-      {showScrollBtn && (
+      {showScrollBtn ? (
         <button
           className="scroll-to-bottom-btn"
           onClick={() => terminal.scrollToBottom()}
@@ -353,7 +344,15 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         >
           ↓
         </button>
-      )}
+      ) : session.state === "idle" && visible ? (
+        <button
+          className="clear-input-btn"
+          onClick={() => pty.handle.current?.write("\x15")}
+          title="Clear input line (Ctrl+U)"
+        >
+          ⌫
+        </button>
+      ) : null}
     </div>
   );
 }

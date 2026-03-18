@@ -91,8 +91,8 @@
 
 .clear-input-btn {
   position: absolute;
-  bottom: 12px;
-  right: 48px;
+  bottom: 16px;
+  right: 16px;
   z-index: 11;
   width: 28px;
   height: 28px;
@@ -103,7 +103,7 @@
   color: var(--text-secondary);
   font-size: 14px;
   cursor: pointer;
-  opacity: 0.5;
+  opacity: 0.4;
   transition: opacity 0.15s;
 }
 

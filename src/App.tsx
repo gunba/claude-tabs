@@ -70,9 +70,13 @@ export default function App() {
           setFlashingTabs((f) => { const n = new Set(f); n.delete(s.id); return n; });
         }, 1500);
       }
+      // Clear reviving spinner once session leaves starting state
+      if (revivingTabId === s.id && prevState === "starting" && s.state !== "starting") {
+        setRevivingTabId(null);
+      }
       prev.set(s.id, s.state);
     }
-  }, [sessions]);
+  }, [sessions, revivingTabId]);
 
   // Initialize once
   useEffect(() => {
@@ -140,7 +144,9 @@ export default function App() {
             assistantMessageCount: savedMetadata.assistantMessageCount,
           });
           setActiveTab(newSession.id);
-          setRevivingTabId(null);
+          // Keep reviving spinner until session leaves "starting" state
+          // (PTY spawned and first output received)
+          setRevivingTabId(newSession.id);
         } catch (err) {
           console.error("Failed to revive session:", err);
           setRevivingTabId(null);
