@@ -62,9 +62,10 @@ export function processJsonlEvent(acc: JsonlAccumulator, event: any): JsonlAccum
       firstUserMessage = extractUserText(event);
     }
     // A user message with text (not a tool result) means the user typed a new
-    // prompt. Claude must have been idle to accept it. If state was stuck in
-    // thinking/toolUse (e.g. after an interrupt), this corrects it.
-    return { ...acc, state: "idle", currentAction: null, currentToolName: null, firstUserMessage };
+    // prompt. Claude will now be thinking — set state accordingly so the UI
+    // shows the thinking indicator immediately rather than waiting for the
+    // assistant JSONL event (which only arrives after generation completes).
+    return { ...acc, state: "thinking", currentAction: null, currentToolName: null, firstUserMessage };
   }
 
   if (type === "progress") {

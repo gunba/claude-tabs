@@ -163,7 +163,7 @@ describe("processJsonlEvent", () => {
     expect(result.currentToolName).toBeNull();
   });
 
-  it("preserves state on user event without tool_result", () => {
+  it("sets state to thinking on user text message (Claude will process it)", () => {
     const acc = { ...createAccumulator(), state: "idle" as const };
     const event = {
       type: "user",
@@ -172,7 +172,7 @@ describe("processJsonlEvent", () => {
       },
     };
     const result = processJsonlEvent(acc, event);
-    expect(result.state).toBe("idle");
+    expect(result.state).toBe("thinking");
   });
 
   // ── progress events ─────────────────────────────────────────────────

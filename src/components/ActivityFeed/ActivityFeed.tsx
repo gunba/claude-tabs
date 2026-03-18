@@ -71,9 +71,16 @@ export function ActivityFeed() {
         Array.from(prev.entries()).map(([id, p]) => [id.slice(0, 8), { settled: p.settled, state: p.state }])
       );
 
-      // Mark as settled once the session transitions INTO thinking/toolUse
-      if (!existing.settled && (session.state === "thinking" || session.state === "toolUse") && existing.state !== session.state) {
-        existing.settled = true;
+      // Mark as settled once the session has actual conversation data,
+      // or transitions into an active state. Using assistantMessageCount
+      // instead of observing a state transition avoids issues where React
+      // batches rapid state changes and the feed never sees the intermediate.
+      if (!existing.settled) {
+        if (session.metadata.assistantMessageCount > 0) {
+          existing.settled = true;
+        } else if ((session.state === "thinking" || session.state === "toolUse") && existing.state !== session.state) {
+          existing.settled = true;
+        }
       }
 
       // State transitions — show meaningful changes
