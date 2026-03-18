@@ -194,6 +194,13 @@ PTY data is debounce-batched in `useTerminal.ts` before writing to xterm.js (4ms
 ### State Detection
 State MUST be derived from real signals (JSONL events, PTY output patterns), never from arbitrary timers. **DO NOT** use setTimeout/setInterval to guess state transitions (e.g. "if no JSONL for 15s, assume idle"). If you can't determine the state from the data, that's a gap in the data — fix the data source, don't paper over it with timers. Timer-based heuristics are unreliable, untestable, and always wrong in edge cases.
 
+### No Hacky Solutions
+Every fix must address the root cause. If a behavior can be derived from real data (JSONL events, filesystem structure, PTY output), use that signal. Never:
+- Retry after a delay hoping the second attempt works (fix why the first attempt fails)
+- Use timers/polling to guess when something happened (find the event that signals it)
+- Use heuristics when deterministic linking is possible (e.g. Claude Code links continued sessions by embedding the old sessionId in the new JSONL file's first events — use that, don't scan by timestamp)
+- Increase buffer sizes instead of implementing proper lazy loading (xterm.js supports dynamic `scrollback` via `terminal.options.scrollback`)
+
 ### Things that broke before (don't repeat)
 - **DO NOT** use arbitrary timers/timeouts to infer session state (see State Detection above)
 - **DO NOT** use Tauri event listeners for PTY data — use `tauri-pty` npm wrapper

@@ -709,7 +709,8 @@ pub fn build_claude_args(config: SessionConfig) -> Result<Vec<String>, String> {
 
     if config.project_dir {
         args.push("--project-dir".into());
-        args.push(config.working_dir.clone());
+        // Normalize forward slashes to backslashes for Windows
+        args.push(config.working_dir.replace('/', "\\"));
     }
 
     if config.continue_session {

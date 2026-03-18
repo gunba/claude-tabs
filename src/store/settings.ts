@@ -48,6 +48,7 @@ interface SettingsState {
 
   // Actions
   addRecentDir: (dir: string) => void;
+  removeRecentDir: (dir: string) => void;
   savePreset: (name: string, config: Partial<SessionConfig>) => void;
   removePreset: (id: string) => void;
   setLastConfig: (config: SessionConfig) => void;
@@ -90,6 +91,16 @@ export const useSettingsStore = create<SettingsState>()(
             recentDirs: [norm, ...s.recentDirs.filter((d) =>
               d.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase() !== normLower
             )].slice(0, 20),
+          };
+        }),
+
+      removeRecentDir: (dir) =>
+        set((s) => {
+          const normLower = dir.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+          return {
+            recentDirs: s.recentDirs.filter((d) =>
+              d.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase() !== normLower
+            ),
           };
         }),
 

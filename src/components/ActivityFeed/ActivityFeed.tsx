@@ -9,7 +9,7 @@ interface FeedEntry {
   timestamp: number;
   sessionId: string;
   sessionName: string;
-  type: "output" | "summary" | "name" | "system";
+  type: "action" | "tool" | "name" | "system";
   message: string;
 }
 
@@ -22,9 +22,9 @@ function formatTime(ts: number): string {
 
 interface PrevSession {
   state: string;
-  summary: string | null;
   name: string;
-  recentOutput: string;
+  currentAction: string | null;
+  subagentCount: number;
   settled: boolean; // true after first idle transition from an active state (not initial state)
 }
 
@@ -56,13 +56,11 @@ export function ActivityFeed() {
       const existing = prev.get(session.id);
 
       if (!existing) {
-        // Initialize with CURRENT values so restored/revived state doesn't
-        // generate spurious feed entries. Not settled until first active→idle transition.
         prev.set(session.id, {
           state: session.state,
-          summary: session.metadata.nodeSummary ?? null,
           name: sessionName,
-          recentOutput: session.metadata.recentOutput ?? "",
+          currentAction: session.metadata.currentAction ?? null,
+          subagentCount: session.metadata.subagentCount,
           settled: false,
         });
         continue;
@@ -73,39 +71,39 @@ export function ActivityFeed() {
         Array.from(prev.entries()).map(([id, p]) => [id.slice(0, 8), { settled: p.settled, state: p.state }])
       );
 
-      // Mark as settled once the session transitions INTO thinking/toolUse from
-      // a DIFFERENT state. This prevents resume replay (which pushes accumulated
-      // state in one shot) from immediately settling and leaking old output.
+      // Mark as settled once the session transitions INTO thinking/toolUse
       if (!existing.settled && (session.state === "thinking" || session.state === "toolUse") && existing.state !== session.state) {
         existing.settled = true;
       }
 
-      // Agent output — what they're "typing" (speech bubble replacement)
-      const currentOutput = session.metadata.recentOutput ?? "";
-      if (currentOutput && currentOutput !== existing.recentOutput && session.state !== "dead") {
-        // Only show in feed after the session has settled
-        if (existing.settled) {
-          const trimmed = currentOutput.trim().slice(0, 500);
-          if (trimmed) {
-            addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "output", message: trimmed });
-          }
+      // State transitions — show meaningful changes
+      if (session.state !== existing.state && existing.settled) {
+        if (session.state === "idle" && (existing.state === "thinking" || existing.state === "toolUse")) {
+          addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "action", message: "Finished" });
+        } else if (session.state === "thinking" && existing.state === "idle") {
+          addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "action", message: "Thinking..." });
+        } else if (session.state === "waitingPermission") {
+          addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "action", message: "Waiting for permission" });
+        } else if (session.state === "dead") {
+          addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "action", message: "Session ended" });
         }
-        // Always track the latest value (even before settled) so we don't
-        // flood when the session settles
-        existing.recentOutput = currentOutput;
       }
 
-      // Track state (for internal use) but don't spam the feed with transitions
+      // Tool use changes — show what tool is being used
+      const currentAction = session.metadata.currentAction ?? null;
+      if (currentAction && currentAction !== existing.currentAction && existing.settled) {
+        addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "tool", message: currentAction });
+      }
+      existing.currentAction = currentAction;
+
+      // Subagent creation
+      if (session.metadata.subagentCount > existing.subagentCount && existing.settled) {
+        const newCount = session.metadata.subagentCount - existing.subagentCount;
+        addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "action", message: `Spawned ${newCount} subagent${newCount > 1 ? "s" : ""}` });
+      }
+      existing.subagentCount = session.metadata.subagentCount;
+
       existing.state = session.state;
-
-      // Summary update (from Haiku) — suppress until settled (revival/restore)
-      const currentSummary = session.metadata.nodeSummary ?? null;
-      if (currentSummary && currentSummary !== existing.summary) {
-        if (existing.settled) {
-          addEntry({ timestamp: now, sessionId: session.id, sessionName, type: "summary", message: currentSummary });
-        }
-        existing.summary = currentSummary;
-      }
 
       // Name change
       if (sessionName !== existing.name) {

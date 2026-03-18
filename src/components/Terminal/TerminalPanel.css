@@ -87,6 +87,32 @@
   color: var(--text-primary);
 }
 
+/* ── Clear input button ──────────────────────────────────────────── */
+
+.clear-input-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 48px;
+  z-index: 11;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.clear-input-btn:hover {
+  opacity: 1;
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
 /* ── State Banner Overlay ──────────────────────────────────────────── */
 
 .state-banner {

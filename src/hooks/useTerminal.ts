@@ -88,6 +88,18 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       disposables.push(term.onResize(({ cols, rows }) => onResize(cols, rows)));
     }
 
+    // Dynamic scrollback: grow by 10K when user scrolls near the top,
+    // shrink back to 10K when they return to the bottom.
+    disposables.push(term.onScroll(() => {
+      const buf = term.buffer.active;
+      const current = term.options.scrollback ?? 10000;
+      if (buf.viewportY < 500) {
+        term.options.scrollback = current + 10000;
+      } else if (buf.viewportY >= buf.baseY && current > 10000) {
+        term.options.scrollback = 10000;
+      }
+    }));
+
     return () => disposables.forEach((d) => d.dispose());
   }, [onData, onResize]);
 

@@ -53,6 +53,7 @@ pub fn run() {
             commands::write_test_commands,
             commands::write_test_state,
             jsonl_watcher::find_active_jsonl_session,
+            jsonl_watcher::find_continuation_session,
             jsonl_watcher::session_has_conversation,
             jsonl_watcher::start_jsonl_watcher,
             jsonl_watcher::stop_jsonl_watcher,

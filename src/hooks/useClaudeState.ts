@@ -27,7 +27,12 @@ const IDLE_PROMPT = /❯\s*$/;
  * emitted by the Rust file watcher. Keeps a minimal PTY scan
  * only for permission detection (the one thing JSONL doesn't capture).
  */
-export function useClaudeState(sessionId: string | null, isResumed = false) {
+interface UseClaudeStateOptions {
+  /** Called when a result event indicates the conversation ended (plan mode, compaction). */
+  onConversationEnd?: () => void;
+}
+
+export function useClaudeState(sessionId: string | null, isResumed = false, opts: UseClaudeStateOptions = {}) {
   const updateState = useSessionStore((s) => s.updateState);
   const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const accRef = useRef<JsonlAccumulator>(createAccumulator());
@@ -38,6 +43,8 @@ export function useClaudeState(sessionId: string | null, isResumed = false) {
   // Only needed for resumed sessions (which have history to replay).
   // New sessions start caught-up — no replay to suppress.
   const caughtUpRef = useRef(!isResumed);
+  const onConversationEndRef = useRef(opts.onConversationEnd);
+  onConversationEndRef.current = opts.onConversationEnd;
 
   // Listen to JSONL events from Rust watcher
   useEffect(() => {
@@ -57,6 +64,11 @@ export function useClaudeState(sessionId: string | null, isResumed = false) {
           // During JSONL replay, events arrive in rapid bursts. The Rust watcher
           // emits "jsonl-caught-up" once it reaches the end of the file.
           if (!caughtUpRef.current) return;
+
+          // Detect conversation end (result event) — signals plan mode or compaction
+          if (parsed.type === "result" && onConversationEndRef.current) {
+            onConversationEndRef.current();
+          }
 
           if (acc.state !== lastStateRef.current) {
             updateState(sessionId, acc.state);

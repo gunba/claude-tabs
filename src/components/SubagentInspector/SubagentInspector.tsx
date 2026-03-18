@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import type { Subagent, SubagentMessage } from "../../types/session";
 import "./SubagentInspector.css";
 
@@ -11,7 +12,7 @@ function MessageBlock({ msg }: { msg: SubagentMessage }) {
   if (msg.role === "assistant") {
     return (
       <div className="inspector-msg inspector-msg-assistant">
-        <pre className="inspector-msg-text">{msg.text}</pre>
+        <div className="inspector-msg-md"><ReactMarkdown>{msg.text}</ReactMarkdown></div>
       </div>
     );
   }

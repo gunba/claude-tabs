@@ -44,7 +44,7 @@ const EXCLUDED_FLAGS = new Set<string>();
 export function SessionLauncher() {
   const createSession = useSessionStore((s) => s.createSession);
   const claudePath = useSessionStore((s) => s.claudePath);
-  const { recentDirs, lastConfig, setShowLauncher, addRecentDir, setLastConfig } =
+  const { recentDirs, lastConfig, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig } =
     useSettingsStore();
   const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
 
@@ -261,7 +261,8 @@ export function SessionLauncher() {
                   key={dir}
                   className="recent-chip"
                   onClick={() => updateConfig("workingDir", dir)}
-                  title={dir}
+                  onContextMenu={(e) => { e.preventDefault(); removeRecentDir(dir); }}
+                  title={`${dir}\nRight-click to remove`}
                   type="button"
                 >
                   {dirToTabName(dir)}

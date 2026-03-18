@@ -33,7 +33,6 @@ export function useCommandDiscovery(): void {
 
     async function discover() {
       trace("commandDiscovery: start");
-      // Collect project directories from sessions + recent dirs for custom command scanning
       const sessions = useSessionStore.getState().sessions;
       const recentDirs = useSettingsStore.getState().recentDirs;
       const projectDirs = [
@@ -51,12 +50,28 @@ export function useCommandDiscovery(): void {
         invoke<Array<{ cmd: string; desc: string }>>("discover_plugin_commands", { extraDirs: projectDirs })
       ).catch(() => [] as Array<{ cmd: string; desc: string }>);
 
-      const [builtins, plugins] = await Promise.all([builtinPromise, pluginPromise]);
+      // Fallback: parse --help output for slash commands when binary scan fails
+      // (binary may not exist on machines without admin or on first install)
+      const helpPromise = traceAsync("commandDiscovery: get_cli_help", () =>
+        invoke<string>("get_cli_help")
+      ).then((help) => {
+        const cmds: Array<{ cmd: string; desc: string }> = [];
+        // Match lines like "  /command    Description text"
+        const re = /^\s+(\/[\w-]+)\s{2,}(.+)$/gm;
+        let m;
+        while ((m = re.exec(help)) !== null) {
+          cmds.push({ cmd: m[1], desc: m[2].trim() });
+        }
+        return cmds;
+      }).catch(() => [] as Array<{ cmd: string; desc: string }>);
+
+      const [builtins, plugins, helpCmds] = await Promise.all([builtinPromise, pluginPromise, helpPromise]);
 
       const toSlash = (arr: Array<{ cmd: string; desc: string }>): SlashCommand[] =>
         arr.filter((c) => typeof c.cmd === "string" && c.cmd.startsWith("/"));
 
-      const merged = mergeCommands(toSlash(builtins), toSlash(plugins));
+      // Merge all sources — binary scan has best descriptions, --help is fallback
+      const merged = mergeCommands(toSlash(builtins), toSlash(helpCmds), toSlash(plugins));
       useSettingsStore.getState().setSlashCommands(merged);
     }
   }, [claudePath]);

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
 import { dirToTabName, formatTokenCount, sessionColor, getSessionColorIndex, forceSessionColor } from "./lib/claude";
@@ -49,12 +50,30 @@ export default function App() {
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingTabName, setEditingTabName] = useState("");
+  const [revivingTabId, setRevivingTabId] = useState<string | null>(null);
+  const [flashingTabs, setFlashingTabs] = useState<Set<string>>(new Set());
+  const prevStatesRef = useRef<Map<string, string>>(new Map());
   const dragTabRef = useRef<string | null>(null);
   const initRef = useRef(false);
 
   useCliWatcher();
   useNotifications();
   useCommandDiscovery();
+
+  // Track state transitions — briefly flash tabs that become idle from an active state
+  useEffect(() => {
+    const prev = prevStatesRef.current;
+    for (const s of sessions) {
+      const prevState = prev.get(s.id);
+      if (prevState && prevState !== "idle" && prevState !== "dead" && prevState !== "starting" && s.state === "idle") {
+        setFlashingTabs((f) => new Set(f).add(s.id));
+        setTimeout(() => {
+          setFlashingTabs((f) => { const n = new Set(f); n.delete(s.id); return n; });
+        }, 1500);
+      }
+      prev.set(s.id, s.state);
+    }
+  }, [sessions]);
 
   // Initialize once
   useEffect(() => {
@@ -89,6 +108,7 @@ export default function App() {
       if (!session) return;
 
       if (session.state === "dead") {
+        setRevivingTabId(id);
         // Use the original CLI session ID for resume. After a revival,
         // resumeSession holds the original ID while sessionId gets overwritten
         // to the app's internal ID. The JSONL file lives under the original.
@@ -121,8 +141,10 @@ export default function App() {
             assistantMessageCount: savedMetadata.assistantMessageCount,
           });
           setActiveTab(newSession.id);
+          setRevivingTabId(null);
         } catch (err) {
           console.error("Failed to revive session:", err);
+          setRevivingTabId(null);
         }
       } else {
         // Always dismiss subagent inspector when switching tabs
@@ -213,8 +235,8 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Tab bar — always visible */}
-      <div className="tab-bar">
+      {/* Tab bar + title bar (custom window chrome) */}
+      <div className="tab-bar" data-tauri-drag-region>
           <div className="tab-bar-scroll">
             {regularSessions.map((session) => {
               const isActive = session.id === activeTabId;
@@ -225,7 +247,7 @@ export default function App() {
               return (
                 <div
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "idle" && isActive ? " tab-idle" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}${revivingTabId === session.id ? " tab-reviving" : ""}`}
                   role="button"
                   tabIndex={0}
                   draggable
@@ -361,6 +383,11 @@ export default function App() {
           >
             +
           </button>
+          <div className="window-controls">
+            <button className="window-btn window-btn-minimize" onClick={() => getCurrentWindow().minimize()} title="Minimize">─</button>
+            <button className="window-btn window-btn-maximize" onClick={() => getCurrentWindow().toggleMaximize()} title="Maximize">□</button>
+            <button className="window-btn window-btn-close" onClick={() => getCurrentWindow().close()} title="Close">×</button>
+          </div>
         </div>
 
       {/* Subagent row — conditional, only for active session */}

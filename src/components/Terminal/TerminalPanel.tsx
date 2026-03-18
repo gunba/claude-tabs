@@ -5,6 +5,7 @@ import { usePty } from "../../hooks/usePty";
 import { useClaudeState } from "../../hooks/useClaudeState";
 import { useSubagentWatcher } from "../../hooks/useSubagentWatcher";
 import { useSessionStore } from "../../store/sessions";
+import { useSettingsStore } from "../../store/settings";
 import { buildClaudeArgs } from "../../lib/claude";
 import { registerPtyWriter, unregisterPtyWriter } from "../../lib/ptyRegistry";
 import { registerBufferReader, unregisterBufferReader } from "../../lib/terminalRegistry";
@@ -95,7 +96,30 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const spawnedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isResumed = !!session.config.resumeSession;
-  const { feed, caughtUp } = useClaudeState(session.id, isResumed);
+  const watchedJsonlIdRef = useRef(session.config.resumeSession || session.config.sessionId || session.id);
+
+  // When a result event fires (conversation ended) but the PTY is still alive,
+  // check if Claude forked into a new JSONL file (plan mode, continuation).
+  // The new file's first events reference the old sessionId — this is how we link them.
+  const handleConversationEnd = useCallback(() => {
+    if (session.state === "dead") return;
+    invoke<string | null>("find_continuation_session", {
+      sessionId: watchedJsonlIdRef.current,
+      workingDir: session.config.workingDir,
+    }).then((newJsonlId) => {
+      if (newJsonlId && newJsonlId !== watchedJsonlIdRef.current) {
+        invoke("stop_jsonl_watcher", { sessionId: session.id });
+        invoke("start_jsonl_watcher", {
+          sessionId: session.id,
+          workingDir: session.config.workingDir,
+          jsonlSessionId: newJsonlId,
+        });
+        watchedJsonlIdRef.current = newJsonlId;
+      }
+    }).catch(() => {});
+  }, [session.id, session.state, session.config.workingDir]);
+
+  const { feed, caughtUp } = useClaudeState(session.id, isResumed, { onConversationEnd: handleConversationEnd });
   const [loading, setLoading] = useState(isResumed);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
@@ -148,11 +172,30 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
   const pty = usePty({ onData: handlePtyData, onExit: handlePtyExit });
 
+  // Track user input for slash command detection
+  const inputBufRef = useRef("");
+  const recordCommandUsage = useSettingsStore((s) => s.recordCommandUsage);
+
   const handleTermData = useCallback(
     (data: string) => {
       pty.handle.current?.write(data);
+      // Buffer user input to detect slash commands typed directly in terminal
+      for (const ch of data) {
+        if (ch === "\r" || ch === "\n") {
+          const trimmed = inputBufRef.current.trim();
+          if (trimmed.startsWith("/") && trimmed.length >= 3 && !trimmed.includes(" ")) {
+            recordCommandUsage(trimmed);
+          }
+          inputBufRef.current = "";
+        } else if (ch === "\x7f" || ch === "\b") {
+          // Backspace
+          inputBufRef.current = inputBufRef.current.slice(0, -1);
+        } else if (ch >= " ") {
+          inputBufRef.current += ch;
+        }
+      }
     },
-    [pty.handle]
+    [pty.handle, recordCommandUsage]
   );
 
   const handleResize = useCallback(
@@ -186,7 +229,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       try {
         const args = await buildClaudeArgs(session.config);
         const { cols, rows } = terminal.getDimensions();
-        const handle = pty.spawn(claudePath, args, session.config.workingDir, cols, rows);
+        // Normalize path slashes for Windows PTY spawn
+        const cwd = session.config.workingDir.replace(/\//g, "\\");
+        const handle = pty.spawn(claudePath, args, cwd, cols, rows);
         registerPtyWriter(session.id, handle.write);
         updateState(session.id, "idle");
 
@@ -291,6 +336,15 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         </div>
       )}
       <div className="terminal-container" ref={setContainer} />
+      {session.state === "idle" && visible && (
+        <button
+          className="clear-input-btn"
+          onClick={() => pty.handle.current?.write("\x15")}
+          title="Clear input line (Ctrl+U)"
+        >
+          ⌫
+        </button>
+      )}
       {showScrollBtn && (
         <button
           className="scroll-to-bottom-btn"

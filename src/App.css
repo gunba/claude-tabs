@@ -70,6 +70,51 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* Idle + active: blue glow bar indicating "waiting for input" */
+.tab-active.tab-idle {
+  box-shadow: inset 0 -2px 0 var(--accent-secondary);
+  animation: idle-glow 3s ease-in-out infinite;
+}
+
+@keyframes idle-glow {
+  0%, 100% { box-shadow: inset 0 -2px 0 var(--accent-secondary); }
+  50% { box-shadow: inset 0 -2px 0 var(--accent-secondary), 0 2px 8px color-mix(in srgb, var(--accent-secondary) 30%, transparent); }
+}
+
+/* Brief flash when a tab transitions to idle (finished working) */
+.tab-flash {
+  animation: tab-done-flash 1.5s ease;
+}
+
+@keyframes tab-done-flash {
+  0% { background: color-mix(in srgb, var(--accent-secondary) 25%, var(--bg-surface)); }
+  100% { background: transparent; }
+}
+
+/* Reviving spinner overlay */
+.tab-reviving {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.tab-reviving::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .tab-dead {
   opacity: 0.45;
 }
@@ -240,6 +285,38 @@
 .tab-resume:hover {
   background: var(--bg-selection);
   color: var(--accent-secondary);
+}
+
+/* ── Window controls (custom title bar) ─────────────────────── */
+
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.window-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.window-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.window-btn-close:hover {
+  background: var(--error);
+  color: white;
 }
 
 /* ── Tab context menu ────────────────────────────────────────── */

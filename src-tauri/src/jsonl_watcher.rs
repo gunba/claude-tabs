@@ -91,6 +91,57 @@ pub fn session_has_conversation(session_id: String, working_dir: String) -> bool
     path.exists() && path.metadata().map(|m| m.len() > 100).unwrap_or(false)
 }
 
+/// Find a continuation JSONL file for a given session ID.
+/// When Claude enters plan mode or forks a conversation, the new JSONL file
+/// references the old sessionId in its first few events. This command scans
+/// the project directory for such a file and returns its session ID.
+#[tauri::command]
+pub fn find_continuation_session(session_id: String, working_dir: String) -> Result<Option<String>, String> {
+    let home = dirs::home_dir().ok_or("No home dir")?;
+    let encoded = encode_dir(&working_dir);
+    let project_dir = home.join(".claude").join("projects").join(encoded);
+
+    if !project_dir.exists() {
+        return Ok(None);
+    }
+
+    let current_file = format!("{}.jsonl", session_id);
+
+    if let Ok(entries) = fs::read_dir(&project_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+            if !fname.ends_with(".jsonl") || fname == current_file { continue; }
+
+            // Read first 5 lines and check if any reference our session ID
+            if let Ok(file) = std::fs::File::open(&path) {
+                let reader = std::io::BufReader::new(file);
+                let mut found_ref = false;
+                let mut new_sid: Option<String> = None;
+                for (i, line) in std::io::BufRead::lines(reader).take(5).enumerate() {
+                    if let Ok(line) = line {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                            let line_sid = parsed["sessionId"].as_str().unwrap_or("");
+                            if line_sid == session_id {
+                                found_ref = true;
+                            } else if !line_sid.is_empty() && found_ref && i > 0 {
+                                // Found a line with a DIFFERENT sessionId after seeing our old one
+                                new_sid = Some(line_sid.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if let Some(sid) = new_sid {
+                    return Ok(Some(sid));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 #[tauri::command]
 pub fn start_jsonl_watcher(
     app: AppHandle,
@@ -131,7 +182,6 @@ pub fn start_jsonl_watcher(
                 retries = 0;
                 let len = file.metadata().map(|m| m.len()).unwrap_or(0);
                 if len > offset {
-                    eprintln!("[jsonl_watcher] Reading {} bytes from {} for session {}", len - offset, path.display(), sid);
                     let mut reader = BufReader::new(file);
                     if reader.seek(SeekFrom::Start(offset)).is_ok() {
                         let mut line = String::new();
@@ -150,10 +200,6 @@ pub fn start_jsonl_watcher(
                             line.clear();
                         }
                     }
-                    eprintln!("[jsonl_watcher] Emitting caught-up for session {}", sid);
-                    // Emit caught-up signal after processing all available lines.
-                    // On first read (offset was 0), this means replay is done.
-                    // On subsequent reads, it means we processed a batch of new events.
                     app.emit(
                         "jsonl-caught-up",
                         serde_json::json!({ "sessionId": sid }),
