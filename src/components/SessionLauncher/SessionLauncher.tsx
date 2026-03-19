@@ -45,7 +45,13 @@ const DEDICATED_FLAGS = new Set([
 ]);
 
 // Flags that don't start an interactive session
-const NON_SESSION_FLAGS = new Set(["--version", "-V", "--help", "-h"]);
+const NON_SESSION_FLAGS = new Set([
+  "--version", "-V", "--help", "-h",
+  "--print", "-p",          // Non-interactive print mode
+  "--output-format",        // Only useful with --print
+  "--input-format",         // Piped input
+  "--no-input",             // Disables interactive input
+]);
 
 // ── Main component ──────────────────────────────────────────────────
 
@@ -68,6 +74,7 @@ export function SessionLauncher() {
     resumeSession: lastConfig.resumeSession,
   });
   const [showCliOptions, setShowCliOptions] = useState(true);
+  const [showUtility, setShowUtility] = useState(false);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
 
   // Unified command line: editable string that starts from config selections.
@@ -179,11 +186,16 @@ export function SessionLauncher() {
 
   const handleLaunch = useCallback(async () => {
     if (!isNonSessionCommand && !launchConfig.workingDir.trim()) return;
-    const name = launchConfig.workingDir ? dirToTabName(launchConfig.workingDir) : "run";
-    if (launchConfig.workingDir) addRecentDir(launchConfig.workingDir);
-    // Save config as defaults but strip one-shot resume fields —
+    const finalConfig: SessionConfig = { ...launchConfig, runMode: isNonSessionCommand };
+    const name = isNonSessionCommand
+      ? commandTokens.find(t => t !== "claude" && !t.startsWith("-"))
+        || commandTokens.find(t => t.startsWith("--"))
+        || "run"
+      : launchConfig.workingDir ? dirToTabName(launchConfig.workingDir) : "run";
+    if (finalConfig.workingDir) addRecentDir(finalConfig.workingDir);
+    // Save config as defaults but strip one-shot resume fields and runMode —
     // these are per-launch, not persistent defaults.
-    setLastConfig({ ...launchConfig, resumeSession: null, continueSession: false });
+    setLastConfig({ ...finalConfig, resumeSession: null, continueSession: false, runMode: false });
     try {
       // If relaunching an existing session, close it first
       const replaceId = useSettingsStore.getState().replaceSessionId;
@@ -191,12 +203,12 @@ export function SessionLauncher() {
         await closeSession(replaceId);
         useSettingsStore.getState().setReplaceSessionId(null);
       }
-      await createSession(name, launchConfig);
+      await createSession(name, finalConfig);
       setShowLauncher(false);
     } catch (err) {
       console.error("Failed to create session:", err);
     }
-  }, [launchConfig, isNonSessionCommand, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig]);
+  }, [launchConfig, isNonSessionCommand, commandTokens, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -414,17 +426,6 @@ export function SessionLauncher() {
           </div>
           {showCliOptions && filteredCliOptions.length > 0 && (
             <div className="launcher-cli-grid">
-              {nonSessionFlags.map((opt) => (
-                <button
-                  key={opt.flag}
-                  className={`launcher-cli-pill launcher-cli-pill-nonsession${activeFlags.has(opt.flag) ? " launcher-cli-pill-active" : ""}`}
-                  onClick={() => handleCliPillClick(opt)}
-                  title={opt.description}
-                  type="button"
-                >
-                  {opt.flag}
-                </button>
-              ))}
               {filteredCliOptions.map((opt) => (
                 <button
                   key={opt.flag}
@@ -438,27 +439,51 @@ export function SessionLauncher() {
               ))}
             </div>
           )}
-          {showCliOptions && sortedCliCommands.length > 0 && (
-            <div className="launcher-cli-grid" style={{ marginTop: 4 }}>
-              {sortedCliCommands.map((cmd) => {
-                const heat = computeHeatLevel(commandUsage[cmd.name] || 0, cliCommandMaxCount);
-                return (
-                  <button
-                    key={cmd.name}
-                    className="launcher-cli-pill launcher-cli-pill-cmd"
-                    style={getHeatStyle(heat)}
-                    onClick={() => setCommandLine((prev) => {
-                      const base = buildFullCommand(config);
-                      return prev.trim() === `claude ${cmd.name}` ? base : `claude ${cmd.name}`;
-                    })}
-                    title={cmd.description}
-                    type="button"
-                  >
-                    {cmd.name}
-                  </button>
-                );
-              })}
-            </div>
+
+          {/* Utility Commands — collapsed by default */}
+          {(nonSessionFlags.length > 0 || sortedCliCommands.length > 0) && (
+            <>
+              <button
+                className="launcher-cli-toggle launcher-cli-utility-toggle"
+                onClick={() => setShowUtility((v) => !v)}
+                type="button"
+              >
+                {showUtility ? "\u25BE" : "\u25B8"} Utility Commands
+              </button>
+              {showUtility && (
+                <div className="launcher-cli-grid">
+                  {nonSessionFlags.map((opt) => (
+                    <button
+                      key={opt.flag}
+                      className={`launcher-cli-pill launcher-cli-pill-nonsession${activeFlags.has(opt.flag) ? " launcher-cli-pill-active" : ""}`}
+                      onClick={() => handleCliPillClick(opt)}
+                      title={opt.description}
+                      type="button"
+                    >
+                      {opt.flag}
+                    </button>
+                  ))}
+                  {sortedCliCommands.map((cmd) => {
+                    const heat = computeHeatLevel(commandUsage[cmd.name] || 0, cliCommandMaxCount);
+                    return (
+                      <button
+                        key={cmd.name}
+                        className="launcher-cli-pill launcher-cli-pill-cmd"
+                        style={getHeatStyle(heat)}
+                        onClick={() => setCommandLine((prev) => {
+                          const base = buildFullCommand(config);
+                          return prev.trim() === `claude ${cmd.name}` ? base : `claude ${cmd.name}`;
+                        })}
+                        title={cmd.description}
+                        type="button"
+                      >
+                        {cmd.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
 

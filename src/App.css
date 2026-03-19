@@ -102,6 +102,11 @@
   opacity: 0.8;
 }
 
+.tab-run .tab-name {
+  font-style: italic;
+  opacity: 0.85;
+}
+
 /* ── Shift-held: unified blue top-bar + tint ──────────── */
 .shift-held .tab:not(.tab-dead):not(.tab-active) {
   background: color-mix(in srgb, var(--accent-secondary) 8%, var(--bg-surface));

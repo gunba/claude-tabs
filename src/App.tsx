@@ -52,6 +52,7 @@ export default function App() {
   const shiftHeld = useShiftKey();
   const prevStatesRef = useRef<Map<string, string>>(new Map());
   const dragTabRef = useRef<string | null>(null);
+  const editDoneRef = useRef(false);
   const initRef = useRef(false);
 
   useCliWatcher();
@@ -85,12 +86,13 @@ export default function App() {
 
   // Quick launch with saved defaults (Shift+click "+" or Ctrl+Shift+T)
   const quickLaunch = useCallback(async () => {
-    const defaults = useSettingsStore.getState().savedDefaults;
+    const { savedDefaults, lastConfig } = useSettingsStore.getState();
+    const defaults = (savedDefaults && savedDefaults.workingDir.trim()) ? savedDefaults : lastConfig;
     if (!defaults || !defaults.workingDir.trim()) {
       setShowLauncher(true);
       return;
     }
-    const cleanConfig = { ...defaults, resumeSession: null, continueSession: false, sessionId: null };
+    const cleanConfig = { ...defaults, resumeSession: null, continueSession: false, sessionId: null, runMode: false };
     const name = dirToTabName(cleanConfig.workingDir);
     useSettingsStore.getState().addRecentDir(cleanConfig.workingDir);
     useSettingsStore.getState().setLastConfig(cleanConfig);
@@ -222,7 +224,7 @@ export default function App() {
               return (
                 <div
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
                   role="button"
                   tabIndex={0}
                   draggable
@@ -297,19 +299,23 @@ export default function App() {
                         value={editingTabName}
                         onChange={(e) => setEditingTabName(e.target.value)}
                         onBlur={() => {
-                          if (editingTabName.trim()) {
+                          if (!editDoneRef.current && editingTabName.trim()) {
                             renameSession(session.id, editingTabName.trim());
                           }
+                          editDoneRef.current = false;
                           setEditingTabId(null);
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
+                            editDoneRef.current = true;
                             if (editingTabName.trim()) {
                               renameSession(session.id, editingTabName.trim());
                             }
                             setEditingTabId(null);
+                          } else if (e.key === "Escape") {
+                            editDoneRef.current = true;
+                            setEditingTabId(null);
                           }
-                          if (e.key === "Escape") setEditingTabId(null);
                           e.stopPropagation();
                         }}
                         onClick={(e) => e.stopPropagation()}

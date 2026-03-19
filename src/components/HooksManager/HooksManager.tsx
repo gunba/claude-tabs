@@ -113,7 +113,14 @@ export function HooksManager({ onClose }: HooksManagerProps) {
   }, [loadHooks]);
 
   // Get hooks for the current scope
-  const scopeKey = scope === "user" ? "user" : `project:${projectDir}`;
+  let scopeKey: string;
+  if (scope === "user") {
+    scopeKey = "user";
+  } else if (scope === "project-local") {
+    scopeKey = `project-local:${projectDir}`;
+  } else {
+    scopeKey = `project:${projectDir}`;
+  }
   const currentHooks: Record<string, MatcherGroup[]> = hooksData[scopeKey] ?? {};
 
   // Flatten for display
@@ -156,11 +163,12 @@ export function HooksManager({ onClose }: HooksManagerProps) {
     if (!form.command.trim()) return;
 
     const newHook: HookEntry = {
+      ...(editing?.hook ?? {}),
       type: form.type,
       command: form.command.trim(),
     };
-    if (form.timeout !== 60) newHook.timeout = form.timeout;
-    if (form.statusMessage.trim()) newHook.statusMessage = form.statusMessage.trim();
+    newHook.timeout = form.timeout !== 60 ? form.timeout : undefined;
+    newHook.statusMessage = form.statusMessage.trim() || undefined;
 
     // Clone current hooks
     const updated: Record<string, MatcherGroup[]> = JSON.parse(JSON.stringify(currentHooks));
@@ -249,7 +257,8 @@ export function HooksManager({ onClose }: HooksManagerProps) {
     setForm({ ...EMPTY_FORM });
   }, []);
 
-  const eventHasMatcher = HOOK_EVENTS.find((e) => e.name === form.eventName)?.hasMatcher ?? false;
+  const isCustomEvent = !HOOK_EVENTS.some((e) => e.name === form.eventName);
+  const eventHasMatcher = isCustomEvent || (HOOK_EVENTS.find((e) => e.name === form.eventName)?.hasMatcher ?? false);
 
   return (
     <div className="hooks-overlay" onClick={onClose}>
@@ -353,15 +362,28 @@ export function HooksManager({ onClose }: HooksManagerProps) {
               <span className="hooks-form-label">Event</span>
               <select
                 className="hooks-form-select"
-                value={form.eventName}
-                onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value }))}
+                value={isCustomEvent ? "__custom__" : form.eventName}
+                onChange={(e) => {
+                  const eventName = e.target.value === "__custom__" ? "" : e.target.value;
+                  setForm((f) => ({ ...f, eventName }));
+                }}
               >
                 {HOOK_EVENTS.map((ev) => (
                   <option key={ev.name} value={ev.name}>
                     {ev.name} — {ev.desc}
                   </option>
                 ))}
+                <option value="__custom__">Custom event...</option>
               </select>
+              {isCustomEvent && (
+                <input
+                  className="hooks-form-input"
+                  value={form.eventName}
+                  onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value }))}
+                  placeholder="EventName"
+                  style={{ marginTop: 4 }}
+                />
+              )}
             </div>
 
             {eventHasMatcher && (
@@ -430,7 +452,7 @@ export function HooksManager({ onClose }: HooksManagerProps) {
               <button
                 className="hooks-form-save"
                 onClick={handleSave}
-                disabled={!form.command.trim()}
+                disabled={!form.command.trim() || !form.eventName.trim()}
               >
                 {editing ? "Update" : "Save"}
               </button>

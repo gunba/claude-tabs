@@ -273,6 +273,15 @@
   color: var(--accent-secondary);
 }
 
+.launcher-cli-utility-toggle {
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+.launcher-cli-utility-toggle:hover {
+  opacity: 1;
+}
+
 /* ── Section (shared for CLI Options + Resume) ───────────── */
 
 .launcher-section {

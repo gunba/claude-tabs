@@ -723,12 +723,15 @@ pub fn discover_hooks(working_dirs: Vec<String>) -> Result<serde_json::Value, St
     // Project-level hooks for each working directory
     for dir in &working_dirs {
         let dir_path = std::path::Path::new(dir);
-        for settings_name in &["settings.local.json", "settings.json"] {
+        for (settings_name, prefix) in &[
+            ("settings.local.json", "project-local"),
+            ("settings.json", "project"),
+        ] {
             let settings_path = dir_path.join(".claude").join(settings_name);
             if let Ok(content) = std::fs::read_to_string(&settings_path) {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
                     if let Some(hooks) = parsed.get("hooks") {
-                        let key = format!("project:{}", dir);
+                        let key = format!("{}:{}", prefix, dir);
                         all_hooks.insert(key, hooks.clone());
                     }
                 }

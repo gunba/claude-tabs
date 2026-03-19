@@ -148,13 +148,20 @@ export function ActivityFeed() {
         {entries.length === 0 ? (
           <div className="activity-feed-empty">No activity yet</div>
         ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className={`feed-entry feed-entry-${entry.type}`}>
-              <span className="feed-time">{formatTime(entry.timestamp)}</span>
-              <span className="feed-nick" style={{ color: sessionColor(entry.sessionId) }}>{entry.sessionName}</span>
-              <span className="feed-msg"><ReactMarkdown>{entry.message}</ReactMarkdown></span>
-            </div>
-          ))
+          entries.map((entry) => {
+            // Resolve current name from store; fall back to snapshot for closed sessions
+            const liveSession = sessions.find((s) => s.id === entry.sessionId);
+            const displayName = liveSession
+              ? (liveSession.name || dirToTabName(liveSession.config.workingDir))
+              : entry.sessionName;
+            return (
+              <div key={entry.id} className={`feed-entry feed-entry-${entry.type}`}>
+                <span className="feed-time">{formatTime(entry.timestamp)}</span>
+                <span className="feed-nick" style={{ color: sessionColor(entry.sessionId) }}>{displayName}</span>
+                <span className="feed-msg"><ReactMarkdown>{entry.message}</ReactMarkdown></span>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

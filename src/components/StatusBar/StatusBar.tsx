@@ -72,6 +72,20 @@ function SessionStatus({ session }: { session: Session }) {
   );
 }
 
+function countHookEntries(hooks: Record<string, unknown>): number {
+  let count = 0;
+  for (const scopeHooks of Object.values(hooks)) {
+    if (typeof scopeHooks !== "object" || scopeHooks === null) continue;
+    for (const matcherGroups of Object.values(scopeHooks as Record<string, unknown>)) {
+      if (!Array.isArray(matcherGroups)) continue;
+      for (const mg of matcherGroups) {
+        count += (mg as { hooks?: unknown[] }).hooks?.length ?? 0;
+      }
+    }
+  }
+  return count;
+}
+
 export function StatusBar() {
   const sessions = useSessionStore((s) => s.sessions);
   const activeTabId = useSessionStore((s) => s.activeTabId);
@@ -90,17 +104,7 @@ export function StatusBar() {
     }
     invoke<Record<string, unknown>>("discover_hooks", { workingDirs: dirs })
       .then((hooks) => {
-        let count = 0;
-        for (const val of Object.values(hooks)) {
-          if (typeof val === "object" && val !== null) {
-            for (const eventHooks of Object.values(
-              val as Record<string, unknown>
-            )) {
-              if (Array.isArray(eventHooks)) count += eventHooks.length;
-            }
-          }
-        }
-        setHookCount(count);
+        setHookCount(countHookEntries(hooks));
       })
       .catch(() => setHookCount(0));
   }, [sessions]);

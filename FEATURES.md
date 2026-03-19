@@ -12,6 +12,7 @@ Expected behaviors that MUST be preserved. **Agents: read this before modifying 
 - Non-active tabs flash green briefly when transitioning to idle from an active state
 - Dead tabs dimmed (opacity 0.45), clickable to switch (overlay provides actions)
 - Shift+click tab opens relaunch modal; unified blue top-bar + tint when Shift is held (active tab shows both clay bottom bar and blue top bar; permission-pulsing tabs pause animation)
+- Shift-highlight suppressed when typing in text inputs (terminal, tab rename, launcher fields) — only bare Shift press outside input contexts triggers highlights
 - Tabs draggable for reorder via native drag-and-drop
 - Right-click context menu: Rename, Copy Session ID, Copy Working Dir, Open in Explorer, Revive/Close
 
@@ -87,7 +88,7 @@ Expected behaviors that MUST be preserved. **Agents: read this before modifying 
 ## Session Launcher
 
 - Modal for new session or resume — Ctrl+T opens fresh (clears resume/continue flags)
-- Quick launch: Shift+click "+" or Ctrl+Shift+T uses saved defaults without showing modal; "+" button swaps to blue background when Shift is held
+- Quick launch: Shift+click "+" or Ctrl+Shift+T instantly launches without showing modal; uses saved defaults if set, otherwise falls back to last-used config (including folder); "+" button swaps to blue background when Shift is held
 - Ctrl+R opens resume picker (browse past Claude sessions); cards show blue top-bar + tint when Shift is held
 - CLI command pills sorted by usage frequency (same heat gradient as Command Bar)
 - **CLI option pills**: flags from `claude --help` shown as clickable pills; flags with dedicated UI controls (model, permissions, effort, etc.) are excluded from the grid
@@ -107,6 +108,17 @@ Expected behaviors that MUST be preserved. **Agents: read this before modifying 
 - Queued command shows a pulsing indicator; clicking the same queued command again toggles it off
 - Holding Shift shows unified blue top-bar + tint on non-queued pills (no animation); heat gradient suppressed while Shift is held; tooltips show queue hint
 - Queue auto-clears when session dies
+
+## Hooks Manager
+
+- Three scopes: User (`~/.claude/settings.json`), Project (`.claude/settings.json`), Project Local (`.claude/settings.local.json`)
+- **Scope separation**: Rust backend returns distinct keys per scope (`user`, `project:{dir}`, `project-local:{dir}`) — project and project-local hooks never conflated
+- Non-destructive saves: merges hooks into existing settings file (preserves other keys like `permissions`)
+- **Edit preserves unknown fields**: editing a hook spreads the original entry before applying form values, so fields added by future CLI versions are not stripped
+- **Custom events**: event dropdown includes a "Custom event..." option with freeform text input, so users aren't locked to the hardcoded event list
+- Existing hooks with unknown event names (from file) are displayed and editable
+- Status bar hook count reflects actual hook entries (sums `hooks[]` within each `MatcherGroup`), not matcher group count
+- Three hook types supported: `command`, `prompt`, `agent`
 
 ## Window
 

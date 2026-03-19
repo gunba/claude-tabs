@@ -137,6 +137,7 @@ export const useSettingsStore = create<SettingsState>()(
           resumeSession: null,
           continueSession: false,
           sessionId: null,
+          runMode: false,
         },
       }),
 

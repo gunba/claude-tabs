@@ -37,6 +37,7 @@ export interface SessionConfig {
   projectDir: boolean;
   extraFlags: string | null;
   sessionId: string | null;
+  runMode: boolean;
 }
 
 export interface SessionMetadata {
@@ -121,4 +122,5 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
   projectDir: false,
   extraFlags: null,
   sessionId: null,
+  runMode: false,
 };

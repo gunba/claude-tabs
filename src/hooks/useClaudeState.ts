@@ -123,6 +123,49 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
       }
     );
 
+    // Capture narrowed sessionId for use in helper (TypeScript can't narrow across function boundaries).
+    const sid = sessionId;
+
+    // Finalize caught-up: reset tokens/cost, sync state to store, update accumulator.
+    // Shared by both the normal caught-up signal and the 15s safety-net timeout.
+    function finalizeCaughtUp(): void {
+      caughtUpRef.current = true;
+      const acc = accRef.current;
+      // For resumed sessions, if replay ends in an active state (thinking/toolUse),
+      // the session was likely interrupted. The PTY is now showing the idle prompt.
+      const replayState = (acc.state === "thinking" || acc.state === "toolUse") ? "idle" : acc.state;
+      lastStateRef.current = replayState;
+      updateState(sid, replayState);
+      // Build reset metadata — tokens/cost zeroed so only NEW conversation usage shows.
+      const resetMetadata = {
+        costUsd: 0,
+        currentAction: null,
+        currentToolName: null,
+        subagentCount: acc.subagentCount,
+        subagentActivity: [] as string[],
+        recentOutput: acc.lastAssistantText,
+        contextWarning: acc.contextWarning,
+        taskProgress: acc.taskProgress,
+        inputTokens: 0,
+        outputTokens: 0,
+        assistantMessageCount: acc.assistantMessageCount,
+        ...(acc.firstUserMessage ? { nodeSummary: acc.firstUserMessage } : {}),
+      };
+      lastFingerprintRef.current = JSON.stringify(resetMetadata);
+      updateMetadata(sid, resetMetadata);
+      accRef.current = {
+        ...accRef.current,
+        state: replayState,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        currentAction: null,
+        currentToolName: null,
+        subagentActivity: [],
+      };
+      onCaughtUpRef.current?.();
+    }
+
     // Listen for caught-up signal — watcher reached end of file.
     // Snapshot the current metadata fingerprint so the first post-replay
     // metadata update doesn't leak stale recentOutput to the activity feed.
@@ -134,54 +177,27 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
         // Subsequent caught-up signals are from new data batches and should
         // NOT reset tokens or fingerprints.
         if (caughtUpRef.current) return;
-        // Build reset metadata — tokens/cost zeroed so only NEW conversation usage shows.
-        // Set fingerprint to match so the next new event correctly triggers an update.
-        const acc = accRef.current;
-        const resetMetadata = {
-          costUsd: 0,
-          currentAction: null,
-          currentToolName: null,
-          subagentCount: acc.subagentCount,
-          subagentActivity: [] as string[],
-          recentOutput: acc.lastAssistantText,
-          contextWarning: acc.contextWarning,
-          taskProgress: acc.taskProgress,
-          inputTokens: 0,
-          outputTokens: 0,
-          assistantMessageCount: acc.assistantMessageCount,
-        };
-        lastFingerprintRef.current = JSON.stringify(resetMetadata);
-        // Sync state to store. For resumed sessions, if replay ends in an
-        // active state (thinking/toolUse), the session was likely interrupted.
-        // The PTY is now showing the idle prompt, so force idle.
-        const replayState = (acc.state === "thinking" || acc.state === "toolUse") ? "idle" : acc.state;
-        lastStateRef.current = replayState;
-        updateState(sessionId, replayState);
-        updateMetadata(sessionId, {
-          ...resetMetadata,
-          // Preserve first user message from replay for tab naming
-          ...(acc.firstUserMessage ? { nodeSummary: acc.firstUserMessage } : {}),
-        });
-        // Reset token counts and cost so only the NEW conversation's usage is shown.
-        // Historical tokens from the resumed session don't count against this run.
-        accRef.current = {
-          ...accRef.current,
-          state: replayState,
-          inputTokens: 0,
-          outputTokens: 0,
-          costUsd: 0,
-          currentAction: null,
-          currentToolName: null,
-          subagentActivity: [],
-        };
-        caughtUpRef.current = true;
-        onCaughtUpRef.current?.();
+        finalizeCaughtUp();
       }
     );
+
+    // Safety net: if caught-up never arrives within 15s, force it.
+    // This prevents sessions from being permanently frozen if the Rust
+    // watcher's caught-up event is lost or the watcher dies silently.
+    let caughtUpTimer: ReturnType<typeof setTimeout> | null = null;
+    if (!caughtUpRef.current) {
+      caughtUpTimer = setTimeout(() => {
+        if (!caughtUpRef.current) {
+          console.warn(`[useClaudeState] Forcing caught-up for session ${sessionId} after 15s timeout`);
+          finalizeCaughtUp();
+        }
+      }, 15000);
+    }
 
     return () => {
       unlisten.then((fn) => fn());
       unlistenCaughtUp.then((fn) => fn());
+      if (caughtUpTimer) clearTimeout(caughtUpTimer);
     };
   }, [sessionId, updateState, updateMetadata]);
 

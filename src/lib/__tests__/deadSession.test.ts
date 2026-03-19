@@ -26,6 +26,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   projectDir: false,
   extraFlags: null,
   sessionId: null,
+  runMode: false,
 };
 
 const DEFAULT_METADATA: SessionMetadata = {

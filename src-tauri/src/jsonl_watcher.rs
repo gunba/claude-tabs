@@ -180,46 +180,55 @@ pub fn start_jsonl_watcher(
                     eprintln!("[jsonl_watcher] Fast scan: {} bytes for session {}", len, sid);
 
                     // HEAD: read first 30 lines for first user message / tab naming
-                    {
-                        let head_file = File::open(&path).unwrap();
-                        let reader = BufReader::new(head_file);
-                        let mut line = String::new();
-                        let mut count = 0;
-                        let mut r = reader;
-                        while count < 30 && r.read_line(&mut line).unwrap_or(0) > 0 {
-                            let trimmed = line.trim();
-                            if !trimmed.is_empty() {
-                                app.emit("jsonl-event", serde_json::json!({
-                                    "sessionId": sid, "line": trimmed
-                                })).ok();
-                                count += 1;
-                            }
-                            line.clear();
-                        }
-                    }
-
                     // TAIL: seek to last ~256KB and read last 100 lines for state/cost/tokens
-                    {
-                        let tail_file = File::open(&path).unwrap();
-                        let mut reader = BufReader::new(tail_file);
-                        let seek_pos = if len > 256_000 { len - 256_000 } else { 0 };
-                        reader.seek(SeekFrom::Start(seek_pos)).ok();
-                        // Collect lines, keep last 100
-                        let mut tail_lines: Vec<String> = Vec::new();
-                        let mut line = String::new();
-                        while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                            let trimmed = line.trim().to_string();
-                            if !trimmed.is_empty() {
-                                tail_lines.push(trimmed);
+                    // If either open fails, fall back to full sequential read from offset 0.
+                    let fast_scan_ok = (|| -> Result<(), std::io::Error> {
+                        {
+                            let head_file = File::open(&path)?;
+                            let mut r = BufReader::new(head_file);
+                            let mut line = String::new();
+                            let mut count = 0;
+                            while count < 30 && r.read_line(&mut line).unwrap_or(0) > 0 {
+                                let trimmed = line.trim();
+                                if !trimmed.is_empty() {
+                                    app.emit("jsonl-event", serde_json::json!({
+                                        "sessionId": sid, "line": trimmed
+                                    })).ok();
+                                    count += 1;
+                                }
+                                line.clear();
                             }
-                            line.clear();
                         }
-                        let start = if tail_lines.len() > 100 { tail_lines.len() - 100 } else { 0 };
-                        for tl in &tail_lines[start..] {
-                            app.emit("jsonl-event", serde_json::json!({
-                                "sessionId": sid, "line": tl
-                            })).ok();
+                        {
+                            let tail_file = File::open(&path)?;
+                            let mut reader = BufReader::new(tail_file);
+                            let seek_pos = if len > 256_000 { len - 256_000 } else { 0 };
+                            reader.seek(SeekFrom::Start(seek_pos)).ok();
+                            let mut tail_lines: Vec<String> = Vec::new();
+                            let mut line = String::new();
+                            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                                let trimmed = line.trim().to_string();
+                                if !trimmed.is_empty() {
+                                    tail_lines.push(trimmed);
+                                }
+                                line.clear();
+                            }
+                            let start = if tail_lines.len() > 100 { tail_lines.len() - 100 } else { 0 };
+                            for tl in &tail_lines[start..] {
+                                app.emit("jsonl-event", serde_json::json!({
+                                    "sessionId": sid, "line": tl
+                                })).ok();
+                            }
                         }
+                        Ok(())
+                    })();
+
+                    if fast_scan_ok.is_err() {
+                        eprintln!("[jsonl_watcher] Fast scan failed for session {}, falling back to full read", sid);
+                        // Fall back: read entire file from start
+                        did_fast_scan = false;
+                        offset = 0;
+                        continue;
                     }
 
                     app.emit("jsonl-caught-up", serde_json::json!({ "sessionId": sid })).ok();
@@ -252,7 +261,12 @@ pub fn start_jsonl_watcher(
             } else {
                 retries += 1;
                 if retries > 60 {
-                    break; // Give up after ~30 seconds
+                    eprintln!("[jsonl_watcher] Giving up on session {} after 30s — JSONL file never appeared at {}", sid, path.display());
+                    app.emit("jsonl-watcher-error", serde_json::json!({
+                        "sessionId": sid,
+                        "error": "JSONL file not found after 30 seconds"
+                    })).ok();
+                    break;
                 }
             }
 

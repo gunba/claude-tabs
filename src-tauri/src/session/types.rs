@@ -50,6 +50,8 @@ pub struct SessionConfig {
     pub extra_flags: Option<String>,
     #[serde(default)]
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub run_mode: bool,
 }
 
 impl Default for SessionConfig {
@@ -76,6 +78,7 @@ impl Default for SessionConfig {
             project_dir: false,
             extra_flags: None,
             session_id: None,
+            run_mode: false,
         }
     }
 }

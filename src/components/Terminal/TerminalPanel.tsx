@@ -100,6 +100,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const respawnRequest = useSessionStore((s) => s.respawnRequest);
   const clearRespawnRequest = useSessionStore((s) => s.clearRespawnRequest);
+  const closeSession = useSessionStore((s) => s.closeSession);
   const spawnedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isResumed = !!session.config.resumeSession;
@@ -140,6 +141,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // check if Claude forked into a new JSONL file (plan mode, continuation).
   // The new file's first events reference the old sessionId — this is how we link them.
   const handleConversationEnd = useCallback(() => {
+    if (session.config.runMode) return;
     if (session.state === "dead") return;
     invoke<string | null>("find_continuation_session", {
       sessionId: watchedJsonlIdRef.current,
@@ -299,7 +301,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     (data: string) => {
       // Swallow all input when session is dead (overlay handles actions)
       if (session.state === "dead") {
-        if (data === "\r" || data === "\n") {
+        if (!session.config.runMode && (data === "\r" || data === "\n")) {
           triggerRespawnRef.current();
         }
         return;
@@ -370,13 +372,15 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         spawnTimestampRef.current = Date.now();
         updateState(session.id, "idle");
 
-        // Start JSONL file watcher for structured metadata.
+        // Start JSONL file watcher for structured metadata (skip for run-mode).
         // For resumed sessions, watch the original session's JSONL file.
-        invoke("start_jsonl_watcher", {
-          sessionId: session.id,
-          workingDir: session.config.workingDir,
-          jsonlSessionId: session.config.resumeSession || null,
-        });
+        if (!session.config.runMode) {
+          invoke("start_jsonl_watcher", {
+            sessionId: session.id,
+            workingDir: session.config.workingDir,
+            jsonlSessionId: session.config.resumeSession || null,
+          });
+        }
       } catch (err) {
         console.error("Failed to spawn PTY:", err);
         updateState(session.id, "error");
@@ -540,7 +544,22 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         </div>
       )}
       <div className="terminal-container" ref={setContainer} />
-      {showDeadOverlay && (
+      {showDeadOverlay && session.config.runMode && (
+        <div className="dead-overlay dead-overlay-run">
+          <div className="dead-overlay-card">
+            <div className="dead-overlay-title">Command complete</div>
+            <div className="dead-overlay-actions">
+              <button className="dead-overlay-btn" onClick={() => closeSession(session.id)}>
+                Close tab
+              </button>
+            </div>
+            <div className="dead-overlay-hint">
+              <kbd>Ctrl+W</kbd> close
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeadOverlay && !session.config.runMode && (
         <div className="dead-overlay">
           <div className="dead-overlay-card">
             <div className="dead-overlay-title">Session ended</div>
