@@ -1,10 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
-import { dirToTabName, formatTokenCount, sessionColor, getSessionColorIndex, forceSessionColor, getResumeId } from "./lib/claude";
+import { dirToTabName, formatTokenCount, sessionColor, getResumeId } from "./lib/claude";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { SubagentInspector } from "./components/SubagentInspector/SubagentInspector";
 import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
@@ -33,7 +32,6 @@ export default function App() {
   const closeSession = useSessionStore((s) => s.closeSession);
   const createSession = useSessionStore((s) => s.createSession);
   const persist = useSessionStore((s) => s.persist);
-  const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const updateSubagent = useSessionStore((s) => s.updateSubagent);
   const reorderTabs = useSessionStore((s) => s.reorderTabs);
   const renameSession = useSessionStore((s) => s.renameSession);
@@ -49,7 +47,6 @@ export default function App() {
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingTabName, setEditingTabName] = useState("");
-  const [revivingTabId, setRevivingTabId] = useState<string | null>(null);
   const [flashingTabs, setFlashingTabs] = useState<Set<string>>(new Set());
   const [shiftHeld, setShiftHeld] = useState(false);
   const prevStatesRef = useRef<Map<string, string>>(new Map());
@@ -71,13 +68,9 @@ export default function App() {
           setFlashingTabs((f) => { const n = new Set(f); n.delete(s.id); return n; });
         }, 1500);
       }
-      // Clear reviving spinner once session leaves starting state
-      if (revivingTabId === s.id && prevState === "starting" && s.state !== "starting") {
-        setRevivingTabId(null);
-      }
       prev.set(s.id, s.state);
     }
-  }, [sessions, revivingTabId]);
+  }, [sessions]);
 
   // Initialize once
   useEffect(() => {
@@ -137,62 +130,18 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", persist);
   }, [persist]);
 
-  // Revive dead sessions or switch to live ones
+  // Activate tab — dead tabs just switch to them (overlay provides actions)
   const handleTabActivate = useCallback(
-    async (id: string) => {
-      const session = sessions.find((s) => s.id === id);
-      if (!session) return;
-
-      if (session.state === "dead") {
-        setRevivingTabId(id);
-        // Use the original CLI session ID for resume. After a revival,
-        // resumeSession holds the original ID while sessionId gets overwritten
-        // to the app's internal ID. The JSONL file lives under the original.
-        const resumeId = getResumeId(session);
-        const hasConversation = await invoke<boolean>("session_has_conversation", {
-          sessionId: resumeId,
-          workingDir: session.config.workingDir,
-        }).catch(() => false);
-        const config = {
-          ...session.config,
-          continueSession: false,
-          resumeSession: hasConversation ? resumeId : null,
-        };
-        const name = session.name || dirToTabName(session.config.workingDir);
-        const idx = sessions.findIndex((s) => s.id === id);
-        // Preserve metadata (nodeSummary, tokens, etc.) across revival
-        const savedMetadata = { ...session.metadata };
-        try {
-          // Capture color before close releases it
-          const savedColorIdx = getSessionColorIndex(id);
-          // Create new session first, THEN close old one — avoids visual gap
-          const newSession = await createSession(name, config, { insertAtIndex: idx });
-          if (savedColorIdx >= 0) forceSessionColor(newSession.id, savedColorIdx);
-          updateMetadata(newSession.id, {
-            nodeSummary: savedMetadata.nodeSummary,
-            inputTokens: savedMetadata.inputTokens,
-            outputTokens: savedMetadata.outputTokens,
-            assistantMessageCount: savedMetadata.assistantMessageCount,
-          });
-          setActiveTab(newSession.id);
-          setRevivingTabId(newSession.id);
-          // Close old dead tab after new one is visible
-          await closeSession(id);
-        } catch (err) {
-          console.error("Failed to revive session:", err);
-          setRevivingTabId(null);
-        }
-      } else {
-        // Always dismiss subagent inspector when switching tabs
-        if (inspectedSubagent) {
-          setInspectedSubagent(null);
-        }
-        if (id !== activeTabId) {
-          setActiveTab(id);
-        }
+    (id: string) => {
+      // Always dismiss subagent inspector when switching tabs
+      if (inspectedSubagent) {
+        setInspectedSubagent(null);
+      }
+      if (id !== activeTabId) {
+        setActiveTab(id);
       }
     },
-    [sessions, activeTabId, inspectedSubagent, setActiveTab, closeSession, createSession, updateMetadata]
+    [activeTabId, inspectedSubagent, setActiveTab]
   );
 
   // Global keyboard shortcuts
@@ -287,7 +236,7 @@ export default function App() {
               return (
                 <div
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}${revivingTabId === session.id ? " tab-reviving" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
                   role="button"
                   tabIndex={0}
                   draggable
@@ -497,6 +446,7 @@ export default function App() {
       <CommandBar
         sessionId={activeTabId}
         sessionState={activeSession?.state ?? "dead"}
+        shiftHeld={shiftHeld}
       />
 
       <StatusBar />

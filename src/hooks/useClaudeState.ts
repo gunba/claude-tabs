@@ -6,6 +6,7 @@ import {
   createAccumulator,
   type JsonlAccumulator,
 } from "../lib/jsonlState";
+import type { SessionState } from "../types/session";
 
 /** Patterns that indicate the CLI is waiting for user permission/input. */
 const PERMISSION_PATTERNS = [
@@ -38,7 +39,7 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
   const updateState = useSessionStore((s) => s.updateState);
   const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const accRef = useRef<JsonlAccumulator>(createAccumulator());
-  const lastStateRef = useRef<string>("starting");
+  const lastStateRef = useRef<SessionState>("starting");
   const lastFingerprintRef = useRef<string>("");
   const permissionRef = useRef("");
   // Suppress state/metadata updates until the JSONL watcher has caught up.
@@ -75,8 +76,19 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
           }
 
           if (acc.state !== lastStateRef.current) {
-            updateState(sessionId, acc.state);
-            lastStateRef.current = acc.state;
+            // Race condition safety net: if JSONL says "thinking" but the PTY
+            // already shows the idle prompt (❯), the CLI returned before the
+            // JSONL event arrived. Suppress the stale thinking transition.
+            const suppressThinking =
+              acc.state === "thinking" && IDLE_PROMPT.test(permissionRef.current);
+
+            if (!suppressThinking) {
+              updateState(sessionId, acc.state);
+              lastStateRef.current = acc.state;
+            } else {
+              // Keep accumulator in sync with store (still idle)
+              accRef.current = { ...accRef.current, state: lastStateRef.current };
+            }
             // When JSONL gives a definitive state (idle, thinking), clear the
             // permission buffer so stale permission prompts don't re-trigger
             // waitingPermission after the user has already responded.
@@ -210,5 +222,13 @@ export function useClaudeState(sessionId: string | null, isResumed = false, opts
     [sessionId, updateState]
   );
 
-  return { feed };
+  const reset = useCallback((resumed: boolean) => {
+    accRef.current = createAccumulator();
+    lastStateRef.current = "starting";
+    lastFingerprintRef.current = "";
+    permissionRef.current = "";
+    caughtUpRef.current = !resumed;
+  }, []);
+
+  return { feed, reset };
 }

@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
-import type { CliOption } from "../../store/settings";
-import { dirToTabName } from "../../lib/claude";
+import type { CliOption, CliCommand } from "../../store/settings";
+import { dirToTabName, computeHeatLevel, getHeatStyle } from "../../lib/claude";
 import {
   type SessionConfig,
   type PermissionMode,
@@ -45,6 +45,7 @@ export function SessionLauncher() {
   const { recentDirs, lastConfig, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
     useSettingsStore();
   const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
+  const commandUsage = useSettingsStore((s) => s.commandUsage);
 
   const [config, setConfig] = useState<SessionConfig>({
     ...DEFAULT_SESSION_CONFIG,
@@ -107,6 +108,20 @@ export function SessionLauncher() {
     return (cliCapabilities.options || [])
       .sort((a, b) => a.flag.localeCompare(b.flag));
   }, [cliCapabilities.options]);
+
+  // CLI subcommands sorted by usage frequency (most-used first, then alphabetical)
+  const sortedCliCommands = useMemo((): CliCommand[] => {
+    return [...(cliCapabilities.commands || [])].sort((a, b) => {
+      const aCount = commandUsage[a.name] || 0;
+      const bCount = commandUsage[b.name] || 0;
+      if (aCount !== bCount) return bCount - aCount;
+      return a.name.localeCompare(b.name);
+    });
+  }, [cliCapabilities.commands, commandUsage]);
+
+  const cliCommandMaxCount = useMemo(() => {
+    return Math.max(...sortedCliCommands.map((c) => commandUsage[c.name] || 0), 0);
+  }, [sortedCliCommands, commandUsage]);
 
   // Extract extra flags from the command line (anything the user typed beyond
   // what the dropdowns generate). We parse the command line to find extra args.
@@ -373,19 +388,23 @@ export function SessionLauncher() {
               ))}
             </div>
           )}
-          {showCliOptions && (cliCapabilities.commands || []).length > 0 && (
+          {showCliOptions && sortedCliCommands.length > 0 && (
             <div className="launcher-cli-grid" style={{ marginTop: 4 }}>
-              {[...(cliCapabilities.commands || [])].sort((a, b) => a.name.localeCompare(b.name)).map((cmd) => (
-                <button
-                  key={cmd.name}
-                  className="launcher-cli-pill launcher-cli-pill-cmd"
-                  onClick={() => setCommandLine(prev => prev.trimEnd() + ` ${cmd.name}`)}
-                  title={cmd.description}
-                  type="button"
-                >
-                  {cmd.name}
-                </button>
-              ))}
+              {sortedCliCommands.map((cmd) => {
+                const heat = computeHeatLevel(commandUsage[cmd.name] || 0, cliCommandMaxCount);
+                return (
+                  <button
+                    key={cmd.name}
+                    className="launcher-cli-pill launcher-cli-pill-cmd"
+                    style={getHeatStyle(heat)}
+                    onClick={() => setCommandLine(prev => prev.trimEnd() + ` ${cmd.name}`)}
+                    title={cmd.description}
+                    type="button"
+                  >
+                    {cmd.name}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

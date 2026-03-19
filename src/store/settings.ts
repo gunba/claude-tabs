@@ -3,11 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import type { LaunchPreset, SessionConfig, PastSession } from "../types/session";
 import { DEFAULT_SESSION_CONFIG } from "../types/session";
-
-/** Normalize a Windows path: forward slashes to backslashes, strip trailing backslashes. */
-function normalizePath(p: string): string {
-  return p.replace(/\//g, "\\").replace(/\\+$/, "");
-}
+import { normalizePath } from "../lib/paths";
 
 export interface CliOption {
   flag: string;        // e.g. "--model"
@@ -47,6 +43,7 @@ interface SettingsState {
   slashCommands: SlashCommand[];
 
   commandUsage: Record<string, number>;
+  commandUsageBootstrapped: boolean;
   showHooksManager: boolean;
   replaceSessionId: string | null; // Session to close when launcher launches (Shift+Click relaunch)
   pastSessions: PastSession[];
@@ -67,6 +64,7 @@ interface SettingsState {
   setSlashCommands: (cmds: SlashCommand[]) => void;
   setReplaceSessionId: (id: string | null) => void;
   setShowHooksManager: (show: boolean) => void;
+  bootstrapCommandUsage: () => Promise<void>;
   loadPastSessions: () => Promise<void>;
 }
 
@@ -85,6 +83,7 @@ export const useSettingsStore = create<SettingsState>()(
       cliCapabilities: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
       slashCommands: [],
       commandUsage: {},
+      commandUsageBootstrapped: false,
       showHooksManager: false,
       replaceSessionId: null,
       pastSessions: [],
@@ -164,6 +163,20 @@ export const useSettingsStore = create<SettingsState>()(
 
       setSlashCommands: (cmds) => set({ slashCommands: cmds }),
       setShowHooksManager: (show) => set({ showHooksManager: show }),
+      bootstrapCommandUsage: async () => {
+        try {
+          const scanned = await invoke<Record<string, number>>("scan_command_usage");
+          set((s) => {
+            const merged = { ...s.commandUsage };
+            for (const [cmd, count] of Object.entries(scanned)) {
+              merged[cmd] = Math.max(merged[cmd] || 0, count);
+            }
+            return { commandUsage: merged, commandUsageBootstrapped: true };
+          });
+        } catch {
+          set({ commandUsageBootstrapped: true });
+        }
+      },
       setReplaceSessionId: (id) => set({ replaceSessionId: id }),
       loadPastSessions: async () => {
         set({ pastSessionsLoading: true });
@@ -190,6 +203,7 @@ export const useSettingsStore = create<SettingsState>()(
         previousCliVersion: state.previousCliVersion,
         cliCapabilities: state.cliCapabilities,
         commandUsage: state.commandUsage,
+        commandUsageBootstrapped: state.commandUsageBootstrapped,
       }),
     }
   )

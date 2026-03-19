@@ -19,20 +19,7 @@ impl WatcherState {
     }
 }
 
-/// Public wrapper for encode_dir (used by commands.rs)
-pub fn encode_dir_pub(dir: &str) -> String { encode_dir(dir) }
-
-fn encode_dir(dir: &str) -> String {
-    // Mirrors Claude Code's project directory encoding:
-    // replaces ALL non-alphanumeric characters with hyphens.
-    // C:\Users\jorda\Desktop\Obsidian -> C--Users-jorda-Desktop-Obsidian
-    // C:\Users\Jordan.Graham\Desktop  -> C--Users-Jordan-Graham-Desktop
-    dir.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
-        .collect::<String>()
-        .trim_end_matches('-')
-        .to_string()
-}
+use crate::path_utils::encode_dir;
 
 fn jsonl_path(session_id: &str, working_dir: &str) -> PathBuf {
     let home = match dirs::home_dir() { Some(h) => h, None => return PathBuf::new() };

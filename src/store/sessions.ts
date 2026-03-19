@@ -16,6 +16,7 @@ interface SessionsState {
   claudePath: string | null;
   initialized: boolean;
   subagents: Map<string, Subagent[]>; // sessionId -> subagents
+  respawnRequest: { tabId: string; config: SessionConfig; name?: string } | null;
 
   // Actions
   init: () => Promise<void>;
@@ -24,9 +25,12 @@ interface SessionsState {
   setActiveTab: (id: string) => void;
   updateState: (id: string, state: SessionState) => void;
   updateMetadata: (id: string, metadata: Partial<SessionMetadata>) => void;
+  updateConfig: (id: string, config: Partial<SessionConfig>) => void;
   reorderTabs: (order: string[]) => void;
   persist: () => Promise<void>;
   renameSession: (id: string, name: string) => void;
+  requestRespawn: (tabId: string, config: SessionConfig, name?: string) => void;
+  clearRespawnRequest: () => void;
   addSubagent: (sessionId: string, subagent: Subagent) => void;
   updateSubagent: (sessionId: string, subagentId: string, updates: Partial<Subagent>) => void;
 }
@@ -37,6 +41,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
   claudePath: null,
   initialized: false,
   subagents: new Map(),
+  respawnRequest: null,
 
   init: async () => {
     trace("init: start");
@@ -124,6 +129,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
     }));
   },
 
+  updateConfig: (id, config) => {
+    set((s) => ({
+      sessions: s.sessions.map((x) =>
+        x.id === id ? { ...x, config: { ...x.config, ...config } } : x
+      ),
+    }));
+  },
+
   reorderTabs: (order) => {
     invoke("reorder_tabs", { order });
     set((s) => {
@@ -158,6 +171,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
         x.id === id ? { ...x, name } : x
       ),
     }));
+  },
+
+  requestRespawn: (tabId, config, name) => {
+    set({ respawnRequest: { tabId, config, name } });
+  },
+
+  clearRespawnRequest: () => {
+    set({ respawnRequest: null });
   },
 
   addSubagent: (sessionId, subagent) => {

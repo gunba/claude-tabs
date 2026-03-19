@@ -1,5 +1,6 @@
 use tauri::State;
 
+use crate::path_utils;
 use crate::session::persistence;
 use crate::session::types::{Session, SessionConfig, SessionState};
 use crate::session::SessionManager;
@@ -151,58 +152,6 @@ fn detect_claude_cli_sync() -> Result<String, String> {
     Err("Claude CLI not found. Please install it: npm install -g @anthropic-ai/claude-code".into())
 }
 
-/// Decode a Claude projects directory name back to a filesystem path.
-/// Claude encodes paths by replacing ALL non-alphanumeric chars with hyphens,
-/// so the encoding is lossy (periods, spaces, slashes all become '-').
-/// We resolve ambiguity by probing the filesystem to find which path exists.
-fn decode_project_dir(encoded: &str) -> String {
-    // Split drive letter on Windows: "C--Users-..." → ("C", "Users-...")
-    let (prefix, segments_str) = if let Some((drive, rest)) = encoded.split_once("--") {
-        (format!("{}:\\", drive), rest)
-    } else {
-        ("/".to_string(), encoded)
-    };
-
-    let parts: Vec<&str> = segments_str.split('-').collect();
-    if parts.is_empty() {
-        return prefix;
-    }
-
-    // Greedy filesystem walk: at each position, try joining multiple parts
-    // with non-slash separators (period, hyphen, space) and check if the
-    // resulting directory exists. Uses longest match first to handle names
-    // like "Jordan.Graham" (2 parts joined with '.') correctly.
-    let mut current = std::path::PathBuf::from(&prefix);
-    let mut i = 0;
-
-    while i < parts.len() {
-        let mut matched = false;
-
-        // Try multi-part names (longest first), with each separator
-        let max_j = std::cmp::min(i + 6, parts.len());
-        for j in (i + 2..=max_j).rev() {
-            for sep in &[".", "-", " "] {
-                let candidate = current.join(parts[i..j].join(sep));
-                if candidate.exists() {
-                    current = candidate;
-                    i = j;
-                    matched = true;
-                    break;
-                }
-            }
-            if matched { break; }
-        }
-
-        if !matched {
-            // Single part as path segment (original behavior)
-            current = current.join(parts[i]);
-            i += 1;
-        }
-    }
-
-    current.to_string_lossy().to_string()
-}
-
 /// Scan ~/.claude/projects/ for past Claude conversation files.
 /// Returns a list of { id, path, directory, lastModified, sizeBytes } entries.
 /// Async to avoid blocking the WebView event loop on large project directories.
@@ -237,8 +186,9 @@ fn list_past_sessions_sync() -> Result<Vec<serde_json::Value>, String> {
             .unwrap_or("")
             .to_string();
 
-        // Decode the directory path from the encoded folder name
-        let decoded_dir = decode_project_dir(&encoded_name);
+        // Resolve the real directory path: reads cwd from JSONL files first,
+        // falls back to filesystem-probing heuristic for legacy/empty dirs.
+        let decoded_dir = path_utils::resolve_project_dir(&encoded_name, &path);
 
         // Get the last segment as a short project name
         let project_name = decoded_dir
@@ -574,7 +524,7 @@ pub fn discover_plugin_commands(extra_dirs: Vec<String>) -> Result<Vec<serde_jso
 #[tauri::command]
 pub fn get_first_user_message(session_id: String, working_dir: String) -> Result<String, String> {
     let home = dirs::home_dir().ok_or("No home dir")?;
-    let encoded = crate::jsonl_watcher::encode_dir_pub(&working_dir);
+    let encoded = path_utils::encode_dir(&working_dir);
     let path = home.join(".claude").join("projects").join(encoded).join(format!("{}.jsonl", session_id));
 
     if !path.exists() {
@@ -852,6 +802,65 @@ pub fn write_test_commands(json: String) -> Result<(), String> {
     }
     std::fs::write(data_dir.join("test-commands.json"), json)
         .map_err(|e| format!("Failed to write test commands: {}", e))
+}
+
+/// Scan JSONL conversation history for slash command usage.
+/// Walks ~/.claude/projects/*/*.jsonl, caps at 200 most recent files by mtime,
+/// and counts `<command-name>X</command-name>` patterns.
+#[tauri::command]
+pub async fn scan_command_usage() -> Result<std::collections::HashMap<String, u64>, String> {
+    tokio::task::spawn_blocking(scan_command_usage_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn scan_command_usage_sync() -> Result<std::collections::HashMap<String, u64>, String> {
+    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+    let projects_dir = home.join(".claude").join("projects");
+    if !projects_dir.exists() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Collect all .jsonl files with their modification times
+    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
+    let entries = std::fs::read_dir(&projects_dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() { continue; }
+        if let Ok(dir_entries) = std::fs::read_dir(&path) {
+            for file in dir_entries.flatten() {
+                let fpath = file.path();
+                if fpath.extension().and_then(|e| e.to_str()) != Some("jsonl") { continue; }
+                if let Ok(meta) = std::fs::metadata(&fpath) {
+                    let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    files.push((mtime, fpath));
+                }
+            }
+        }
+    }
+
+    // Sort by mtime desc, cap at 200
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.truncate(200);
+
+    use std::io::{BufRead, BufReader};
+
+    let re = regex::Regex::new(r"<command-name>(/[\w-]+)</command-name>").unwrap();
+    let mut counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+
+    for (_, path) in &files {
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        for line in BufReader::new(file).lines().flatten() {
+            for cap in re.captures_iter(&line) {
+                *counts.entry(cap[1].to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    Ok(counts)
 }
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 mod commands;
 mod jsonl_watcher;
+mod path_utils;
 mod session;
 
 use std::sync::{Arc, Mutex};
@@ -76,6 +77,7 @@ pub fn run() {
             commands::get_first_user_message,
             commands::discover_hooks,
             commands::save_hooks,
+            commands::scan_command_usage,
             commands::read_test_commands,
             commands::write_test_commands,
             commands::write_test_state,

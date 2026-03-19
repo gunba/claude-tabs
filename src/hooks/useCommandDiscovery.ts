@@ -19,16 +19,29 @@ function mergeCommands(...lists: SlashCommand[][]): SlashCommand[] {
 }
 
 // Discovers slash commands from Claude Code binary + plugin/project directory scans.
+// Discovery is deferred until terminal sessions have loaded to avoid competing for
+// disk I/O and CPU — reading the Claude binary (100MB+) and spawning `claude --help`
+// would otherwise slow down the terminal's Claude process on Windows.
 export function useCommandDiscovery(): void {
   const discoveredRef = useRef(false);
-  const claudePath = useSessionStore((s) => s.claudePath);
+  // Wait for terminal sessions to finish loading before starting discovery.
+  // Active sessions in "starting" state mean the Claude process is still booting;
+  // heavy I/O from binary scanning and subprocess spawns would compete with it.
+  const ready = useSessionStore((s) => {
+    if (!s.claudePath) return false;
+    // No active sessions → no contention; otherwise wait for at least one past startup
+    return s.sessions.every((sess) => sess.state === "dead")
+      || s.sessions.some((sess) => sess.state !== "dead" && sess.state !== "starting");
+  });
 
   useEffect(() => {
-    if (discoveredRef.current || !claudePath) return;
-    discoveredRef.current = true;
+    if (discoveredRef.current || !ready) return;
 
-    // Defer so the UI is interactive before scanning the binary
-    const timer = setTimeout(() => discover(), 1000);
+    // Extra buffer to let the terminal's Claude process fully boot
+    const timer = setTimeout(() => {
+      discoveredRef.current = true;
+      discover();
+    }, 3000);
     return () => clearTimeout(timer);
 
     async function discover() {
@@ -73,6 +86,11 @@ export function useCommandDiscovery(): void {
       // Merge all sources — binary scan has best descriptions, --help is fallback
       const merged = mergeCommands(toSlash(builtins), toSlash(helpCmds), toSlash(plugins));
       useSettingsStore.getState().setSlashCommands(merged);
+
+      // Bootstrap command usage from JSONL history (once per install)
+      if (!useSettingsStore.getState().commandUsageBootstrapped) {
+        useSettingsStore.getState().bootstrapCommandUsage();
+      }
     }
-  }, [claudePath]);
+  }, [ready]);
 }

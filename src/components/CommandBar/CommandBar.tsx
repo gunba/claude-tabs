@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
+import { computeHeatLevel, getHeatStyle } from "../../lib/claude";
 import "./CommandBar.css";
 
 // ── Component ───────────────────────────────────────────────────────
@@ -8,9 +9,10 @@ import "./CommandBar.css";
 interface CommandBarProps {
   sessionId: string | null;
   sessionState: string;
+  shiftHeld: boolean;
 }
 
-export function CommandBar({ sessionId, sessionState }: CommandBarProps) {
+export function CommandBar({ sessionId, sessionState, shiftHeld }: CommandBarProps) {
   const [queuedCommand, setQueuedCommand] = useState<string | null>(null);
   const slashCommands = useSettingsStore((s) => s.slashCommands);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
@@ -25,6 +27,11 @@ export function CommandBar({ sessionId, sessionState }: CommandBarProps) {
       return a.cmd.localeCompare(b.cmd);
     });
   }, [slashCommands, commandUsage]);
+
+  const maxCount = useMemo(() => {
+    if (sortedCommands.length === 0) return 0;
+    return Math.max(...sortedCommands.map((c) => commandUsage[c.cmd] || 0), 0);
+  }, [sortedCommands, commandUsage]);
 
   // When session becomes idle and there is a queued command, fire it.
   // Delay slightly so Claude Code has time to render the prompt.
@@ -51,15 +58,19 @@ export function CommandBar({ sessionId, sessionState }: CommandBarProps) {
     (command: string) => {
       if (!sessionId) return;
 
-      // Always queue — the idle effect handles sending with proper delay.
-      // This prevents commands from being sent during output rendering.
-      setQueuedCommand((prev) => {
-        if (prev === command) return null; // Toggle off
-        return command;
-      });
-      recordCommandUsage(command);
+      if (shiftHeld) {
+        // Shift+click: queue for auto-send when idle (for when Claude is busy)
+        setQueuedCommand((prev) => {
+          if (prev === command) return null; // Toggle off
+          return command;
+        });
+      } else {
+        // Normal click: send immediately
+        writeToPty(sessionId, command + "\r");
+        recordCommandUsage(command);
+      }
     },
-    [sessionId, recordCommandUsage]
+    [sessionId, shiftHeld, recordCommandUsage]
   );
 
   // Don't render if there's no active session
@@ -68,7 +79,7 @@ export function CommandBar({ sessionId, sessionState }: CommandBarProps) {
   const discovering = slashCommands.length === 0;
 
   return (
-    <div className="command-bar">
+    <div className={`command-bar${shiftHeld ? " shift-held" : ""}`}>
       <div className="command-bar-scroll">
         {discovering ? (
           <span className="command-bar-discovering">Discovering commands...</span>
@@ -76,15 +87,15 @@ export function CommandBar({ sessionId, sessionState }: CommandBarProps) {
           sortedCommands.map((cmd) => {
             const isQueued = queuedCommand === cmd.cmd;
             const usageCount = commandUsage[cmd.cmd] || 0;
-            const isFrequent = usageCount > 0;
+            const heat = computeHeatLevel(usageCount, maxCount);
             return (
               <button
                 key={cmd.cmd}
                 className={
                   "command-btn" +
-                  (isQueued ? " command-btn-queued" : "") +
-                  (isFrequent ? " command-btn-frequent" : "")
+                  (isQueued ? " command-btn-queued" : "")
                 }
+                style={isQueued ? undefined : getHeatStyle(heat)}
                 onClick={() => handleClick(cmd.cmd)}
                 title={cmd.desc}
                 type="button"

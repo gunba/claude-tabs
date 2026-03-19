@@ -177,11 +177,12 @@ describe("processJsonlEvent", () => {
 
   // ── progress events ─────────────────────────────────────────────────
 
-  it("maintains toolUse state on progress events", () => {
+  it("preserves currentAction on progress events (no timer overwrite)", () => {
     const acc = {
       ...createAccumulator(),
       state: "toolUse" as const,
       currentToolName: "Bash",
+      currentAction: "Bash: npm test",
     };
     const event = {
       type: "progress",
@@ -189,7 +190,7 @@ describe("processJsonlEvent", () => {
     };
     const result = processJsonlEvent(acc, event);
     expect(result.state).toBe("toolUse");
-    expect(result.currentAction).toBe("Bash: running (3s)");
+    expect(result.currentAction).toBe("Bash: npm test");
   });
 
   it("ignores progress events when state is idle (stale progress)", () => {
@@ -439,6 +440,63 @@ describe("extractUserText", () => {
   it("returns null when array has only non-text blocks", () => {
     const event = { message: { content: [{ type: "tool_result", content: "output" }] } };
     expect(extractUserText(event)).toBeNull();
+  });
+});
+
+describe("local command user events", () => {
+  it("does not transition to thinking for string content with command-name marker", () => {
+    const acc = { ...createAccumulator(), state: "idle" as const };
+    const event = {
+      type: "user",
+      message: { content: "command-name: stickers\nsome local command output" },
+    };
+    const result = processJsonlEvent(acc, event);
+    expect(result.state).toBe("idle");
+  });
+
+  it("does not transition to thinking for array content with local-command marker", () => {
+    const acc = { ...createAccumulator(), state: "idle" as const };
+    const event = {
+      type: "user",
+      message: { content: [{ type: "text", text: "local-command execution result" }] },
+    };
+    const result = processJsonlEvent(acc, event);
+    expect(result.state).toBe("idle");
+  });
+
+  it("preserves existing state and currentAction when already thinking", () => {
+    const acc = {
+      ...createAccumulator(),
+      state: "thinking" as const,
+      currentAction: "processing something",
+    };
+    const event = {
+      type: "user",
+      message: { content: "command-name: help\nhelp output" },
+    };
+    const result = processJsonlEvent(acc, event);
+    expect(result.state).toBe("thinking");
+    expect(result.currentAction).toBe("processing something");
+  });
+
+  it("still transitions to thinking for regular user text messages", () => {
+    const acc = { ...createAccumulator(), state: "idle" as const };
+    const event = {
+      type: "user",
+      message: { content: [{ type: "text", text: "Please fix the bug in auth.ts" }] },
+    };
+    const result = processJsonlEvent(acc, event);
+    expect(result.state).toBe("thinking");
+  });
+
+  it("still transitions to thinking for tool_result user events", () => {
+    const acc = { ...createAccumulator(), state: "toolUse" as const };
+    const event = {
+      type: "user",
+      message: { content: [{ type: "tool_result", content: "Test output" }] },
+    };
+    const result = processJsonlEvent(acc, event);
+    expect(result.state).toBe("thinking");
   });
 });
 

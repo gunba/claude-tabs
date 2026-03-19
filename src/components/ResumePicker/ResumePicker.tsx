@@ -2,22 +2,14 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
-import { dirToTabName } from "../../lib/claude";
+import { getResumeId } from "../../lib/claude";
+import { dirToTabName, abbreviatePath, normalizeForFilter } from "../../lib/paths";
 import {
   type PastSession,
   type SessionConfig,
   DEFAULT_SESSION_CONFIG,
 } from "../../types/session";
 import "./ResumePicker.css";
-
-// ── Helpers ─────────────────────────────────────────────────────────
-
-function abbreviatePath(dir: string): string {
-  const normalized = dir.replace(/\\/g, "/");
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.length <= 2) return normalized;
-  return `~/${parts.slice(-2).join("/")}`;
-}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -48,7 +40,10 @@ interface ResumePickerProps {
 export function ResumePicker({ onClose }: ResumePickerProps) {
   const createSession = useSessionStore((s) => s.createSession);
   const storeSessions = useSessionStore((s) => s.sessions);
-  const { lastConfig, addRecentDir, setShowLauncher, setLastConfig } = useSettingsStore();
+  const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeTabId));
+  const activeIsDead = activeSession?.state === "dead";
+  const requestRespawn = useSessionStore((s) => s.requestRespawn);
+  const { addRecentDir, setShowLauncher, setLastConfig } = useSettingsStore();
 
   const pastSessions = useSettingsStore((s) => s.pastSessions);
   const pastSessionsLoading = useSettingsStore((s) => s.pastSessionsLoading);
@@ -63,19 +58,24 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
     filterRef.current?.focus();
   }, [loadPastSessions]);
 
-  // Dead session map: CLI session ID -> { nodeSummary, model, permissionMode, effort }
+  // Dead session map: CLI session ID -> { appSessionId, nodeSummary, config }
   const deadSessionMap = useMemo(() => {
     const map = new Map<string, {
+      appSessionId: string;
       nodeSummary: string | null;
       config: SessionConfig;
     }>();
     for (const s of storeSessions) {
       if (s.state === "dead") {
         const key = s.config.sessionId || s.id;
-        map.set(key, {
+        const resumeKey = getResumeId(s);
+        const entry = {
+          appSessionId: s.id,
           nodeSummary: s.metadata.nodeSummary ?? null,
           config: s.config,
-        });
+        };
+        map.set(key, entry);
+        if (resumeKey !== key) map.set(resumeKey, entry);
       }
     }
     return map;
@@ -90,14 +90,9 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       return false;
     });
     if (dirFilter.trim()) {
-      // Normalize both sides by collapsing all non-alphanumeric chars to hyphens.
-      // This handles the lossy decode_project_dir encoding where periods, spaces,
-      // and path separators all become hyphens (e.g. "Jordan.Graham" encodes as
-      // "Jordan-Graham" but decodes as "Jordan/Graham").
-      const normalize = (s: string) => s.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-      const filterNorm = normalize(dirFilter);
+      const filterNorm = normalizeForFilter(dirFilter);
       list = list.filter((ps) => {
-        const dirNorm = normalize(ps.directory);
+        const dirNorm = normalizeForFilter(ps.directory);
         return dirNorm.includes(filterNorm) || filterNorm.includes(dirNorm);
       });
     }
@@ -109,7 +104,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
     setSelectedIndex(0);
   }, [dirFilter]);
 
-  // Resume a past session directly
+  // Resume a past session directly — reuse active dead tab if available
   const handleResume = useCallback(
     async (pastSession: PastSession) => {
       const workingDir = pastSession.directory || ".";
@@ -125,6 +120,14 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
         continueSession: false,
       };
       addRecentDir(workingDir);
+
+      if (activeIsDead && activeSession) {
+        // Reuse the dead tab — respawn in place
+        requestRespawn(activeSession.id, resumeConfig, pastSession.path);
+        onClose();
+        return;
+      }
+
       try {
         await createSession(pastSession.path, resumeConfig);
         onClose();
@@ -132,7 +135,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
         console.error("Failed to resume session:", err);
       }
     },
-    [deadSessionMap, createSession, addRecentDir, onClose]
+    [deadSessionMap, activeIsDead, activeSession, createSession, addRecentDir, requestRespawn, onClose]
   );
 
   // Open the main launcher with this session pre-filled (Shift+Click / Configure)
@@ -150,7 +153,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       onClose();
       setShowLauncher(true);
     },
-    [deadSessionMap, lastConfig, setLastConfig, onClose, setShowLauncher]
+    [deadSessionMap, setLastConfig, onClose, setShowLauncher]
   );
 
   const handleBrowseFilter = useCallback(async () => {

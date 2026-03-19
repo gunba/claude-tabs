@@ -9,7 +9,7 @@ import { useSettingsStore } from "../../store/settings";
 import { buildClaudeArgs, getResumeId } from "../../lib/claude";
 import { registerPtyWriter, unregisterPtyWriter } from "../../lib/ptyRegistry";
 import { registerBufferReader, unregisterBufferReader } from "../../lib/terminalRegistry";
-import type { Session, SessionState } from "../../types/session";
+import type { Session, SessionConfig, SessionState } from "../../types/session";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPanel.css";
 
@@ -95,10 +95,46 @@ function useDurationTimer(sessionId: string, state: SessionState) {
 export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const claudePath = useSessionStore((s) => s.claudePath);
   const updateState = useSessionStore((s) => s.updateState);
+  const updateConfig = useSessionStore((s) => s.updateConfig);
+  const renameSession = useSessionStore((s) => s.renameSession);
+  const updateMetadata = useSessionStore((s) => s.updateMetadata);
+  const respawnRequest = useSessionStore((s) => s.respawnRequest);
+  const clearRespawnRequest = useSessionStore((s) => s.clearRespawnRequest);
   const spawnedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isResumed = !!session.config.resumeSession;
   const watchedJsonlIdRef = useRef(getResumeId(session));
+  const [respawnCounter, setRespawnCounter] = useState(0);
+  const [hasConversation, setHasConversation] = useState(false);
+  const spawnTimestampRef = useRef(Date.now());
+  const resumePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopResumePolling = useCallback(() => {
+    if (resumePollingRef.current) { clearInterval(resumePollingRef.current); resumePollingRef.current = null; }
+  }, []);
+
+  // Switch JSONL watcher to a new session file (plan mode, /resume detection)
+  // resumed=true suppresses updates until caught-up (for /resume with history)
+  // resumed=false starts caught-up immediately (for plan-mode continuation with fresh file)
+  const switchJsonlWatcher = useCallback((newJsonlId: string, resumed = true) => {
+    invoke("stop_jsonl_watcher", { sessionId: session.id }).catch(() => {});
+    claudeState.reset(resumed);
+    invoke("start_jsonl_watcher", {
+      sessionId: session.id,
+      workingDir: session.config.workingDir,
+      jsonlSessionId: newJsonlId,
+    });
+    watchedJsonlIdRef.current = newJsonlId;
+    // Pick up tab name from matching dead tab
+    const sessions = useSessionStore.getState().sessions;
+    const match = sessions.find((s) =>
+      s.state === "dead" && s.id !== session.id && getResumeId(s) === newJsonlId
+    );
+    if (match?.metadata.nodeSummary) {
+      renameSession(session.id, match.name);
+      updateMetadata(session.id, { nodeSummary: match.metadata.nodeSummary });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id, session.config.workingDir, renameSession, updateMetadata]);
 
   // When a result event fires (conversation ended) but the PTY is still alive,
   // check if Claude forked into a new JSONL file (plan mode, continuation).
@@ -110,19 +146,27 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       workingDir: session.config.workingDir,
     }).then((newJsonlId) => {
       if (newJsonlId && newJsonlId !== watchedJsonlIdRef.current) {
-        invoke("stop_jsonl_watcher", { sessionId: session.id });
-        invoke("start_jsonl_watcher", {
-          sessionId: session.id,
-          workingDir: session.config.workingDir,
-          jsonlSessionId: newJsonlId,
-        });
-        watchedJsonlIdRef.current = newJsonlId;
+        // Plan-mode continuation: fresh JSONL file, no history to replay
+        switchJsonlWatcher(newJsonlId, false);
+        return;
       }
+      // No continuation found — might be /resume, check latest JSONL after short delay
+      setTimeout(() => {
+        invoke<string>("find_active_jsonl_session", {
+          workingDir: session.config.workingDir,
+          sinceMs: spawnTimestampRef.current,
+        }).then((latestId) => {
+          if (latestId && latestId !== watchedJsonlIdRef.current) {
+            switchJsonlWatcher(latestId);
+          }
+        }).catch(() => {});
+      }, 2000);
     }).catch(() => {});
-  }, [session.id, session.state, session.config.workingDir]);
+  }, [session.state, session.config.workingDir, switchJsonlWatcher]);
 
   const handleCaughtUp = useCallback(() => setLoading(false), []);
-  const { feed } = useClaudeState(session.id, isResumed, { onConversationEnd: handleConversationEnd, onCaughtUp: handleCaughtUp });
+  const claudeState = useClaudeState(session.id, isResumed, { onConversationEnd: handleConversationEnd, onCaughtUp: handleCaughtUp });
+  const { feed } = claudeState;
   const [loading, setLoading] = useState(isResumed);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [queuedInput, setQueuedInput] = useState<string | null>(null);
@@ -173,19 +217,93 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         updateSubagent(session.id, sub.id, { state: "dead" });
       }
       updateState(session.id, "dead");
-      terminalRef.current?.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
+      // Check if session has conversation content for the overlay's Resume button
+      const resumeId = getResumeId(session);
+      invoke<boolean>("session_has_conversation", {
+        sessionId: resumeId,
+        workingDir: session.config.workingDir,
+      }).then((has) => { setHasConversation(has); }).catch(() => {});
     },
-    [session.id, updateState]
+    [session.id, session.config.resumeSession, session.config.sessionId, session.config.workingDir, updateState]
   );
 
   const pty = usePty({ onData: handlePtyData, onExit: handlePtyExit });
+
+  // ── In-tab respawn ────────────────────────────────────────────────────
+  const triggerRespawnRef = useRef<(config?: SessionConfig, name?: string) => void>(() => {});
+  // Stable ref so callbacks can call triggerRespawn without stale closures
+  triggerRespawnRef.current = (config?: SessionConfig, name?: string) => {
+    // 1. Clean up old PTY, watchers, and active polling
+    pty.cleanup();
+    invoke("stop_jsonl_watcher", { sessionId: session.id }).catch(() => {});
+    invoke("stop_subagent_watcher", { sessionId: session.id }).catch(() => {});
+    unregisterPtyWriter(session.id);
+    stopResumePolling();
+
+    // 2. Determine config (default: resume same session)
+    const newConfig: SessionConfig = config ?? {
+      ...session.config,
+      resumeSession: hasConversation ? getResumeId(session) : null,
+      continueSession: false,
+    };
+
+    // 3. Update session in store
+    updateConfig(session.id, newConfig);
+    if (name) renameSession(session.id, name);
+
+    // 4. Visual feedback + loading spinner for resumed sessions
+    terminalRef.current?.write("\r\n\x1b[90m[Resuming...]\x1b[0m\r\n");
+    setLoading(!!newConfig.resumeSession);
+
+    // 5. Reset internal state and JSONL accumulator
+    const isResume = !!newConfig.resumeSession;
+    spawnedRef.current = false;
+    watchedJsonlIdRef.current = newConfig.resumeSession || newConfig.sessionId || session.id;
+    setHasConversation(false);
+    claudeState.reset(isResume);
+    spawnTimestampRef.current = Date.now();
+
+    // 6. Trigger re-spawn
+    updateState(session.id, "starting");
+    setRespawnCounter((c) => c + 1);
+  };
 
   // Track user input for slash command detection
   const inputBufRef = useRef("");
   const recordCommandUsage = useSettingsStore((s) => s.recordCommandUsage);
 
+  // Start polling for JSONL session switch (after /resume command)
+  const startJsonlPolling = useCallback(() => {
+    if (resumePollingRef.current) return;
+    let elapsed = 0;
+    resumePollingRef.current = setInterval(() => {
+      elapsed += 3000;
+      if (elapsed > 30000) {
+        // Timeout — stop polling
+        stopResumePolling();
+        return;
+      }
+      invoke<string>("find_active_jsonl_session", {
+        workingDir: session.config.workingDir,
+        sinceMs: spawnTimestampRef.current,
+      }).then((latestId) => {
+        if (latestId && latestId !== watchedJsonlIdRef.current) {
+          switchJsonlWatcher(latestId);
+          stopResumePolling();
+        }
+      }).catch(() => {});
+    }, 3000);
+  }, [session.config.workingDir, switchJsonlWatcher, stopResumePolling]);
+
   const handleTermData = useCallback(
     (data: string) => {
+      // Swallow all input when session is dead (overlay handles actions)
+      if (session.state === "dead") {
+        if (data === "\r" || data === "\n") {
+          triggerRespawnRef.current();
+        }
+        return;
+      }
       pty.handle.current?.write(data);
       // Buffer user input to detect slash commands typed directly in terminal
       for (const ch of data) {
@@ -193,6 +311,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           const trimmed = inputBufRef.current.trim();
           if (trimmed.startsWith("/") && trimmed.length >= 3 && !trimmed.includes(" ")) {
             recordCommandUsage(trimmed);
+          }
+          // Detect /resume to start JSONL polling
+          if (trimmed === "/resume") {
+            startJsonlPolling();
           }
           inputBufRef.current = "";
         } else if (ch === "\x7f" || ch === "\b") {
@@ -205,7 +327,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     },
     // pty.handle is a stable ref — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recordCommandUsage]
+    [session.state, recordCommandUsage, startJsonlPolling]
   );
 
   const handleResize = useCallback(
@@ -232,9 +354,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     [terminal]
   );
 
-  // Spawn PTY once + start JSONL watcher
+  // Spawn PTY once + start JSONL watcher (respawnCounter triggers re-spawn)
   useEffect(() => {
-    if (spawnedRef.current || !claudePath || session.state === "dead") return;
+    if (spawnedRef.current || !claudePath) return;
 
     const doSpawn = async () => {
       spawnedRef.current = true;
@@ -245,6 +367,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         const cwd = session.config.workingDir.replace(/\//g, "\\");
         const handle = pty.spawn(claudePath, args, cwd, cols, rows);
         registerPtyWriter(session.id, handle.write);
+        spawnTimestampRef.current = Date.now();
         updateState(session.id, "idle");
 
         // Start JSONL file watcher for structured metadata.
@@ -266,7 +389,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     const timer = setTimeout(doSpawn, 50);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claudePath, session.id]);
+  }, [claudePath, session.id, respawnCounter]);
 
   // Register terminal buffer reader for transcript export
   useEffect(() => {
@@ -282,9 +405,18 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       unregisterPtyWriter(id);
       unregisterBufferReader(id);
       pty.cleanup();
+      stopResumePolling();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Watch for respawn requests from ResumePicker or other components
+  useEffect(() => {
+    if (respawnRequest?.tabId === session.id && session.state === "dead") {
+      clearRespawnRequest();
+      triggerRespawnRef.current(respawnRequest.config, respawnRequest.name);
+    }
+  }, [respawnRequest, session.state, session.id, clearRespawnRequest]);
 
   // Re-fit and focus when becoming visible — only depends on visible and session.id.
   // terminal is NOT in deps because useTerminal returns a new object on every render,
@@ -292,6 +424,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // repeatedly and flashing the terminal.
   useEffect(() => {
     if (visible) {
+      terminal.fit();  // resize BEFORE write to avoid reflow losing queued data
       // Flush background buffer — write all buffered data in one batch
       const chunks = bgBufferRef.current;
       if (chunks.length > 0) {
@@ -303,12 +436,30 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         for (const c of chunks) { merged.set(c, offset); offset += c.length; }
         terminal.termRef.current?.write(merged);
       }
-      terminal.fit();
       terminal.termRef.current?.scrollToBottom();
       terminal.focus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
+
+  // Fix GPU texture corruption after OS sleep / display power-off.
+  // clearTextureAtlas() rebuilds the glyph atlas (xterm.js docs recommend
+  // this for Chromium/Nvidia sleep bugs), refresh() forces a full redraw.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible" || !visible) return;
+      const term = terminal.termRef.current;
+      if (!term) return;
+      term.clearTextureAtlas();
+      term.refresh(0, term.rows - 1);
+      terminal.fit();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    // terminal is NOT in deps — useTerminal returns a new object each render.
+    // visible is needed to re-capture its value in the closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   // Queue input handler: capture typed text, or cancel if already queued
   const handleQueueInput = useCallback(() => {
@@ -374,6 +525,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 
+  const showDeadOverlay = session.state === "dead" && visible;
+
   return (
     <div
       className="terminal-panel"
@@ -387,6 +540,55 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         </div>
       )}
       <div className="terminal-container" ref={setContainer} />
+      {showDeadOverlay && (
+        <div className="dead-overlay">
+          <div className="dead-overlay-card">
+            <div className="dead-overlay-title">Session ended</div>
+            <div className="dead-overlay-actions">
+              {hasConversation && (
+                <button
+                  className="dead-overlay-btn dead-overlay-btn-primary"
+                  onClick={() => triggerRespawnRef.current()}
+                >
+                  Resume
+                </button>
+              )}
+              <button
+                className="dead-overlay-btn"
+                onClick={() => {
+                  // Trigger Ctrl+R — App.tsx handles opening the resume picker
+                  window.dispatchEvent(new KeyboardEvent("keydown", { key: "r", ctrlKey: true }));
+                }}
+              >
+                Resume other...
+              </button>
+            </div>
+            <div className="dead-overlay-actions">
+              <button
+                className="dead-overlay-btn"
+                onClick={() => {
+                  const freshConfig: SessionConfig = {
+                    ...session.config,
+                    resumeSession: null,
+                    continueSession: false,
+                    sessionId: null,
+                  };
+                  triggerRespawnRef.current(freshConfig);
+                }}
+              >
+                New session
+              </button>
+            </div>
+            <div className="dead-overlay-hint">
+              {hasConversation ? (
+                <><kbd>Enter</kbd> resume &middot; <kbd>Ctrl+R</kbd> browse</>
+              ) : (
+                <><kbd>Ctrl+R</kbd> browse</>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {showScrollBtn && (
         <button
           className="scroll-to-bottom-btn"
@@ -396,7 +598,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           ↓
         </button>
       )}
-      {!showScrollBtn && visible && (
+      {!showScrollBtn && visible && session.state !== "dead" && (
         <div className="clear-input-zone">
           <button
             className={`queue-input-btn${queuedInput ? " queue-input-btn-active" : ""}`}

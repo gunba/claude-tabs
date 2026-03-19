@@ -41,6 +41,25 @@ export function createAccumulator(): JsonlAccumulator {
   };
 }
 
+/** Markers that identify local/slash command events (no assistant response expected). */
+const LOCAL_COMMAND_MARKERS = ["command-name", "local-command"];
+
+function hasLocalCommandMarker(text: string): boolean {
+  return LOCAL_COMMAND_MARKERS.some((m) => text.includes(m));
+}
+
+/** Detect local/slash command user events that won't produce an assistant response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isLocalCommandEvent(event: any): boolean {
+  const content = event.message?.content;
+  if (typeof content === "string") return hasLocalCommandMarker(content);
+  if (Array.isArray(content)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return content.some((b: any) => b.type === "text" && typeof b.text === "string" && hasLocalCommandMarker(b.text));
+  }
+  return false;
+}
+
 /** Process a single JSONL line and return an updated accumulator. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function processJsonlEvent(acc: JsonlAccumulator, event: any): JsonlAccumulator {
@@ -56,6 +75,10 @@ export function processJsonlEvent(acc: JsonlAccumulator, event: any): JsonlAccum
     if (hasToolResult) {
       return { ...acc, state: "thinking", currentAction: null, currentToolName: null };
     }
+    // Local slash commands (e.g. /stickers, /help) emit a user event but never
+    // produce a follow-up assistant/result event. Skip the thinking transition
+    // so the tab doesn't get stuck in a permanent "thinking" state.
+    if (isLocalCommandEvent(event)) return acc;
     // Capture first user message text for tab naming
     let firstUserMessage = acc.firstUserMessage;
     if (!firstUserMessage) {
@@ -69,14 +92,9 @@ export function processJsonlEvent(acc: JsonlAccumulator, event: any): JsonlAccum
   }
 
   if (type === "progress") {
-    // Only update to toolUse if we're actually in a tool-use state.
-    // Progress events can arrive late — don't override idle/thinking.
-    if (acc.state !== "toolUse" && acc.state !== "starting") return acc;
-    const toolName = acc.currentToolName || "Bash";
-    return {
-      ...acc,
-      currentAction: `${toolName}: running (${event.data?.elapsedTimeSeconds || 0}s)`,
-    };
+    // Progress events arrive while tools run. Don't overwrite currentAction —
+    // it already has useful detail from the tool_use event (file paths, patterns, etc.).
+    return acc;
   }
 
   if (type === "result") {
@@ -165,8 +183,6 @@ function processAssistant(acc: JsonlAccumulator, event: any): JsonlAccumulator {
     inputTokens,
     outputTokens,
     assistantMessageCount: acc.assistantMessageCount + 1,
-    contextWarning: acc.contextWarning,
-    taskProgress: acc.taskProgress,
   };
 }
 
@@ -196,7 +212,7 @@ export function extractUserText(event: any): string | null {
   const content = event.message?.content;
   // String content
   if (typeof content === "string") {
-    if (content.length > 10 && !content.includes("command-name") && !content.includes("local-command")) {
+    if (content.length > 10 && !hasLocalCommandMarker(content)) {
       const result = content.replace(/\n/g, " ").trim().slice(0, 150);
       return result || null;
     }
@@ -206,7 +222,7 @@ export function extractUserText(event: any): string | null {
     for (const block of content) {
       if (block.type === "text" && typeof block.text === "string") {
         const t = block.text;
-        if (t.length > 10 && !t.includes("command-name") && !t.includes("local-command")) {
+        if (t.length > 10 && !hasLocalCommandMarker(t)) {
           return t.replace(/\n/g, " ").trim().slice(0, 150);
         }
       }

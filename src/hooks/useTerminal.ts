@@ -13,6 +13,8 @@ interface UseTerminalOptions {
 export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const webglRef = useRef<WebglAddon | null>(null);
+  const webglRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const attachedRef = useRef(false);
 
@@ -64,7 +66,10 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (webglRetryTimerRef.current) clearTimeout(webglRetryTimerRef.current);
       observerRef.current?.disconnect();
+      webglRef.current?.dispose();
+      webglRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -126,9 +131,30 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       e.stopPropagation();
     }, true); // Capture phase — intercept before xterm.js
 
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {}
+    // Load WebGL renderer with context loss recovery.
+    // On context loss: dispose, wait 1s, retry once. If retry fails,
+    // xterm.js automatically falls back to the DOM canvas renderer.
+    const loadWebgl = (canRetry = true) => {
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          console.warn("WebGL context lost — disposing addon");
+          try { addon.dispose(); } catch {}
+          webglRef.current = null;
+          if (canRetry) {
+            webglRetryTimerRef.current = setTimeout(() => loadWebgl(false), 1000);
+          }
+        });
+        term.loadAddon(addon);
+        webglRef.current = addon;
+      } catch {
+        webglRef.current = null;
+        if (!canRetry) {
+          console.warn("WebGL retry failed — using canvas renderer");
+        }
+      }
+    };
+    loadWebgl();
 
     try {
       fit.fit();

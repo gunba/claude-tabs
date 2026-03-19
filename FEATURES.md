@@ -10,7 +10,7 @@ Expected behaviors that MUST be preserved. **Agents: read this before modifying 
 - No `-webkit-app-region` drag regions — native titlebar handles window dragging
 - State dot colors: idle=green, thinking=clay pulse, toolUse=blue scale, waitingPermission=orange pulse, error=red, dead=muted, starting=muted pulse
 - Non-active tabs flash green briefly when transitioning to idle from an active state
-- Dead tabs dimmed (opacity 0.45), clickable to revive
+- Dead tabs dimmed (opacity 0.45), clickable to switch (overlay provides actions)
 - Shift+click tab opens relaunch modal; visual border hint when Shift is held
 - Tabs draggable for reorder via native drag-and-drop
 - Right-click context menu: Rename, Copy Session ID, Copy Working Dir, Open in Explorer, Revive/Close
@@ -29,21 +29,36 @@ Expected behaviors that MUST be preserved. **Agents: read this before modifying 
 - Shows only LIVE events from the current conversation
 - Must NOT seed with persisted state on app startup
 - Must NOT show historical events from resumed sessions — the accumulator reset on caught-up prevents stale values from leaking back into the store
+- Shows detailed tool info (file paths, commands, patterns) — progress events do NOT overwrite with timers
 - Driven by metadata fingerprint changes in Zustand store
 
-## Session Revival (Dead Tab Click)
+## Dead Session Overlay & In-Tab Respawn
 
-- Create new session BEFORE closing old one — avoids visual flash/gap in tab bar
-- Resume target chain: `resumeSession || sessionId || id` (chains through multiple revivals)
-- Preserve color index and metadata (nodeSummary, tokens, assistantMessageCount) across revival
+- Dead sessions show an overlay with Resume, Resume other, and New session buttons
+- All actions respawn the PTY in the same tab — no new tab created, no old tab destroyed
+- Resume button only shown if session has conversation (`session_has_conversation` check)
+- Enter key on dead tab resumes same session; all other input swallowed
+- Ctrl+R on dead tab opens resume picker targeting that tab (reuses tab via `requestRespawn`)
+- ResumePicker detects active dead tab and respawns in place instead of creating new session
+- `triggerRespawn` cleans up old PTY/watchers, resets JSONL accumulator, increments respawn counter
+- Resume target chain: `resumeSession || sessionId || id` (chains through multiple respawns)
 - Check JSONL file existence via `session_has_conversation`, not `assistantMessageCount`
 - `resumeSession` and `continueSession` are one-shot flags — never persist in `lastConfig`
 - Skip `--session-id` CLI arg when using `--resume` or `--continue`
 
+## JSONL Session Switch Detection
+
+- Detects when user uses `/resume` within Claude to switch conversations mid-session
+- On `/resume` input: polls `find_active_jsonl_session` every 3s for 30s to find new JSONL file
+- On conversation end: tries `find_continuation_session` first, falls back to `find_active_jsonl_session`
+- `switchJsonlWatcher` stops old watcher, resets accumulator, starts new watcher
+- Tab name picked up from matching dead tabs when switching to a previously-seen session
+
 ## Terminal Rendering
 
 - xterm.js 6.0 with DEC 2026 synchronized output — prevents ink rendering flash on rapid writes
-- WebGL renderer for performance
+- WebGL renderer for performance, with context loss recovery (retry once after 1s, fallback to canvas)
+- Visibility change handler: clears texture atlas and redraws on OS wake / tab restore (fixes GPU corruption after sleep)
 - Hidden tabs use CSS `display: none` — never unmount/remount xterm.js (destroys state)
 - Background tabs: PTY data buffered in `bgBufferRef`, flushed as single batched write on tab focus
 - Dynamic scrollback: 5K default, grows to 10K on scroll-to-top, shrinks back at bottom
@@ -74,6 +89,19 @@ Expected behaviors that MUST be preserved. **Agents: read this before modifying 
 - Modal for new session or resume — Ctrl+T opens fresh (clears resume/continue flags)
 - Quick launch: Shift+click "+" or Ctrl+Shift+T uses saved defaults without showing modal
 - Ctrl+R opens resume picker (browse past Claude sessions)
+- CLI command pills sorted by usage frequency (same heat gradient as Command Bar)
+
+## Command Bar
+
+- Slash command pills sorted by usage frequency, then alphabetically
+- **Heat gradient**: pills show 4-tier visual heat (muted → accent) based on usage relative to most-used command
+  - Level 0: default muted (unused), Level 1: 30% accent blend, Level 2: 65% accent blend, Level 3: full accent with tinted background
+- **History bootstrap**: on first install, scans up to 200 recent JSONL files for slash command usage so heat map starts warm
+- **Click** a pill → sends the command to the PTY immediately (records usage)
+- **Shift+click** a pill → queues the command for auto-send when Claude becomes idle (records usage only when dispatched, not on queue)
+- Queued command shows a pulsing indicator; clicking the same queued command again toggles it off
+- Holding Shift triggers a WoW-style animated glow on all pills (pulsing accent-colored box-shadow)
+- Queue auto-clears when session dies
 
 ## Window
 

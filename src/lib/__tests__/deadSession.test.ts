@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Session, SessionConfig, SessionMetadata } from "../../types/session";
+import { dirToTabName, normalizeForFilter } from "../paths";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -165,7 +166,6 @@ describe("dead session revive flow", () => {
       config: { ...DEFAULT_CONFIG, workingDir: "/my-project" },
     });
 
-    const dirToTabName = (dir: string) => dir.split("/").pop() || dir;
     const name = dead.name || dirToTabName(dead.config.workingDir);
     expect(name).toBe("My Custom Name");
   });
@@ -227,10 +227,10 @@ describe("projectDir field in SessionConfig", () => {
 // ── encode_dir normalization (ResumePicker filter logic) ────────────
 
 describe("encode_dir normalization for directory filtering", () => {
-  // This tests the normalization logic used in ResumePicker to handle
-  // the lossy decode_project_dir encoding where periods, spaces, and
-  // path separators all become hyphens.
-  const normalize = (s: string) => s.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+  // Tests the normalizeForFilter logic used in ResumePicker to handle
+  // the lossy encode_dir encoding where periods, spaces, and path
+  // separators all become hyphens.
+  const normalize = normalizeForFilter;
 
   it("normalizes periods to hyphens", () => {
     expect(normalize("Jordan.Graham")).toBe("jordan-graham");

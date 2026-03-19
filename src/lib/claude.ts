@@ -1,5 +1,9 @@
+import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Session, SessionConfig } from "../types/session";
+
+// Re-export path utilities so existing imports from claude.ts keep working
+export { dirToTabName } from "./paths";
 
 export async function buildClaudeArgs(
   config: SessionConfig
@@ -10,12 +14,6 @@ export async function buildClaudeArgs(
 /** Resume target: chains through revivals to find the original CLI session ID. */
 export function getResumeId(session: Session): string {
   return session.config.resumeSession || session.config.sessionId || session.id;
-}
-
-/** Derive a short tab name from the working directory */
-export function dirToTabName(dir: string): string {
-  const parts = dir.replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts[parts.length - 1] || dir;
 }
 
 /** Model display label */
@@ -91,6 +89,39 @@ export function getSessionColorIndex(sessionId: string): number {
 /** Force-assign a specific color index to a session. */
 export function forceSessionColor(sessionId: string, colorIndex: number): void {
   colorAssignments.set(sessionId, colorIndex % SESSION_COLORS.length);
+}
+
+/** Compute heat level (0–3) for command frequency visualization. */
+export function computeHeatLevel(count: number, maxCount: number): 0 | 1 | 2 | 3 {
+  if (count <= 0 || maxCount <= 0) return 0;
+  const ratio = count / maxCount;
+  if (ratio < 0.25) return 1;
+  if (ratio < 0.70) return 2;
+  return 3;
+}
+
+/** Inline styles for heat level — uses color-mix() for smooth gradient. */
+export function getHeatStyle(level: 0 | 1 | 2 | 3): CSSProperties {
+  switch (level) {
+    case 1:
+      return {
+        color: "color-mix(in srgb, var(--accent) 30%, var(--text-muted))",
+        borderColor: "var(--border)",
+      };
+    case 2:
+      return {
+        color: "color-mix(in srgb, var(--accent) 65%, var(--text-muted))",
+        borderColor: "color-mix(in srgb, var(--accent) 40%, var(--border))",
+      };
+    case 3:
+      return {
+        color: "var(--accent)",
+        borderColor: "color-mix(in srgb, var(--accent) 60%, var(--border))",
+        background: "var(--accent-bg)",
+      };
+    default:
+      return {};
+  }
 }
 
 /** Format token count compactly: 0, 42, 2.3K, 36K, 1.2M */
