@@ -18,6 +18,7 @@ interface SessionsState {
   initialized: boolean;
   subagents: Map<string, Subagent[]>; // sessionId -> subagents
   thinkingBlocks: Map<string, ThinkingBlock[]>; // sessionId -> thinking blocks
+  commandHistory: Map<string, string[]>; // sessionId -> commands (newest first)
   respawnRequest: { tabId: string; config: SessionConfig; name?: string } | null;
   killRequest: string | null; // sessionId to kill
   hookChangeCounter: number;
@@ -45,6 +46,7 @@ interface SessionsState {
   removeDeadSubagents: (sessionId: string) => void;
   appendThinkingBlocks: (sessionId: string, blocks: ThinkingBlock[]) => void;
   clearThinkingBlocks: (sessionId: string) => void;
+  addCommandHistory: (sessionId: string, command: string) => void;
 }
 
 export const useSessionStore = create<SessionsState>((set) => ({
@@ -54,6 +56,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
   initialized: false,
   subagents: new Map(),
   thinkingBlocks: new Map(),
+  commandHistory: new Map(),
   respawnRequest: null,
   killRequest: null,
   hookChangeCounter: 0,
@@ -61,8 +64,9 @@ export const useSessionStore = create<SessionsState>((set) => ({
 
   init: async () => {
     trace("init: start");
+    let sessions: Session[] = [];
     try {
-      const sessions = await traceAsync("init: load_persisted_sessions", () =>
+      sessions = await traceAsync("init: load_persisted_sessions", () =>
         invoke<Session[]>("load_persisted_sessions")
       );
       // Assign colors sequentially to restored sessions
@@ -76,10 +80,28 @@ export const useSessionStore = create<SessionsState>((set) => ({
       set({ initialized: true });
       trace("init: no sessions, initialized=true");
     }
-    // Detect CLI path in background
-    traceAsync("init: detect_claude_cli", () => invoke<string>("detect_claude_cli"))
-      .then((claudePath) => { set({ claudePath }); trace("init: claudePath set"); })
-      .catch((e) => console.error("CLI detection failed:", e));
+    // Collect all session IDs for orphan cleanup
+    const sessionIds = new Set<string>();
+    for (const s of sessions) {
+      if (s.config.sessionId) sessionIds.add(s.config.sessionId);
+      if (s.config.resumeSession) sessionIds.add(s.config.resumeSession);
+    }
+    // Kill orphan processes and detect CLI in parallel — both must
+    // complete before claudePath is set (which gates PTY spawning)
+    const [claudePath] = await Promise.all([
+      traceAsync("init: detect_claude_cli", () => invoke<string>("detect_claude_cli"))
+        .catch((e) => { console.error("CLI detection failed:", e); return null as string | null; }),
+      sessionIds.size > 0
+        ? traceAsync("init: kill_orphan_sessions", () =>
+            invoke<number>("kill_orphan_sessions", { sessionIds: [...sessionIds] })
+          ).then((n) => { if (n > 0) trace(`init: killed ${n} orphan(s)`); })
+           .catch((e) => console.error("Orphan cleanup failed:", e))
+        : Promise.resolve(),
+    ]);
+    if (claudePath) {
+      set({ claudePath });
+      trace("init: claudePath set");
+    }
   },
 
   createSession: async (name, config, opts = {}) => {
@@ -120,9 +142,11 @@ export const useSessionStore = create<SessionsState>((set) => ({
       subagents.delete(id);
       const thinkingBlocks = new Map(s.thinkingBlocks);
       thinkingBlocks.delete(id);
+      const commandHistory = new Map(s.commandHistory);
+      commandHistory.delete(id);
       const inspectorOffSessions = new Set(s.inspectorOffSessions);
       inspectorOffSessions.delete(id);
-      return { sessions, activeTabId, subagents, thinkingBlocks, inspectorOffSessions };
+      return { sessions, activeTabId, subagents, thinkingBlocks, commandHistory, inspectorOffSessions };
     });
     // Persist immediately so the removal is captured even if the app closes
     useSessionStore.getState().persist();
@@ -276,6 +300,16 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const map = new Map(s.thinkingBlocks);
       map.delete(sessionId);
       return { thinkingBlocks: map };
+    });
+  },
+
+  addCommandHistory: (sessionId, command) => {
+    set((s) => {
+      const map = new Map(s.commandHistory);
+      const existing = map.get(sessionId) || [];
+      const updated = [command, ...existing];
+      map.set(sessionId, updated.length > 50 ? updated.slice(0, 50) : updated);
+      return { commandHistory: map };
     });
   },
 }));

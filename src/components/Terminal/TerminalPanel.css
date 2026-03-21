@@ -101,6 +101,7 @@
 }
 
 .bar-btn {
+  position: relative;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -123,6 +124,20 @@
 .bar-btn-active {
   color: var(--accent);
   animation: queue-pulse 1.5s ease-in-out infinite;
+}
+
+.bar-btn-thinking-active {
+  color: var(--accent-tertiary);
+}
+
+.bar-btn-thinking-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-tertiary);
 }
 
 .bar-spacer { flex: 1; }

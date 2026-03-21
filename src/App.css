@@ -259,7 +259,7 @@
 }
 
 .tab-name-input {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   font-family: inherit;
   background: var(--bg-primary);
@@ -267,9 +267,13 @@
   border: 1px solid var(--accent);
   border-radius: 3px;
   padding: 0 4px;
+  margin: 0;
   outline: none;
   width: 100%;
   min-width: 0;
+  line-height: normal;
+  box-sizing: border-box;
+  height: 20px;
 }
 
 .tab-kill {

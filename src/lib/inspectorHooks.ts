@@ -123,7 +123,7 @@ export const INSTALL_HOOK = `(function() {
                 if (Array.isArray(sc)) {
                   for (var si = 0; si < sc.length; si++) {
                     if (sc[si].type === 'text' && sc[si].text) {
-                      curSub.msgs.push({r: 'a', x: sc[si].text.slice(0, 500)});
+                      curSub.msgs.push({r: 'a', x: sc[si].text.slice(0, 4000)});
                     }
                     if (sc[si].type === 'tool_use') {
                       var sinp = sc[si].input || {};
@@ -132,7 +132,7 @@ export const INSTALL_HOOK = `(function() {
                         state.pendingDescs.push(sinp.description.slice(0, 100));
                       }
                       curSub.act = sact;
-                      curSub.msgs.push({r: 't', x: (sinp.command || sinp.file_path || sinp.pattern || sinp.description || '').slice(0, 500), tn: sc[si].name});
+                      curSub.msgs.push({r: 't', x: (sinp.command || sinp.file_path || sinp.pattern || sinp.description || '').slice(0, 4000), tn: sc[si].name});
                     }
                   }
                 }
@@ -152,7 +152,7 @@ export const INSTALL_HOOK = `(function() {
                           if (suc[sl].content[sm].text) srt += suc[sl].content[sm].text;
                         }
                       }
-                      if (srt) curSub.msgs.push({r: 't', x: srt.slice(0, 500), tn: 'result'});
+                      if (srt) curSub.msgs.push({r: 't', x: srt.slice(0, 4000), tn: 'result'});
                     }
                   }
                   if (curSub.msgs.length > 200) curSub.msgs = curSub.msgs.slice(-200);

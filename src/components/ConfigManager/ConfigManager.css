@@ -4,8 +4,8 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  width: 92vw;
-  max-width: 1400px;
+  width: 96vw;
+  max-width: 1900px;
   height: 88vh;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
 }
@@ -13,18 +13,12 @@
 /* ── Header (title + tabs + close) ───────────────────── */
 
 .config-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-}
-
-.config-header-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 .config-header-right {
@@ -42,6 +36,7 @@
 .config-tabs {
   display: flex;
   gap: 2px;
+  justify-self: center;
 }
 
 .config-tab {
@@ -136,6 +131,11 @@
   gap: 8px;
   flex: 1;
   min-height: 0;
+}
+
+.three-pane-grid-compact {
+  max-width: 1300px;
+  margin: 0 auto;
 }
 
 .three-pane-column {
@@ -552,6 +552,12 @@
   font-family: 'Cascadia Code', 'Fira Code', monospace;
 }
 
+.plugins-tag-disabled {
+  opacity: 0.45;
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
 .plugins-tag-remove {
   background: none;
   border: none;
@@ -854,3 +860,42 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ── Settings Syntax Highlighting ────────────────────── */
+
+.sh-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sh-pre {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  box-sizing: border-box;
+}
+
+.sh-textarea {
+  color: transparent !important;
+  caret-color: var(--text-primary);
+  background: transparent !important;
+  position: relative;
+  z-index: 1;
+}
+
+.sh-key { color: var(--accent); }
+.sh-string { color: var(--accent-secondary); }
+.sh-number { color: var(--accent-tertiary); }
+.sh-bool { color: var(--accent-tertiary); }

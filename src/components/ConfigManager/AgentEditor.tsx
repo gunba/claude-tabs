@@ -1,13 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentFile, StatusMessage } from "../../lib/settingsSchema";
+import type { AgentFile } from "../../lib/settingsSchema";
+import type { PaneComponentProps } from "./ThreePaneEditor";
 
-interface AgentEditorProps {
-  projectDir: string;
-  onStatus: (msg: StatusMessage | null) => void;
-}
-
-export function AgentEditor({ projectDir, onStatus }: AgentEditorProps) {
+export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps) {
   const [agents, setAgents] = useState<AgentFile[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [content, setContent] = useState("");
@@ -16,20 +12,17 @@ export function AgentEditor({ projectDir, onStatus }: AgentEditorProps) {
   const [newAgentName, setNewAgentName] = useState("");
   const [showNewForm, setShowNewForm] = useState(false);
 
+  const workingDir = scope === "user" ? "" : projectDir;
+
   const loadAgents = useCallback(async () => {
-    if (!projectDir) {
-      setAgents([]);
-      setLoading(false);
-      return;
-    }
     try {
-      const result = await invoke<AgentFile[]>("list_agents", { workingDir: projectDir });
+      const result = await invoke<AgentFile[]>("list_agents", { scope, workingDir });
       setAgents(result);
     } catch {
       setAgents([]);
     }
     setLoading(false);
-  }, [projectDir]);
+  }, [scope, workingDir]);
 
   useEffect(() => {
     loadAgents();
@@ -47,8 +40,8 @@ export function AgentEditor({ projectDir, onStatus }: AgentEditorProps) {
 
     let cancelled = false;
     invoke<string>("read_config_file", {
-      scope: "project",
-      workingDir: projectDir,
+      scope,
+      workingDir,
       fileType: `agent:${agent.name}`,
     }).then((result) => {
       if (!cancelled) { setContent(result); setSavedContent(result); }
@@ -56,14 +49,14 @@ export function AgentEditor({ projectDir, onStatus }: AgentEditorProps) {
       if (!cancelled) { setContent(""); setSavedContent(""); }
     });
     return () => { cancelled = true; };
-  }, [selectedAgent, agents, projectDir]);
+  }, [selectedAgent, agents, scope, workingDir]);
 
   const handleSave = useCallback(async () => {
     if (!selectedAgent) return;
     try {
       await invoke("write_config_file", {
-        scope: "project",
-        workingDir: projectDir,
+        scope,
+        workingDir,
         fileType: `agent:${selectedAgent}`,
         content,
       });
@@ -73,7 +66,7 @@ export function AgentEditor({ projectDir, onStatus }: AgentEditorProps) {
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [selectedAgent, projectDir, content, onStatus]);
+  }, [selectedAgent, scope, workingDir, content, onStatus]);
 
   const handleCreateAgent = useCallback(async () => {
     const name = newAgentName.trim().replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -87,8 +80,8 @@ You are a specialized agent for ${name}.
 `;
     try {
       await invoke("write_config_file", {
-        scope: "project",
-        workingDir: projectDir,
+        scope,
+        workingDir,
         fileType: `agent:${name}`,
         content: template,
       });
@@ -101,14 +94,14 @@ You are a specialized agent for ${name}.
     } catch (err) {
       onStatus({ text: `Create failed: ${err}`, type: "error" });
     }
-  }, [newAgentName, projectDir, loadAgents, onStatus]);
+  }, [newAgentName, scope, workingDir, loadAgents, onStatus]);
 
   const handleDeleteAgent = useCallback(async () => {
     if (!selectedAgent) return;
     try {
       await invoke("write_config_file", {
-        scope: "project",
-        workingDir: projectDir,
+        scope,
+        workingDir,
         fileType: `agent-delete:${selectedAgent}`,
         content: "",
       });
@@ -119,15 +112,11 @@ You are a specialized agent for ${name}.
     } catch (err) {
       onStatus({ text: `Delete failed: ${err}`, type: "error" });
     }
-  }, [selectedAgent, projectDir, loadAgents, onStatus]);
+  }, [selectedAgent, scope, workingDir, loadAgents, onStatus]);
 
   const dirty = content !== savedContent;
 
   if (loading) return <div className="config-md-hint">Loading...</div>;
-
-  if (!projectDir) {
-    return <div className="config-md-hint">No project directory selected. Open a session first.</div>;
-  }
 
   return (
     <div className="config-agents">
@@ -219,7 +208,7 @@ You are a specialized agent for ${name}.
       ) : (
         <div className="config-agent-empty">
           {agents.length === 0
-            ? "No agents defined in this project."
+            ? "No agents defined in this scope."
             : "Select an agent to edit."}
         </div>
       )}

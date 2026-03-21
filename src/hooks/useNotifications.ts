@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import {
   isPermissionGranted,
   requestPermission,
-  sendNotification,
 } from "@tauri-apps/plugin-notification";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
 
@@ -13,6 +15,8 @@ import { useSettingsStore } from "../store/settings";
  *
  * Only notifies for sessions that are NOT the currently active/visible session.
  * Rate-limited to avoid notification spam (max one per session per 30s).
+ *
+ * Clicking a notification switches to the target tab and focuses the window.
  */
 export function useNotifications() {
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
@@ -34,6 +38,22 @@ export function useNotifications() {
       permissionGrantedRef.current = granted;
     })();
   }, [notificationsEnabled]);
+
+  // Listen for notification clicks → switch tab + focus window
+  useEffect(() => {
+    const unlisten = listen<string>("notification-clicked", (event) => {
+      const sessionId = event.payload;
+      const store = useSessionStore.getState();
+      if (!store.sessions.some((s) => s.id === sessionId)) return;
+
+      store.setActiveTab(sessionId);
+
+      const win = getCurrentWindow();
+      win.unminimize().then(() => win.show()).then(() => win.setFocus()).catch(() => {});
+    });
+
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   // Subscribe to session state changes
   useEffect(() => {
@@ -79,7 +99,7 @@ export function useNotifications() {
 
         if (title && body) {
           lastNotifyRef.current[session.id] = now;
-          sendNotification({ title, body });
+          invoke("send_notification", { title, body, sessionId: session.id });
         }
       }
 

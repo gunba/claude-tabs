@@ -1136,10 +1136,15 @@ describe("deriveStateFromPoll", () => {
 });
 
 describe("allocateInspectorPort", () => {
-  it("returns sequential ports", () => {
+  it("returns sequential ports (wraps at boundary)", () => {
     const p1 = allocateInspectorPort();
     const p2 = allocateInspectorPort();
-    expect(p2).toBe(p1 + 1);
+    // Ports are sequential, but wrap from 6499 -> 6400
+    if (p1 === 6499) {
+      expect(p2).toBe(6400);
+    } else {
+      expect(p2).toBe(p1 + 1);
+    }
   });
 });
 

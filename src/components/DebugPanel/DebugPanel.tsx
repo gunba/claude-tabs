@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IconClose } from "../Icons/Icons";
 import "./DebugPanel.css";
 
 interface DebugPanelProps {
@@ -73,7 +74,7 @@ export function DebugPanel({ onClose }: DebugPanelProps) {
           Clear
         </button>
         <button className="debug-panel-close" onClick={onClose} title="Close (Esc)">
-          ×
+          <IconClose size={14} />
         </button>
       </div>
       <div className="debug-panel-filter">

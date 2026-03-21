@@ -45,7 +45,6 @@ interface SettingsState {
   slashCommands: SlashCommand[];
 
   commandUsage: Record<string, number>;
-  commandUsageBootstrapped: boolean;
   showConfigManager: string | false;
   showThinkingPanel: boolean;
   replaceSessionId: string | null; // Session to close when launcher launches (Ctrl+Click relaunch)
@@ -93,7 +92,6 @@ export const useSettingsStore = create<SettingsState>()(
       binarySettingsSchema: [],
       slashCommands: [],
       commandUsage: {},
-      commandUsageBootstrapped: false,
       showConfigManager: false,
       showThinkingPanel: false,
       replaceSessionId: null,
@@ -186,10 +184,10 @@ export const useSettingsStore = create<SettingsState>()(
             for (const [cmd, count] of Object.entries(scanned)) {
               merged[cmd] = Math.max(merged[cmd] || 0, count);
             }
-            return { commandUsage: merged, commandUsageBootstrapped: true };
+            return { commandUsage: merged };
           });
         } catch {
-          set({ commandUsageBootstrapped: true });
+          // scan failed — no problem, in-app counts still work
         }
       },
       setReplaceSessionId: (id) => set({ replaceSessionId: id }),
@@ -256,7 +254,6 @@ export const useSettingsStore = create<SettingsState>()(
         cliCapabilities: state.cliCapabilities,
         binarySettingsSchema: state.binarySettingsSchema,
         commandUsage: state.commandUsage,
-        commandUsageBootstrapped: state.commandUsageBootstrapped,
         sessionNames: state.sessionNames,
         sessionConfigs: state.sessionConfigs,
       }),

@@ -78,11 +78,15 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       return true; // Let it through
     });
 
-    // Ctrl+wheel: page-at-a-time scroll
+    // Ctrl+wheel: snap to top/bottom
     term.attachCustomWheelEventHandler((ev) => {
       if (ev.ctrlKey) {
         ev.preventDefault();
-        term.scrollPages(ev.deltaY > 0 ? 1 : -1);
+        if (ev.deltaY > 0) {
+          term.scrollToBottom();
+        } else {
+          term.scrollToTop();
+        }
         return false;
       }
       return true;
@@ -169,12 +173,17 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     loadWebgl();
 
     try {
-      fit.fit();
+      const dims = fit.proposeDimensions();
+      if (dims && dims.rows > 1) fit.fit();
     } catch {}
 
     // Observe container size changes
     const observer = new ResizeObserver(() => {
-      try { fit.fit(); } catch {}
+      try {
+        const dims = fit.proposeDimensions();
+        if (!dims || dims.rows <= 1) return;
+        fit.fit();
+      } catch {}
     });
     observer.observe(el);
     observerRef.current = observer;
@@ -266,8 +275,12 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     const term = termRef.current;
     if (!term) return;
     const buf = term.buffer.active;
-    // Start from viewport position (skip current view), scan backwards
-    const startLine = buf.viewportY - 1;
+    // At bottom: scan from end of visible area to find most recent prompt
+    // Already scrolled up: scan from above viewport to cycle to next prompt
+    const atBottom = buf.viewportY >= buf.baseY - BOTTOM_TOLERANCE;
+    const startLine = atBottom
+      ? buf.baseY + term.rows - 1
+      : buf.viewportY - 1;
     for (let i = startLine; i >= 0; i--) {
       const line = buf.getLine(i);
       if (!line) continue;
@@ -294,7 +307,11 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
 
   const fit = useCallback(() => {
     try {
-      fitRef.current?.fit();
+      const f = fitRef.current;
+      if (!f) return;
+      const dims = f.proposeDimensions();
+      if (!dims || dims.rows <= 1) return;
+      f.fit();
     } catch {}
   }, []);
 

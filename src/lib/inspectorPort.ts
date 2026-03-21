@@ -6,7 +6,7 @@
  */
 const PORT_MIN = 6400;
 const PORT_MAX = 6499;
-let nextPort = PORT_MIN;
+let nextPort = PORT_MIN + (Date.now() % (PORT_MAX - PORT_MIN + 1));
 
 export function allocateInspectorPort(): number {
   const port = nextPort++;

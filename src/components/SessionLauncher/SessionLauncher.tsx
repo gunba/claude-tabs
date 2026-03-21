@@ -9,6 +9,7 @@ import {
   type PermissionMode,
   DEFAULT_SESSION_CONFIG,
 } from "../../types/session";
+import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, IconReset } from "../Icons/Icons";
 import "./SessionLauncher.css";
 
 // ── Option definitions ──────────────────────────────────────────────
@@ -315,7 +316,7 @@ export function SessionLauncher() {
         {/* Resume banner or path input */}
         {isResuming ? (
           <div className="launcher-resume-banner">
-            <span className="launcher-resume-banner-icon">↩</span>
+            <span className="launcher-resume-banner-icon"><IconReturn size={16} /></span>
             <span className="launcher-resume-banner-text">
               Resuming in <strong>{dirToTabName(config.workingDir)}</strong>
             </span>
@@ -332,7 +333,7 @@ export function SessionLauncher() {
               autoComplete="off"
             />
             <button className="launcher-browse-btn" onClick={handleBrowse} title="Browse" type="button">
-              📂
+              <IconFolder size={14} />
             </button>
           </div>
         )}
@@ -360,7 +361,7 @@ export function SessionLauncher() {
         {/* Compact selects row: Model, Permissions, Effort, toggle pills */}
         <div className={`launcher-selects${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
           <label className="launcher-select-group">
-            <span className="launcher-select-icon" title="Model">◈</span>
+            <span className="launcher-select-icon" title="Model"><IconModelDiamond size={13} /></span>
             <select
               className="launcher-select"
               value={config.model ?? ""}
@@ -376,7 +377,7 @@ export function SessionLauncher() {
           </label>
 
           <label className="launcher-select-group">
-            <span className="launcher-select-icon" title="Permissions">🔒</span>
+            <span className="launcher-select-icon" title="Permissions"><IconLock size={13} /></span>
             <select
               className="launcher-select"
               value={config.permissionMode}
@@ -392,7 +393,7 @@ export function SessionLauncher() {
           </label>
 
           <label className="launcher-select-group">
-            <span className="launcher-select-icon" title="Effort">⚡</span>
+            <span className="launcher-select-icon" title="Effort"><IconLightning size={13} /></span>
             <select
               className="launcher-select"
               value={config.effort ?? ""}
@@ -530,7 +531,7 @@ export function SessionLauncher() {
               title="Reset to generated command"
               type="button"
             >
-              ↺
+              <IconReset size={14} />
             </button>
           </div>
         </div>

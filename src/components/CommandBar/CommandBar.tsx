@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
+import { useSessionStore } from "../../store/sessions";
 import { computeHeatLevel, getHeatStyle } from "../../lib/claude";
 import "./CommandBar.css";
 
@@ -17,6 +18,19 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
   const slashCommands = useSettingsStore((s) => s.slashCommands);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const recordCommandUsage = useSettingsStore((s) => s.recordCommandUsage);
+  const history = useSessionStore((s) => sessionId ? s.commandHistory.get(sessionId) : undefined) ?? [];
+  const addCommandHistory = useSessionStore((s) => s.addCommandHistory);
+
+  /** Send a slash command immediately and record it. */
+  const sendCommand = useCallback(
+    (command: string) => {
+      if (!sessionId) return;
+      writeToPty(sessionId, command + "\r");
+      recordCommandUsage(command);
+      addCommandHistory(sessionId, command);
+    },
+    [sessionId, recordCommandUsage, addCommandHistory]
+  );
 
   // Sort: frequently-used first (by count desc), then alphabetical
   const sortedCommands = useMemo(() => {
@@ -39,13 +53,12 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
     if (!queuedCommand || !sessionId) return;
     if (sessionState === "idle") {
       const timer = setTimeout(() => {
-        writeToPty(sessionId, queuedCommand + "\r");
-        recordCommandUsage(queuedCommand);
+        sendCommand(queuedCommand);
         setQueuedCommand(null);
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [sessionState, queuedCommand, sessionId, recordCommandUsage]);
+  }, [sessionState, queuedCommand, sessionId, sendCommand]);
 
   // Clear queue if session dies
   useEffect(() => {
@@ -66,11 +79,10 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
         });
       } else {
         // Normal click: send immediately
-        writeToPty(sessionId, command + "\r");
-        recordCommandUsage(command);
+        sendCommand(command);
       }
     },
-    [sessionId, recordCommandUsage]
+    [sessionId, sendCommand]
   );
 
   // Don't render if there's no active session
@@ -80,6 +92,21 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
 
   return (
     <div className="command-bar">
+      {history.length > 0 && (
+        <div className="command-history">
+          {history.map((cmd, i) => (
+            <button
+              key={`${i}-${cmd}`}
+              className="command-history-item"
+              onClick={() => sendCommand(cmd)}
+              title={`Re-send ${cmd}`}
+              type="button"
+            >
+              {cmd}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="command-bar-scroll">
         {discovering ? (
           <span className="command-bar-discovering">Discovering commands...</span>

@@ -23,6 +23,9 @@ export interface IpcCommands {
   persist_sessions: () => Promise<void>;
   load_persisted_sessions: () => Promise<Session[]>;
   detect_claude_cli: () => Promise<string>;
+  kill_orphan_sessions: (args: {
+    sessionIds: string[];
+  }) => Promise<number>;
   build_claude_args: (args: {
     config: SessionConfig;
   }) => Promise<string[]>;

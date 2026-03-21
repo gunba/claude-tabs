@@ -12,7 +12,11 @@ import {
   releaseSessionColor,
   getSessionColorIndex,
   forceSessionColor,
+  getResumeId,
+  effectiveModel,
 } from "../claude";
+import type { Session } from "../../types/session";
+import { DEFAULT_SESSION_CONFIG } from "../../types/session";
 
 describe("dirToTabName", () => {
   it("extracts last path segment (Unix)", () => {
@@ -59,16 +63,16 @@ describe("modelColor", () => {
     expect(modelColor(null)).toBe("var(--text-muted)");
   });
 
-  it("returns tertiary accent for opus model", () => {
-    expect(modelColor("claude-opus-4-6")).toBe("var(--accent-tertiary)");
+  it("returns legendary orange for opus model", () => {
+    expect(modelColor("claude-opus-4-6")).toBe("#ff8000");
   });
 
-  it("returns secondary accent for sonnet model", () => {
-    expect(modelColor("claude-sonnet-4-6")).toBe("var(--accent-secondary)");
+  it("returns epic purple for sonnet model", () => {
+    expect(modelColor("claude-sonnet-4-6")).toBe("#a335ee");
   });
 
-  it("returns success color for haiku model", () => {
-    expect(modelColor("claude-haiku-4-5-20251001")).toBe("var(--success)");
+  it("returns rare blue for haiku model", () => {
+    expect(modelColor("claude-haiku-4-5-20251001")).toBe("#4e9bff");
   });
 
   it("returns muted color for unknown model", () => {
@@ -76,15 +80,15 @@ describe("modelColor", () => {
   });
 
   it("matches opus substring anywhere in model string", () => {
-    expect(modelColor("some-opus-variant")).toBe("var(--accent-tertiary)");
+    expect(modelColor("some-opus-variant")).toBe("#ff8000");
   });
 
   it("matches sonnet substring anywhere in model string", () => {
-    expect(modelColor("my-sonnet-4-20260101")).toBe("var(--accent-secondary)");
+    expect(modelColor("my-sonnet-4-20260101")).toBe("#a335ee");
   });
 
   it("matches haiku substring anywhere in model string", () => {
-    expect(modelColor("claude-3-haiku-20240307")).toBe("var(--success)");
+    expect(modelColor("claude-3-haiku-20240307")).toBe("#4e9bff");
   });
 });
 
@@ -295,5 +299,101 @@ describe("session color assignment", () => {
     const c1 = sessionColor(id);
     const c2 = sessionColor(id);
     expect(c1).toBe(c2);
+  });
+});
+
+/** Helper: build a minimal Session for testing pure functions. */
+function makeSession(overrides: {
+  id?: string;
+  resumeSession?: string | null;
+  sessionId?: string | null;
+  model?: string | null;
+  runtimeModel?: string | null;
+}): Session {
+  return {
+    id: overrides.id ?? "test-id",
+    name: "test",
+    config: {
+      ...DEFAULT_SESSION_CONFIG,
+      resumeSession: overrides.resumeSession ?? null,
+      sessionId: overrides.sessionId ?? null,
+      model: overrides.model ?? null,
+    },
+    state: "idle",
+    metadata: {
+      costUsd: 0,
+      contextPercent: 0,
+      durationSecs: 0,
+      currentAction: null,
+      nodeSummary: null,
+      currentToolName: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      assistantMessageCount: 0,
+      choiceHint: false,
+      runtimeModel: overrides.runtimeModel ?? null,
+    },
+    createdAt: "2026-01-01T00:00:00Z",
+    lastActive: "2026-01-01T00:00:00Z",
+  };
+}
+
+describe("getResumeId", () => {
+  it("returns resumeSession when set", () => {
+    const s = makeSession({ id: "app-id", resumeSession: "original-cli-id", sessionId: "mid-id" });
+    expect(getResumeId(s)).toBe("original-cli-id");
+  });
+
+  it("falls back to sessionId when resumeSession is null", () => {
+    const s = makeSession({ id: "app-id", resumeSession: null, sessionId: "cli-session-id" });
+    expect(getResumeId(s)).toBe("cli-session-id");
+  });
+
+  it("falls back to session.id when both are null", () => {
+    const s = makeSession({ id: "app-id", resumeSession: null, sessionId: null });
+    expect(getResumeId(s)).toBe("app-id");
+  });
+
+  it("prefers resumeSession over sessionId", () => {
+    const s = makeSession({ resumeSession: "resume-target", sessionId: "session-target" });
+    expect(getResumeId(s)).toBe("resume-target");
+  });
+
+  it("returns empty resumeSession if it is an empty string", () => {
+    // Empty string is falsy — should fall through to sessionId
+    const s = makeSession({ resumeSession: "", sessionId: "fallback" });
+    expect(getResumeId(s)).toBe("fallback");
+  });
+});
+
+describe("effectiveModel", () => {
+  it("returns config model when set", () => {
+    const s = makeSession({ model: "claude-opus-4-6", runtimeModel: "claude-sonnet-4-6" });
+    expect(effectiveModel(s)).toBe("claude-opus-4-6");
+  });
+
+  it("falls back to runtimeModel when config model is null", () => {
+    const s = makeSession({ model: null, runtimeModel: "claude-sonnet-4-6" });
+    expect(effectiveModel(s)).toBe("claude-sonnet-4-6");
+  });
+
+  it("returns null when both are null", () => {
+    const s = makeSession({ model: null, runtimeModel: null });
+    expect(effectiveModel(s)).toBeNull();
+  });
+
+  it("prefers config model over runtimeModel", () => {
+    const s = makeSession({ model: "claude-haiku-4-5-20251001", runtimeModel: "claude-opus-4-6" });
+    expect(effectiveModel(s)).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("returns null for empty string model (falsy)", () => {
+    const s = makeSession({ model: "", runtimeModel: null });
+    expect(effectiveModel(s)).toBeNull();
+  });
+
+  it("falls back to runtimeModel for empty string model", () => {
+    const s = makeSession({ model: "", runtimeModel: "claude-sonnet-4-6" });
+    expect(effectiveModel(s)).toBe("claude-sonnet-4-6");
   });
 });

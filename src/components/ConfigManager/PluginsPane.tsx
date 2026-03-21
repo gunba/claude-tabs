@@ -8,6 +8,28 @@ interface McpServer {
   env?: Record<string, string>;
 }
 
+type PluginsMap = Record<string, boolean>;
+
+/** Normalize enabledPlugins from either array or object format to Record<string, boolean>. */
+export function normalizePlugins(raw: unknown): PluginsMap {
+  if (!raw) return {};
+  if (Array.isArray(raw)) {
+    const map: PluginsMap = {};
+    for (const name of raw) {
+      if (typeof name === "string") map[name] = true;
+    }
+    return map;
+  }
+  if (typeof raw === "object") {
+    const map: PluginsMap = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      map[k] = v === true;
+    }
+    return map;
+  }
+  return {};
+}
+
 export function PluginsPane({ scope, projectDir, onStatus }: PaneComponentProps) {
   const [json, setJson] = useState<Record<string, unknown>>({});
   const [saved, setSaved] = useState<string>("{}");
@@ -22,6 +44,10 @@ export function PluginsPane({ scope, projectDir, onStatus }: PaneComponentProps)
         fileType: "settings",
       });
       const parsed = result ? JSON.parse(result) : {};
+      // Normalize enabledPlugins to object format on load
+      if (parsed.enabledPlugins) {
+        parsed.enabledPlugins = normalizePlugins(parsed.enabledPlugins);
+      }
       setJson(parsed);
       setSaved(JSON.stringify(parsed, null, 2));
     } catch {
@@ -45,8 +71,11 @@ export function PluginsPane({ scope, projectDir, onStatus }: PaneComponentProps)
 
       // Merge only plugin keys into the fresh base
       const merged = { ...current };
-      if (json.enabledPlugins) merged.enabledPlugins = json.enabledPlugins;
-      else delete merged.enabledPlugins;
+      if (json.enabledPlugins && Object.keys(json.enabledPlugins as PluginsMap).length > 0) {
+        merged.enabledPlugins = json.enabledPlugins;
+      } else {
+        delete merged.enabledPlugins;
+      }
       if (json.mcpServers) merged.mcpServers = json.mcpServers;
       else delete merged.mcpServers;
 
@@ -65,22 +94,34 @@ export function PluginsPane({ scope, projectDir, onStatus }: PaneComponentProps)
     }
   }, [json, scope, projectDir, onStatus]);
 
-  const enabledPlugins = (json.enabledPlugins as string[] | undefined) || [];
+  const plugins = normalizePlugins(json.enabledPlugins);
+  const pluginEntries = Object.entries(plugins);
   const mcpServers = (json.mcpServers as Record<string, McpServer> | undefined) || {};
   const dirty = JSON.stringify(json, null, 2) !== saved;
 
   const addPlugin = () => {
     const trimmed = newPlugin.trim();
-    if (!trimmed || enabledPlugins.includes(trimmed)) return;
-    setJson((prev) => ({ ...prev, enabledPlugins: [...enabledPlugins, trimmed] }));
+    if (!trimmed || trimmed in plugins) return;
+    setJson((prev) => ({
+      ...prev,
+      enabledPlugins: { ...(prev.enabledPlugins as PluginsMap), [trimmed]: true },
+    }));
     setNewPlugin("");
   };
 
-  const removePlugin = (idx: number) => {
-    const next = enabledPlugins.filter((_, i) => i !== idx);
+  const togglePlugin = (name: string) => {
     setJson((prev) => {
+      const current = prev.enabledPlugins as PluginsMap;
+      return { ...prev, enabledPlugins: { ...current, [name]: !current[name] } };
+    });
+  };
+
+  const removePlugin = (name: string) => {
+    setJson((prev) => {
+      const current = { ...(prev.enabledPlugins as PluginsMap) };
+      delete current[name];
       const updated = { ...prev };
-      if (next.length > 0) updated.enabledPlugins = next;
+      if (Object.keys(current).length > 0) updated.enabledPlugins = current;
       else delete updated.enabledPlugins;
       return updated;
     });
@@ -104,12 +145,20 @@ export function PluginsPane({ scope, projectDir, onStatus }: PaneComponentProps)
       {/* Enabled Plugins */}
       <div className="plugins-section">
         <div className="plugins-section-title">Enabled Plugins</div>
-        {enabledPlugins.length > 0 ? (
+        {pluginEntries.length > 0 ? (
           <div className="plugins-tags">
-            {enabledPlugins.map((p, i) => (
-              <span key={i} className="plugins-tag">
-                {p}
-                <button className="plugins-tag-remove" onClick={() => removePlugin(i)}>x</button>
+            {pluginEntries.map(([name, enabled]) => (
+              <span
+                key={name}
+                className={`plugins-tag${enabled ? "" : " plugins-tag-disabled"}`}
+                onClick={() => togglePlugin(name)}
+                title={enabled ? "Click to disable" : "Click to enable"}
+              >
+                {name}
+                <button
+                  className="plugins-tag-remove"
+                  onClick={(e) => { e.stopPropagation(); removePlugin(name); }}
+                >x</button>
               </span>
             ))}
           </div>

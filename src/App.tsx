@@ -25,6 +25,7 @@ import { writeToPty } from "./lib/ptyRegistry";
 import { killAllActivePtys } from "./lib/ptyProcess";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { startTestHarness } from "./lib/testHarness";
+import { IconPencil, IconStop, IconClose, IconReturn, IconGear, IconArrowRight } from "./components/Icons/Icons";
 import type { Subagent } from "./types/session";
 import "./App.css";
 
@@ -195,7 +196,7 @@ export default function App() {
         setShowPalette((v) => !v);
       }
 
-      if (e.ctrlKey && e.key === "r") {
+      if (e.ctrlKey && e.shiftKey && e.key === "R") {
         e.preventDefault();
         setShowResumePicker(true);
       }
@@ -243,7 +244,7 @@ export default function App() {
         if (activeTabId) writeToPty(activeTabId, "\x15".repeat(20));
       }
 
-      if (e.key === "F2") {
+      if (e.ctrlKey && e.key === "e") {
         e.preventDefault();
         if (activeTabId) {
           const s = sessions.find(s => s.id === activeTabId);
@@ -301,7 +302,7 @@ export default function App() {
               if (session.config.effort) metaSpans.push({ text: session.config.effort.charAt(0).toUpperCase() + session.config.effort.slice(1), color: "var(--accent)" });
               const subs = subagentMap.get(session.id) || [];
               const liveAgents = subs.filter((s) => s.state !== "dead").length;
-              if (liveAgents > 0) metaSpans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--accent-tertiary)" });
+              if (liveAgents > 0) metaSpans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--text-secondary)" });
 
               return (
                 <div
@@ -431,7 +432,7 @@ export default function App() {
                       }}
                       title="Rename"
                     >
-                      ✎
+                      <IconPencil size={11} />
                     </button>
                     {session.state !== "dead" && (
                       <button
@@ -439,7 +440,7 @@ export default function App() {
                         onClick={(e) => { e.stopPropagation(); requestKill(session.id); }}
                         title="Kill agent (keep tab)"
                       >
-                        ⏹
+                        <IconStop size={9} />
                       </button>
                     )}
                     <button
@@ -447,7 +448,7 @@ export default function App() {
                       onClick={(e) => { e.stopPropagation(); closeSession(session.id); }}
                       title="Close"
                     >
-                      ×
+                      <IconClose size={12} />
                     </button>
                   </span>
                 </div>
@@ -457,16 +458,16 @@ export default function App() {
           <button
             className="tab-resume"
             onClick={() => setShowResumePicker(true)}
-            title="Resume session (from Claude history)"
+            title="Resume session (Ctrl+Shift+R)"
           >
-            ↩
+            <IconReturn size={16} />
           </button>
           <button
             className="tab-config"
             onClick={() => setShowConfigManager("settings")}
             title="Config Manager (Ctrl+,)"
           >
-            ⚙
+            <IconGear size={16} />
           </button>
           <button
             className="tab-add"
@@ -493,7 +494,7 @@ export default function App() {
                 onClick={() => activeTabId && setInspectedSubagent({ sessionId: activeTabId, subagentId: sub.id })}
                 title={sub.description}
               >
-                <span className="subagent-icon">→</span>
+                <span className="subagent-icon"><IconArrowRight size={10} /></span>
                 <span className="subagent-label">
                   <span className="subagent-name">{sub.description}</span>
                   <span className="subagent-last-msg">
@@ -508,7 +509,7 @@ export default function App() {
                     className="subagent-close"
                     onClick={(e) => { e.stopPropagation(); activeTabId && updateSubagent(activeTabId, sub.id, { state: "dead" }); }}
                     title="Dismiss"
-                  >×</span>
+                  ><IconClose size={12} /></span>
                 )}
               </button>
             );
@@ -539,7 +540,7 @@ export default function App() {
           {/* Empty state — no active terminal visible */}
           {initialized && !regularSessions.some((s) => s.id === activeTabId) && (
             <div className="empty-state">
-              <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+R</kbd> resume from history
+              <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+Shift+R</kbd> resume from history
             </div>
           )}
         </div>

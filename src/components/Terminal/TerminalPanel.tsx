@@ -433,22 +433,33 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // which would cause this effect to re-fire on every store update, calling fit()
   // repeatedly and flashing the terminal.
   useEffect(() => {
-    if (visible) {
-      terminal.fit();  // resize BEFORE write to avoid reflow losing queued data
-      // Flush background buffer — write all buffered data in one batch
-      const chunks = bgBufferRef.current;
-      if (chunks.length > 0) {
-        bgBufferRef.current = [];
-        let totalLen = 0;
-        for (const c of chunks) totalLen += c.length;
-        const merged = new Uint8Array(totalLen);
-        let offset = 0;
-        for (const c of chunks) { merged.set(c, offset); offset += c.length; }
-        terminal.termRef.current?.write(merged);
-      }
-      terminal.termRef.current?.scrollToBottom();
-      terminal.focus();
-    }
+    if (!visible) return;
+    let cancelled = false;
+    let rafInner: number | undefined;
+    const raf1 = requestAnimationFrame(() => {
+      rafInner = requestAnimationFrame(() => {
+        if (cancelled) return;
+        terminal.fit();
+        // Flush background buffer — write all buffered data in one batch
+        const chunks = bgBufferRef.current;
+        if (chunks.length > 0) {
+          bgBufferRef.current = [];
+          let totalLen = 0;
+          for (const c of chunks) totalLen += c.length;
+          const merged = new Uint8Array(totalLen);
+          let offset = 0;
+          for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+          terminal.termRef.current?.write(merged);
+        }
+        terminal.termRef.current?.scrollToBottom();
+        terminal.focus();
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      if (rafInner !== undefined) cancelAnimationFrame(rafInner);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 
@@ -567,6 +578,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // terminal.scrollToLastUserMessage is a stable useCallback — safe in deps
   }, [visible, terminal.scrollToLastUserMessage]);
 
+  const showThinkingPanel = useSettingsStore((s) => s.showThinkingPanel);
+  const setShowThinkingPanel = useSettingsStore((s) => s.setShowThinkingPanel);
+  const thinkingBlockCount = useSessionStore((s) => s.thinkingBlocks.get(session.id)?.length ?? 0);
+
   const totalTokens = session.metadata.inputTokens + session.metadata.outputTokens;
 
   return (
@@ -604,6 +619,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
                 <polyline points="3 6 7 2 11 6" />
               </svg>
             </button>
+            <div className="bar-spacer" />
             <button
               className="bar-btn"
               style={{ visibility: showScrollTopBtn ? "visible" : "hidden" }}
@@ -615,6 +631,18 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
                 <polyline points="3 5 7 1 11 5" />
                 <line x1="7" y1="1" x2="7" y2="10" />
                 <line x1="3" y1="13" x2="11" y2="13" />
+              </svg>
+            </button>
+            <div className="bar-spacer" />
+            <button
+              className={`bar-btn${queuedInput ? " bar-btn-active" : ""}`}
+              onClick={handleQueueInput}
+              title={queuedInput ? `Queued: "${queuedInput}" (click to cancel)` : "Queue input for idle send"}
+              aria-label="Queue input"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 3v5a2 2 0 0 1-2 2H4" />
+                <polyline points="6 8 4 10 6 12" />
               </svg>
             </button>
             <button
@@ -643,17 +671,20 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
               </svg>
             </button>
             <button
-              className={`bar-btn${queuedInput ? " bar-btn-active" : ""}`}
-              onClick={handleQueueInput}
-              title={queuedInput ? `Queued: "${queuedInput}" (click to cancel)` : "Queue input for idle send"}
-              aria-label="Queue input"
+              className={`bar-btn${showThinkingPanel ? " bar-btn-thinking-active" : ""}`}
+              onClick={() => setShowThinkingPanel(!showThinkingPanel)}
+              title="Toggle thinking panel (Ctrl+I)"
+              aria-label="Toggle thinking panel"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 3v5a2 2 0 0 1-2 2H4" />
-                <polyline points="6 8 4 10 6 12" />
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                <ellipse cx="7" cy="6" rx="5.5" ry="4.5" />
+                <circle cx="4" cy="11.5" r="1" />
+                <circle cx="2.5" cy="13" r="0.6" />
               </svg>
+              {thinkingBlockCount > 0 && (
+                <span className="bar-btn-thinking-dot" />
+              )}
             </button>
-            <div className="bar-spacer" />
             <button
               className="bar-btn"
               style={{ visibility: showScrollBtn ? "visible" : "hidden" }}

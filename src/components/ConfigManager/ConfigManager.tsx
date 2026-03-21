@@ -8,17 +8,18 @@ import { MarkdownPane } from "./MarkdownPane";
 import { HooksPane } from "./HooksPane";
 import { PluginsPane } from "./PluginsPane";
 import { AgentEditor } from "./AgentEditor";
+import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconClose } from "../Icons/Icons";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import "./ConfigManager.css";
 
 type Tab = "settings" | "claudemd" | "hooks" | "plugins" | "agents";
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "settings", label: "Settings", icon: "⚙" },
-  { id: "claudemd", label: "CLAUDE.md", icon: "📄" },
-  { id: "hooks", label: "Hooks", icon: "⚓" },
-  { id: "plugins", label: "Plugins", icon: "🧩" },
-  { id: "agents", label: "Agents", icon: "🤖" },
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: "settings", label: "Settings", icon: <IconGear size={11} /> },
+  { id: "claudemd", label: "CLAUDE.md", icon: <IconDocument size={11} /> },
+  { id: "hooks", label: "Hooks", icon: <IconHook size={11} /> },
+  { id: "plugins", label: "Plugins", icon: <IconPuzzle size={11} /> },
+  { id: "agents", label: "Agents", icon: <IconBot size={11} /> },
 ];
 
 export function ConfigManager() {
@@ -63,20 +64,18 @@ export function ConfigManager() {
     <ModalOverlay onClose={onClose} className="config-modal">
       {/* Header with tabs */}
       <div className="config-header">
-        <div className="config-header-left">
-          <span className="config-title">Config</span>
-          <div className="config-tabs">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                className={`config-tab${tab === t.id ? " config-tab-active" : ""}`}
-                onClick={() => setTab(t.id)}
-              >
-                <span className="config-tab-icon">{t.icon}</span>
-                {t.label}
-              </button>
-            ))}
-          </div>
+        <span className="config-title">Config</span>
+        <div className="config-tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={`config-tab${tab === t.id ? " config-tab-active" : ""}`}
+              onClick={() => setTab(t.id)}
+            >
+              <span className="config-tab-icon">{t.icon}</span>
+              {t.label}
+            </button>
+          ))}
         </div>
         <div className="config-header-right">
           {/* Project dir selector — only when multiple dirs exist */}
@@ -92,7 +91,7 @@ export function ConfigManager() {
             </select>
           )}
           <button className="config-close" onClick={onClose} title="Close (Esc)">
-            ×
+            <IconClose size={14} />
           </button>
         </div>
       </div>
@@ -106,13 +105,13 @@ export function ConfigManager() {
           <ThreePaneEditor component={MarkdownPane} projectDir={projectDir} onStatus={setStatusMsg} />
         )}
         {tab === "hooks" && (
-          <ThreePaneEditor component={HooksPane} projectDir={projectDir} onStatus={setStatusMsg} />
+          <ThreePaneEditor component={HooksPane} projectDir={projectDir} onStatus={setStatusMsg} compact />
         )}
         {tab === "plugins" && (
-          <ThreePaneEditor component={PluginsPane} projectDir={projectDir} onStatus={setStatusMsg} />
+          <ThreePaneEditor component={PluginsPane} projectDir={projectDir} onStatus={setStatusMsg} compact />
         )}
         {tab === "agents" && (
-          <AgentEditor projectDir={projectDir} onStatus={setStatusMsg} />
+          <ThreePaneEditor component={AgentEditor} projectDir={projectDir} onStatus={setStatusMsg} />
         )}
       </div>
 

@@ -9,6 +9,7 @@
     "CB-06",
     "CB-07",
     "CB-08",
+    "CB-09",
     "CM-01",
     "CM-02",
     "CM-03",
@@ -26,6 +27,8 @@
     "CM-15",
     "CM-16",
     "CM-17",
+    "CM-18",
+    "CM-19",
     "DP-01",
     "DP-02",
     "DP-03",
@@ -45,6 +48,7 @@
     "DS-05",
     "DS-06",
     "DS-07",
+    "DS-08",
     "HM-01",
     "HM-02",
     "HM-03",
@@ -54,6 +58,7 @@
     "HM-07",
     "HM-08",
     "HM-09",
+    "HM-10",
     "KB-01",
     "KB-02",
     "KB-03",
@@ -107,6 +112,7 @@
     "TB-19",
     "TB-20",
     "TB-21",
+    "TB-22",
     "TP-01",
     "TP-02",
     "TP-03",
@@ -128,119 +134,29 @@
     "TR-07",
     "TR-08",
     "TR-09",
+    "TR-10",
     "WN-01",
-    "WN-02"
+    "WN-02",
+    "WN-03"
   ],
   "unchecked": [
-    "CB-05",
-    "CB-06",
-    "CB-07",
-    "CM-01",
-    "CM-02",
-    "CM-03",
-    "CM-04",
-    "CM-05",
-    "CM-06",
-    "CM-07",
-    "CM-12",
-    "CM-13",
-    "CM-14",
-    "CM-15",
-    "CM-16",
-    "CM-17",
-    "DP-01",
-    "DP-03",
-    "DP-04",
-    "DP-05",
-    "DP-06",
-    "DP-07",
-    "DP-09",
-    "DP-10",
-    "DP-11",
-    "DP-12",
-    "DS-01",
-    "DS-02",
-    "DS-03",
-    "DS-05",
-    "DS-06",
-    "DS-07",
-    "HM-03",
-    "HM-04",
-    "HM-05",
-    "HM-06",
-    "HM-07",
-    "HM-08",
-    "HM-09",
-    "KB-01",
-    "KB-02",
-    "KB-04",
-    "KB-05",
-    "KB-09",
-    "MO-01",
-    "SL-04",
-    "SL-07",
-    "SL-08",
-    "SL-09",
-    "SL-12",
-    "SL-13",
-    "SL-15",
-    "SL-16",
-    "SR-01",
-    "SR-02",
-    "SR-05",
-    "TB-02",
-    "TB-03",
-    "TB-04",
-    "TB-05",
-    "TB-06",
-    "TB-07",
-    "TB-08",
-    "TB-09",
-    "TB-10",
-    "TB-11",
-    "TB-12",
-    "TB-13",
-    "TB-14",
-    "TB-15",
-    "TB-16",
-    "TB-18",
-    "TB-19",
-    "TB-20",
-    "TB-21",
-    "TP-01",
-    "TP-02",
-    "TP-03",
-    "TP-05",
-    "TP-06",
-    "TP-07",
-    "TP-08",
-    "TP-09",
-    "TP-10",
-    "TP-11",
-    "TR-01",
-    "TR-04",
-    "TR-05",
-    "TR-06",
-    "TR-07",
-    "TR-08",
-    "TR-09",
-    "WN-01"
+    "CM-19"
   ],
   "citations": {
     "CB-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CB-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CB-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CB-04": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CB-05": {
@@ -252,11 +168,11 @@
       "down": 0
     },
     "CB-07": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CB-08": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-01": {
@@ -264,39 +180,39 @@
       "down": 0
     },
     "CM-02": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "CM-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-04": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-06": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "CM-07": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "CM-08": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-09": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "CM-10": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-01": {
@@ -304,23 +220,23 @@
       "down": 0
     },
     "DP-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-04": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-06": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-07": {
@@ -328,15 +244,15 @@
       "down": 0
     },
     "DP-08": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-09": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-10": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-11": {
@@ -360,27 +276,27 @@
       "down": 0
     },
     "DS-04": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "DS-05": {
       "up": 0,
-      "down": 0
+      "down": 1
     },
     "DS-06": {
       "up": 0,
       "down": 0
     },
     "DS-07": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "HM-01": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "HM-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "HM-03": {
@@ -392,19 +308,19 @@
       "down": 0
     },
     "HM-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "HM-06": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "HM-07": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "HM-08": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "HM-09": {
@@ -420,7 +336,7 @@
       "down": 0
     },
     "KB-03": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "KB-04": {
@@ -432,31 +348,31 @@
       "down": 0
     },
     "KB-06": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "KB-07": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "KB-08": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "KB-09": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-04": {
@@ -464,15 +380,15 @@
       "down": 0
     },
     "SL-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-06": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-07": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-08": {
@@ -484,11 +400,11 @@
       "down": 0
     },
     "SL-10": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-11": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-12": {
@@ -496,23 +412,23 @@
       "down": 0
     },
     "SL-13": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SL-14": {
       "up": 0,
-      "down": 0
+      "down": 1
     },
     "SL-15": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "SL-16": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SR-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SR-02": {
@@ -520,19 +436,19 @@
       "down": 0
     },
     "SR-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SR-04": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "SR-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-02": {
@@ -540,15 +456,15 @@
       "down": 0
     },
     "TB-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-04": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-06": {
@@ -560,11 +476,11 @@
       "down": 0
     },
     "TB-08": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-09": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "TB-10": {
@@ -572,19 +488,19 @@
       "down": 0
     },
     "TB-11": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-12": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-13": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-14": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-15": {
@@ -596,11 +512,11 @@
       "down": 0
     },
     "TB-17": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-18": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-19": {
@@ -608,7 +524,7 @@
       "down": 0
     },
     "TB-20": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TB-21": {
@@ -616,11 +532,11 @@
       "down": 0
     },
     "TP-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TP-02": {
-      "up": 0,
+      "up": 4,
       "down": 0
     },
     "TP-03": {
@@ -628,11 +544,11 @@
       "down": 0
     },
     "TP-04": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TP-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TP-06": {
@@ -660,31 +576,31 @@
       "down": 0
     },
     "TP-12": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-03": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-04": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "TR-05": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-06": {
-      "up": 0,
+      "up": 3,
       "down": 0
     },
     "WN-01": {
@@ -692,104 +608,136 @@
       "down": 0
     },
     "WN-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-07": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-08": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "TR-09": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "KB-10": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "MO-01": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "CM-11": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-12": {
-      "up": 0,
+      "up": 3,
       "down": 0
     },
     "CM-13": {
-      "up": 0,
+      "up": 3,
       "down": 0
     },
     "CM-14": {
-      "up": 0,
+      "up": 2,
       "down": 0
     },
     "CM-15": {
-      "up": 0,
+      "up": 3,
       "down": 0
     },
     "CM-16": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "CM-17": {
-      "up": 0,
+      "up": 4,
+      "down": 0
+    },
+    "TB-22": {
+      "up": 1,
+      "down": 0
+    },
+    "CM-18": {
+      "up": 1,
+      "down": 0
+    },
+    "HM-10": {
+      "up": 1,
+      "down": 0
+    },
+    "DS-08": {
+      "up": 1,
+      "down": 0
+    },
+    "TR-10": {
+      "up": 1,
+      "down": 0
+    },
+    "WN-03": {
+      "up": 2,
+      "down": 0
+    },
+    "CB-09": {
+      "up": 1,
+      "down": 0
+    },
+    "CM-19": {
+      "up": 1,
       "down": 0
     }
   },
-  "cycle": 1,
-  "last_run": "2026-03-21T09:15:13.297579+00:00",
+  "cycle": 2,
+  "last_run": "2026-03-21T11:13:28.786401+00:00",
   "metadata": {
     "TB-22": {
       "files": [
-        "src/App.tsx:1"
+        "src/App.tsx:28",
+        "src/components/Icons/Icons.tsx:1"
       ],
       "verified": "2026-03-21",
       "notes": "Added during change documentation"
     },
     "TR-07": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:593",
-        "src/components/Terminal/TerminalPanel.css:91"
+        "src/components/Terminal/TerminalPanel.tsx:609"
       ],
       "verified": "2026-03-21",
-      "notes": "Button bar JSX starts at 593, CSS .terminal-button-bar at 91"
+      "notes": "Edited via tag-edit.sh"
     },
     "TR-08": {
       "files": [
-        "src/hooks/useTerminal.ts:265",
-        "src/components/Terminal/TerminalPanel.tsx:555"
+        "src/hooks/useTerminal.ts:274",
+        "src/components/Terminal/TerminalPanel.tsx:567"
       ],
       "verified": "2026-03-21",
-      "notes": "scrollToLastUserMessage callback moved to line 265"
+      "notes": "Edited via tag-edit.sh"
     },
     "TR-09": {
       "files": [
         "src/hooks/useTerminal.ts:82"
       ],
       "verified": "2026-03-21",
-      "notes": "attachCustomWheelEventHandler at line 82"
+      "notes": "Edited via tag-edit.sh"
     },
     "TR-10": {
       "files": [
-        "src/hooks/useTerminal.ts:78"
+        "src/components/Terminal/TerminalPanel.tsx:435"
       ],
       "verified": "2026-03-21",
       "notes": "Added during change documentation"
     },
     "KB-10": {
       "files": [
-        "src/hooks/useTerminal.ts:75"
+        "src/hooks/useTerminal.ts:74"
       ],
       "verified": "2026-03-21",
-      "notes": "Alt+digit block at line 75"
+      "notes": "Edited via tag-edit.sh"
     },
     "MO-01": {
       "files": [
@@ -810,17 +758,18 @@
     "CM-12": {
       "files": [
         "src/components/ConfigManager/ThreePaneEditor.tsx:1",
-        "src/components/ConfigManager/ConfigManager.css:75"
+        "src/components/ConfigManager/ConfigManager.css:133"
       ],
       "verified": "2026-03-21",
-      "notes": "Added during change documentation"
+      "notes": "Edited via tag-edit.sh"
     },
     "CM-13": {
       "files": [
-        "src/components/ConfigManager/SettingsPane.tsx:1"
+        "src/components/ConfigManager/SettingsPane.tsx:8",
+        "src/components/ConfigManager/ConfigManager.css:866"
       ],
       "verified": "2026-03-21",
-      "notes": "Added during change documentation"
+      "notes": "Edited via tag-edit.sh"
     },
     "CM-14": {
       "files": [
@@ -838,18 +787,19 @@
     },
     "CM-16": {
       "files": [
-        "src/components/ConfigManager/PluginsPane.tsx:1"
+        "src/components/ConfigManager/PluginsPane.tsx:14",
+        "src/components/ConfigManager/ConfigManager.css:555"
       ],
       "verified": "2026-03-21",
-      "notes": "Added during change documentation"
+      "notes": "Edited via tag-edit.sh"
     },
     "CM-17": {
       "files": [
-        "src/components/StatusBar/StatusBar.tsx:143",
-        "src/store/settings.ts:49"
+        "src/components/StatusBar/StatusBar.tsx:140",
+        "src/store/settings.ts:48"
       ],
       "verified": "2026-03-21",
-      "notes": "Added during change documentation"
+      "notes": "hooks button onClick at StatusBar:140, showConfigManager type at settings:48"
     },
     "CB-03": {
       "files": [
@@ -938,46 +888,47 @@
     },
     "KB-09": {
       "files": [
-        "src/App.tsx:218"
+        "src/App.tsx:219-228"
       ],
       "verified": "2026-03-21",
-      "notes": "DRIFT: text says config->hooks->thinking->debug->resume but actual order is contextMenu->palette->debug->thinking->config->resume->launcher->inspector. hooks no longer separate modal."
+      "notes": "PASS: Escape chain matches documented order exactly: contextMenu->palette->debug->thinking->config->resume->launcher->inspector"
     },
     "CM-01": {
       "files": [
-        "src/components/ConfigManager/ConfigManager.tsx:30",
-        "src/App.tsx:207"
+        "src/components/ConfigManager/ConfigManager.css:16",
+        "src/components/ConfigManager/ConfigManager.tsx:66"
       ],
       "verified": "2026-03-21",
-      "notes": "DRIFT: says 720px modal but now 92vw/1400px/88vh. Superseded by CM-11."
+      "notes": "Edited via tag-edit.sh"
     },
     "CM-02": {
       "files": [
-        "src/components/ConfigManager/ConfigManager.tsx:18"
+        "src/components/ConfigManager/ConfigManager.tsx:17"
       ],
       "verified": "2026-03-21",
-      "notes": "DRIFT: says 3 tabs but now 5 tabs. Superseded by CM-11."
+      "notes": "Five tabs confirmed: settings/claudemd/hooks/plugins/agents with IconGear/IconDocument/IconHook/IconPuzzle/IconBot icons"
     },
     "CM-04": {
       "files": [
-        "src/components/ModalOverlay/ModalOverlay.tsx:14"
+        "src/components/ModalOverlay/ModalOverlay.tsx:14-19"
       ],
       "verified": "2026-03-21",
-      "notes": "DRIFT: references .config-overlay but now .modal-overlay via ModalOverlay component."
+      "notes": "PASS: onKeyDown returns for Escape and Ctrl+comma, stopPropagation for all other keys"
     },
     "CM-05": {
       "files": [
-        "src/components/ConfigManager/SettingsPane.tsx:1"
+        "src/components/ConfigManager/ConfigManager.tsx:103"
       ],
       "verified": "2026-03-21",
-      "notes": "DRIFT: describes form controls but now raw JSON textarea per CM-13."
+      "notes": "Edited via tag-edit.sh"
     },
     "CM-06": {
       "files": [
-        "src/components/ConfigManager/MarkdownPane.tsx:1"
+        "src/components/ConfigManager/SettingsPane.tsx:33-119",
+        "src/components/ConfigManager/MarkdownPane.tsx:11-83"
       ],
       "verified": "2026-03-21",
-      "notes": "DRIFT: describes stacked view but now three-pane grid per CM-12/CM-14."
+      "notes": "PASS: Both panes have per-scope dirty tracking and Save. MarkdownPane Tab inserts 2 spaces at :66-73"
     },
     "CB-01": {
       "files": [
@@ -1073,6 +1024,221 @@
       ],
       "verified": "2026-03-21",
       "notes": "verified: SVG backspace icon (pointed rectangle path + X lines), Lucide/Feather style"
+    },
+    "CM-07": {
+      "files": [
+        "src/components/ConfigManager/AgentEditor.tsx:6",
+        "src/components/ConfigManager/ConfigManager.tsx:113"
+      ],
+      "verified": "2026-03-21",
+      "notes": "AgentEditor component at :6, agents tab rendering at ConfigManager:113"
+    },
+    "TP-02": {
+      "files": [
+        "src/components/Terminal/TerminalPanel.tsx:674"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "CM-18": {
+      "files": [
+        "src/components/ConfigManager/ConfigManager.tsx:17"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "HM-10": {
+      "files": [
+        "src/components/StatusBar/StatusBar.tsx:8"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Added during change documentation"
+    },
+    "TB-09": {
+      "files": [
+        "src/App.tsx:247"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "CM-03": {
+      "files": [
+        "src/components/ConfigManager/ConfigManager.tsx:43-58",
+        "src/components/ConfigManager/ConfigManager.tsx:84"
+      ],
+      "verified": "2026-03-21",
+      "notes": "PASS: projectDirs deduped at :43, selector renders only when length>1 at :84, defaults to active session dir at :52-58"
+    },
+    "TB-08": {
+      "files": [
+        "src/App.tsx:296",
+        "src/lib/claude.ts:25"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "HM-05": {
+      "files": [
+        "src/components/ConfigManager/HooksPane.tsx:188",
+        "src/components/ConfigManager/HooksPane.tsx:234-252"
+      ],
+      "verified": "2026-03-21",
+      "notes": "PASS: Custom event option at :242, isCustomEvent check at :188, freeform input at :244-251"
+    },
+    "SL-13": {
+      "files": [
+        "src/components/SessionLauncher/SessionLauncher.tsx:247-257"
+      ],
+      "verified": "2026-03-21",
+      "notes": "PASS: handleCliPillClick toggles: removes flag if found in tokens, appends if not"
+    },
+    "SL-15": {
+      "files": [
+        "src/components/SessionLauncher/SessionLauncher.tsx:259",
+        "src/components/SessionLauncher/SessionLauncher.tsx:362"
+      ],
+      "verified": "2026-03-21",
+      "notes": "handleNonSessionFlagClick replaces entire command with 'claude <flag>' (line 267), toggling off restores session command (line 264). Session controls disabled+dimmed via launcher-selects-disabled class (line 362). Reset button (IconReset) escapes utility mode at line 530-535."
+    },
+    "TB-05": {
+      "files": [
+        "src/App.css:1"
+      ],
+      "verified": "2026-03-21",
+      "notes": "PASS: grep confirms no -webkit-app-region in any CSS/TSX files, only in FEATURES.md doc entry itself"
+    },
+    "TB-18": {
+      "files": [
+        "src/App.tsx:641-648"
+      ],
+      "verified": "2026-03-21",
+      "notes": "PASS: clipboard.writeText(inspectorUrl) without disconnect call, unlike Open Inspector at :629-636"
+    },
+    "KB-03": {
+      "files": [
+        "src/App.tsx:199"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "TB-20": {
+      "files": [
+        "src/App.css:153-157",
+        "src/components/StatusBar/StatusBar.tsx:40-47",
+        "src/components/StatusBar/StatusBar.css:116-118"
+      ],
+      "verified": "2026-03-21",
+      "notes": "PASS: tab dot hollow via transparent bg+inset border+no animation; status bar shows IconCircleOutline+Inspector off with reconnect tooltip"
+    },
+    "DP-05": {
+      "files": [
+        "src/components/DebugPanel/DebugPanel.tsx:28",
+        "src/lib/testHarness.ts:257"
+      ],
+      "verified": "2026-03-21",
+      "notes": "DebugPanel polls globalThis.__consoleLogs every 500ms (line 28 interval). testHarness.ts sets __consoleLogs on globalThis (line 257)"
+    },
+    "DP-10": {
+      "files": [
+        "src/components/DebugPanel/DebugPanel.css:91"
+      ],
+      "verified": "2026-03-21",
+      "notes": "font-family is monospace (var(--font-mono)), font-size is 10px in .debug-panel-body at line 91-93"
+    },
+    "DS-07": {
+      "files": [
+        "src/components/Terminal/TerminalPanel.tsx:240",
+        "src/components/Terminal/TerminalPanel.tsx:704"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Own orphans killed auto + retry (line 240-264). External holders show 'Session in use externally' overlay with 'Kill and resume'/'Cancel' buttons (lines 704-735). Never killed without user confirmation."
+    },
+    "HM-06": {
+      "files": [
+        "src/components/ConfigManager/HooksPane.tsx:94",
+        "src/components/ConfigManager/HooksPane.tsx:188"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Hooks with unknown event names are displayed via flatHooks iteration (line 94-101) which iterates all eventNames from data, not just HOOK_EVENTS. The isCustomEvent check at line 188 allows editing unknown events via Custom event input."
+    },
+    "SL-07": {
+      "files": [
+        "src/store/settings.ts:200",
+        "src/components/Terminal/TerminalPanel.tsx:191"
+      ],
+      "verified": "2026-03-21",
+      "notes": "cacheSessionConfig stores partial config in sessionConfigs map (localStorage persisted). Called when inspector connects at TerminalPanel:191-193. Used as fallback in ResumePicker."
+    },
+    "SL-16": {
+      "files": [
+        "src/components/SessionLauncher/SessionLauncher.tsx:500"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Subcommand onClick replaces command line with 'claude <cmd>' if not already set, clicking again restores via buildFullCommand(config) (line 500-502). Toggle behavior confirmed."
+    },
+    "TP-05": {
+      "files": [
+        "src/lib/inspectorHooks.ts:205",
+        "src/store/sessions.ts:288"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Inspector truncates thinking text at 10000 chars (line 205). Inspector ring buffer capped at 30 (line 207). Store appendThinkingBlocks caps at 50 per session (line 288)."
+    },
+    "TR-05": {
+      "files": [
+        "src/App.tsx:524",
+        "src/components/Terminal/TerminalPanel.tsx:591"
+      ],
+      "verified": "2026-03-21",
+      "notes": "App.tsx always renders all TerminalPanels (line 524-530). TerminalPanel uses style={{ display: visible ? 'flex' : 'none' }} (line 591). Never unmounts/remounts."
+    },
+    "DS-08": {
+      "files": [
+        "src/store/sessions.ts:83"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "SR-05": {
+      "files": [
+        "src/lib/inspectorHooks.ts:19",
+        "src/hooks/useInspectorState.ts:199",
+        "src/types/session.ts:89"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Description said session ID stack but code uses agentId routing with parentSessionId field"
+    },
+    "WN-03": {
+      "files": [
+        "src/hooks/useNotifications.ts:1"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Added during change documentation"
+    },
+    "DS-05": {
+      "files": [
+        "src/components/Terminal/TerminalPanel.tsx:65",
+        "src/App.tsx:199"
+      ],
+      "verified": "2026-03-21",
+      "notes": "DRIFT: Dead overlay dispatches Ctrl+r (no shift, lowercase) but App.tsx handler requires Ctrl+Shift+R. Synthetic event wont match. Overlay hint also says Ctrl+R (line 89). Code bug or doc needs to say Ctrl+Shift+R."
+    },
+    "CB-09": {
+      "files": [
+        "src/components/CommandBar/CommandBar.tsx:95",
+        "src/store/sessions.ts:306"
+      ],
+      "verified": "2026-03-21",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "CM-19": {
+      "files": [
+        "src/components/ConfigManager/ThreePaneEditor.tsx:9",
+        "src/components/ConfigManager/ConfigManager.tsx:108",
+        "src/components/ConfigManager/ConfigManager.css:136"
+      ],
+      "verified": "2026-03-21",
+      "notes": "compact prop at ThreePaneEditor:13, hooks compact at ConfigManager:108, plugins compact at :111, CSS class at ConfigManager.css:136"
     }
   }
 }

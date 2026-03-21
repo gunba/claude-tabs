@@ -23,9 +23,9 @@ export function effectiveModel(session: Session): string | null {
 
 /** Known model families: keyword → display label + CSS color. */
 const MODEL_FAMILIES: Array<{ keyword: string; label: string; color: string }> = [
-  { keyword: "opus", label: "Opus", color: "var(--accent-tertiary)" },
-  { keyword: "sonnet", label: "Sonnet", color: "var(--accent-secondary)" },
-  { keyword: "haiku", label: "Haiku", color: "var(--success)" },
+  { keyword: "opus", label: "Opus", color: "#ff8000" },     // Legendary
+  { keyword: "sonnet", label: "Sonnet", color: "#a335ee" },  // Epic
+  { keyword: "haiku", label: "Haiku", color: "#4e9bff" },    // Rare
 ];
 
 function resolveModelFamily(model: string | null): (typeof MODEL_FAMILIES)[number] | null {

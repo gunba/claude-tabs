@@ -98,6 +98,8 @@ pub fn run() {
             commands::kill_process_tree,
             commands::kill_session_holder,
             commands::force_kill_session_holder,
+            commands::kill_orphan_sessions,
+            commands::send_notification,
             jsonl_watcher::find_active_jsonl_session,
             jsonl_watcher::find_continuation_session,
             jsonl_watcher::session_has_conversation,

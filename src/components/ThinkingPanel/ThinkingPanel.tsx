@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../../store/sessions";
 import type { ThinkingBlock } from "../../types/session";
+import { IconClose } from "../Icons/Icons";
 import "./ThinkingPanel.css";
 
 interface ThinkingPanelProps {
@@ -55,7 +56,7 @@ export function ThinkingPanel({ sessionId, onClose }: ThinkingPanelProps) {
         <span className="thinking-panel-title">Thinking</span>
         <span className="thinking-panel-count">{blocks.length}</span>
         <button className="thinking-panel-close" onClick={onClose} title="Close (Esc)">
-          ×
+          <IconClose size={14} />
         </button>
       </div>
       <div className="thinking-panel-body" ref={scrollRef}>

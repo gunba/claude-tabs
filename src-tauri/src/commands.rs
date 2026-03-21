@@ -1356,6 +1356,91 @@ fn is_descendant_of(pid: u32, ancestor: u32, tree: &[(u32, u32)]) -> bool {
     false
 }
 
+// ── Kill orphan sessions (startup cleanup) ─────────────────────────
+
+/// Kill all processes holding any of the given session IDs.
+/// Unlike `kill_session_holder`, this skips ancestry checks — on startup,
+/// any process matching our persisted session IDs is an orphan from a
+/// previous app instance.
+#[tauri::command]
+pub async fn kill_orphan_sessions(session_ids: Vec<String>) -> Result<u32, String> {
+    tokio::task::spawn_blocking(move || kill_orphan_sessions_sync(&session_ids))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(target_os = "windows")]
+fn kill_orphan_sessions_sync(session_ids: &[String]) -> Result<u32, String> {
+    use std::os::windows::process::CommandExt;
+
+    if session_ids.is_empty() {
+        return Ok(0);
+    }
+
+    // Build a single WQL WHERE clause: CommandLine like '%id1%' or CommandLine like '%id2%'
+    let where_clause = session_ids
+        .iter()
+        .map(|id| format!("CommandLine like '%{}%'", id))
+        .collect::<Vec<_>>()
+        .join(" or ");
+
+    let output = std::process::Command::new("wmic")
+        .args(["process", "where", &where_clause, "get", "ProcessId", "/value"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .output()
+        .map_err(|e| format!("Failed to enumerate processes: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let my_pid = std::process::id();
+    let mut killed = 0u32;
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if let Some(pid_str) = line.strip_prefix("ProcessId=") {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                if pid != my_pid && pid != 0 {
+                    if kill_process_tree_sync(pid).is_ok() {
+                        killed += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(killed)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_orphan_sessions_sync(session_ids: &[String]) -> Result<u32, String> {
+    if session_ids.is_empty() {
+        return Ok(0);
+    }
+
+    // Build a single regex alternation: id1|id2|id3
+    let pattern = session_ids.join("|");
+
+    let output = std::process::Command::new("pgrep")
+        .args(["-f", &pattern])
+        .output()
+        .map_err(|e| format!("Failed to enumerate processes: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let my_pid = std::process::id();
+    let mut killed = 0u32;
+
+    for line in stdout.lines() {
+        if let Ok(pid) = line.trim().parse::<u32>() {
+            if pid != my_pid && pid != 0 {
+                if kill_process_tree_sync(pid).is_ok() {
+                    killed += 1;
+                }
+            }
+        }
+    }
+
+    Ok(killed)
+}
+
 // ── Config Manager commands ────────────────────────────────────────
 
 /// Validate an agent name — only alphanumeric, hyphens, underscores.
@@ -1386,7 +1471,12 @@ fn resolve_config_path(scope: &str, working_dir: &str, file_type: &str) -> Resul
         _ if file_type.starts_with("agent:") || file_type.starts_with("agent-delete:") => {
             let name = file_type.split_once(':').map(|(_, n)| n).unwrap_or("");
             validate_agent_name(name)?;
-            Ok(std::path::Path::new(working_dir).join(".claude").join("agents").join(format!("{}.md", name)))
+            match scope {
+                "user" => Ok(home.join(".claude").join("agents").join(format!("{}.md", name))),
+                "project" => Ok(std::path::Path::new(working_dir).join(".claude").join("agents").join(format!("{}.md", name))),
+                "project-local" => Ok(std::path::Path::new(working_dir).join(".claude").join("local").join("agents").join(format!("{}.md", name))),
+                _ => Err("Invalid scope".into()),
+            }
         },
         _ => Err(format!("Unknown file_type: {}", file_type)),
     }
@@ -1433,10 +1523,16 @@ pub fn write_config_file(scope: String, working_dir: String, file_type: String, 
     std::fs::write(&path, &content).map_err(|e| format!("Failed to write {}: {}", path.display(), e))
 }
 
-/// List agent definition files in a project's .claude/agents/ directory.
+/// List agent definition files based on scope.
 #[tauri::command]
-pub fn list_agents(working_dir: String) -> Result<Vec<serde_json::Value>, String> {
-    let agents_dir = std::path::Path::new(&working_dir).join(".claude").join("agents");
+pub fn list_agents(scope: String, working_dir: String) -> Result<Vec<serde_json::Value>, String> {
+    let home = dirs::home_dir().ok_or("No home dir")?;
+    let agents_dir = match scope.as_str() {
+        "user" => home.join(".claude").join("agents"),
+        "project" => std::path::Path::new(&working_dir).join(".claude").join("agents"),
+        "project-local" => std::path::Path::new(&working_dir).join(".claude").join("local").join("agents"),
+        _ => return Err("Invalid scope".into()),
+    };
     if !agents_dir.exists() {
         return Ok(Vec::new());
     }
@@ -1463,4 +1559,39 @@ pub fn list_agents(working_dir: String) -> Result<Vec<serde_json::Value>, String
         a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
     });
     Ok(agents)
+}
+
+#[tauri::command]
+pub async fn send_notification(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    session_id: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        use tauri::Emitter;
+        use tauri_winrt_notification::Toast;
+
+        // Debug builds use PowerShell app ID (matches notification plugin behavior);
+        // release builds use the bundle identifier
+        let app_id = if cfg!(debug_assertions) {
+            Toast::POWERSHELL_APP_ID.to_string()
+        } else {
+            app.config().identifier.clone()
+        };
+
+        let app_for_cb = app.clone();
+
+        Toast::new(&app_id)
+            .title(&title)
+            .text1(&body)
+            .on_activated(move |_action| {
+                let _ = app_for_cb.emit("notification-clicked", session_id.clone());
+                Ok(())
+            })
+            .show()
+            .map_err(|e| format!("Toast failed: {e}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

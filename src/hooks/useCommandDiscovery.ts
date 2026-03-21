@@ -87,10 +87,8 @@ export function useCommandDiscovery(): void {
       const merged = mergeCommands(toSlash(builtins), toSlash(helpCmds), toSlash(plugins));
       useSettingsStore.getState().setSlashCommands(merged);
 
-      // Bootstrap command usage from JSONL history (once per install)
-      if (!useSettingsStore.getState().commandUsageBootstrapped) {
-        useSettingsStore.getState().bootstrapCommandUsage();
-      }
+      // Scan command usage from JSONL history (refreshed each launch)
+      useSettingsStore.getState().bootstrapCommandUsage();
     }
   }, [ready]);
 }

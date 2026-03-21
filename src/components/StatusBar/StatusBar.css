@@ -32,7 +32,7 @@
 }
 
 .status-model {
-  color: var(--accent-tertiary);
+  /* color set inline via modelColor() */
 }
 
 .status-perm {
@@ -107,25 +107,6 @@
 
 .status-hooks-btn:hover {
   color: var(--accent);
-}
-
-.status-thinking-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: inherit;
-  color: var(--text-muted);
-  padding: 0;
-  transition: color 0.15s;
-}
-
-.status-thinking-btn:hover {
-  color: var(--text-primary);
-}
-
-.status-thinking-btn.active {
-  color: var(--accent-tertiary);
 }
 
 .status-total-tokens {

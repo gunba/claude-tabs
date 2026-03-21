@@ -30,9 +30,9 @@ Global slash commands in `~/.claude/commands/`. Type these in any conversation:
 
 | Command | What it does |
 |---------|-------------|
-| `/r` | Review: document change → review + simplify + test (3 parallel agents). Repeatable. |
-| `/j` | Maintain: prove doc entries (2 parallel provers) → sync CLAUDE.md → folder audit → hooks |
-| `/b` | Build: compile → changelog from commits → release or personal test |
+| `/r` | Review: document change → review + simplify + test (3 agents). Repeatable. |
+| `/j` | Maintain: prove entries (2 parallel provers) → sync CLAUDE.md → folder audit → hooks |
+| `/b` | Build: [commit?] → build → [release+push?] — prompts at each step |
 
 ## Layout
 
@@ -45,6 +45,7 @@ Global slash commands in `~/.claude/commands/`. Type these in any conversation:
 │  Terminal (xterm.js 6.0)                              │ bar │
 │  (CSS display toggle, not unmount)                    │ 28px│
 ├──────────────────────────────────────────────────────────────┤
+│ Command History  [/r] [/j] [/r] ...  (per-session, newest←)  │
 │ Command Bar (slash commands)                                  │
 ├──────────────────────────────────────────────────────────────┤
 │ StatusBar (model, cost, tokens, duration)                     │
@@ -58,7 +59,7 @@ See **DOCS/ARCHITECTURE.md** for data flow, state inspection, PTY internals, per
 ```
 src/
 ├── App.tsx                              # Root: tab bar, subagent bar, terminals
-├── store/sessions.ts                    # Zustand: sessions, active tab, subagents
+├── store/sessions.ts                    # Zustand: sessions, active tab, subagents, command history
 ├── store/settings.ts                    # Zustand: preferences, CLI info (persisted to localStorage)
 ├── hooks/
 │   ├── useTerminal.ts                   # xterm.js lifecycle, write batching, fixed 100K scrollback
@@ -66,7 +67,7 @@ src/
 │   ├── useInspectorState.ts             # BUN_INSPECT WebSocket: state detection, metadata, subagent tracking
 │   ├── useCommandDiscovery.ts           # Slash command discovery (binary scan + --help fallback + plugins)
 │   ├── useCliWatcher.ts                 # CLI version + capabilities
-│   ├── useNotifications.ts              # Desktop notifications
+│   ├── useNotifications.ts              # Desktop notifications (WinRT toast, click-to-switch)
 │   └── useCtrlKey.ts                    # Ctrl-key held state for alternate-action highlights
 ├── components/
 │   ├── Terminal/TerminalPanel.tsx        # PTY + terminal + inspector + background buffering
@@ -78,11 +79,12 @@ src/
 │   ├── SubagentInspector/SubagentInspector.tsx  # Markdown-rendered subagent conversation viewer
 │   ├── ConfigManager/ConfigManager.tsx  # 5-tab config workspace (Ctrl+,): Settings, CLAUDE.md, Hooks, Plugins, Agents
 │   ├── ConfigManager/ThreePaneEditor.tsx # 3-column User/Project/Local scope layout (color-coded)
-│   ├── ConfigManager/SettingsPane.tsx   # Per-scope raw JSON settings editor
+│   ├── ConfigManager/SettingsPane.tsx   # Per-scope JSON editor with syntax highlighting overlay
 │   ├── ConfigManager/MarkdownPane.tsx   # Per-scope CLAUDE.md editor
 │   ├── ConfigManager/HooksPane.tsx      # Per-scope hooks CRUD (absorbed from HooksManager)
-│   ├── ConfigManager/PluginsPane.tsx    # Per-scope enabledPlugins + mcpServers
-│   ├── ConfigManager/AgentEditor.tsx    # Agent file list + markdown editor
+│   ├── ConfigManager/PluginsPane.tsx    # Per-scope enabledPlugins (Record<string,boolean>) + mcpServers
+│   ├── ConfigManager/AgentEditor.tsx    # Per-scope agent file list + markdown editor
+│   ├── Icons/Icons.tsx                  # SVG icon components (shared Icon base, currentColor)
 │   ├── ThinkingPanel/ThinkingPanel.tsx  # Thinking block viewer (Ctrl+I)
 │   ├── ModalOverlay/ModalOverlay.tsx    # Shared modal wrapper
 │   └── DebugPanel/DebugPanel.tsx        # Debug log viewer (Ctrl+Shift+D)
@@ -106,7 +108,7 @@ src/
 
 ### Theme System
 
-All colors are CSS custom properties on `:root` — components never use hardcoded hex. Applied at startup via `applyTheme()`. xterm.js colors from `getXtermTheme()` reading CSS variables.
+All colors are CSS custom properties on `:root` — components use CSS variables, not hardcoded hex (exception: model rarity colors in `claude.ts` are fixed hex for cross-theme consistency). Applied at startup via `applyTheme()`. xterm.js colors from `getXtermTheme()` reading CSS variables.
 
 Key variables: `--bg-primary`, `--bg-surface`, `--accent` (clay), `--accent-secondary` (blue), `--accent-tertiary` (purple), `--term-bg`, `--term-fg`.
 
@@ -117,7 +119,7 @@ Key variables: `--bg-primary`, `--bg-surface`, `--accent` (clay), `--accent-seco
 - TypeScript types in `src/types/` mirror Rust types with camelCase
 - Zustand stores in `src/store/`, hooks in `src/hooks/`
 - Components in `src/components/<Name>/<Name>.tsx` with co-located CSS
-- Add tests for any new pure-logic functions in `src/lib/`
+- Add tests for any new pure-logic functions in `src/lib/` and store actions in `src/store/`
 
 ### Subprocess Spawns (Rust)
 All Rust commands that spawn subprocesses MUST:
@@ -135,7 +137,7 @@ All Rust commands that spawn subprocesses MUST:
 |----------|--------|
 | `Ctrl+T` | New session |
 | `Ctrl+W` | Close active tab |
-| `Ctrl+R` | Resume from history |
+| `Ctrl+Shift+R` | Resume from history |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle tabs |
 | `Alt+1-9` | Jump to tab N |
 | `Ctrl+K` | Command palette |
@@ -143,5 +145,5 @@ All Rust commands that spawn subprocesses MUST:
 | `Ctrl+I` | Toggle thinking panel |
 | `Ctrl+,` | Config manager |
 | `Ctrl+Shift+D` | Toggle debug log panel |
-| `F2` | Rename active tab |
+| `Ctrl+E` | Rename active tab |
 | `Esc` | Close modal / dismiss inspector |

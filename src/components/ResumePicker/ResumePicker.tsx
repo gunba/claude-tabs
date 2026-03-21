@@ -10,6 +10,7 @@ import {
   type SessionConfig,
   DEFAULT_SESSION_CONFIG,
 } from "../../types/session";
+import { IconFolder } from "../Icons/Icons";
 import "./ResumePicker.css";
 
 function formatSize(bytes: number): string {
@@ -304,7 +305,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
             title="Browse"
             type="button"
           >
-            📂
+            <IconFolder size={14} />
           </button>
         </div>
 
