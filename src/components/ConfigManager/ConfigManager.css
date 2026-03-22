@@ -210,6 +210,10 @@
   tab-size: 2;
 }
 
+.pane-textarea::-webkit-scrollbar { width: 5px; }
+.pane-textarea::-webkit-scrollbar-track { background: transparent; }
+.pane-textarea::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
+
 .pane-textarea:focus {
   background: color-mix(in srgb, var(--scope-color) 3%, var(--bg-primary));
 }
@@ -517,6 +521,10 @@
   overflow-y: auto;
 }
 
+.plugins-pane::-webkit-scrollbar { width: 4px; }
+.plugins-pane::-webkit-scrollbar-track { background: transparent; }
+.plugins-pane::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 2px; }
+
 .plugins-section {
   display: flex;
   flex-direction: column;
@@ -797,6 +805,10 @@
   tab-size: 2;
 }
 
+.config-md-editor::-webkit-scrollbar { width: 5px; }
+.config-md-editor::-webkit-scrollbar-track { background: transparent; }
+.config-md-editor::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
+
 .config-md-editor:focus {
   border-color: var(--accent);
 }
@@ -965,6 +977,10 @@
   margin: 6px 0;
   overflow-x: auto;
 }
+
+.md-preview pre::-webkit-scrollbar { height: 4px; }
+.md-preview pre::-webkit-scrollbar-track { background: transparent; }
+.md-preview pre::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 2px; }
 
 .md-preview pre code {
   background: none;

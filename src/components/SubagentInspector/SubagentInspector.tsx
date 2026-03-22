@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Subagent, SubagentMessage } from "../../types/session";
+import { formatTokenCount } from "../../lib/claude";
 import "./SubagentInspector.css";
 
 interface SubagentInspectorProps {
@@ -59,6 +60,13 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
 
   return (
     <div className="inspector-overlay">
+      <div className="inspector-header">
+        <span className="inspector-header-desc">{subagent.description}</span>
+        <span className="inspector-header-meta">
+          {subagent.state} · {formatTokenCount(subagent.tokenCount)}
+        </span>
+        <button className="inspector-header-close" onClick={onClose}>×</button>
+      </div>
       <div className="inspector-messages" ref={scrollRef}>
         {subagent.messages.length === 0 ? (
           <div className="inspector-empty">

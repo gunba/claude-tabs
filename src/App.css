@@ -77,7 +77,17 @@
 
 @keyframes permission-pulse {
   0%, 100% { box-shadow: inset 0 -2px 0 var(--accent); }
-  50% { box-shadow: inset 0 -2px 0 var(--permission), 0 2px 6px color-mix(in srgb, var(--permission) 20%, transparent); }
+  50% { box-shadow: inset 0 -2px 0 var(--accent-tertiary), 0 2px 6px color-mix(in srgb, var(--accent-tertiary) 20%, transparent); }
+}
+
+/* Purple attention pulse for inactive tabs needing user input */
+.tab-attention:not(.tab-active) {
+  animation: tab-attention-pulse 2s ease-in-out infinite;
+}
+
+@keyframes tab-attention-pulse {
+  0%, 100% { background: transparent; }
+  50% { background: color-mix(in srgb, var(--accent-tertiary) 15%, var(--bg-surface)); }
 }
 
 /* Brief flash when a non-active tab transitions to idle (finished working) */
@@ -119,7 +129,7 @@
 
 .ctrl-held .tab-active.tab-permission {
   animation: none;
-  box-shadow: inset 0 -2px 0 var(--permission), inset 0 2px 0 var(--accent-secondary);
+  box-shadow: inset 0 -2px 0 var(--accent-tertiary), inset 0 2px 0 var(--accent-secondary);
 }
 
 /* Action needed: pulsing purple bar */
@@ -158,7 +168,7 @@
 .tab-dot.state-thinking { background: var(--accent); animation: dot-pulse 2s ease infinite; }
 .tab-dot.state-toolUse { background: var(--info); animation: dot-pulse 2s ease infinite; }
 .tab-dot.state-actionNeeded { background: var(--accent-tertiary); animation: dot-pulse 2s ease infinite; }
-.tab-dot.state-waitingPermission { background: var(--permission); animation: dot-pulse 2s ease infinite; }
+.tab-dot.state-waitingPermission { background: var(--accent-tertiary); animation: dot-pulse 2s ease infinite; }
 .tab-dot.state-error { background: var(--error); }
 .tab-dot.state-dead { background: var(--text-muted); }
 .tab-dot.state-starting { background: var(--text-muted); animation: dot-pulse 2s ease infinite; }
@@ -398,21 +408,21 @@
 .tab-group-separator {
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 4px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border-subtle);
 }
 
-.tab-group-label {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
+.tab-group-pip {
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  opacity: 0.3;
+  transition: opacity 0.15s;
+}
+
+.tab-group-separator:hover .tab-group-pip {
+  opacity: 0.6;
 }
 
 /* ── Tab reorder arrows ─────────────────────────────────────── */
@@ -483,6 +493,16 @@
 .tab-context-menu-item:hover {
   background: var(--bg-surface-hover);
   color: var(--text-primary);
+}
+
+.tab-context-menu-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border-subtle);
+}
+
+.tab-context-menu-item-danger:hover {
+  color: var(--error, #e55);
 }
 
 /* ── Subagent bar ────────────────────────────────────────────── */

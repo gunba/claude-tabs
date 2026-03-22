@@ -144,8 +144,10 @@ export function useInspectorState(
 
     // ── Subagent tracking (routed by agentId in the hook) ──
     if (data.subs.length > 0) {
-      const { addSubagent, updateSubagent, subagents } = useSessionStore.getState();
+      const { addSubagent, updateSubagent, clearIdleSubagents, subagents } = useSessionStore.getState();
       const existing = subagents.get(sid) || [];
+      const hasNewSubs = data.subs.some(sub => !knownSubsRef.current.has(sub.sid));
+      if (hasNewSubs) clearIdleSubagents(sid);
 
       for (const sub of data.subs) {
         const subState = SUB_STATE_MAP[sub.st] || "starting";

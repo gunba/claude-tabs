@@ -119,9 +119,7 @@
     "TB-23",
     "TB-24",
     "TB-25",
-    "TP-01",
     "TP-02",
-    "TP-03",
     "TP-04",
     "TP-05",
     "TP-06",
@@ -144,41 +142,27 @@
     "WN-03"
   ],
   "unchecked": [
-    "CB-02",
-    "CB-03",
     "CB-05",
     "CM-01",
-    "CM-02",
     "CM-03",
     "CM-05",
-    "CM-06",
     "CM-10",
-    "CM-12",
     "CM-13",
     "CM-15",
     "CM-16",
     "CM-17",
     "CM-18",
-    "CM-22",
-    "DP-01",
     "DP-02",
-    "DP-05",
-    "DP-07",
-    "DP-08",
     "DP-09",
     "DP-10",
     "DP-11",
     "DP-12",
-    "DS-03",
-    "DS-04",
     "DS-06",
     "DS-07",
     "DS-08",
     "HM-02",
     "HM-06",
     "HM-08",
-    "KB-02",
-    "KB-03",
     "KB-07",
     "KB-08",
     "MO-01",
@@ -188,34 +172,26 @@
     "SL-05",
     "SL-07",
     "SL-13",
-    "SL-15",
     "SL-16",
     "SR-01",
     "SR-02",
     "SR-03",
     "TB-05",
     "TB-06",
-    "TB-13",
     "TB-14",
     "TB-16",
     "TB-19",
     "TB-20",
     "TB-22",
     "TB-23",
-    "TB-24",
     "TB-25",
-    "TP-01",
     "TP-02",
-    "TP-03",
     "TP-05",
     "TP-08",
     "TR-01",
     "TR-03",
-    "TR-04",
     "TR-07",
-    "TR-08",
-    "TR-09",
-    "TR-10"
+    "TR-08"
   ],
   "citations": {
     "CB-01": {
@@ -223,11 +199,11 @@
       "down": 0
     },
     "CB-02": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "CB-03": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "CB-04": {
@@ -251,11 +227,11 @@
       "down": 0
     },
     "CM-01": {
-      "up": 3,
+      "up": 1,
       "down": 0
     },
     "CM-02": {
-      "up": 6,
+      "up": 7,
       "down": 0
     },
     "CM-03": {
@@ -271,7 +247,7 @@
       "down": 0
     },
     "CM-06": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "CM-07": {
@@ -291,7 +267,7 @@
       "down": 0
     },
     "DP-01": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "DP-02": {
@@ -307,7 +283,7 @@
       "down": 0
     },
     "DP-05": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "DP-06": {
@@ -315,11 +291,11 @@
       "down": 0
     },
     "DP-07": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "DP-08": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "DP-09": {
@@ -351,7 +327,7 @@
       "down": 0
     },
     "DS-04": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "DS-05": {
@@ -407,11 +383,11 @@
       "down": 0
     },
     "KB-02": {
-      "up": 0,
+      "up": 1,
       "down": 0
     },
     "KB-03": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "KB-04": {
@@ -495,7 +471,7 @@
       "down": 1
     },
     "SL-15": {
-      "up": 2,
+      "up": 4,
       "down": 0
     },
     "SL-16": {
@@ -555,7 +531,7 @@
       "down": 0
     },
     "TB-09": {
-      "up": 3,
+      "up": 4,
       "down": 0
     },
     "TB-10": {
@@ -571,7 +547,7 @@
       "down": 0
     },
     "TB-13": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "TB-14": {
@@ -606,16 +582,8 @@
       "up": 1,
       "down": 0
     },
-    "TP-01": {
-      "up": 1,
-      "down": 0
-    },
     "TP-02": {
       "up": 4,
-      "down": 0
-    },
-    "TP-03": {
-      "up": 1,
       "down": 0
     },
     "TP-04": {
@@ -659,7 +627,7 @@
       "down": 0
     },
     "TR-04": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "TR-05": {
@@ -687,7 +655,7 @@
       "down": 0
     },
     "TR-09": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "KB-10": {
@@ -703,7 +671,7 @@
       "down": 0
     },
     "CM-12": {
-      "up": 4,
+      "up": 5,
       "down": 0
     },
     "CM-13": {
@@ -743,7 +711,7 @@
       "down": 0
     },
     "TR-10": {
-      "up": 2,
+      "up": 1,
       "down": 0
     },
     "WN-03": {
@@ -759,7 +727,7 @@
       "down": 0
     },
     "CM-22": {
-      "up": 4,
+      "up": 2,
       "down": 0
     },
     "CM-23": {
@@ -784,7 +752,7 @@
     }
   },
   "cycle": 3,
-  "last_run": "2026-03-21T17:25:02.053049+00:00",
+  "last_run": "2026-03-22T06:12:06.833944+00:00",
   "metadata": {
     "TB-22": {
       "files": [
@@ -811,21 +779,18 @@
     },
     "TR-09": {
       "files": [
-        "src/hooks/useTerminal.ts:82",
-        "src-tauri/tauri.conf.json"
+        "src/components/Terminal/TerminalPanel.tsx:584",
+        "src-tauri/tauri.conf.json:25"
       ],
-      "verified": "2026-03-21",
+      "verified": "2026-03-22",
       "notes": "Edited via tag-edit.sh"
     },
     "TR-10": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:435",
-        "src/components/Terminal/TerminalPanel.tsx:439",
-        "src/components/Terminal/TerminalPanel.tsx:440",
-        "src/components/Terminal/TerminalPanel.tsx:458"
+        "src/components/Terminal/TerminalPanel.tsx:449"
       ],
-      "verified": "2026-03-21",
-      "notes": "Double rAF: outer rAF at 439, inner rAF at 440. fit() called inside inner frame at 442. Cancellation via cancelled flag at 437 and cleanup at 458-461 cancels both frames on rapid tab switching."
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "KB-10": {
       "files": [
@@ -852,11 +817,12 @@
     },
     "CM-12": {
       "files": [
-        "src/components/ConfigManager/ThreePaneEditor.tsx:1",
-        "src/components/ConfigManager/ConfigManager.css:133"
+        "src/components/ConfigManager/ThreePaneEditor.tsx:45",
+        "src/components/ConfigManager/ConfigManager.tsx:101",
+        "src/components/ConfigManager/ConfigManager.css:129"
       ],
-      "verified": "2026-03-21",
-      "notes": "Edited via tag-edit.sh"
+      "verified": "2026-03-22",
+      "notes": "ThreePaneEditor renders 3 columns (line 47: three-pane-grid). CSS at ConfigManager.css:131 uses grid-template-columns: 1fr 1fr 1fr. Colors: User=var(--accent) (clay), Project=var(--accent-secondary) (blue), Local=var(--accent-tertiary) (purple) at ThreePaneEditor.tsx:39-43. Left border via --scope-color at CSS:142, tinted header at CSS:153. 5 tabs (Settings, CLAUDE.md, Hooks, Plugins, Agents) at ConfigManager.tsx:101-114. Confirmed."
     },
     "CM-13": {
       "files": [
@@ -902,12 +868,12 @@
     },
     "CB-03": {
       "files": [
-        "src-tauri/src/commands.rs:1029",
-        "src-tauri/src/commands.rs:1060",
-        "src/store/settings.ts:181"
+        "src/store/settings.ts:175",
+        "src-tauri/src/commands.rs:1043",
+        "src/hooks/useCommandDiscovery.ts:91"
       ],
-      "verified": "2026-03-21",
-      "notes": "verified: scan_command_usage caps at 200 files by mtime, scans JSONL for command-name patterns, bootstrapCommandUsage merges into commandUsage"
+      "verified": "2026-03-22",
+      "notes": "bootstrapCommandUsage at settings.ts:175 invokes scan_command_usage Rust cmd. Rust fn at commands.rs:1049 scans JSONL files, sorted by mtime desc, truncated at 200. Called from useCommandDiscovery.ts:91 on launch. Confirmed."
     },
     "CM-10": {
       "files": [
@@ -981,10 +947,10 @@
     },
     "CM-01": {
       "files": [
-        "src/components/ConfigManager/ConfigManager.css:20",
+        "src/components/ConfigManager/ConfigManager.css:16",
         "src/components/ConfigManager/ConfigManager.tsx:67"
       ],
-      "verified": "2026-03-21",
+      "verified": "2026-03-22",
       "notes": "Edited via tag-edit.sh"
     },
     "CM-02": {
@@ -1058,11 +1024,11 @@
     },
     "DP-08": {
       "files": [
-        "src/components/DebugPanel/DebugPanel.tsx:54",
-        "src/components/DebugPanel/DebugPanel.tsx:58"
+        "src/components/DebugPanel/DebugPanel.tsx:55",
+        "src/components/DebugPanel/DebugPanel.tsx:59"
       ],
-      "verified": "2026-03-21",
-      "notes": "verified: handleCopy copies filtered.join(newline), handleClear empties buffer"
+      "verified": "2026-03-22",
+      "notes": "Copy handler at line 55-57 writes filtered.join(newline) to clipboard. Clear handler at line 59-63 empties captured array and sets logs to empty. Confirmed."
     },
     "HM-01": {
       "files": [
@@ -1187,10 +1153,11 @@
     "SL-15": {
       "files": [
         "src/components/SessionLauncher/SessionLauncher.tsx:259",
-        "src/components/SessionLauncher/SessionLauncher.tsx:362"
+        "src/components/SessionLauncher/SessionLauncher.tsx:500",
+        "src/components/SessionLauncher/SessionLauncher.tsx:271"
       ],
-      "verified": "2026-03-21",
-      "notes": "handleNonSessionFlagClick replaces entire command with 'claude <flag>' (line 267), toggling off restores session command (line 264). Session controls disabled+dimmed via launcher-selects-disabled class (line 362). Reset button (IconReset) escapes utility mode at line 530-535."
+      "verified": "2026-03-22",
+      "notes": "handleNonSessionFlagClick at line 259-269 replaces entire command line with 'claude {flag}' or restores. Subcommand click at line 500-503 replaces with 'claude {cmd.name}' or restores. Session controls disabled+dimmed via isNonSessionCommand check (lines 362-369). Reset button at line 528-535 calls handleResetCommand which restores full command. Confirmed."
     },
     "TB-05": {
       "files": [
@@ -1208,10 +1175,10 @@
     },
     "KB-03": {
       "files": [
-        "src/App.tsx:199"
+        "src/App.tsx:197"
       ],
-      "verified": "2026-03-21",
-      "notes": "Edited via tag-edit.sh"
+      "verified": "2026-03-22",
+      "notes": "Ctrl+Shift+R opens resume picker at line 197-200. Confirmed."
     },
     "TB-20": {
       "files": [
@@ -1332,12 +1299,11 @@
     },
     "CM-22": {
       "files": [
-        "src/components/ConfigManager/ThreePaneEditor.tsx:20",
-        "src/components/ConfigManager/ThreePaneEditor.tsx:53",
-        "src/lib/paths.ts:43"
+        "src/components/ConfigManager/ThreePaneEditor.tsx:19",
+        "src/lib/paths.ts:89"
       ],
-      "verified": "2026-03-21",
-      "notes": "scopePath() returns actual file paths per tab (line 20-38). formatScopePath() normalizes backslashes to forward slashes (paths.ts line 43-52). Used in header (line 53)."
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "CM-23": {
       "files": [
@@ -1447,13 +1413,12 @@
     },
     "TB-24": {
       "files": [
-        "src/App.css:127",
-        "src/App.css:157",
-        "src/App.tsx:316",
-        "src/App.tsx:384"
+        "src/App.css:136",
+        "src/App.css:170",
+        "src/App.tsx:307"
       ],
-      "verified": "2026-03-21",
-      "notes": "Added during change documentation"
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "TB-06": {
       "files": [
@@ -1609,10 +1574,11 @@
     },
     "DS-03": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:48"
+        "src/components/Terminal/TerminalPanel.tsx:48",
+        "src/lib/claude.ts:20"
       ],
-      "verified": "2026-03-21",
-      "notes": "canResume derived from nodeSummary or resumeSession at line 48: const canResume = !!session.metadata.nodeSummary || !!session.config.resumeSession. No JSONL file check."
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "SR-01": {
       "files": [
@@ -1630,17 +1596,6 @@
       ],
       "verified": "2026-03-21",
       "notes": "Ctrl+Click at line 357 opens relaunch modal with session config and resume ID. Blue top-bar/tint when Ctrl held via CSS .ctrl-held .tab at App.css:110-118."
-    },
-    "TP-03": {
-      "files": [
-        "src/App.tsx:572",
-        "src/App.css:614",
-        "src/App.css:620",
-        "src/components/ThinkingPanel/ThinkingPanel.css:1",
-        "src/hooks/useTerminal.ts:194"
-      ],
-      "verified": "2026-03-21",
-      "notes": "ThinkingPanel rendered as flex sibling of terminal-area inside app-main (display:flex at CSS:616). terminal-area is flex:1 at CSS:621. ThinkingPanel has fixed width:350px, min:250px, max:50% at CSS:1-4. ResizeObserver on container at useTerminal.ts:194 auto-fires fit() on size changes."
     },
     "DS-09": {
       "files": [
@@ -1696,6 +1651,37 @@
       ],
       "verified": "2026-03-21",
       "notes": "tab-add 66x66 at 333, tab-resume 66x66 at 354, tab-config 66x66 at 375"
+    },
+    "TB-13": {
+      "files": [
+        "src/App.css:50",
+        "src/App.css:195"
+      ],
+      "verified": "2026-03-22",
+      "notes": "flex: 0 1 200px at line 50, min-width: 90px at line 51, max-width: 200px at line 52. Tab-name has text-overflow: ellipsis at line 199. Confirmed."
+    },
+    "TR-04": {
+      "files": [
+        "src/hooks/useTerminal.ts:70",
+        "src/hooks/useTerminal.ts:75"
+      ],
+      "verified": "2026-03-22",
+      "notes": "Ctrl+Home scrollToTop at line 70-72, Ctrl+End scrollToBottom at line 74-77. Confirmed."
+    },
+    "KB-02": {
+      "files": [
+        "src/App.tsx:187"
+      ],
+      "verified": "2026-03-22",
+      "notes": "Ctrl+W closes active tab via closeSession(activeTabId) at line 187-190. Confirmed."
+    },
+    "DP-01": {
+      "files": [
+        "src/components/DebugPanel/DebugPanel.css:1",
+        "src/App.tsx:563"
+      ],
+      "verified": "2026-03-22",
+      "notes": "DebugPanel CSS: width 350px (line 2), min-width 250px (line 3), max-width 50% (line 4). Renders as flex sibling of terminal-area in app-main (App.tsx:537-566). app-main uses display:flex (App.css:626). Confirmed."
     }
   }
 }

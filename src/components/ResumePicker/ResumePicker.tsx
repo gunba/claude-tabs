@@ -150,11 +150,14 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       const filterNorm = normalizeForFilter(dirFilter);
       list = list.filter((ps) => {
         const dirNorm = normalizeForFilter(ps.directory);
-        return dirNorm.includes(filterNorm) || filterNorm.includes(dirNorm);
+        if (dirNorm.includes(filterNorm) || filterNorm.includes(dirNorm)) return true;
+        const name = sessionNames[ps.id];
+        if (name && normalizeForFilter(name).includes(filterNorm)) return true;
+        return false;
       });
     }
     return list;
-  }, [pastSessions, dirFilter, deadSessionMap]);
+  }, [pastSessions, dirFilter, deadSessionMap, sessionNames]);
 
   // Merge chain sessions into single entries
   const mergedList = useMemo((): MergedChain[] => {
@@ -256,7 +259,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
 
   // Resume a specific PastSession by ID
   const resumeById = useCallback(
-    async (ps: PastSession) => {
+    async (ps: PastSession, displayName?: string | null) => {
       const workingDir = ps.directory || ".";
       const dead = deadSessionMap.get(ps.id);
       const cached = sessionConfigs[ps.id];
@@ -268,26 +271,27 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
         continueSession: false,
       };
       addRecentDir(workingDir);
+      const name = displayName || sessionNames[ps.id] || ps.path;
 
       if (activeIsDead && activeSession) {
-        requestRespawn(activeSession.id, resumeConfig, ps.path);
+        requestRespawn(activeSession.id, resumeConfig, name);
         onClose();
         return;
       }
 
       try {
-        await createSession(ps.path, resumeConfig);
+        await createSession(name, resumeConfig);
         onClose();
       } catch (err) {
         console.error("Failed to resume session:", err);
       }
     },
-    [deadSessionMap, sessionConfigs, activeIsDead, activeSession, createSession, addRecentDir, requestRespawn, onClose]
+    [deadSessionMap, sessionConfigs, sessionNames, activeIsDead, activeSession, createSession, addRecentDir, requestRespawn, onClose]
   );
 
   // Resume a chain (latest member)
   const handleResume = useCallback(
-    (chain: MergedChain) => resumeById(chain.resumeSession),
+    (chain: MergedChain) => resumeById(chain.resumeSession, chain.displayName),
     [resumeById]
   );
 
@@ -364,7 +368,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
             type="text"
             value={dirFilter}
             onChange={(e) => setDirFilter(e.target.value)}
-            placeholder="Filter by directory..."
+            placeholder="Filter by name or directory..."
             autoComplete="off"
           />
           <button

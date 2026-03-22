@@ -280,7 +280,7 @@ export default function App() {
           <div className="tab-bar-scroll">
             {groups.flatMap((group) => [
               <div key={`sep-${group.key}`} className="tab-group-separator" title={group.fullPath}>
-                <span className="tab-group-label">{group.label}</span>
+                <span className="tab-group-pip" />
               </div>,
               ...group.sessions.map((session, si) => {
               const isActive = session.id === activeTabId;
@@ -304,7 +304,7 @@ export default function App() {
               return (
                 <div
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${session.state === "actionNeeded" && isActive ? " tab-actionNeeded" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${session.state === "actionNeeded" && isActive ? " tab-actionNeeded" : ""}${(session.state === "waitingPermission" || session.state === "actionNeeded") ? " tab-attention" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
                   role="button"
                   tabIndex={0}
                   draggable
@@ -699,6 +699,22 @@ export default function App() {
                       Close
                     </button>
                   )}
+                  <div className="tab-context-menu-divider" />
+                  <button
+                    className="tab-context-menu-item tab-context-menu-item-danger"
+                    onClick={() => {
+                      const group = groups.find((g) => g.sessions.some((s) => s.id === ctxSession.id));
+                      if (group) {
+                        for (const s of group.sessions) closeSession(s.id);
+                      }
+                      setTabContextMenu(null);
+                    }}
+                  >
+                    Close Group ({(() => {
+                      const group = groups.find((g) => g.sessions.some((s) => s.id === ctxSession.id));
+                      return group ? group.sessions.length : 0;
+                    })()})
+                  </button>
                 </>
               );
             })()}

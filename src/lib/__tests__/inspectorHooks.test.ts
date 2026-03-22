@@ -734,7 +734,7 @@ describe("POLL_STATE", () => {
     expect((g.__inspectorState as Record<string, unknown[]>).events).toHaveLength(0);
   });
 
-  it("resets permPending after poll", () => {
+  it("preserves permPending after poll (reset only by user event in INSTALL_HOOK)", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     g.__inspectorState = {
       n: 1, sid: null, cost: 0, model: null, stop: null,
@@ -748,7 +748,7 @@ describe("POLL_STATE", () => {
     const result = fn() as Record<string, unknown>;
     expect(result.permPending).toBe(true);
     const stateObj = g.__inspectorState as Record<string, unknown>;
-    expect(stateObj.permPending).toBe(false);
+    expect(stateObj.permPending).toBe(true);
   });
 });
 

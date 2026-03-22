@@ -149,21 +149,70 @@ describe("subagent actions", () => {
     expect(subs![0].tokenCount).toBe(500);
   });
 
-  it("removeDeadSubagents filters out dead subagents", () => {
-    useSessionStore.getState().addSubagent("s1", makeSub("sub-1", "dead"));
+  it("clearIdleSubagents filters out idle subagents", () => {
+    useSessionStore.getState().addSubagent("s1", makeSub("sub-1", "idle"));
     useSessionStore.getState().addSubagent("s1", makeSub("sub-2", "thinking"));
-    useSessionStore.getState().removeDeadSubagents("s1");
+    useSessionStore.getState().clearIdleSubagents("s1");
     const subs = useSessionStore.getState().subagents.get("s1");
     expect(subs).toHaveLength(1);
     expect(subs![0].id).toBe("sub-2");
   });
 
-  it("removeDeadSubagents is a no-op when no dead subagents exist", () => {
+  it("clearIdleSubagents is a no-op when no idle subagents exist", () => {
     useSessionStore.getState().addSubagent("s1", makeSub("sub-1", "thinking"));
     const before = useSessionStore.getState().subagents;
-    useSessionStore.getState().removeDeadSubagents("s1");
+    useSessionStore.getState().clearIdleSubagents("s1");
     // Same reference when nothing changed (optimization)
     expect(useSessionStore.getState().subagents).toBe(before);
+  });
+});
+
+describe("closeSession tab selection", () => {
+  beforeEach(resetStore);
+
+  it("selects tab to the right when closing active middle tab", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a"), makeSession("b"), makeSession("c")],
+      activeTabId: "b",
+    });
+    await useSessionStore.getState().closeSession("b");
+    expect(useSessionStore.getState().activeTabId).toBe("c");
+  });
+
+  it("selects tab to the left when closing active last tab", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a"), makeSession("b"), makeSession("c")],
+      activeTabId: "c",
+    });
+    await useSessionStore.getState().closeSession("c");
+    expect(useSessionStore.getState().activeTabId).toBe("b");
+  });
+
+  it("selects tab to the right when closing active first tab", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a"), makeSession("b")],
+      activeTabId: "a",
+    });
+    await useSessionStore.getState().closeSession("a");
+    expect(useSessionStore.getState().activeTabId).toBe("b");
+  });
+
+  it("keeps activeTabId when closing non-active tab", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a"), makeSession("b"), makeSession("c")],
+      activeTabId: "a",
+    });
+    await useSessionStore.getState().closeSession("b");
+    expect(useSessionStore.getState().activeTabId).toBe("a");
+  });
+
+  it("sets null when closing the only tab", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a")],
+      activeTabId: "a",
+    });
+    await useSessionStore.getState().closeSession("a");
+    expect(useSessionStore.getState().activeTabId).toBeNull();
   });
 });
 

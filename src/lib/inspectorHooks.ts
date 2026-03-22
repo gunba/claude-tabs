@@ -318,7 +318,6 @@ export const POLL_STATE = `(function() {
       return { sid: sub.sid, desc: sub.desc, st: sub.st, tok: sub.tok, act: sub.act, msgs: msgs, lastTs: sub.lastTs };
     })
   };
-  s.permPending = false;
   s.events = [];
   return result;
 })()`;

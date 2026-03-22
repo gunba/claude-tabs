@@ -75,51 +75,16 @@
   background: var(--bg-surface-hover);
 }
 
-.command-btn-queued {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-bg);
-  font-weight: 600;
-  animation: queue-pulse 2s ease infinite;
-}
-
-@keyframes queue-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
 /* ── Ctrl-held: subtle box outline ─────────────────── */
 
-.ctrl-held .command-btn:not(.command-btn-queued) {
+.ctrl-held .command-btn {
   border-color: var(--accent-secondary);
 }
 
-.ctrl-held .command-btn:not(.command-btn-queued):hover {
+.ctrl-held .command-btn:hover {
   border-color: var(--accent-secondary);
   color: var(--text-primary);
   background: var(--bg-surface-hover);
-}
-
-/* ── Queue indicator ─────────────────────────────────────── */
-
-.command-bar-queue-indicator {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 9px;
-  color: var(--accent);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.command-bar-queue-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: queue-pulse 2s ease infinite;
 }
 
 /* ── Discovering placeholder ────────────────────────────── */

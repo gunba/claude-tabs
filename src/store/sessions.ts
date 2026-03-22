@@ -41,7 +41,7 @@ interface SessionsState {
   setInspectorOff: (id: string, off: boolean) => void;
   addSubagent: (sessionId: string, subagent: Subagent) => void;
   updateSubagent: (sessionId: string, subagentId: string, updates: Partial<Subagent>) => void;
-  removeDeadSubagents: (sessionId: string) => void;
+  clearIdleSubagents: (sessionId: string) => void;
   addCommandHistory: (sessionId: string, command: string) => void;
 }
 
@@ -128,11 +128,15 @@ export const useSessionStore = create<SessionsState>((set) => ({
     await invoke("close_session", { id });
     releaseSessionColor(id);
     set((s) => {
+      const closedIndex = s.sessions.findIndex((x) => x.id === id);
       const sessions = s.sessions.filter((x) => x.id !== id);
-      const activeTabId =
-        s.activeTabId === id
-          ? sessions[sessions.length - 1]?.id ?? null
-          : s.activeTabId;
+      let activeTabId: string | null;
+      if (s.activeTabId !== id) {
+        activeTabId = s.activeTabId;
+      } else {
+        // Prefer tab to the right (same index after removal), then left
+        activeTabId = sessions[closedIndex]?.id ?? sessions[closedIndex - 1]?.id ?? null;
+      }
       const subagents = new Map(s.subagents);
       subagents.delete(id);
       const commandHistory = new Map(s.commandHistory);
@@ -250,7 +254,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const existing = map.get(sessionId) || [];
       // Don't add duplicates
       if (existing.some((sa) => sa.id === subagent.id)) return s;
-      map.set(sessionId, [...existing, subagent]);
+      map.set(sessionId, [subagent, ...existing]);
       return { subagents: map };
     });
   },
@@ -268,14 +272,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
     });
   },
 
-  removeDeadSubagents: (sessionId) => {
+  clearIdleSubagents: (sessionId) => {
     set((s) => {
       const map = new Map(s.subagents);
       const list = map.get(sessionId);
       if (!list) return s;
-      const alive = list.filter((sa) => sa.state !== "dead");
-      if (alive.length === list.length) return s;
-      map.set(sessionId, alive);
+      const active = list.filter((sa) => sa.state !== "idle");
+      if (active.length === list.length) return s;
+      map.set(sessionId, active);
       return { subagents: map };
     });
   },

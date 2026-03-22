@@ -1,5 +1,7 @@
 # Claude Tabs
 
+<!-- Codes: BV=Build & Validate, DR=Development Rules, TH=Theme System -->
+
 Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust backend + React/TypeScript frontend. No API key — uses the Claude Code CLI directly.
 
 ```
@@ -8,31 +10,25 @@ React UI (WebView2) ←→ Tauri IPC ←→ Rust Backend ←→ ConPTY ←→ Cl
 
 ## Build & Validate
 
-```bash
-npm run build:quick     # Release binary, no installer (~30s after first build)
-npm run build:debug     # Debug binary, fastest (~10-15s incremental)
-npm run tauri dev       # Dev mode with hot-reload (frontend only, Rust recompiles on change)
-npm run tauri build     # Full NSIS installer (only for releases)
-```
-
-Portable exe: `src-tauri/target/release/claude-tabs.exe` (quick) or `src-tauri/target/debug/claude-tabs.exe` (debug). Never do a full NSIS build just to test.
-
-**Before every commit:**
-```bash
-npx tsc --noEmit           # Zero TypeScript errors
-npm test                   # All Vitest unit tests pass
-cargo check (in src-tauri) # Zero Rust errors
-```
+- [BV-01] Build commands:
+  - `npm run build:quick` — Release binary, no installer (~30s after first build)
+  - `npm run build:debug` — Debug binary, fastest (~10-15s incremental)
+  - `npm run tauri dev` — Dev mode with hot-reload (frontend only, Rust recompiles on change)
+  - `npm run tauri build` — Full NSIS installer (only for releases)
+  - Portable exe: `src-tauri/target/release/claude-tabs.exe` (quick) or `src-tauri/target/debug/claude-tabs.exe` (debug)
+- [BV-02] Never do a full NSIS build just to test. Use build:quick or build:debug.
+- [BV-03] Before every commit: `npx tsc --noEmit` (zero TS errors), `npm test` (all Vitest pass), `cargo check` in src-tauri (zero Rust errors)
 
 ## Commands
 
-Global slash commands in `~/.claude/commands/`. Type these in any conversation:
+Global slash commands in `~/.claude/commands/`:
 
 | Command | What it does |
 |---------|-------------|
 | `/r` | Review: document change → review + simplify + test (3 agents). Repeatable. |
-| `/j` | Maintain: prove entries (2 parallel provers) → sync CLAUDE.md → folder audit → hooks |
-| `/b` | Build: [commit?] → build → [release+push?] — prompts at each step |
+| `/j` | Maintain: prove entries (3 parallel provers) → sync CLAUDE.md → folder audit → hooks |
+| `/b` | Build: [commit?] → build → [release+push?] — choose steps upfront |
+| `/rj` | Review then janitor in sequence |
 
 ## Layout
 
@@ -53,6 +49,8 @@ Global slash commands in `~/.claude/commands/`. Type these in any conversation:
 ```
 
 See **DOCS/ARCHITECTURE.md** for data flow, state inspection, PTY internals, persistence, and other implementation details.
+See **DOCS/FEATURES.md** for user-facing behaviors. See **DOCS/ARCHITECTURE.md** for technical internals.
+All three docs are tagged `[XX-NN]` and proved. Code implementing a tagged entry is not dead code.
 
 ### Frontend Structure
 
@@ -85,7 +83,6 @@ src/
 │   ├── ConfigManager/PluginsPane.tsx    # Per-scope enabledPlugins (Record<string,boolean>) + mcpServers
 │   ├── ConfigManager/AgentEditor.tsx    # Per-scope agent file list + markdown editor
 │   ├── Icons/Icons.tsx                  # SVG icon components (shared Icon base, currentColor)
-│   ├── ThinkingPanel/ThinkingPanel.tsx  # Thinking block viewer (Ctrl+I)
 │   ├── ModalOverlay/ModalOverlay.tsx    # Shared modal wrapper
 │   └── DebugPanel/DebugPanel.tsx        # Debug log viewer (Ctrl+Shift+D)
 ├── lib/
@@ -106,44 +103,17 @@ src/
     └── ipc.ts                           # Tauri IPC command signatures
 ```
 
-### Theme System
-
-All colors are CSS custom properties on `:root` — components use CSS variables, not hardcoded hex (exception: model rarity colors in `claude.ts` are fixed hex for cross-theme consistency). Applied at startup via `applyTheme()`. xterm.js colors from `getXtermTheme()` reading CSS variables.
-
-Key variables: `--bg-primary`, `--bg-surface`, `--accent` (clay), `--accent-secondary` (blue), `--accent-tertiary` (purple), `--term-bg`, `--term-fg`.
-
 ## Development Rules
 
-### Code Organization
-- Rust IPC commands in `commands.rs`, registered in `lib.rs` via `generate_handler!`
-- TypeScript types in `src/types/` mirror Rust types with camelCase
-- Zustand stores in `src/store/`, hooks in `src/hooks/`
-- Components in `src/components/<Name>/<Name>.tsx` with co-located CSS
-- Add tests for any new pure-logic functions in `src/lib/` and store actions in `src/store/`
+- [DR-01] Rust IPC commands in `commands.rs`, registered in `lib.rs` via `generate_handler!`
+- [DR-02] TypeScript types in `src/types/` mirror Rust types with camelCase
+- [DR-03] Zustand stores in `src/store/`, hooks in `src/hooks/`
+- [DR-04] Components in `src/components/<Name>/<Name>.tsx` with co-located CSS
+- [DR-05] Add tests for any new pure-logic functions in `src/lib/` and store actions in `src/store/`
+- [DR-06] All Rust commands that spawn subprocesses MUST use `tokio::task::spawn_blocking()` to avoid blocking the WebView event loop
+- [DR-07] All Rust commands that spawn subprocesses MUST add `CREATE_NO_WINDOW` flag on Windows (`cmd.creation_flags(0x08000000)`)
 
-### Subprocess Spawns (Rust)
-All Rust commands that spawn subprocesses MUST:
-1. Use `tokio::task::spawn_blocking()` to avoid blocking the WebView event loop
-2. Add `CREATE_NO_WINDOW` flag on Windows (`cmd.creation_flags(0x08000000)`)
+## Theme System
 
-### Documentation
-- **DOCS/FEATURES.md** — user-facing behaviors, tagged `[XX-NN]`. Read before modifying UI code.
-- **DOCS/ARCHITECTURE.md** — technical implementation details, tagged `[XX-NN]`. Read before modifying internals.
-- Code implementing a tagged entry is not dead code.
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+T` | New session |
-| `Ctrl+W` | Close active tab |
-| `Ctrl+Shift+R` | Resume from history |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Cycle tabs |
-| `Alt+1-9` | Jump to tab N |
-| `Ctrl+K` | Command palette |
-| `Ctrl+Shift+U` | Clear all input lines |
-| `Ctrl+I` | Toggle thinking panel |
-| `Ctrl+,` | Config manager |
-| `Ctrl+Shift+D` | Toggle debug log panel |
-| `Ctrl+E` | Rename active tab |
-| `Esc` | Close modal / dismiss inspector |
+- [TH-01] All colors are CSS custom properties on `:root` — components use CSS variables, not hardcoded hex (exception: model rarity colors in `claude.ts` are fixed hex for cross-theme consistency). Applied at startup via `applyTheme()`. xterm.js colors from `getXtermTheme()` reading CSS variables.
+- [TH-02] Key variables: `--bg-primary`, `--bg-surface`, `--accent` (clay), `--accent-secondary` (blue), `--accent-tertiary` (purple), `--term-bg`, `--term-fg`

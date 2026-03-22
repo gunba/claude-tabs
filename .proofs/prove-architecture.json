@@ -36,6 +36,7 @@
     "PT-08",
     "PT-09",
     "PT-10",
+    "PT-11",
     "RC-01",
     "RC-02",
     "RC-03",
@@ -79,36 +80,25 @@
     "SS-03"
   ],
   "unchecked": [
-    "BF-01",
     "BF-02",
-    "CM-01",
     "CM-02",
     "DF-01",
     "DF-02",
     "DF-03",
     "DF-05",
-    "DF-07",
-    "DF-08",
     "IN-01",
-    "IN-02",
     "IN-03",
     "IN-04",
     "IN-05",
-    "IN-06",
-    "PS-01",
     "PS-03",
     "PS-04",
-    "PS-05",
-    "PT-01",
     "PT-02",
     "PT-03",
-    "PT-04",
     "PT-05",
     "PT-06",
     "PT-07",
-    "PT-08",
     "PT-09",
-    "PT-10",
+    "PT-11",
     "RC-02",
     "RC-03",
     "RC-05",
@@ -117,9 +107,7 @@
     "RC-09",
     "RC-10",
     "RC-11",
-    "RC-12",
     "RC-14",
-    "RS-01",
     "RS-03",
     "RS-04",
     "RS-05",
@@ -127,26 +115,19 @@
     "RS-07",
     "RS-08",
     "RS-09",
-    "SI-01",
-    "SI-02",
     "SI-03",
     "SI-04",
     "SI-05",
     "SI-06",
-    "SI-07",
     "SI-08",
     "SI-09",
     "SI-10",
     "SI-11",
-    "SI-13",
-    "SI-14",
-    "SI-15",
-    "SS-01",
     "SS-03"
   ],
   "citations": {
     "BF-01": {
-      "up": 5,
+      "up": 7,
       "down": 0
     },
     "BF-02": {
@@ -178,7 +159,7 @@
       "down": 0
     },
     "DF-07": {
-      "up": 3,
+      "up": 4,
       "down": 0
     },
     "IN-01": {
@@ -186,7 +167,7 @@
       "down": 0
     },
     "IN-02": {
-      "up": 2,
+      "up": 1,
       "down": 0
     },
     "IN-03": {
@@ -202,11 +183,11 @@
       "down": 0
     },
     "IN-06": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "PS-01": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "PS-02": {
@@ -222,7 +203,7 @@
       "down": 0
     },
     "PT-01": {
-      "up": 3,
+      "up": 4,
       "down": 0
     },
     "PT-02": {
@@ -234,7 +215,7 @@
       "down": 0
     },
     "PT-04": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "PT-05": {
@@ -294,7 +275,7 @@
       "down": 0
     },
     "RS-01": {
-      "up": 4,
+      "up": 6,
       "down": 0
     },
     "RS-02": {
@@ -318,11 +299,11 @@
       "down": 0
     },
     "SI-01": {
-      "up": 3,
+      "up": 4,
       "down": 0
     },
     "SI-02": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "SI-03": {
@@ -342,7 +323,7 @@
       "down": 0
     },
     "SI-07": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "SI-08": {
@@ -358,7 +339,7 @@
       "down": 0
     },
     "SS-01": {
-      "up": 4,
+      "up": 5,
       "down": 0
     },
     "SS-02": {
@@ -370,15 +351,15 @@
       "down": 0
     },
     "PT-08": {
-      "up": 2,
+      "up": 3,
       "down": 0
     },
     "RC-12": {
-      "up": 5,
-      "down": 1
+      "up": 2,
+      "down": 0
     },
     "DF-08": {
-      "up": 3,
+      "up": 4,
       "down": 0
     },
     "RC-13": {
@@ -390,7 +371,7 @@
       "down": 0
     },
     "PS-05": {
-      "up": 2,
+      "up": 1,
       "down": 0
     },
     "PT-09": {
@@ -402,11 +383,11 @@
       "down": 0
     },
     "CM-01": {
-      "up": 3,
+      "up": 1,
       "down": 0
     },
     "CM-02": {
-      "up": 4,
+      "up": 5,
       "down": 0
     },
     "DF-09": {
@@ -418,11 +399,11 @@
       "down": 0
     },
     "SI-12": {
-      "up": 1,
+      "up": 2,
       "down": 0
     },
     "SI-13": {
-      "up": 3,
+      "up": 2,
       "down": 0
     },
     "SI-14": {
@@ -430,8 +411,8 @@
       "down": 0
     },
     "SI-15": {
-      "up": 1,
-      "down": 1
+      "up": 2,
+      "down": 0
     },
     "RS-07": {
       "up": 3,
@@ -442,16 +423,20 @@
       "down": 0
     },
     "RS-09": {
-      "up": 3,
+      "up": 4,
       "down": 0
     },
     "PT-10": {
-      "up": 2,
+      "up": 3,
+      "down": 0
+    },
+    "PT-11": {
+      "up": 1,
       "down": 0
     }
   },
   "cycle": 5,
-  "last_run": "2026-03-21T17:28:15.057154+00:00",
+  "last_run": "2026-03-22T06:11:09.041387+00:00",
   "metadata": {
     "PS-04": {
       "files": [
@@ -473,13 +458,11 @@
     },
     "RC-12": {
       "files": [
-        "src-tauri/src/commands.rs:1487",
-        "src-tauri/src/commands.rs:1498",
-        "src-tauri/src/commands.rs:1528",
-        "src-tauri/src/commands.rs:1458"
+        "src-tauri/src/commands.rs:1501",
+        "src-tauri/src/commands.rs:1512"
       ],
-      "verified": "2026-03-21",
-      "notes": "read_config_file, write_config_file, list_agents, resolve_config_path with 3 agent scopes"
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "DF-03": {
       "files": [
@@ -508,12 +491,10 @@
     },
     "PT-04": {
       "files": [
-        "src/lib/ptyProcess.ts:73",
-        "src/lib/ptyProcess.ts:99",
-        "src/lib/ptyProcess.ts:170"
+        "src/lib/ptyProcess.ts:73"
       ],
-      "verified": "2026-03-21",
-      "notes": "exitFired guard declared at 73, checked at 99 (read loop) and 170 (kill), ensures exactly-once exit callback"
+      "verified": "2026-03-22",
+      "notes": "exitFired guard at line 73-78. fireExit checks and sets exitFired. kill() at line 178 and read loop at line 105 and parallel waiter at line 113 all call fireExit. PASS."
     },
     "PT-06": {
       "files": [
@@ -539,13 +520,10 @@
     },
     "SI-02": {
       "files": [
-        "src/hooks/useInspectorState.ts:44",
-        "src/hooks/useInspectorState.ts:48",
-        "src/hooks/useInspectorState.ts:50",
-        "src/hooks/useInspectorState.ts:354"
+        "src/hooks/useInspectorState.ts:25"
       ],
-      "verified": "2026-03-21",
-      "notes": "verified: 1s delay, 3 retries, backoff [2s,4s,8s]"
+      "verified": "2026-03-22",
+      "notes": "CONNECT_DELAY_MS=1000 at line 25, MAX_RETRIES=3 at line 29, RETRY_DELAYS=[2000,4000,8000] at line 31. Retry logic at lines 250-257. PASS."
     },
     "SI-05": {
       "files": [
@@ -619,8 +597,8 @@
       "files": [
         "src/components/Terminal/TerminalPanel.tsx:283"
       ],
-      "verified": "2026-03-21",
-      "notes": "triggerRespawn at line 283-320: cleans up old PTY (pty.cleanup()), inspector (disconnect+unregisterInspectorPort), clears thinking blocks, allocates new inspector port (allocateInspectorPort at line 315), increments respawn counter (setRespawnCounter at line 319). All documented behaviors confirmed."
+      "verified": "2026-03-22",
+      "notes": "triggerRespawn at line 283. Cleans up PTY (286), inspector (287), writer (288), port registry (289). Allocates new port (316). Increments respawnCounter (320). PASS."
     },
     "RS-03": {
       "files": [
@@ -671,8 +649,8 @@
       "files": [
         "src/components/Icons/Icons.tsx:1"
       ],
-      "verified": "2026-03-21",
-      "notes": "verified: 24 exports, stroke-based, 16x16 viewBox, currentColor, pointerEvents none"
+      "verified": "2026-03-22",
+      "notes": "24 exported icon components confirmed. All stroke-based, 16x16 viewBox, currentColor, pointerEvents none via shared Icon base. PASS."
     },
     "DF-02": {
       "files": [
@@ -754,12 +732,10 @@
     },
     "BF-01": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:206",
-        "src/components/Terminal/TerminalPanel.tsx:228",
-        "src/components/Terminal/TerminalPanel.tsx:443"
+        "src/components/Terminal/TerminalPanel.tsx:228"
       ],
-      "verified": "2026-03-21",
-      "notes": "bgBufferRef declared at 206, push at 228 when not visible, flushed as single merged write at 443-453 on tab focus"
+      "verified": "2026-03-22",
+      "notes": "bgBufferRef.current.push(data) when !visibleRef.current confirmed at line 228. PASS."
     },
     "RC-05": {
       "files": [
@@ -808,8 +784,8 @@
       "files": [
         "src/lib/ptyProcess.ts:1"
       ],
-      "verified": "2026-03-21",
-      "notes": "verified: direct invoke plugin:pty calls, not tauri-pty npm"
+      "verified": "2026-03-22",
+      "notes": "Line 1-5 confirms direct PTY wrapper using invoke from tauri/core. All PTY calls use invoke('plugin:pty|...'). PASS."
     },
     "RC-13": {
       "files": [
@@ -828,9 +804,9 @@
     },
     "PS-05": {
       "files": [
-        "src/store/sessions.ts:91"
+        "src/store/sessions.ts:86"
       ],
-      "verified": "2026-03-21",
+      "verified": "2026-03-22",
       "notes": "Edited via tag-edit.sh"
     },
     "PT-09": {
@@ -867,11 +843,11 @@
     },
     "CM-01": {
       "files": [
-        "src/components/ConfigManager/ConfigManager.css:20",
+        "src/components/ConfigManager/ConfigManager.css:16",
         "src/components/ConfigManager/ConfigManager.tsx:67"
       ],
-      "verified": "2026-03-21",
-      "notes": "verified: grid auto 1fr auto + title/tabs/header-right structure"
+      "verified": "2026-03-22",
+      "notes": "CSS line drifted from :20 to :16 (.config-header block). Fixed."
     },
     "PT-03": {
       "files": [
@@ -912,8 +888,8 @@
       "files": [
         "src/lib/inspectorHooks.ts:27"
       ],
-      "verified": "2026-03-21",
-      "notes": "INSTALL_HOOK still exists at line 27 as exported const. POLL_STATE has been removed from the codebase entirely (no matches found). Entry says both exist but only INSTALL_HOOK remains."
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "IN-03": {
       "files": [
@@ -997,30 +973,26 @@
     },
     "SI-13": {
       "files": [
-        "src/hooks/useInspectorState.ts:45",
-        "src/hooks/useInspectorState.ts:46",
-        "src/hooks/useInspectorState.ts:47",
-        "src/hooks/useInspectorState.ts:48",
-        "src/hooks/useInspectorState.ts:49"
+        "src/hooks/useInspectorState.ts:37"
       ],
-      "verified": "2026-03-21",
-      "notes": "Override chain at lines 45-49: ExitPlanMode->actionNeeded (45), idle override (46), choiceHint->actionNeeded (47-48), permPending->waitingPermission (49). Priority order confirmed."
+      "verified": "2026-03-22",
+      "notes": "Function is deriveStateFromPoll (not deriveStateFromPush). Override chain at lines 62-72 confirmed. Text corrected and line updated from 47 to 37."
     },
     "SI-14": {
       "files": [
         "src/hooks/useInspectorState.ts:203",
         "src/lib/inspectorHooks.ts:27"
       ],
-      "verified": "2026-03-21",
-      "notes": "Edited via tag-edit.sh"
+      "verified": "2026-03-22",
+      "notes": "Text corrected: removed JSON.parse reference (only JSON.stringify is wrapped). Lines confirmed: INSTALL_HOOK at inspectorHooks.ts:27, connect function at useInspectorState.ts:203."
     },
     "SI-15": {
       "files": [
-        "src/lib/inspectorHooks.ts:350",
-        "src/hooks/useInspectorState.ts:27"
+        "src/lib/inspectorHooks.ts:296",
+        "src/hooks/useInspectorState.ts:7"
       ],
-      "verified": "2026-03-21",
-      "notes": "Corrected: architecture is poll-based (POLL_STATE every 250ms), not push-based. No __ispPush or Runtime.addBinding exists in code. Original entry described non-existent push payload types."
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
     },
     "RS-07": {
       "files": [
@@ -1049,6 +1021,14 @@
       ],
       "verified": "2026-03-21",
       "notes": "Confirmed: void invoke exitstatus at line 112, runs parallel to readLoop. fireExit with exitFired guard at lines 75-82 ensures single callback."
+    },
+    "PT-11": {
+      "files": [
+        "src/components/Terminal/TerminalPanel.tsx:305",
+        "src/hooks/useTerminal.ts:363"
+      ],
+      "verified": "2026-03-22",
+      "notes": "Added during change documentation"
     }
   }
 }

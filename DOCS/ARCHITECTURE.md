@@ -38,12 +38,12 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/lib/inspectorHooks.ts:53, src/lib/inspectorHooks.ts:200, src/lib/inspectorHooks.ts:230, src/lib/inspectorHooks.ts:254
 - [SI-12] idleDetected is sticky: cleared only by user events in the hook; prevents state oscillation between idle and stale tool_use
   - Files: src/lib/inspectorHooks.ts:250
-- [SI-13] `deriveStateFromPush` override chain: ExitPlanMode refines toolUse to actionNeeded; idleDetected overrides to idle; choiceHint refines idle to actionNeeded; permPending always wins (waitingPermission)
-  - Files: src/hooks/useInspectorState.ts:47
-- [SI-14] Poll-based architecture: INSTALL_HOOK wraps JSON.stringify/JSON.parse to capture state into globalThis.__inspectorState; useInspectorState polls via POLL_STATE expression every 250ms, draining events and transient flags each cycle. No push binding; state detection disabled if hook install fails.
+- [SI-13] `deriveStateFromPoll` override chain: ExitPlanMode refines toolUse to actionNeeded; idleDetected overrides to idle; choiceHint refines idle to actionNeeded; permPending always wins (waitingPermission)
+  - Files: src/hooks/useInspectorState.ts:37, src/hooks/useInspectorState.ts:63
+- [SI-14] Poll-based architecture: INSTALL_HOOK wraps JSON.stringify to capture state into globalThis.__inspectorState; useInspectorState polls via POLL_STATE expression every 250ms, draining events and transient flags each cycle. No push binding; state detection disabled if hook install fails.
   - Files: src/hooks/useInspectorState.ts:203, src/lib/inspectorHooks.ts:27
 - [SI-15] Poll result fields: InspectorPollResult includes n (event count), sid, cost, model, stop, tools, inTok/outTok, events (ring buffer), permPending/idleDetected (notification flags), subs (subagent state with spliced msgs), inputBuf/inputTs (stdin capture), choiceHint (computed from lastText)
-  - Files: src/lib/inspectorHooks.ts:350, src/hooks/useInspectorState.ts:7
+  - Files: src/lib/inspectorHooks.ts:296, src/hooks/useInspectorState.ts:7
 
 ## PTY Internals
 
@@ -62,6 +62,8 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/hooks/useTerminal.ts:189, src/hooks/useTerminal.ts:196, src/hooks/useTerminal.ts:326
 - [PT-10] Parallel exit waiter: fire-and-forget invoke('plugin:pty|exitstatus') runs alongside read loop. On Windows ConPTY, read pipe may hang after Ctrl+C; exitstatus uses WaitForSingleObject which reliably returns. exitFired guard ensures exactly one callback fires
   - Files: src/lib/ptyProcess.ts:112
+- [PT-11] Respawn clears both bgBufferRef and useTerminal's writeBatchRef (via clearPending()) before writing \x1bc. Without this, stale PTY data from previous sessions survives the terminal reset and gets flushed when the tab becomes visible, causing duplicated conversation content.
+  - Files: src/components/Terminal/TerminalPanel.tsx:305, src/hooks/useTerminal.ts:363
 
 ## Persistence
 
@@ -71,7 +73,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [PS-04] `beforeunload` kills all active PTY process trees before persisting — prevents orphaned CLI processes holding session locks on restart
   - Files: src/App.tsx:153, src/lib/ptyProcess.ts:22
 - [PS-05] init() awaits both kill_orphan_sessions and detect_claude_cli in parallel via Promise.all before setting claudePath — gates PTY spawning on cleanup completion (previous code set claudePath via fire-and-forget .then() which raced with spawning)
-  - Files: src/store/sessions.ts:91
+  - Files: src/store/sessions.ts:86
 
 ## Respawn & Resume
 
@@ -97,7 +99,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 ## Inspector
 
 - [IN-01] Inspector port allocation and registry in `inspectorPort.ts`
-- [IN-02] `INSTALL_HOOK` JS expression in `inspectorHooks.ts`; pushes events via `Runtime.addBinding` (`__ispPush`). No polling.
+- [IN-02] `INSTALL_HOOK` JS expression in `inspectorHooks.ts`; wraps JSON.stringify to capture events into globalThis.__inspectorState. Polled every 250ms via POLL_STATE.
   - Files: src/lib/inspectorHooks.ts:27
 - [IN-03] Subagent tracking: inspector detects Agent tool_use -> queues description -> matches with new session ID system event -> routes events to subagent entry
 - [IN-04] Subagent messages pushed in real-time (`k:sm`) and appended to store for SubagentInspector
@@ -129,7 +131,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [RC-11] register_active_pid / unregister_active_pid — frontend registers OS PIDs of PTY children; RunEvent::Exit handler iterates ActivePids and calls kill_process_tree_sync for each
   - Files: src-tauri/src/commands.rs:1113, src-tauri/src/lib.rs:114
 - [RC-12] Config files read/write: read_config_file and write_config_file handle settings JSON, CLAUDE.md (3 scopes), and agent files (3 scopes: user=~/.claude/agents/, project={wd}/.claude/agents/, local={wd}/.claude/local/agents/). list_agents takes scope param. Parent dirs auto-created on write.
-  - Files: src-tauri/src/commands.rs:1487, src-tauri/src/commands.rs:1498
+  - Files: src-tauri/src/commands.rs:1501, src-tauri/src/commands.rs:1512
 - [RC-13] kill_orphan_sessions: takes Vec<String> session IDs, finds processes by command line match (WMIC on Windows, pgrep on Unix), kills all without ancestry check (safe at startup since no live sessions exist yet). Returns count of killed processes
   - Files: src-tauri/src/commands.rs:1380, src/store/sessions.ts:90
 - [RC-14] send_notification: Custom WinRT toast command bypassing Tauri notification plugin. Uses tauri-winrt-notification Toast with on_activated callback that emits 'notification-clicked' event to frontend. Dev mode uses PowerShell app ID, production uses bundle identifier. spawn_blocking + CREATE_NO_WINDOW compliant.

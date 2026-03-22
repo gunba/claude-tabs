@@ -80,21 +80,11 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       if (ev.altKey && ev.key >= "0" && ev.key <= "9" && ev.type === "keydown") {
         return false;
       }
-      return true; // Let it through
-    });
-
-    // Ctrl+wheel: snap to top/bottom
-    term.attachCustomWheelEventHandler((ev) => {
-      if (ev.ctrlKey) {
-        ev.preventDefault();
-        if (ev.deltaY > 0) {
-          term.scrollToBottom();
-        } else {
-          term.scrollToTop();
-        }
+      // Ctrl+E: block from PTY — handled by App.tsx (tab rename)
+      if (ev.ctrlKey && ev.key === "e" && ev.type === "keydown") {
         return false;
       }
-      return true;
+      return true; // Let it through
     });
 
     termRef.current = term;
@@ -370,11 +360,24 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     return "";
   }, []);
 
+  // Discard any pending write-batch chunks and cancel debounce timer.
+  // Called during respawn to prevent stale PTY data from being flushed
+  // after the terminal reset (\x1bc).
+  const clearPending = useCallback(() => {
+    writeBatchRef.current = [];
+    debounceStartRef.current = 0;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, []);
+
   return {
     attach,
     write,
     writeBytes,
     clear,
+    clearPending,
     focus,
     scrollToBottom,
     scrollToTop,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
 import { useSessionStore } from "../../store/sessions";
@@ -14,7 +14,6 @@ interface CommandBarProps {
 }
 
 export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProps) {
-  const [queuedCommand, setQueuedCommand] = useState<string | null>(null);
   const slashCommands = useSettingsStore((s) => s.slashCommands);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const recordCommandUsage = useSettingsStore((s) => s.recordCommandUsage);
@@ -32,6 +31,15 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
     [sessionId, recordCommandUsage, addCommandHistory]
   );
 
+  /** Type a command into the terminal without sending (no Enter). */
+  const typeCommand = useCallback(
+    (command: string) => {
+      if (!sessionId) return;
+      writeToPty(sessionId, command);
+    },
+    [sessionId]
+  );
+
   // Sort: frequently-used first (by count desc), then alphabetical
   const sortedCommands = useMemo(() => {
     return [...slashCommands].sort((a, b) => {
@@ -47,42 +55,19 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
     return Math.max(...sortedCommands.map((c) => commandUsage[c.cmd] || 0), 0);
   }, [sortedCommands, commandUsage]);
 
-  // When session becomes idle and there is a queued command, fire it.
-  // Delay slightly so Claude Code has time to render the prompt.
-  useEffect(() => {
-    if (!queuedCommand || !sessionId) return;
-    if (sessionState === "idle") {
-      const timer = setTimeout(() => {
-        sendCommand(queuedCommand);
-        setQueuedCommand(null);
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [sessionState, queuedCommand, sessionId, sendCommand]);
-
-  // Clear queue if session dies
-  useEffect(() => {
-    if (sessionState === "dead") {
-      setQueuedCommand(null);
-    }
-  }, [sessionState]);
-
   const handleClick = useCallback(
     (command: string, e: React.MouseEvent) => {
       if (!sessionId) return;
 
       if (e.ctrlKey) {
-        // Ctrl+Click: queue for auto-send when idle (for when Claude is busy)
-        setQueuedCommand((prev) => {
-          if (prev === command) return null; // Toggle off
-          return command;
-        });
-      } else {
-        // Normal click: send immediately
+        // Ctrl+Click: send immediately (type + Enter)
         sendCommand(command);
+      } else {
+        // Normal click: type into terminal without sending
+        typeCommand(command);
       }
     },
-    [sessionId, sendCommand]
+    [sessionId, sendCommand, typeCommand]
   );
 
   // Don't render if there's no active session
@@ -112,19 +97,15 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
           <span className="command-bar-discovering">Discovering commands...</span>
         ) : (
           sortedCommands.map((cmd) => {
-            const isQueued = queuedCommand === cmd.cmd;
             const usageCount = commandUsage[cmd.cmd] || 0;
             const heat = computeHeatLevel(usageCount, maxCount);
             return (
               <button
                 key={cmd.cmd}
-                className={
-                  "command-btn" +
-                  (isQueued ? " command-btn-queued" : "")
-                }
-                style={isQueued || ctrlHeld ? undefined : getHeatStyle(heat)}
+                className="command-btn"
+                style={ctrlHeld ? undefined : getHeatStyle(heat)}
                 onClick={(e) => handleClick(cmd.cmd, e)}
-                title={ctrlHeld ? `Ctrl+Click: Queue "${cmd.cmd}"` : cmd.desc}
+                title={ctrlHeld ? `Ctrl+Click: Send "${cmd.cmd}"` : `Click: Type "${cmd.cmd}" into terminal\n${cmd.desc}`}
                 type="button"
               >
                 {cmd.cmd}
@@ -133,12 +114,6 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
           })
         )}
       </div>
-      {queuedCommand && (
-        <div className="command-bar-queue-indicator">
-          <span className="command-bar-queue-dot" />
-          {queuedCommand} queued
-        </div>
-      )}
     </div>
   );
 }

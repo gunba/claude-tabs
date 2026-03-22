@@ -302,6 +302,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (name) renameSession(session.id, name);
 
     // 4. Visual feedback + loading spinner for resumed sessions
+    // [PT-11] Clear stale buffers before terminal reset
+    bgBufferRef.current = [];
+    terminal.clearPending();
     terminalRef.current?.write("\x1bc");  // RIS: full terminal reset
     terminal.fit();
     terminalRef.current?.write("\x1b[90m[Resuming...]\x1b[0m\r\n");
@@ -577,21 +580,32 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const showDeadOverlay = session.state === "dead" && visible;
   const showButtonBar = visible && session.state !== "dead";
 
-  // Ctrl+middle-mouse: scroll to last user message
+  // Ctrl+mouse shortcuts (capture phase — fires before xterm.js ScrollableElement's stopPropagation)
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !visible) return;
-    const handler = (ev: MouseEvent) => {
+    const onWheel = (ev: WheelEvent) => {
+      if (ev.ctrlKey) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (ev.deltaY > 0) terminal.scrollToBottom();
+        else terminal.scrollToTop();
+      }
+    };
+    const onMouseDown = (ev: MouseEvent) => {
       if (ev.button === 1 && ev.ctrlKey) {
         ev.preventDefault();
         ev.stopPropagation();
         terminal.scrollToLastUserMessage();
       }
     };
-    el.addEventListener("mousedown", handler, { capture: true });
-    return () => el.removeEventListener("mousedown", handler, { capture: true });
-    // terminal.scrollToLastUserMessage is a stable useCallback — safe in deps
-  }, [visible, terminal.scrollToLastUserMessage]);
+    el.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    el.addEventListener("mousedown", onMouseDown, { capture: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel, { capture: true });
+      el.removeEventListener("mousedown", onMouseDown, { capture: true });
+    };
+  }, [visible, terminal.scrollToTop, terminal.scrollToBottom, terminal.scrollToLastUserMessage]);
 
   const totalTokens = session.metadata.inputTokens + session.metadata.outputTokens;
 
