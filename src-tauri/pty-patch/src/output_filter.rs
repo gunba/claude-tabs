@@ -1,7 +1,10 @@
 /// Byte-level output filter for the live output path.
 ///
-/// Strips dangerous escape sequences before they reach the user's terminal.
+/// Strips dangerous escape sequences before they reach xterm.js.
 /// Handles sequences that span chunk boundaries via internal state machine.
+///
+/// **Passes through** device queries (DA1, DA2, DSR, CPR, DECRQM, Kitty keyboard)
+/// — xterm.js IS the terminal and must respond to these for ConPTY/Claude handshake.
 ///
 /// Tracks BSU/ESU (DEC Mode 2026) synchronized update state so that
 /// ESC[2J is only stripped outside sync blocks. Inside sync blocks,
@@ -135,7 +138,7 @@ impl OutputFilter {
                         let csi_buf = std::mem::take(buf);
                         self.state = FilterState::Normal;
                         if self.is_blocked_csi(&csi_buf) {
-                            self.queries_stripped += 1;
+                            // clear_screen_stripped already incremented inside is_blocked_csi
                         } else {
                             // Track BSU/ESU for sync-aware clear-screen filtering
                             if csi_buf == b"?2026h" {
@@ -250,17 +253,6 @@ impl OutputFilter {
         let params = &buf[..buf.len() - 1];
 
         match final_byte {
-            // DA primary: CSI c, CSI 0 c
-            b'c' => {
-                params.is_empty() || params == b"0" || params == b">0" || params == b">"
-            }
-            // DSR: CSI 6 n (cursor position report request)
-            // Also CSI 5 n (device status report)
-            b'n' => params == b"6" || params == b"5",
-            // DECRQM: CSI ? Ps $ p
-            b'p' => params.ends_with(b"$") && params.starts_with(b"?"),
-            // Kitty keyboard query: CSI ? u
-            b'u' => params == b"?",
             // CSI 3 J — erase scrollback buffer. Always stripped.
             // CSI 2 J — erase entire display. Stripped only OUTSIDE
             // BSU/ESU sync blocks (with a startup grace period).
@@ -457,47 +449,41 @@ mod tests {
     }
 
     #[test]
-    fn test_da_primary_stripped() {
+    fn test_da_primary_passes_through() {
         let mut f = OutputFilter::new();
-        assert_eq!(f.filter(b"\x1b[c"), b"");
-        assert_eq!(f.filter(b"\x1b[0c"), b"");
-        assert_eq!(f.metrics().queries_stripped, 2);
+        assert_eq!(f.filter(b"\x1b[c"), b"\x1b[c");
+        assert_eq!(f.filter(b"\x1b[0c"), b"\x1b[0c");
     }
 
     #[test]
-    fn test_da_secondary_stripped() {
+    fn test_da_secondary_passes_through() {
         let mut f = OutputFilter::new();
-        assert_eq!(f.filter(b"\x1b[>c"), b"");
-        assert_eq!(f.filter(b"\x1b[>0c"), b"");
-        assert_eq!(f.metrics().queries_stripped, 2);
+        assert_eq!(f.filter(b"\x1b[>c"), b"\x1b[>c");
+        assert_eq!(f.filter(b"\x1b[>0c"), b"\x1b[>0c");
     }
 
     #[test]
-    fn test_dsr_cursor_position_stripped() {
+    fn test_dsr_cursor_position_passes_through() {
         let mut f = OutputFilter::new();
-        assert_eq!(f.filter(b"\x1b[6n"), b"");
-        assert_eq!(f.metrics().queries_stripped, 1);
+        assert_eq!(f.filter(b"\x1b[6n"), b"\x1b[6n");
     }
 
     #[test]
-    fn test_dsr_device_status_stripped() {
+    fn test_dsr_device_status_passes_through() {
         let mut f = OutputFilter::new();
-        assert_eq!(f.filter(b"\x1b[5n"), b"");
-        assert_eq!(f.metrics().queries_stripped, 1);
+        assert_eq!(f.filter(b"\x1b[5n"), b"\x1b[5n");
     }
 
     #[test]
-    fn test_decrqm_stripped() {
+    fn test_decrqm_passes_through() {
         let mut f = OutputFilter::new();
-        assert_eq!(f.filter(b"\x1b[?1$p"), b"");
-        assert_eq!(f.metrics().queries_stripped, 1);
+        assert_eq!(f.filter(b"\x1b[?1$p"), b"\x1b[?1$p");
     }
 
     #[test]
-    fn test_kitty_keyboard_query_stripped() {
+    fn test_kitty_keyboard_query_passes_through() {
         let mut f = OutputFilter::new();
-        assert_eq!(f.filter(b"\x1b[?u"), b"");
-        assert_eq!(f.metrics().queries_stripped, 1);
+        assert_eq!(f.filter(b"\x1b[?u"), b"\x1b[?u");
     }
 
     #[test]
@@ -574,8 +560,8 @@ mod tests {
         let mut f = OutputFilter::new();
         let input = b"\x1b[31mred\x1b]52;c;data\x07\x1b[0m normal\x1b[c";
         let result = f.filter(input);
-        // SGR red passes, OSC 52 stripped, SGR reset passes, text passes, DA stripped
-        assert_eq!(result, b"\x1b[31mred\x1b[0m normal");
+        // SGR red passes, OSC 52 stripped, SGR reset passes, text passes, DA passes
+        assert_eq!(result, b"\x1b[31mred\x1b[0m normal\x1b[c");
     }
 
     #[test]
@@ -858,13 +844,12 @@ mod tests {
     // ── Multiple CSI queries in one chunk ───────────────────────────
 
     #[test]
-    fn test_multiple_queries_same_chunk() {
+    fn test_device_queries_pass_through_same_chunk() {
         let mut f = OutputFilter::new();
-        // DA1 + DSR + kitty keyboard query in one chunk
+        // DA1 + DSR + kitty keyboard query in one chunk — all pass through
         let input = b"\x1b[c\x1b[6n\x1b[?u";
         let result = f.filter(input);
-        assert!(result.is_empty());
-        assert_eq!(f.metrics().queries_stripped, 3);
+        assert_eq!(result, input.to_vec());
     }
 
     // ── ESC[1J (erase above) should pass through ───────────────────

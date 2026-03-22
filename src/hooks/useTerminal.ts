@@ -5,7 +5,8 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { getXtermTheme } from "../lib/theme";
 
-const PROMPT_MARKER = "\u276F"; // ❯ — Ink prompt character used by Claude Code
+const PROMPT_MARKER_NEW = ">\u00A0"; // > + NBSP — current Claude Code prompt
+const PROMPT_MARKER_OLD = "\u276F"; // ❯ — legacy Claude Code prompt
 const BOTTOM_TOLERANCE = 2; // Lines of slack for "at bottom" detection
 
 interface UseTerminalOptions {
@@ -358,7 +359,8 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   }, []);
 
   // Read current input from xterm.js buffer — authoritative, immediate,
-  // independent of PTY input tracking. Strips the Ink prompt prefix (❯).
+  // independent of PTY input tracking. Strips the prompt prefix.
+  // Supports both current (> + NBSP) and legacy (❯) Claude Code prompts.
   const getCurrentInput = useCallback((): string => {
     const term = termRef.current;
     if (!term) return "";
@@ -367,9 +369,11 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     const line = buf.getLine(y);
     if (!line) return "";
     const text = line.translateToString(true);
-    // Strip prompt prefix: ❯ (rendered by Ink when idle)
-    const promptIdx = text.lastIndexOf(PROMPT_MARKER);
+    // Try current prompt first ("> " with NBSP), then legacy (❯ + space)
+    let promptIdx = text.lastIndexOf(PROMPT_MARKER_NEW);
+    if (promptIdx < 0) promptIdx = text.lastIndexOf(PROMPT_MARKER_OLD);
     if (promptIdx >= 0) {
+      // Both markers are 2 chars (new: "> " NBSP, old: "❯" + space after)
       // Strip focus event remnants ([I = focus in, [O = focus out) that leak into buffer text
       return text.slice(promptIdx + 2).replace(/\[[OI]/g, "").trimEnd();
     }

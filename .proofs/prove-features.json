@@ -829,64 +829,73 @@
     "TB-23": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "DS-09": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TR-07": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TR-08": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TR-10": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TR-11": {
       "up": 1,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TR-12": {
       "up": 3,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "SL-07": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "CM-23": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "CM-25": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "KB-03": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TR-09": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 8
     },
     "TB-24": {
+      "up": 0,
+      "down": 0,
+      "seen": 2
+    },
+    "CM-05": {
+      "up": 0,
+      "down": 0
+    },
+    "CM-24": {
       "up": 0,
       "down": 0
     }
@@ -980,6 +989,22 @@
       "files": [
         "src/components/Terminal/TerminalPanel.tsx:619",
         "src-tauri/tauri.conf.json:25"
+      ],
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "CM-05": {
+      "files": [
+        "src/components/ConfigManager/ConfigManager.tsx:102",
+        "src/components/ConfigManager/SettingsTab.tsx:1"
+      ],
+      "verified": "2026-03-22",
+      "notes": "Edited via tag-edit.sh"
+    },
+    "CM-24": {
+      "files": [
+        "src/components/ConfigManager/SettingsTab.tsx:112",
+        "src/components/ConfigManager/ConfigManager.css:1101"
       ],
       "verified": "2026-03-22",
       "notes": "Edited via tag-edit.sh"

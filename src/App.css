@@ -513,7 +513,6 @@
   background: var(--border-subtle);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  height: 40px;
   overflow-x: auto;
   scrollbar-width: none;
 }

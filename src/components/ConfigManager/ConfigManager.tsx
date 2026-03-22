@@ -3,7 +3,7 @@ import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
 import { ModalOverlay } from "../ModalOverlay/ModalOverlay";
 import { ThreePaneEditor } from "./ThreePaneEditor";
-import { SettingsPane } from "./SettingsPane";
+import { SettingsTab } from "./SettingsTab";
 import { MarkdownPane } from "./MarkdownPane";
 import { HooksPane } from "./HooksPane";
 import { PluginsPane } from "./PluginsPane";
@@ -99,7 +99,7 @@ export function ConfigManager() {
       {/* Content */}
       <div className="config-content">
         {tab === "settings" && (
-          <ThreePaneEditor component={SettingsPane} projectDir={projectDir} onStatus={setStatusMsg} tabId="settings" />
+          <SettingsTab projectDir={projectDir} onStatus={setStatusMsg} />
         )}
         {tab === "claudemd" && (
           <ThreePaneEditor component={MarkdownPane} projectDir={projectDir} onStatus={setStatusMsg} tabId="claudemd" />

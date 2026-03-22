@@ -196,15 +196,30 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       cacheSessionConfig: (id, config) =>
         set((s) => {
-          // Store only non-default fields to keep entries small
-          const partial: Partial<SessionConfig> = {};
-          if (config.model) partial.model = config.model;
-          if (config.permissionMode !== "default") partial.permissionMode = config.permissionMode;
-          if (config.dangerouslySkipPermissions) partial.dangerouslySkipPermissions = config.dangerouslySkipPermissions;
-          if (config.effort) partial.effort = config.effort;
-          if (config.agent) partial.agent = config.agent;
-          if (config.maxBudget !== null) partial.maxBudget = config.maxBudget;
-          if (config.runMode) partial.runMode = config.runMode;
+          const partial: Partial<SessionConfig> = {
+            model: config.model,
+            permissionMode: config.permissionMode,
+            dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+            effort: config.effort,
+            agent: config.agent,
+            maxBudget: config.maxBudget,
+            verbose: config.verbose,
+            debug: config.debug,
+            projectDir: config.projectDir,
+            extraFlags: config.extraFlags,
+            systemPrompt: config.systemPrompt,
+            appendSystemPrompt: config.appendSystemPrompt,
+            allowedTools: config.allowedTools.length > 0 ? config.allowedTools : undefined,
+            disallowedTools: config.disallowedTools.length > 0 ? config.disallowedTools : undefined,
+            additionalDirs: config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
+            mcpConfig: config.mcpConfig,
+          };
+          // Strip undefined/null/default values to keep entries small
+          for (const [k, v] of Object.entries(partial)) {
+            if (v === undefined || v === null || v === false || v === "" || v === "default") {
+              delete (partial as Record<string, unknown>)[k];
+            }
+          }
           if (Object.keys(partial).length === 0) return s;
           return { sessionConfigs: { ...s.sessionConfigs, [id]: partial } };
         }),

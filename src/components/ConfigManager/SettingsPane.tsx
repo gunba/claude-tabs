@@ -185,7 +185,14 @@ function SettingsReference({
   );
 }
 
-export function SettingsPane({ scope, projectDir, onStatus }: PaneComponentProps) {
+export interface SettingsPaneExtraProps {
+  hideReference?: boolean;
+  onKeysChange?: (keys: Set<string>) => void;
+  insertRef?: React.MutableRefObject<((key: string, value: unknown) => void) | null>;
+  onEditorFocus?: () => void;
+}
+
+export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKeysChange, insertRef, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(true);
@@ -264,6 +271,17 @@ export function SettingsPane({ scope, projectDir, onStatus }: PaneComponentProps
     setText((prev) => insertIntoJson(prev, key, value));
   }, []);
 
+  // Report current keys to parent
+  useEffect(() => {
+    onKeysChange?.(currentKeys);
+  }, [currentKeys, onKeysChange]);
+
+  // Expose handleInsert via ref
+  useEffect(() => {
+    if (insertRef) insertRef.current = handleInsert;
+    return () => { if (insertRef) insertRef.current = null; };
+  }, [handleInsert, insertRef]);
+
   const syncScroll = () => {
     if (textareaRef.current && preRef.current) {
       preRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -282,7 +300,7 @@ export function SettingsPane({ scope, projectDir, onStatus }: PaneComponentProps
   if (typeMismatches.length > 0) validationParts.push(`${typeMismatches.length} type error${typeMismatches.length > 1 ? "s" : ""}`);
 
   return (
-    <div className="pane-editor">
+    <div className="pane-editor" onFocus={onEditorFocus}>
       <div className="sh-container">
         <pre
           ref={preRef}
@@ -303,7 +321,7 @@ export function SettingsPane({ scope, projectDir, onStatus }: PaneComponentProps
         />
       </div>
 
-      {schema.length > 0 && (
+      {!hideReference && schema.length > 0 && (
         <SettingsReference
           schema={schema}
           currentKeys={currentKeys}

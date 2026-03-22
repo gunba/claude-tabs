@@ -196,10 +196,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
   // Cache session config when inspector connects (for resume picker fallback)
   useEffect(() => {
-    if (inspector.connected) {
-      useSettingsStore.getState().cacheSessionConfig(getResumeId(session), session.config);
+    if (inspector.connected && session.config.sessionId) {
+      useSettingsStore.getState().cacheSessionConfig(session.config.sessionId, session.config);
     }
-  }, [inspector.connected, session.id]);
+  }, [inspector.connected, session.id, session.config.sessionId]);
 
   // Duration timer
   useDurationTimer(session.id, session.state);
@@ -332,6 +332,11 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     setRespawnCounter((c) => c + 1);
   };
 
+  // Accumulate user keystrokes for command history detection.
+  // Reading from xterm.js buffer is racy — PTY echo goes through write batching
+  // and xterm.js processes writes async, so the buffer may be stale on Enter.
+  const inputAccRef = useRef("");
+
   const handleTermData = useCallback(
     (data: string) => {
       // Swallow all input when session is dead (overlay handles actions)
@@ -341,13 +346,21 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         }
         return;
       }
-      // Detect slash commands typed directly in terminal on Enter.
-      // Exact match: real Enter keypress is "\r"; pasted text is always longer.
+      // Track user input for command history detection
       if (data === "\r") {
-        const input = terminalRef.current?.getCurrentInput();
+        const input = inputAccRef.current.trim();
         if (input && input.startsWith("/")) {
           useSessionStore.getState().addCommandHistory(session.id, input);
         }
+        inputAccRef.current = "";
+      } else if (data === "\x7f" || data === "\b") {
+        inputAccRef.current = inputAccRef.current.slice(0, -1);
+      } else if (data === "\x15" || data === "\x03") {
+        inputAccRef.current = "";
+      } else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+        inputAccRef.current += data;
+      } else if (data.length > 1 && !data.startsWith("\x1b")) {
+        inputAccRef.current += data;
       }
       pty.handle.current?.write(data);
     },

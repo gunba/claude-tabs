@@ -72,8 +72,6 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/components/Terminal/TerminalPanel.tsx:395, src/components/Terminal/TerminalPanel.tsx:409-415
 - [PT-13] Same-dimension gate: handleResize tracks last PTY dims in a ref; skips redundant pty.resize() calls when cols/rows unchanged. Prevents ConPTY reflow duplication from layout-triggered ResizeObserver events.
   - Files: src/components/Terminal/TerminalPanel.tsx:359
-- [PT-14] Stable subagent bar height: .subagent-bar has fixed height: 40px to prevent content-driven height changes from triggering terminal resizes during inspector poll cycles.
-  - Files: src/App.css:516
 - [PT-15] Background reader thread per session: OS thread reads ConPTY pipe (8 KiB buffer) into bounded sync_channel(64). Decouples blocking pipe reads from IPC, enabling timeout-based sync block coalescing in the read command.
   - Files: src-tauri/pty-patch/src/lib.rs:90
 - [PT-16] DEC 2026 sync coalescing: read command filters output through OutputFilter then SyncBlockDetector. When mid-sync-block (BSU seen, ESU pending), reads continue with 50ms timeout to coalesce the complete synchronized update into a single IPC response. Eliminates scroll jumping from ConPTY-fragmented redraws.
