@@ -75,7 +75,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 ## Terminal
 
 - [TR-01] Scroll-to-top button appears at top-right when scrolled down; scroll-to-bottom button at bottom-right when scrolled up
-- [TR-02] Per-session token badge: semi-transparent overlay (top-left of terminal) showing session token count; tooltip shows input/output breakdown; hidden when dead or zero tokens
+- [TR-02] Per-session token badge: shown on the tab card (top-right, absolutely positioned, hidden on hover to make room for action buttons) showing session token count; tooltip shows input/output breakdown; hidden when dead or zero tokens
 - [TR-03] Clear input button uses standard backspace icon (pointed rectangle with X); Lucide/Feather style
 - [TR-04] Ctrl+Home scrolls to top, Ctrl+End scrolls to bottom
 - [TR-05] Hidden tabs use CSS `display: none` — never unmount/remount xterm.js (destroys state)

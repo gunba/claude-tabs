@@ -298,6 +298,7 @@ export default function App() {
                 metaSpans.push({ text: modelLabel(m) + ver, color: modelColor(m) });
               }
               if (session.config.effort) metaSpans.push({ text: session.config.effort.charAt(0).toUpperCase() + session.config.effort.slice(1), color: "var(--accent)" });
+              const totalTokens = session.metadata.inputTokens + session.metadata.outputTokens;
               const subs = subagentMap.get(session.id) || [];
               const liveAgents = subs.filter((s) => s.state !== "dead" && s.state !== "idle").length;
               if (liveAgents > 0) metaSpans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--text-secondary)" });
@@ -474,6 +475,11 @@ export default function App() {
                       <IconClose size={12} />
                     </button>
                   </span>
+                  {session.state !== "dead" && totalTokens > 0 && (
+                    <span className="tab-tokens" title={`Input: ${formatTokenCount(session.metadata.inputTokens)}\nOutput: ${formatTokenCount(session.metadata.outputTokens)}`}>
+                      {formatTokenCount(totalTokens)}
+                    </span>
+                  )}
                 </div>
               );
               }),

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTerminal } from "../../hooks/useTerminal";
 import { usePty } from "../../hooks/usePty";
 import { useSessionStore } from "../../store/sessions";
-import { buildClaudeArgs, getResumeId, formatTokenCount, canResumeSession } from "../../lib/claude";
+import { buildClaudeArgs, getResumeId, canResumeSession } from "../../lib/claude";
 import { allocateInspectorPort, registerInspectorPort, unregisterInspectorPort, registerInspectorCallbacks, unregisterInspectorCallbacks } from "../../lib/inspectorPort";
 import { useInspectorState } from "../../hooks/useInspectorState";
 import { registerPtyWriter, unregisterPtyWriter } from "../../lib/ptyRegistry";
@@ -670,7 +670,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     };
   }, [visible, terminal.scrollToTop, terminal.scrollToBottom, terminal.scrollToLastUserMessage]);
 
-  const totalTokens = session.metadata.inputTokens + session.metadata.outputTokens;
 
   return (
     <div
@@ -683,15 +682,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           <span>Loading conversation...</span>
         </div>
       )}
-      {visible && session.state !== "dead" && totalTokens > 0 && (
-        <div
-          className="terminal-token-badge"
-          title={`Input: ${formatTokenCount(session.metadata.inputTokens)}\nOutput: ${formatTokenCount(session.metadata.outputTokens)}`}
-        >
-          {formatTokenCount(totalTokens)}
-        </div>
-      )}
-      <div className="terminal-inner">
+<div className="terminal-inner">
         <div className="terminal-container" ref={setContainer} />
         {showButtonBar && (
           <div className="terminal-button-bar">
