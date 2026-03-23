@@ -8,7 +8,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 
 - [DF-01] User types in xterm.js -> `onData` -> PTY `write` -> ConPTY -> Claude stdin
 - [DF-02] Claude stdout -> ConPTY -> background reader thread (8 KiB) -> sync_channel(64) -> OutputFilter (security) -> SyncBlockDetector (DEC 2026 coalescing) -> IPC response -> Uint8Array
-  - Files: src-tauri/pty-patch/src/lib.rs:155, src/lib/ptyProcess.ts:88
+  - Files: src-tauri/pty-patch/src/lib.rs:179, src/lib/ptyProcess.ts:88
 - [DF-03] PTY data handler: `writeBytes(data)` to xterm.js (debounce-batched, 4ms/50ms). Background tabs buffer PTY data in bgBufferRef, flushed as single merged write on tab focus.
 - [DF-04] React re-renders from Zustand store: tab state dots, status bar, subagent cards
 - [DF-05] xterm.js 6.0 with DEC 2026 synchronized output — prevents ink rendering flash on rapid writes
@@ -23,8 +23,8 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 
 - [SI-01] Sole source: BUN_INSPECT WebSocket inspector via JSON.stringify interception (~2-6ms latency)
 - [SI-02] Inspector connects after 1s delay (Bun init time), retries 3x with backoff on failure
-- [SI-03] `deriveStateFromPoll()` — pure function for state derivation from poll payloads; replaces poll-based derivation
-  - Files: src/hooks/useInspectorState.ts:37
+- [SI-03] deriveStateFromPoll() -- pure function for state derivation from poll payloads; replaces poll-based derivation
+  - Files: src/hooks/useInspectorState.ts:39
 - [SI-04] Permission detection via `permPending` notification flag (not PTY regex)
 - [SI-05] Idle detection via `idleDetected` notification flag (not PTY regex); sticky, cleared only by user event; pushed in real-time via `__ispPush`
   - Files: src/lib/inspectorHooks.ts:77
@@ -37,12 +37,12 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/lib/inspectorHooks.ts:53, src/lib/inspectorHooks.ts:181, src/lib/inspectorHooks.ts:211, src/lib/inspectorHooks.ts:235
 - [SI-12] idleDetected is sticky: cleared only by user events in the hook; prevents state oscillation between idle and stale tool_use
   - Files: src/lib/inspectorHooks.ts:236
-- [SI-13] `deriveStateFromPoll` override chain: ExitPlanMode refines toolUse to actionNeeded; idleDetected overrides to idle; choiceHint refines idle to actionNeeded; permPending always wins (waitingPermission)
-  - Files: src/hooks/useInspectorState.ts:37, src/hooks/useInspectorState.ts:63
+- [SI-13] deriveStateFromPoll override chain: ExitPlanMode refines toolUse to actionNeeded; idleDetected overrides to idle; choiceHint refines idle to actionNeeded; permPending always wins (waitingPermission)
+  - Files: src/hooks/useInspectorState.ts:39, src/hooks/useInspectorState.ts:65
 - [SI-14] Poll-based architecture: INSTALL_HOOK wraps JSON.stringify to capture state into globalThis.__inspectorState; useInspectorState polls via POLL_STATE expression every 250ms, draining events and transient flags each cycle. No push binding; state detection disabled if hook install fails.
-  - Files: src/hooks/useInspectorState.ts:199, src/lib/inspectorHooks.ts:27
+  - Files: src/hooks/useInspectorState.ts:214, src/lib/inspectorHooks.ts:27
 - [SI-15] Poll result fields: InspectorPollResult includes n (event count), sid, cost, model, stop, tools, inTok/outTok, events (ring buffer), permPending/idleDetected (notification flags), subs (subagent state with spliced msgs), inputBuf/inputTs (stdin capture), choiceHint (computed from lastText)
-  - Files: src/lib/inspectorHooks.ts:352, src/hooks/useInspectorState.ts:7
+  - Files: src/lib/inspectorHooks.ts:400, src/hooks/useInspectorState.ts:8
 - [SI-16] WebFetch domain blocklist bypass: intercepts require('https').request to return can_fetch:true for api.anthropic.com/api/web/domain_info, eliminating the 10s preflight that blocks all WebFetch calls. Axios in Bun uses the Node http adapter (not globalThis.fetch), so the hook targets the shared https module singleton. Bypass count exposed as fetchBypassed in poll state.
   - Files: src/lib/inspectorHooks.ts:298
 - [SI-17] Interrupt signal detection: Ctrl+C (\x03) and Escape (\x1b) on stdin emit a synthetic result event, set state to end_turn, clear permission/tool flags, and mark all subagents idle — enabling immediate idle detection without waiting for Claude's actual response.
@@ -62,26 +62,28 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [PT-07] OS PID registered in global cleanup registry (`ptyProcess.ts`) immediately on PTY spawn; unregistered on explicit kill. Dual-layer: frontend fires `kill_process_tree` on `beforeunload`, Rust `ActivePids` state kills on `RunEvent::Exit` as backstop
   - Files: src/lib/ptyProcess.ts:9, src-tauri/src/lib.rs:16
 - [PT-08] Scroll desync fix: xterm-viewport uses overflow-y:scroll with hidden scrollbar (scrollbar-width:none + ::-webkit-scrollbar) instead of overflow:hidden. isAtBottom/wasAtBottom use 2-line tolerance for near-bottom snap.
-  - Files: src/components/Terminal/TerminalPanel.css:59, src/hooks/useTerminal.ts:299, src/hooks/useTerminal.ts:214, src/hooks/useTerminal.ts:9
+  - Files: src/components/Terminal/TerminalPanel.css:60, src/hooks/useTerminal.ts:304, src/hooks/useTerminal.ts:219, src/hooks/useTerminal.ts:10
 - [PT-09] FitAddon dimension guard: fit() calls check proposeDimensions() first — if rows <= 1, container is not laid out yet and fit is skipped. Applied in useTerminal wrapper, initial attach, and ResizeObserver.
-  - Files: src/hooks/useTerminal.ts:312, src/hooks/useTerminal.ts:178, src/hooks/useTerminal.ts:184
+  - Files: src/hooks/useTerminal.ts:317, src/hooks/useTerminal.ts:184, src/hooks/useTerminal.ts:191
 - [PT-10] Parallel exit waiter: fire-and-forget invoke('plugin:pty|exitstatus') runs alongside read loop. On Windows ConPTY, read pipe may hang after Ctrl+C; exitstatus uses WaitForSingleObject which reliably returns. exitFired guard ensures exactly one callback fires
   - Files: src/lib/ptyProcess.ts:112
 - [PT-11] Respawn clears both bgBufferRef and useTerminal's writeBatchRef (via clearPending()) before writing \x1bc. Without this, stale PTY data from previous sessions survives the terminal reset and gets flushed when the tab becomes visible, causing duplicated conversation content.
-  - Files: src/components/Terminal/TerminalPanel.tsx:314, src/hooks/useTerminal.ts:366
+  - Files: src/components/Terminal/TerminalPanel.tsx:314, src/hooks/useTerminal.ts:390
 - [PT-12] Pre-spawn fit() + post-spawn rAF dimension verification prevents 80-col race when font metrics or WebGL renderer aren't ready during initial layout
-  - Files: src/components/Terminal/TerminalPanel.tsx:395, src/components/Terminal/TerminalPanel.tsx:409-415
+  - Files: src/components/Terminal/TerminalPanel.tsx:417, src/components/Terminal/TerminalPanel.tsx:431-437
 - [PT-13] Same-dimension gate: handleResize tracks last PTY dims in a ref; skips redundant pty.resize() calls when cols/rows unchanged. Prevents ConPTY reflow duplication from layout-triggered ResizeObserver events.
-  - Files: src/components/Terminal/TerminalPanel.tsx:359
+  - Files: src/components/Terminal/TerminalPanel.tsx:375
 - [PT-15] Background reader thread per session: OS thread reads ConPTY pipe (8 KiB buffer) into bounded sync_channel(64). Decouples blocking pipe reads from IPC, enabling timeout-based sync block coalescing in the read command.
-  - Files: src-tauri/pty-patch/src/lib.rs:119
+  - Files: src-tauri/pty-patch/src/lib.rs:127
 - [PT-16] DEC 2026 sync coalescing: read command filters output through OutputFilter then SyncBlockDetector. When mid-sync-block (BSU seen, ESU pending), reads continue with 50ms timeout to coalesce the complete synchronized update into a single IPC response. Eliminates scroll jumping from ConPTY-fragmented redraws.
   - Files: src-tauri/pty-patch/src/lib.rs:179, src-tauri/pty-patch/src/sync_detector.rs:1
 - [PT-17] Output security filter: byte-level state machine strips OSC 52 (clipboard hijack), OSC 50 (font query), DCS sequences, C1 controls (including cross-chunk PendingC2 state), ESC[3J (scrollback erase). ESC[2J stripped outside sync blocks after startup grace period of 2. Device queries (DA1/DA2/DSR/CPR/DECRQM/Kitty keyboard) pass through for ConPTY handshake. OSC 2 titles sanitized. All hyperlinks pass through.
 - [PT-18] Shutdown drain: drain_output command empties the channel (500ms deadline, 10ms intervals) before session destroy, preventing the background reader thread from blocking on a full channel.
-  - Files: src-tauri/pty-patch/src/lib.rs:340, src/lib/ptyProcess.ts:170
+  - Files: src-tauri/pty-patch/src/lib.rs:348, src/lib/ptyProcess.ts:170
 - [PT-19] Sync block re-wrapping: completed sync blocks are re-wrapped with BSU/ESU before sending to xterm.js. Full-redraw blocks (`is_full_redraw: true`) replace ESC[2J (pushes viewport to scrollback) with ESC[H ESC[J (cursor home + erase below, no scrollback push). `strip_clear_screen_into` uses memchr::memmem to efficiently remove all ESC[2J occurrences.
-  - Files: src-tauri/pty-patch/src/lib.rs:25, src-tauri/pty-patch/src/lib.rs:40
+  - Files: src-tauri/pty-patch/src/lib.rs:27, src-tauri/pty-patch/src/lib.rs:42
+- [PT-20] [OF-05] Full-redraw sync blocks clear scrollback (ESC[3J) before clearing viewport. Prevents ink's full-conversation re-render from duplicating into scrollback on resize.
+  - Files: src-tauri/pty-patch/src/lib.rs:50
 
 ## Persistence
 
@@ -102,11 +104,11 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [RS-05] Skip `--session-id` CLI arg when using `--resume` or `--continue`
 - [RS-06] Session-in-use auto-recovery: checks process ancestry to distinguish own orphans from external processes; own descendants (stale orphans from crashed tabs) killed automatically and resume retries
 - [RS-07] Spawn effect guards against dead sessions (session.state === 'dead') -- prevents restored dead sessions from auto-spawning with --session-id on startup. Respawns still work because triggerRespawn sets state to 'starting' before incrementing respawnCounter
-  - Files: src/components/Terminal/TerminalPanel.tsx:389
+  - Files: src/components/Terminal/TerminalPanel.tsx:411
 - [RS-08] Auto-resume effect uses prevVisibleRef to detect hidden-to-visible transitions; only fires when tab becomes visible AND session is dead AND conversation is resumable; 150ms delay for render settling
-  - Files: src/components/Terminal/TerminalPanel.tsx:433
+  - Files: src/components/Terminal/TerminalPanel.tsx:456
 - [RS-09] Terminal reset on respawn: writes ANSI RIS (\x1bc) to clear content and scrollback, then fit() to sync xterm.js dimensions before spawning new PTY
-  - Files: src/components/Terminal/TerminalPanel.tsx:316, src/hooks/useTerminal.ts:366
+  - Files: src/components/Terminal/TerminalPanel.tsx:316, src/hooks/useTerminal.ts:390
 
 ## Session Switch
 
@@ -121,11 +123,11 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/lib/inspectorHooks.ts:27
 - [IN-03] Subagent tracking: inspector detects Agent tool_use -> queues description -> matches with new session ID system event -> routes events to subagent entry
 - [IN-04] Subagent conversation messages captured via POLL_STATE splice (sub.msgs.splice(0)) each poll cycle; messages accumulated in INSTALL_HOOK's subagent tracking and drained by the frontend poller
-  - Files: src/lib/inspectorHooks.ts:381, src/hooks/useInspectorState.ts:155
+  - Files: src/lib/inspectorHooks.ts:427, src/hooks/useInspectorState.ts:157
 - [IN-05] Stale subagent detection removed -- push-based architecture handles subagent lifecycle via real-time state events only
-  - Files: src/hooks/useInspectorState.ts:149
+  - Files: src/hooks/useInspectorState.ts:156
 - [IN-06] Dead subagent purge removed -- push-based architecture relies on real-time state transitions; idle subs remain visible until session ends
-  - Files: src/hooks/useInspectorState.ts:149
+  - Files: src/hooks/useInspectorState.ts:156
 - [IN-07] Inspector port allocator uses random start offset (Date.now() mod range) to reduce collisions with orphan processes during the brief window between app startup and cleanup
   - Files: src/lib/inspectorPort.ts:9
 - [IN-08] SubagentInspector tool block collapse: MessageBlock uses local useState for collapsed state; getToolPreview extracts first non-empty line (120 char cap). Parent computes lastToolIndex via reduce; only the last tool message auto-expands when subagent is active (not dead/idle). React key={i} ensures stable mounting.
@@ -159,7 +161,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [RC-14] send_notification: Custom WinRT toast command bypassing Tauri notification plugin. Uses tauri-winrt-notification Toast with on_activated callback that emits notification-clicked event to frontend. Dev mode uses PowerShell app ID, production uses bundle identifier. spawn_blocking + CREATE_NO_WINDOW compliant.
   - Files: src-tauri/src/commands.rs:1836, src/hooks/useNotifications.ts:44
 - [RC-15] drain_output -- drain channel before session destroy (spawn_blocking, 500ms deadline)
-  - Files: src-tauri/pty-patch/src/lib.rs:340
+  - Files: src-tauri/pty-patch/src/lib.rs:348
 - [RC-16] read_claude_binary(cli_path) resolves Claude Code binary through 5-step chain: .cmd shim parse -> direct CLI path -> sibling node_modules -> legacy versions dir -> npm root -g. Enables slash command/settings discovery on standalone installs.
   - Files: src-tauri/src/commands.rs:624
 - [RC-17] search_session_content: async Rust command scanning JSONL files for substring matches. Walks ~/.claude/projects/, skips files >20MB, stops at 50 results, returns sessionId + 200-char snippet. Uses extract_message_text helper for full text extraction from user/assistant events.
@@ -175,4 +177,4 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [CM-02] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
   - Files: src/lib/paths.ts:89
 - [CM-03] Settings schema discovery uses 4-tier priority: (1) JSON Schema from schemastore.org fetched via Rust fetch_settings_schema command (reqwest, avoids CORS), cached in localStorage by CLI version; (2) CLI --help flag parsing; (3) Binary Zod regex scan; (4) Static field registry. parseJsonSchema() unwraps Zod anyOf optionals, maps JSON Schema types to SettingField types, extracts descriptions/enums. buildSettingsSchema() deduplicates across all tiers.
-  - Files: src/lib/settingsSchema.ts:62, src-tauri/src/commands.rs:650, src/store/settings.ts:233
+  - Files: src/lib/settingsSchema.ts:62, src-tauri/src/commands.rs:890, src/store/settings.ts:257

@@ -312,6 +312,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // 4. Visual feedback + loading spinner for resumed sessions
     // [PT-11] Clear stale buffers before terminal reset
     bgBufferRef.current = [];
+    deferredResizeRef.current = null;
     terminal.clearPending();
     terminalRef.current?.write("\x1bc");  // RIS: full terminal reset
     terminal.fit();
@@ -350,7 +351,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       if (data === "\r") {
         const input = inputAccRef.current.trim();
         if (input && input.startsWith("/")) {
-          useSessionStore.getState().addCommandHistory(session.id, input);
+          useSessionStore.getState().addCommandHistory(session.id, input.split(" ")[0]);
         }
         inputAccRef.current = "";
       } else if (data === "\x7f" || data === "\b") {
@@ -370,14 +371,22 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   );
 
   const lastPtyDimsRef = useRef<{ cols: number; rows: number } | null>(null);
+  const deferredResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const handleResize = useCallback(
     (cols: number, rows: number) => {
       const last = lastPtyDimsRef.current;
       if (last && last.cols === cols && last.rows === rows) return;
       lastPtyDimsRef.current = { cols, rows };
+      // Defer the PTY resize if bgBuffer has pending data. The resize triggers
+      // a ConPTY repaint + ink full re-render; if xterm.js hasn't caught up yet
+      // (buffer not flushed), the repaint duplicates content into scrollback.
+      if (bgBufferRef.current.length > 0) {
+        deferredResizeRef.current = { cols, rows };
+        return;
+      }
       pty.handle.current?.resize(cols, rows);
     },
-    // pty.handle is a stable ref — omitted from deps intentionally
+    // pty.handle and bgBufferRef are stable refs — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -503,8 +512,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     const raf1 = requestAnimationFrame(() => {
       rafInner = requestAnimationFrame(() => {
         if (cancelled) return;
-        terminal.fit();
-        // Flush background buffer — write all buffered data in one batch
+        // Flush background buffer FIRST — write all buffered data in one batch
+        // so xterm.js catches up to ConPTY before any resize is sent.
         const chunks = bgBufferRef.current;
         if (chunks.length > 0) {
           bgBufferRef.current = [];
@@ -514,6 +523,13 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           let offset = 0;
           for (const c of chunks) { merged.set(c, offset); offset += c.length; }
           terminal.termRef.current?.write(merged);
+        }
+        terminal.fit();
+        // Send any deferred PTY resize now that the buffer has been flushed
+        const deferred = deferredResizeRef.current;
+        if (deferred) {
+          deferredResizeRef.current = null;
+          pty.handle.current?.resize(deferred.cols, deferred.rows);
         }
         terminal.termRef.current?.scrollToBottom();
         terminal.focus();
