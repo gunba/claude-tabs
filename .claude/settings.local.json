@@ -19,18 +19,19 @@
       "Bash(bash \"$LOCALAPPDATA/claude-agent-logs/bin/tag-info.sh\" stats)",
       "Bash(bash \"$LOCALAPPDATA/claude-agent-logs/bin/tag-info.sh\" lookup TB-01)",
       "Bash(bash \"$LOCALAPPDATA/claude-agent-logs/bin/start.sh\" 2>&1)",
-      "Bash(bash \"C:/Users/jorda/AppData/Local/claude-agent-logs/bin/tag-edit.sh\" --tag PT-14 --remove 2>&1)"
+      "Bash(bash \"C:/Users/jorda/AppData/Local/claude-agent-logs/bin/tag-edit.sh\" --tag PT-14 --remove 2>&1)",
+      "Bash(fi)"
     ]
   },
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$LOCALAPPDATA/claude-agent-logs/bin/block-doc-edits.sh\"",
-            "timeout": 5
+            "command": "bash -c 'MAIN=$(git worktree list --porcelain | head -1 | sed \"s/^worktree //\"); CUR=$(git rev-parse --show-toplevel); [ \"$MAIN\" != \"$CUR\" ] && bash \"$LOCALAPPDATA/claude-agent-logs/bin/setup-worktree.sh\" || true'",
+            "timeout": 30
           }
         ]
       }

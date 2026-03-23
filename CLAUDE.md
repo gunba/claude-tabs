@@ -93,7 +93,7 @@ src/
 │   ├── ptyProcess.ts                    # Direct PTY wrapper + active PID cleanup registry
 │   ├── ptyRegistry.ts                   # Global PTY writer registry
 │   ├── terminalRegistry.ts             # Terminal buffer reader registry
-│   ├── paths.ts                         # Path helpers, tab grouping (groupSessionsByDir, swapWithinGroup, TabGroup)
+│   ├── paths.ts                         # Path helpers, tab grouping, worktree detection (parseWorktreePath, worktreeAcronym)
 │   ├── settingsSchema.ts               # CLI settings.json schema discovery + parsing
 │   ├── testHarness.ts                   # Test bridge (writes state to JSON, accepts commands)
 │   ├── uiConfig.ts                     # Persisted UI configuration
