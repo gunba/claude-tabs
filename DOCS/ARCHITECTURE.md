@@ -1,6 +1,6 @@
 # Architecture
 
-<!-- Codes: DF=Data Flow, SI=State Inspection, PT=PTY Internals, PS=Persistence, RS=Respawn & Resume, SS=Session Switch, IN=Inspector, BF=Background Buffering, RC=Rust Commands, CM=Config Manager -->
+<!-- Codes: DF=Data Flow, SI=State Inspection, PT=PTY Internals, PS=Persistence, RS=Respawn & Resume, SS=Session Switch, IN=Inspector, BF=Background Buffering, RC=Rust Commands, CI=Config Implementation -->
 
 Technical implementation details. Code implementing a tagged entry is not dead code.
 
@@ -26,7 +26,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [SI-03] deriveStateFromPoll() -- pure function for state derivation from poll payloads; replaces poll-based derivation
   - Files: src/hooks/useInspectorState.ts:39
 - [SI-04] Permission detection via `permPending` notification flag (not PTY regex)
-- [SI-05] Idle detection via `idleDetected` notification flag (not PTY regex); sticky, cleared only by user event; pushed in real-time via `__ispPush`
+- [SI-05] Idle detection via `idleDetected` notification flag (not PTY regex); sticky, cleared only by user event; set synchronously in JSON.stringify hook, drained by poll loop
   - Files: src/lib/inspectorHooks.ts:77
 - [SI-06] `choiceHint` detection: terminal buffer tail scan (last 15 lines via `getSessionBufferTail`) detects numbered list items when stop=end_turn and no tools in turn; auto-clears on user input (resets stop to null)
 - [SI-07] Tool actions, user prompts, assistant text, subagent descriptions captured inline
@@ -169,12 +169,12 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [RC-18] Plugin management IPC: plugin_list (claude plugin list --available --json), plugin_install (--scope), plugin_uninstall, plugin_enable, plugin_disable. All async with spawn_blocking + CREATE_NO_WINDOW (via run_claude_cli helper). Raw JSON passthrough for plugin_list; string result for mutations.
   - Files: src-tauri/src/commands.rs:1879, src-tauri/src/lib.rs:167
 
-## Config Manager
+## Config Implementation
 
 
-- [CM-01] Config modal header uses CSS grid (auto 1fr auto) instead of flexbox space-between, so tab row stays centered regardless of left (title) or right (project selector + close) content width.
+- [CI-01] Config modal header uses CSS grid (auto 1fr auto) instead of flexbox space-between, so tab row stays centered regardless of left (title) or right (project selector + close) content width.
   - Files: src/components/ConfigManager/ConfigManager.css:18, src/components/ConfigManager/ConfigManager.tsx:66
-- [CM-02] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
+- [CI-02] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
   - Files: src/lib/paths.ts:89
-- [CM-03] Settings schema discovery uses 4-tier priority: (1) JSON Schema from schemastore.org fetched via Rust fetch_settings_schema command (reqwest, avoids CORS), cached in localStorage by CLI version; (2) CLI --help flag parsing; (3) Binary Zod regex scan; (4) Static field registry. parseJsonSchema() unwraps Zod anyOf optionals, maps JSON Schema types to SettingField types, extracts descriptions/enums. buildSettingsSchema() deduplicates across all tiers.
+- [CI-03] Settings schema discovery uses 4-tier priority: (1) JSON Schema from schemastore.org fetched via Rust fetch_settings_schema command (reqwest, avoids CORS), cached in localStorage by CLI version; (2) CLI --help flag parsing; (3) Binary Zod regex scan; (4) Static field registry. parseJsonSchema() unwraps Zod anyOf optionals, maps JSON Schema types to SettingField types, extracts descriptions/enums. buildSettingsSchema() deduplicates across all tiers.
   - Files: src/lib/settingsSchema.ts:62, src-tauri/src/commands.rs:890, src/store/settings.ts:257

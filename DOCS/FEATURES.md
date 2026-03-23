@@ -48,7 +48,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 - [SR-01] Resumed sessions show loading spinner until inspector connects (~1s) and confirms session is responsive
 - [SR-02] Token/cost counters show only NEW conversation usage (inspector starts accumulating from connection time)
 - [SR-03] First user message captured by inspector's `firstMsg` field for tab naming
-- [SR-04] Subagent card colors: plain --bg-surface base; active cards get muted border-left (--text-muted) with pulsing bg; idle at 0.4 opacity; icon uses --accent (warm clay); selected cards get accent-secondary border + tinted bg with animation suppressed
+- [SR-04] Subagent card colors: plain --bg-surface base; active cards get muted border-left (--text-muted) with pulsing text color (subagent-text-pulse on name/msg); idle at 0.4 opacity; icon uses --accent (warm clay); selected cards get accent-secondary border + tinted bg with animation suppressed
 - [SR-05] Nested subagents supported via agentId-based routing (each event tagged with agentId, parentSessionId tracked per subagent)
 - [SR-06] Loading spinner @keyframes spin rule defined in TerminalPanel.css — animates border-top rotation at 0.8s linear infinite
   - Files: src/components/Terminal/TerminalPanel.css:33
@@ -78,7 +78,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 - [TR-04] Ctrl+Home scrolls to top, Ctrl+End scrolls to bottom
 - [TR-05] Hidden tabs use CSS `display: none` — never unmount/remount xterm.js (destroys state)
 - [TR-06] Fixed 100K scrollback buffer — no dynamic resizing
-- [TR-07] Vertical button bar (28px): permanent right-side column with scroll-to-top, scroll-to-last-message, queue input, clear input, clear all input, and scroll-to-bottom. Visibility-toggled (not removed) to prevent layout shift.
+- [TR-07] Vertical button bar (28px): right-side column with scroll-to-top, scroll-to-last-message, queue input, clear input, clear all input, and scroll-to-bottom. Conditionally rendered when visible and not dead; individual scroll buttons within use visibility toggling.
   - Files: src/components/Terminal/TerminalPanel.tsx:666
 - [TR-08] Scroll to last user message: uses xterm.js buffer markers registered on user Enter presses (not prompt scanning), accessible via button bar and Ctrl+middle-click on terminal (capture phase listener)
   - Files: src/hooks/useTerminal.ts:277, src/components/Terminal/TerminalPanel.tsx:615
@@ -92,7 +92,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
   - Files: src/components/SubagentInspector/SubagentInspector.tsx:18, src/components/SubagentInspector/SubagentInspector.css:122
 - [TR-13] Context clear detection: terminal scrollback auto-clears when Claude session ID changes (/clear, plan approval, compaction). Signal-based via inspector — no input parsing or timers.
   - Files: src/components/Terminal/TerminalPanel.tsx:183
-- [TR-14] No scrollback duplication: Ink full-redraw sync blocks have ESC[2J replaced with ESC[H ESC[J so viewport content is never pushed to scrollback. Scroll up shows only real conversation history.
+- [TR-14] No scrollback duplication: Ink full-redraw sync blocks have ESC[2J stripped from data; block prefixed with ESC[3J (scrollback clear) + ESC[H ESC[J (cursor-home + viewport-clear) inside BSU/ESU wrapping. Scroll up shows only real conversation history.
   - Files: src-tauri/pty-patch/src/lib.rs:40
 
 ## Session Launcher
@@ -109,7 +109,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 - [SL-07] Config caching: session configs cached in sessionConfigs map (localStorage) when inspector connects (model, permissionMode, dangerouslySkipPermissions, effort, agent, maxBudget, verbose, debug, projectDir, extraFlags, systemPrompt, appendSystemPrompt, allowedTools, disallowedTools, additionalDirs, mcpConfig); used as fallback when resuming sessions not in the dead tab map
   - Files: src/store/settings.ts:199
 - [SL-08] Config pruning: both `sessionNames` and `sessionConfigs` maps pruned to only IDs present in loaded past sessions
-- [SL-09] Config restore: SessionLauncher spreads all lastConfig fields (not just 8), clearing one-shot fields (resumeSession, continueSession, sessionId, runMode)
+- [SL-09] Config restore: SessionLauncher uses savedDefaults (explicit "Save defaults") with lastConfig fallback, clearing one-shot fields (continueSession, sessionId, runMode); resume fields preserved from lastConfig when set by configure flow
 - [SL-10] CLI command pills sorted by usage frequency (same heat gradient as Command Bar)
 - [SL-11] CLI option pills: flags from `claude --help` shown as clickable pills; flags with dedicated UI controls (model, permissions, effort, etc.) are excluded from the grid
 - [SL-12] Active flag indicators: pills highlight with accent color when their flag is present in the command line (reactive to manual edits in textarea)

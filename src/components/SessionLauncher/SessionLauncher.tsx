@@ -59,15 +59,19 @@ const NON_SESSION_FLAGS = new Set([
 export function SessionLauncher() {
   const createSession = useSessionStore((s) => s.createSession);
   const claudePath = useSessionStore((s) => s.claudePath);
-  const { recentDirs, lastConfig, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
+  const { recentDirs, lastConfig, savedDefaults, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
     useSettingsStore();
   const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
 
+  // savedDefaults (explicit "Save defaults") takes priority over lastConfig (auto-saved on launch)
+  const defaults = savedDefaults ?? lastConfig;
   const [config, setConfig] = useState<SessionConfig>({
     ...DEFAULT_SESSION_CONFIG,
-    ...lastConfig,
-    // Clear one-shot fields that shouldn't carry over (except resumeSession, preserved for configure flow)
+    ...defaults,
+    // Preserve resume from lastConfig (configure flow sets this one-shot)
+    ...(lastConfig.resumeSession ? { resumeSession: lastConfig.resumeSession, workingDir: lastConfig.workingDir } : {}),
+    // Clear one-shot fields
     continueSession: false,
     sessionId: null,
     runMode: false,
@@ -91,7 +95,7 @@ export function SessionLauncher() {
     return parts.join(" ");
   }, []);
 
-  const [commandLine, setCommandLine] = useState(() => buildFullCommand(config, lastConfig.extraFlags || ""));
+  const [commandLine, setCommandLine] = useState(() => buildFullCommand(config, defaults.extraFlags || ""));
 
   // Regenerate command line when config dropdowns change (skip in utility mode)
   useEffect(() => {
