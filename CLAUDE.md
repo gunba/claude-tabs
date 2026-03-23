@@ -77,6 +77,7 @@ src/
 │   ├── SubagentInspector/SubagentInspector.tsx  # Markdown-rendered subagent conversation viewer
 │   ├── ConfigManager/ConfigManager.tsx  # 5-tab config workspace (Ctrl+,): Settings, Claude, Hooks, Plugins, Agents
 │   ├── ConfigManager/ThreePaneEditor.tsx # 3-column User/Project/Local scope layout (color-coded)
+│   ├── ConfigManager/SettingsTab.tsx    # Per-scope Settings tab layout (user/project/local selector + SettingsPane)
 │   ├── ConfigManager/SettingsPane.tsx   # Per-scope JSON editor with syntax highlighting overlay
 │   ├── ConfigManager/MarkdownPane.tsx   # Per-scope CLAUDE.md editor with preview toggle
 │   ├── ConfigManager/HooksPane.tsx      # Per-scope hooks CRUD (absorbed from HooksManager)

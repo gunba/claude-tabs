@@ -19,22 +19,14 @@
       "Bash(bash \"$LOCALAPPDATA/claude-agent-logs/bin/tag-info.sh\" stats)",
       "Bash(bash \"$LOCALAPPDATA/claude-agent-logs/bin/tag-info.sh\" lookup TB-01)",
       "Bash(bash \"$LOCALAPPDATA/claude-agent-logs/bin/start.sh\" 2>&1)",
-      "Bash(bash \"C:/Users/jorda/AppData/Local/claude-agent-logs/bin/tag-edit.sh\" --tag PT-14 --remove 2>&1)"
+      "Bash(bash \"C:/Users/jorda/AppData/Local/claude-agent-logs/bin/tag-edit.sh\" --tag PT-14 --remove 2>&1)",
+      "Bash(fi)"
     ]
   },
+  "worktree": {
+    "symlinkDirectories": ["node_modules", "src-tauri/target", "src-tauri/pty-patch/target"]
+  },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$LOCALAPPDATA/claude-agent-logs/bin/block-doc-edits.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
