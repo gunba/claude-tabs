@@ -251,6 +251,18 @@ export function IconCircleOutline(props: IconProps) {
   );
 }
 
+/** Git branch fork — version control */
+export function IconGitBranch(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="5" cy="4" r="1.5" />
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="11" cy="6" r="1.5" />
+      <path d="M5 5.5v5M5 8c0-2 6-2 6-2" />
+    </Icon>
+  );
+}
+
 /** Counterclockwise circular arrow — reset */
 export function IconReset(props: IconProps) {
   return (

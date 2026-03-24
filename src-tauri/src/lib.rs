@@ -171,6 +171,9 @@ pub fn run() {
             commands::plugin_uninstall,
             commands::plugin_enable,
             commands::plugin_disable,
+            commands::git_repo_check,
+            commands::git_status,
+            commands::git_diff_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Claude Tabs")

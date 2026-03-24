@@ -48,6 +48,7 @@ interface SettingsState {
 
   commandUsage: Record<string, number>;
   showConfigManager: string | false;
+  sidePanel: "debug" | "diff" | null;
   replaceSessionId: string | null; // Session to close when launcher launches (Ctrl+Click relaunch)
   pastSessions: PastSession[];
   pastSessionsLoading: boolean;
@@ -69,6 +70,7 @@ interface SettingsState {
   setSlashCommands: (cmds: SlashCommand[]) => void;
   setReplaceSessionId: (id: string | null) => void;
   setShowConfigManager: (show: string | false) => void;
+  setSidePanel: (panel: "debug" | "diff" | null) => void;
   bootstrapCommandUsage: () => Promise<void>;
   setSessionName: (id: string, name: string) => void;
   cacheSessionConfig: (id: string, config: SessionConfig) => void;
@@ -95,6 +97,7 @@ export const useSettingsStore = create<SettingsState>()(
       slashCommands: [],
       commandUsage: {},
       showConfigManager: false,
+      sidePanel: null,
       replaceSessionId: null,
       pastSessions: [],
       pastSessionsLoading: false,
@@ -176,6 +179,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       setSlashCommands: (cmds) => set({ slashCommands: cmds }),
       setShowConfigManager: (show) => set({ showConfigManager: show }),
+      setSidePanel: (panel) => set({ sidePanel: panel }),
       bootstrapCommandUsage: async () => {
         try {
           const scanned = await invoke<Record<string, number>>("scan_command_usage");

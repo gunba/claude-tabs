@@ -1,0 +1,405 @@
+import { describe, it, expect } from "vitest";
+import {
+  parseGitStatus,
+  parseUnifiedDiff,
+  splitFilePath,
+  detectChangedPaths,
+  statusLabel,
+} from "../diffParser";
+import type { GitStatusData } from "../../types/git";
+
+// ── parseGitStatus ───────────────────────────────────────────────
+
+describe("parseGitStatus", () => {
+  it("parses branch from header", () => {
+    const result = parseGitStatus("## main...origin/main\n", "", "");
+    expect(result.branch).toBe("main");
+  });
+
+  it("parses branch without remote", () => {
+    const result = parseGitStatus("## feature-x\n", "", "");
+    expect(result.branch).toBe("feature-x");
+  });
+
+  it("parses modified staged file", () => {
+    const porcelain = "## main\nM  src/app.ts\n";
+    const numstatStaged = "5\t2\tsrc/app.ts\n";
+    const result = parseGitStatus(porcelain, "", numstatStaged);
+    expect(result.staged).toHaveLength(1);
+    expect(result.staged[0]).toEqual({
+      path: "src/app.ts",
+      status: "M",
+      oldPath: null,
+      insertions: 5,
+      deletions: 2,
+    });
+    expect(result.totalInsertions).toBe(5);
+    expect(result.totalDeletions).toBe(2);
+  });
+
+  it("parses modified unstaged file", () => {
+    const porcelain = "## main\n M src/app.ts\n";
+    const numstat = "3\t1\tsrc/app.ts\n";
+    const result = parseGitStatus(porcelain, numstat, "");
+    expect(result.unstaged).toHaveLength(1);
+    expect(result.unstaged[0].status).toBe("M");
+    expect(result.unstaged[0].insertions).toBe(3);
+  });
+
+  it("parses untracked files", () => {
+    const porcelain = "## main\n?? newfile.ts\n";
+    const result = parseGitStatus(porcelain, "", "");
+    expect(result.untracked).toHaveLength(1);
+    expect(result.untracked[0]).toEqual({
+      path: "newfile.ts",
+      status: "?",
+      oldPath: null,
+      insertions: 0,
+      deletions: 0,
+    });
+  });
+
+  it("parses added staged file", () => {
+    const porcelain = "## main\nA  new.ts\n";
+    const result = parseGitStatus(porcelain, "", "");
+    expect(result.staged).toHaveLength(1);
+    expect(result.staged[0].status).toBe("A");
+  });
+
+  it("parses deleted file", () => {
+    const porcelain = "## main\nD  old.ts\n";
+    const result = parseGitStatus(porcelain, "", "");
+    expect(result.staged).toHaveLength(1);
+    expect(result.staged[0].status).toBe("D");
+  });
+
+  it("parses rename", () => {
+    const porcelain = "## main\nR  old.ts -> new.ts\n";
+    const result = parseGitStatus(porcelain, "", "");
+    expect(result.staged).toHaveLength(1);
+    expect(result.staged[0].path).toBe("new.ts");
+    expect(result.staged[0].oldPath).toBe("old.ts");
+    expect(result.staged[0].status).toBe("R");
+  });
+
+  it("parses file with both staged and unstaged changes", () => {
+    const porcelain = "## main\nMM src/app.ts\n";
+    const result = parseGitStatus(porcelain, "", "");
+    expect(result.staged).toHaveLength(1);
+    expect(result.unstaged).toHaveLength(1);
+    expect(result.staged[0].path).toBe("src/app.ts");
+    expect(result.unstaged[0].path).toBe("src/app.ts");
+  });
+
+  it("handles empty status", () => {
+    const result = parseGitStatus("## main\n", "", "");
+    expect(result.staged).toHaveLength(0);
+    expect(result.unstaged).toHaveLength(0);
+    expect(result.untracked).toHaveLength(0);
+  });
+
+  it("handles missing branch header", () => {
+    const result = parseGitStatus("M  file.ts\n", "", "");
+    expect(result.branch).toBeNull();
+    expect(result.staged).toHaveLength(1);
+  });
+
+  it("skips ignored files", () => {
+    const result = parseGitStatus("## main\n!! ignored.log\n", "", "");
+    expect(result.staged).toHaveLength(0);
+    expect(result.unstaged).toHaveLength(0);
+    expect(result.untracked).toHaveLength(0);
+  });
+
+  it("handles conflict status (U)", () => {
+    const result = parseGitStatus("## main\nUU conflict.ts\n", "", "");
+    expect(result.staged).toHaveLength(1);
+    expect(result.staged[0].status).toBe("U");
+    expect(result.unstaged).toHaveLength(1);
+    expect(result.unstaged[0].status).toBe("U");
+  });
+
+  it("handles binary files in numstat", () => {
+    const porcelain = "## main\nM  image.png\n";
+    const numstatStaged = "-\t-\timage.png\n";
+    const result = parseGitStatus(porcelain, "", numstatStaged);
+    expect(result.staged[0].insertions).toBe(0);
+    expect(result.staged[0].deletions).toBe(0);
+  });
+
+  it("handles detached HEAD", () => {
+    const result = parseGitStatus("## HEAD (no branch)\n", "", "");
+    expect(result.branch).toBe("HEAD (no branch)");
+  });
+
+  it("computes total insertions and deletions from numstat", () => {
+    const porcelain = "## main\nM  a.ts\nM  b.ts\n";
+    const numstatStaged = "10\t3\ta.ts\n5\t2\tb.ts\n";
+    const result = parseGitStatus(porcelain, "", numstatStaged);
+    expect(result.totalInsertions).toBe(15);
+    expect(result.totalDeletions).toBe(5);
+  });
+});
+
+// ── parseUnifiedDiff ─────────────────────────────────────────────
+
+describe("parseUnifiedDiff", () => {
+  const sampleDiff = [
+    "diff --git a/src/app.ts b/src/app.ts",
+    "index 1234567..abcdef0 100644",
+    "--- a/src/app.ts",
+    "+++ b/src/app.ts",
+    "@@ -10,7 +10,8 @@ function main() {",
+    "   const a = 1;",
+    "-  const b = 2;",
+    "+  const b = 3;",
+    "+  const c = 4;",
+    "   const d = 5;",
+  ].join("\n");
+
+  it("extracts file path", () => {
+    const result = parseUnifiedDiff(sampleDiff);
+    expect(result.path).toBe("src/app.ts");
+    expect(result.oldPath).toBeNull();
+  });
+
+  it("parses hunk header", () => {
+    const result = parseUnifiedDiff(sampleDiff);
+    expect(result.hunks).toHaveLength(1);
+    expect(result.hunks[0].oldStart).toBe(10);
+    expect(result.hunks[0].oldCount).toBe(7);
+    expect(result.hunks[0].newStart).toBe(10);
+    expect(result.hunks[0].newCount).toBe(8);
+  });
+
+  it("parses diff lines with correct kinds", () => {
+    const result = parseUnifiedDiff(sampleDiff);
+    const lines = result.hunks[0].lines;
+    // [hunk-header, context, del, add, add, context]
+    expect(lines[0].kind).toBe("hunk-header");
+    expect(lines[1].kind).toBe("context");
+    expect(lines[2].kind).toBe("del");
+    expect(lines[3].kind).toBe("add");
+    expect(lines[4].kind).toBe("add");
+    expect(lines[5].kind).toBe("context");
+  });
+
+  it("computes line numbers correctly", () => {
+    const result = parseUnifiedDiff(sampleDiff);
+    const lines = result.hunks[0].lines;
+    // Context line: old=10, new=10
+    expect(lines[1].oldLine).toBe(10);
+    expect(lines[1].newLine).toBe(10);
+    // Del line: old=11, new=null
+    expect(lines[2].oldLine).toBe(11);
+    expect(lines[2].newLine).toBeNull();
+    // Add lines: old=null, new=11,12
+    expect(lines[3].oldLine).toBeNull();
+    expect(lines[3].newLine).toBe(11);
+    expect(lines[4].newLine).toBe(12);
+    // Context: old=12, new=13
+    expect(lines[5].oldLine).toBe(12);
+    expect(lines[5].newLine).toBe(13);
+  });
+
+  it("detects binary files", () => {
+    const bin = "diff --git a/img.png b/img.png\nBinary files a/img.png and b/img.png differ\n";
+    const result = parseUnifiedDiff(bin);
+    expect(result.isBinary).toBe(true);
+    expect(result.hunks).toHaveLength(0);
+  });
+
+  it("detects new file", () => {
+    const diff = "diff --git a/new.ts b/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/new.ts\n@@ -0,0 +1,2 @@\n+line1\n+line2\n";
+    const result = parseUnifiedDiff(diff);
+    expect(result.isNew).toBe(true);
+    expect(result.isDeleted).toBe(false);
+  });
+
+  it("detects deleted file", () => {
+    const diff = "diff --git a/old.ts b/old.ts\ndeleted file mode 100644\n--- a/old.ts\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-line1\n-line2\n";
+    const result = parseUnifiedDiff(diff);
+    expect(result.isDeleted).toBe(true);
+    expect(result.isNew).toBe(false);
+  });
+
+  it("detects truncation marker", () => {
+    const diff = sampleDiff + "\n[truncated]";
+    const result = parseUnifiedDiff(diff);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("handles rename paths", () => {
+    const diff = "diff --git a/old.ts b/new.ts\nindex 1234..5678 100644\n--- a/old.ts\n+++ b/new.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const result = parseUnifiedDiff(diff);
+    expect(result.path).toBe("new.ts");
+    expect(result.oldPath).toBe("old.ts");
+  });
+
+  it("parses multiple hunks", () => {
+    const multi = [
+      "diff --git a/f.ts b/f.ts",
+      "--- a/f.ts",
+      "+++ b/f.ts",
+      "@@ -1,3 +1,3 @@",
+      " a",
+      "-b",
+      "+B",
+      " c",
+      "@@ -10,3 +10,3 @@",
+      " x",
+      "-y",
+      "+Y",
+      " z",
+    ].join("\n");
+    const result = parseUnifiedDiff(multi);
+    expect(result.hunks).toHaveLength(2);
+    expect(result.hunks[0].oldStart).toBe(1);
+    expect(result.hunks[1].oldStart).toBe(10);
+  });
+
+  it("handles empty diff", () => {
+    const result = parseUnifiedDiff("");
+    expect(result.hunks).toHaveLength(0);
+    expect(result.path).toBe("");
+    expect(result.isBinary).toBe(false);
+    expect(result.isNew).toBe(false);
+    expect(result.isDeleted).toBe(false);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("handles hunk header without count", () => {
+    const diff = "diff --git a/f.ts b/f.ts\n--- a/f.ts\n+++ b/f.ts\n@@ -1 +1 @@\n-old\n+new\n";
+    const result = parseUnifiedDiff(diff);
+    expect(result.hunks).toHaveLength(1);
+    expect(result.hunks[0].oldCount).toBe(1);
+    expect(result.hunks[0].newCount).toBe(1);
+  });
+
+  it("skips no-newline-at-end-of-file marker", () => {
+    const diff = "diff --git a/f.ts b/f.ts\n--- a/f.ts\n+++ b/f.ts\n@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n";
+    const result = parseUnifiedDiff(diff);
+    const kinds = result.hunks[0].lines.map(l => l.kind);
+    // hunk-header + del + add — the "\ No newline" line is skipped
+    expect(kinds).toEqual(["hunk-header", "del", "add"]);
+  });
+
+  it("handles mode-change-only diff (no hunks)", () => {
+    const diff = "diff --git a/f.sh b/f.sh\nold mode 100644\nnew mode 100755\n";
+    const result = parseUnifiedDiff(diff);
+    expect(result.hunks).toHaveLength(0);
+    expect(result.isBinary).toBe(false);
+    expect(result.path).toBe("f.sh");
+  });
+});
+
+// ── splitFilePath ────────────────────────────────────────────────
+
+describe("splitFilePath", () => {
+  it("splits path into dir and name", () => {
+    expect(splitFilePath("src/lib/app.ts")).toEqual({ dir: "src/lib/", name: "app.ts" });
+  });
+
+  it("handles file with no directory", () => {
+    expect(splitFilePath("app.ts")).toEqual({ dir: "", name: "app.ts" });
+  });
+
+  it("handles backslashes", () => {
+    expect(splitFilePath("src\\lib\\app.ts")).toEqual({ dir: "src\\lib\\", name: "app.ts" });
+  });
+});
+
+// ── detectChangedPaths ───────────────────────────────────────────
+
+describe("detectChangedPaths", () => {
+  const base: GitStatusData = {
+    staged: [{ path: "a.ts", status: "M", oldPath: null, insertions: 5, deletions: 2 }],
+    unstaged: [],
+    untracked: [],
+    branch: "main",
+    totalInsertions: 5,
+    totalDeletions: 2,
+  };
+
+  it("returns empty set for null prev", () => {
+    expect(detectChangedPaths(null, base).size).toBe(0);
+  });
+
+  it("detects new file in staged", () => {
+    const next: GitStatusData = {
+      ...base,
+      staged: [
+        ...base.staged,
+        { path: "b.ts", status: "A", oldPath: null, insertions: 10, deletions: 0 },
+      ],
+    };
+    const changed = detectChangedPaths(base, next);
+    expect(changed.has("s:b.ts")).toBe(true);
+  });
+
+  it("detects file moved to different section", () => {
+    const prev: GitStatusData = {
+      ...base,
+      unstaged: [{ path: "c.ts", status: "M", oldPath: null, insertions: 1, deletions: 0 }],
+    };
+    const next: GitStatusData = {
+      ...base,
+      staged: [
+        ...base.staged,
+        { path: "c.ts", status: "M", oldPath: null, insertions: 1, deletions: 0 },
+      ],
+    };
+    const changed = detectChangedPaths(prev, next);
+    expect(changed.has("s:c.ts")).toBe(true);
+  });
+
+  it("detects stat changes in existing file", () => {
+    const next: GitStatusData = {
+      ...base,
+      staged: [{ path: "a.ts", status: "M", oldPath: null, insertions: 8, deletions: 3 }],
+    };
+    const changed = detectChangedPaths(base, next);
+    expect(changed.has("s:a.ts")).toBe(true);
+  });
+
+  it("detects stat changes in unstaged files", () => {
+    const prev: GitStatusData = {
+      ...base,
+      unstaged: [{ path: "b.ts", status: "M", oldPath: null, insertions: 1, deletions: 0 }],
+    };
+    const next: GitStatusData = {
+      ...prev,
+      unstaged: [{ path: "b.ts", status: "M", oldPath: null, insertions: 5, deletions: 2 }],
+    };
+    const changed = detectChangedPaths(prev, next);
+    expect(changed.has("u:b.ts")).toBe(true);
+  });
+
+  it("detects new untracked file", () => {
+    const next: GitStatusData = {
+      ...base,
+      untracked: [{ path: "new.ts", status: "?", oldPath: null, insertions: 0, deletions: 0 }],
+    };
+    const changed = detectChangedPaths(base, next);
+    expect(changed.has("t:new.ts")).toBe(true);
+  });
+});
+
+// ── statusLabel ──────────────────────────────────────────────────
+
+describe("statusLabel", () => {
+  it("maps known codes", () => {
+    expect(statusLabel("M")).toBe("Modified");
+    expect(statusLabel("A")).toBe("Added");
+    expect(statusLabel("D")).toBe("Deleted");
+    expect(statusLabel("R")).toBe("Renamed");
+    expect(statusLabel("C")).toBe("Copied");
+    expect(statusLabel("U")).toBe("Conflict");
+    expect(statusLabel("?")).toBe("Untracked");
+    expect(statusLabel("!")).toBe("Ignored");
+  });
+
+  it("returns code for unknown", () => {
+    expect(statusLabel("X")).toBe("X");
+  });
+});

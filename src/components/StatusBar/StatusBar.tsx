@@ -8,6 +8,7 @@ import {
   IconPencil, IconLightning, IconUnlock, IconClipboard,
   IconHalfCircle, IconDiamond, IconClock, IconBudget,
   IconWarning, IconHook, IconCircleFilled, IconCircleOutline,
+  IconGitBranch,
 } from "../Icons/Icons";
 import type { Session, PermissionMode } from "../../types/session";
 import "./StatusBar.css";
@@ -111,6 +112,8 @@ export function StatusBar() {
   const activeSession = sessions.find((s) => s.id === activeTabId);
   const [hookCount, setHookCount] = useState(0);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
+  const sidePanel = useSettingsStore((s) => s.sidePanel);
+  const setSidePanel = useSettingsStore((s) => s.setSidePanel);
 
   useEffect(() => {
     const dirs = sessions
@@ -142,6 +145,13 @@ export function StatusBar() {
         <span className="status-empty">No active session</span>
       )}
       <div className="status-right">
+        <button
+          className={`status-item status-hooks-btn${sidePanel === "diff" ? " status-active-btn" : ""}`}
+          onClick={() => setSidePanel(sidePanel === "diff" ? null : "diff")}
+          title="Git changes (Ctrl+Shift+G)"
+        >
+          <IconGitBranch size={12} /> Changes
+        </button>
         <button
           className="status-item status-hooks status-hooks-btn"
           onClick={() => setShowConfigManager("hooks")}
