@@ -172,7 +172,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src-tauri/src/commands.rs:407, src-tauri/src/lib.rs:137
 - [RC-18] Plugin management IPC: plugin_list (claude plugin list --available --json), plugin_install (--scope), plugin_uninstall, plugin_enable, plugin_disable. All async with spawn_blocking + CREATE_NO_WINDOW (via run_claude_cli helper). Raw JSON passthrough for plugin_list; string result for mutations.
   - Files: src-tauri/src/commands.rs:1879, src-tauri/src/lib.rs:167
-- [RC-19] prune_worktree: runs `git worktree remove <path>` with optional --force flag. Async with spawn_blocking + CREATE_NO_WINDOW. Takes worktree_path, project_root (cwd for git), and force boolean. Returns error string on failure (e.g., dirty worktree).
+- [RC-19] prune_worktree: runs `git worktree remove --force <path>` (always forced — dialog is the confirmation). Async with spawn_blocking + CREATE_NO_WINDOW. Takes worktree_path and project_root (cwd for git). Returns error string on failure.
   - Files: src-tauri/src/commands.rs:1877, src-tauri/src/lib.rs:168
 
 ## Config Implementation

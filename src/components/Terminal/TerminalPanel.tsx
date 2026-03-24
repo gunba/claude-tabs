@@ -6,7 +6,7 @@ import { useSessionStore } from "../../store/sessions";
 import { buildClaudeArgs, getResumeId, canResumeSession, stripWorktreeFlags } from "../../lib/claude";
 import { allocateInspectorPort, registerInspectorPort, unregisterInspectorPort, registerInspectorCallbacks, unregisterInspectorCallbacks } from "../../lib/inspectorPort";
 import { useInspectorState } from "../../hooks/useInspectorState";
-import { registerPtyWriter, unregisterPtyWriter } from "../../lib/ptyRegistry";
+import { registerPtyWriter, unregisterPtyWriter, registerPtyKill, unregisterPtyKill } from "../../lib/ptyRegistry";
 import { registerBufferReader, unregisterBufferReader, registerTailReader, unregisterTailReader } from "../../lib/terminalRegistry";
 import { useSettingsStore } from "../../store/settings";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
@@ -290,6 +290,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     pty.cleanup();
     inspector.disconnect();
     unregisterPtyWriter(session.id);
+    unregisterPtyKill(session.id);
     unregisterInspectorPort(session.id);
     useSessionStore.getState().setInspectorOff(session.id, false);
 
@@ -404,6 +405,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         const env = { BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0` };
         const handle = await pty.spawn(claudePath, args, cwd, cols, rows, env);
         registerPtyWriter(session.id, handle.write);
+        registerPtyKill(session.id, () => handle.kill());
         updateState(session.id, "idle");
 
         // Post-spawn dimension verification — catches cases where font metrics
@@ -454,6 +456,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     const id = session.id;
     return () => {
       unregisterPtyWriter(id);
+      unregisterPtyKill(id);
       unregisterBufferReader(id);
       unregisterTailReader(id);
       unregisterInspectorPort(id);

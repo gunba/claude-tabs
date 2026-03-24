@@ -44,8 +44,8 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
   - Files: src/hooks/useInspectorState.ts:126
 - [TB-29] Worktree indicator: when workingDir is a `.claude/worktrees/<slug>` path, tab shows project name as title (not slug) and a hyphen-acronym badge in the meta row (e.g., "sorted-marinating-dove" → "SMD") in blue (accent-secondary). Hover the acronym for the full worktree name. Tab tooltip includes `Worktree: <full-name>`. StatusBar also shows worktree acronym after the model label.
   - Files: src/lib/paths.ts:18, src/App.tsx:293, src/App.tsx:304, src/components/StatusBar/StatusBar.tsx:55
-- [TB-30] Worktree prune on close: manually closing a worktree tab (Ctrl+W, X button, context menu Close) shows a confirmation dialog with "Keep worktree" and "Prune worktree" options. If prune fails (dirty worktree), the error is shown inline with a "Force prune" fallback. Skipped for bulk actions (Close Group, app close). Uses ModalOverlay and `prune_worktree` IPC command [RC-19].
-  - Files: src/App.tsx:173, src/App.tsx:617, src-tauri/src/commands.rs:1877
+- [TB-30] Worktree prune on close: manually closing a worktree tab (Ctrl+W, X button, context menu Close) shows a confirmation dialog with "Keep worktree" and "Prune worktree" options. Pruning kills the PTY (via `killPty` registry), closes the session, then runs `git worktree remove --force`. If prune fails, error is shown with "Dismiss" and "Retry prune" buttons. Backdrop click blocked during prune. Skipped for bulk actions (Close Group, app close). Uses ModalOverlay, `killPty` from ptyRegistry, and `prune_worktree` IPC command [RC-19].
+  - Files: src/App.tsx:173, src/App.tsx:614, src/lib/ptyRegistry.ts:28, src-tauri/src/commands.rs:1877
 
 ## Session Resume
 

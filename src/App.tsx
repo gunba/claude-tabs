@@ -22,6 +22,7 @@ import { useCommandDiscovery } from "./hooks/useCommandDiscovery";
 import { useCtrlKey } from "./hooks/useCtrlKey";
 import { useUiConfigStore } from "./lib/uiConfig";
 import { killAllActivePtys } from "./lib/ptyProcess";
+import { killPty } from "./lib/ptyRegistry";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { startTestHarness } from "./lib/testHarness";
 import { IconPencil, IconStop, IconClose, IconReturn, IconGear, IconArrowRight } from "./components/Icons/Icons";
@@ -66,7 +67,7 @@ export default function App() {
   const initRef = useRef(false);
   const [pruneConfirm, setPruneConfirm] = useState<{
     sessionId: string; worktreePath: string; worktreeName: string; projectRoot: string;
-    error?: string; forcing?: boolean;
+    error?: string; forcing?: boolean; sessionClosed?: boolean;
   } | null>(null);
 
   useCliWatcher();
@@ -610,7 +611,7 @@ export default function App() {
 
       {/* Worktree prune confirmation */}
       {pruneConfirm && (
-        <ModalOverlay onClose={() => setPruneConfirm(null)}>
+        <ModalOverlay onClose={() => { if (!pruneConfirm?.forcing) setPruneConfirm(null); }}>
           <div className="prune-dialog">
             <div className="prune-title">Close worktree session</div>
             <div className="prune-body">
@@ -620,26 +621,31 @@ export default function App() {
               <div className="prune-error">{pruneConfirm.error}</div>
             )}
             <div className="prune-actions">
-              <button onClick={() => {
-                closeSession(pruneConfirm.sessionId);
-                setPruneConfirm(null);
-              }}>Keep worktree</button>
+              {pruneConfirm.sessionClosed
+                ? <button onClick={() => setPruneConfirm(null)}>Dismiss</button>
+                : <button onClick={() => {
+                    closeSession(pruneConfirm.sessionId);
+                    setPruneConfirm(null);
+                  }}>Keep worktree</button>
+              }
               <button className="prune-actions-danger" disabled={pruneConfirm.forcing} onClick={async () => {
-                const force = !!pruneConfirm.error;
-                if (force) setPruneConfirm((p) => p ? { ...p, forcing: true, error: undefined } : p);
+                setPruneConfirm((p) => p ? { ...p, forcing: true, error: undefined } : p);
                 try {
+                  if (!pruneConfirm.sessionClosed) {
+                    await killPty(pruneConfirm.sessionId);
+                    await closeSession(pruneConfirm.sessionId);
+                    setPruneConfirm((p) => p ? { ...p, sessionClosed: true } : p);
+                  }
                   await invoke("prune_worktree", {
                     worktreePath: pruneConfirm.worktreePath,
                     projectRoot: pruneConfirm.projectRoot,
-                    force,
                   });
                 } catch (err) {
                   setPruneConfirm((p) => p ? { ...p, forcing: false, error: String(err) } : p);
                   return;
                 }
-                closeSession(pruneConfirm.sessionId);
                 setPruneConfirm(null);
-              }}>{pruneConfirm.error ? "Force prune" : "Prune worktree"}</button>
+              }}>{pruneConfirm.sessionClosed ? "Retry prune" : "Prune worktree"}</button>
             </div>
           </div>
         </ModalOverlay>

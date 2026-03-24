@@ -16,7 +16,7 @@ Test framework, test suites, manual test cases, and coverage notes.
 | `claude` | `src/lib/__tests__/claude.test.ts` | 23 | Color assignment, `dirToTabName`, `formatTokenCount` |
 | `deadSession` | `src/lib/__tests__/deadSession.test.ts` | 18 | Dead session detection heuristics |
 | `theme` | `src/lib/theme.test.ts` | 4 | Theme definitions, CSS variable generation |
-| `ptyRegistry` | `src/lib/ptyRegistry.test.ts` | 6 | Global PTY writer registry |
+| `ptyRegistry` | `src/lib/__tests__/ptyRegistry.test.ts` | 9 | Global PTY writer + kill registry |
 
 ## Conventions
 
