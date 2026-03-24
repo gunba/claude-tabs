@@ -216,7 +216,9 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
 
     if (chunks.length === 0) return;
 
-    const wasAtBottom = term.buffer.active.viewportY >= term.buffer.active.baseY - BOTTOM_TOLERANCE;
+    const prevViewportY = term.buffer.active.viewportY;
+    const prevBaseY = term.buffer.active.baseY;
+    const wasAtBottom = prevViewportY >= prevBaseY - BOTTOM_TOLERANCE;
 
     // Merge chunks into a single buffer
     let merged: Uint8Array;
@@ -236,6 +238,15 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     term.write(merged, () => {
       if (wasAtBottom) {
         term.scrollToBottom();
+      } else {
+        const newBaseY = term.buffer.active.baseY;
+        // Detect scrollback clear (ESC[3J from full-redraw sync blocks):
+        // baseY shrinks when scrollback is wiped and re-rendered content
+        // hasn't yet filled the same amount. Restore proportional position.
+        if (prevBaseY > 0 && newBaseY > 0 && newBaseY < prevBaseY) {
+          const ratio = prevViewportY / prevBaseY;
+          term.scrollToLine(Math.round(ratio * newBaseY));
+        }
       }
     });
   }, []);

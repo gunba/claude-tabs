@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTerminal } from "../../hooks/useTerminal";
 import { usePty } from "../../hooks/usePty";
@@ -373,10 +373,11 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       const last = lastPtyDimsRef.current;
       if (last && last.cols === cols && last.rows === rows) return;
       lastPtyDimsRef.current = { cols, rows };
-      // Defer the PTY resize if bgBuffer has pending data. The resize triggers
-      // a ConPTY repaint + ink full re-render; if xterm.js hasn't caught up yet
-      // (buffer not flushed), the repaint duplicates content into scrollback.
-      if (bgBufferRef.current.length > 0) {
+      // Defer the PTY resize when: (a) tab is hidden — resize would trigger a
+      // ConPTY repaint with no visible terminal to render into, or (b) bgBuffer
+      // has pending data — xterm.js hasn't caught up yet and the repaint would
+      // duplicate content into scrollback.
+      if (!visibleRef.current || bgBufferRef.current.length > 0) {
         deferredResizeRef.current = { cols, rows };
         return;
       }
@@ -501,45 +502,47 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     }
   }, [killRequest, session.id, session.state, clearKillRequest, pty]);
 
-  // Re-fit and focus when becoming visible — only depends on visible and session.id.
-  // terminal is NOT in deps because useTerminal returns a new object on every render,
-  // which would cause this effect to re-fire on every store update, calling fit()
-  // repeatedly and flashing the terminal.
-  useEffect(() => {
+  // Re-fit and focus when becoming visible. useLayoutEffect fires before
+  // browser paint, preventing stale content flash. The xterm.js write callback
+  // (event-driven, no timer) reveals the terminal after buffer processing.
+  // terminal is NOT in deps because useTerminal returns a new object on every render.
+  useLayoutEffect(() => {
     if (!visible) return;
-    let cancelled = false;
-    let rafInner: number | undefined;
-    const raf1 = requestAnimationFrame(() => {
-      rafInner = requestAnimationFrame(() => {
-        if (cancelled) return;
-        // Flush background buffer FIRST — write all buffered data in one batch
-        // so xterm.js catches up to ConPTY before any resize is sent.
-        const chunks = bgBufferRef.current;
-        if (chunks.length > 0) {
-          bgBufferRef.current = [];
-          let totalLen = 0;
-          for (const c of chunks) totalLen += c.length;
-          const merged = new Uint8Array(totalLen);
-          let offset = 0;
-          for (const c of chunks) { merged.set(c, offset); offset += c.length; }
-          terminal.termRef.current?.write(merged);
-        }
-        terminal.fit();
-        // Send any deferred PTY resize now that the buffer has been flushed
-        const deferred = deferredResizeRef.current;
-        if (deferred) {
-          deferredResizeRef.current = null;
-          pty.handle.current?.resize(deferred.cols, deferred.rows);
-        }
+    const container = containerRef.current;
+    const chunks = bgBufferRef.current;
+    const hasBuffer = chunks.length > 0;
+
+    // Hide stale content before browser paints — write callback reveals
+    if (hasBuffer && container) {
+      container.style.visibility = 'hidden';
+    }
+
+    if (hasBuffer) {
+      bgBufferRef.current = [];
+      let totalLen = 0;
+      for (const c of chunks) totalLen += c.length;
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+      terminal.termRef.current?.write(merged, () => {
+        if (container) container.style.visibility = '';
         terminal.termRef.current?.scrollToBottom();
-        terminal.focus();
       });
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf1);
-      if (rafInner !== undefined) cancelAnimationFrame(rafInner);
-    };
+    }
+    terminal.fit();
+    // Send any deferred PTY resize now that the buffer has been flushed
+    const deferred = deferredResizeRef.current;
+    if (deferred) {
+      deferredResizeRef.current = null;
+      pty.handle.current?.resize(deferred.cols, deferred.rows);
+    }
+    if (!hasBuffer) {
+      // Safety: clear any leftover visibility:hidden from a prior cycle
+      // (e.g., tab went visible→hidden before write callback→visible again with no buffer)
+      if (container) container.style.visibility = '';
+      terminal.termRef.current?.scrollToBottom();
+    }
+    terminal.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 
