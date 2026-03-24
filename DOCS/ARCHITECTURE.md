@@ -64,13 +64,13 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [PT-07] OS PID registered in global cleanup registry (`ptyProcess.ts`) immediately on PTY spawn; unregistered on explicit kill. Dual-layer: frontend fires `kill_process_tree` on `beforeunload`, Rust `ActivePids` state kills on `RunEvent::Exit` as backstop
   - Files: src/lib/ptyProcess.ts:9, src-tauri/src/lib.rs:16
 - [PT-08] Scroll desync fix: xterm-viewport uses overflow-y:scroll with hidden scrollbar (scrollbar-width:none + ::-webkit-scrollbar) instead of overflow:hidden. isAtBottom/wasAtBottom use 2-line tolerance for near-bottom snap.
-  - Files: src/components/Terminal/TerminalPanel.css:60, src/hooks/useTerminal.ts:304, src/hooks/useTerminal.ts:219, src/hooks/useTerminal.ts:10
+  - Files: src/components/Terminal/TerminalPanel.css:60, src/hooks/useTerminal.ts:300, src/hooks/useTerminal.ts:215, src/hooks/useTerminal.ts:10
 - [PT-09] FitAddon dimension guard: fit() calls check proposeDimensions() first — if rows <= 1, container is not laid out yet and fit is skipped. Applied in useTerminal wrapper, initial attach, and ResizeObserver.
-  - Files: src/hooks/useTerminal.ts:317, src/hooks/useTerminal.ts:184, src/hooks/useTerminal.ts:191
+  - Files: src/hooks/useTerminal.ts:313, src/hooks/useTerminal.ts:180, src/hooks/useTerminal.ts:187
 - [PT-10] Parallel exit waiter: fire-and-forget invoke('plugin:pty|exitstatus') runs alongside read loop. On Windows ConPTY, read pipe may hang after Ctrl+C; exitstatus uses WaitForSingleObject which reliably returns. exitFired guard ensures exactly one callback fires
   - Files: src/lib/ptyProcess.ts:112
 - [PT-11] Respawn clears both bgBufferRef and useTerminal's writeBatchRef (via clearPending()) before writing \x1bc. Without this, stale PTY data from previous sessions survives the terminal reset and gets flushed when the tab becomes visible, causing duplicated conversation content.
-  - Files: src/components/Terminal/TerminalPanel.tsx:314, src/hooks/useTerminal.ts:390
+  - Files: src/components/Terminal/TerminalPanel.tsx:314, src/hooks/useTerminal.ts:386
 - [PT-12] Pre-spawn fit() + post-spawn rAF dimension verification prevents 80-col race when font metrics or WebGL renderer aren't ready during initial layout
   - Files: src/components/Terminal/TerminalPanel.tsx:417, src/components/Terminal/TerminalPanel.tsx:431-437
 - [PT-13] Same-dimension gate: handleResize tracks last PTY dims in a ref; skips redundant pty.resize() calls when cols/rows unchanged. Prevents ConPTY reflow duplication from layout-triggered ResizeObserver events.
@@ -110,7 +110,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [RS-08] Auto-resume effect uses prevVisibleRef to detect hidden-to-visible transitions; only fires when tab becomes visible AND session is dead AND conversation is resumable; 150ms delay for render settling
   - Files: src/components/Terminal/TerminalPanel.tsx:456
 - [RS-09] Terminal reset on respawn: writes ANSI RIS (\x1bc) to clear content and scrollback, then fit() to sync xterm.js dimensions before spawning new PTY
-  - Files: src/components/Terminal/TerminalPanel.tsx:316, src/hooks/useTerminal.ts:390
+  - Files: src/components/Terminal/TerminalPanel.tsx:316, src/hooks/useTerminal.ts:386
 
 ## Session Switch
 
@@ -135,7 +135,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [IN-08] SubagentInspector tool block collapse: MessageBlock uses local useState for collapsed state; getToolPreview extracts first non-empty line (120 char cap). Parent computes lastToolIndex via reduce; only the last tool message auto-expands when subagent is active (not dead/idle). React key={i} ensures stable mounting.
   - Files: src/components/SubagentInspector/SubagentInspector.tsx:12, src/components/SubagentInspector/SubagentInspector.tsx:78
 - [IN-09] choiceHint detection uses terminal buffer tail (last 15 lines from xterm.js) to find active Ink selectors via "> 1." + "2." pattern, replacing the previous lastText regex approach. getBufferTail reads only the last N lines for efficiency.
-  - Files: src/hooks/useInspectorState.ts:143, src/lib/terminalRegistry.ts:30, src/hooks/useTerminal.ts:349
+  - Files: src/hooks/useInspectorState.ts:147, src/lib/terminalRegistry.ts:30, src/hooks/useTerminal.ts:345
 
 ## Background Buffering
 

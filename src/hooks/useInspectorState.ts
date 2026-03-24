@@ -93,12 +93,13 @@ export function useInspectorState(
   sessionId: string | null,
   port: number | null,
   reconnectKey?: number
-): { connected: boolean; disconnect: () => void; inputText: string; inputTs: number; userPrompt: string | null; claudeSessionId: string | null } {
+): { connected: boolean; disconnect: () => void; inputText: string; inputTs: number; userPrompt: string | null; claudeSessionId: string | null; completionCount: number } {
   const [connected, setConnected] = useState(false);
   const [inputText, setInputText] = useState("");
   const [inputTs, setInputTs] = useState(0);
   const [userPrompt, setUserPrompt] = useState<string | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
+  const [completionCount, setCompletionCount] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCountRef = useRef(0);
@@ -157,6 +158,20 @@ export function useInspectorState(
     }
 
     const derivedState = deriveStateFromPoll(data, lastStateRef.current);
+
+    // Signal genuine completion: only on transition TO idle via event-confirmed source.
+    // Queued input watches this instead of session.state to avoid false idle flashes.
+    if (derivedState === "idle" && lastStateRef.current !== "idle") {
+      const lastEvt = data.events.length > 0 ? data.events[data.events.length - 1] : null;
+      const eventConfirmed = lastEvt != null && (
+        lastEvt.t === "result" ||
+        (lastEvt.t === "assistant" && lastEvt.sr === "end_turn")
+      );
+      if (eventConfirmed || data.idleDetected) {
+        setCompletionCount(c => c + 1);
+      }
+    }
+
     if (derivedState !== lastStateRef.current) {
       console.log(`[inspector] state ${lastStateRef.current} → ${derivedState} session=${sid}`);
       updateState(sid, derivedState);
@@ -345,6 +360,7 @@ export function useInspectorState(
     noEventTicksRef.current = 0;
     msgIdRef.current = 1;
     setClaudeSessionId(null);
+    setCompletionCount(0);
     setInputText("");
     setInputTs(0);
     setUserPrompt(null);
@@ -367,5 +383,5 @@ export function useInspectorState(
     };
   }, [sessionId, port, connect, disconnect, reconnectKey]);
 
-  return { connected, disconnect, inputText, inputTs, userPrompt, claudeSessionId };
+  return { connected, disconnect, inputText, inputTs, userPrompt, claudeSessionId, completionCount };
 }
