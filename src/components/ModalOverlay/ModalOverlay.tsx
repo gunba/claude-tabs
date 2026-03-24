@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import "./ModalOverlay.css";
 
 interface ModalOverlayProps {
@@ -7,8 +8,13 @@ interface ModalOverlayProps {
 }
 
 export function ModalOverlay({ children, onClose, className }: ModalOverlayProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { overlayRef.current?.focus(); }, []);
+
   return (
     <div
+      ref={overlayRef}
+      tabIndex={-1}
       className="modal-overlay"
       onClick={onClose}
       onKeyDown={(e) => {
