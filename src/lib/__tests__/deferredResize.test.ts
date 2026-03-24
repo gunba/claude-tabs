@@ -13,10 +13,10 @@ import { describe, it, expect, vi } from "vitest";
 
 /**
  * Mirrors the deferred resize decision in TerminalPanel.handleResize.
- * Returns true if the resize should be deferred (bgBuffer non-empty).
+ * Returns true if the resize should be deferred: tab not visible, or bgBuffer non-empty.
  */
-function shouldDeferResize(bgBufferLength: number): boolean {
-  return bgBufferLength > 0;
+function shouldDeferResize(bgBufferLength: number, visible = true): boolean {
+  return !visible || bgBufferLength > 0;
 }
 
 /**
@@ -48,8 +48,16 @@ describe("deferred PTY resize decision", () => {
     expect(shouldDeferResize(100)).toBe(true);
   });
 
-  it("does NOT defer resize when bgBuffer is empty", () => {
-    expect(shouldDeferResize(0)).toBe(false);
+  it("does NOT defer resize when bgBuffer is empty and tab is visible", () => {
+    expect(shouldDeferResize(0, true)).toBe(false);
+  });
+
+  it("defers resize when tab is not visible even with empty bgBuffer", () => {
+    expect(shouldDeferResize(0, false)).toBe(true);
+  });
+
+  it("defers resize when tab is not visible and bgBuffer has data", () => {
+    expect(shouldDeferResize(5, false)).toBe(true);
   });
 });
 
