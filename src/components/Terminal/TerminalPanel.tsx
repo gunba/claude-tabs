@@ -580,19 +580,20 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedInput]);
 
-  // Auto-send queued input when session becomes idle, clear if session dies
+  // Auto-send queued input on event-confirmed completion (not transient idle flashes).
+  // inspector.completionCount only increments on result/end_turn events or idleDetected.
   useEffect(() => {
     if (!queuedInput) return;
     if (session.state === "dead") { setQueuedInput(null); return; }
-    if (session.state !== "idle") return;
     const timer = setTimeout(() => {
+      if (session.state !== "idle") return; // Belt-and-suspenders: verify still idle
       pty.handle.current?.write(queuedInput + "\r");
       setQueuedInput(null);
-    }, 800);
+    }, 300);
     return () => clearTimeout(timer);
     // pty.handle is a stable ref — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.state, queuedInput]);
+  }, [inspector.completionCount, queuedInput, session.state]);
 
   // Auto-restart session when hooks change, same timing as queued input
   useEffect(() => {
@@ -726,31 +727,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 3v5a2 2 0 0 1-2 2H4" />
                 <polyline points="6 8 4 10 6 12" />
-              </svg>
-            </button>
-            <button
-              className="bar-btn"
-              onClick={() => pty.handle.current?.write("\x15")}
-              title="Clear input line (Ctrl+U)"
-              aria-label="Clear input line"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" />
-                <line x1="18" y1="9" x2="12" y2="15" />
-                <line x1="12" y1="9" x2="18" y2="15" />
-              </svg>
-            </button>
-            <button
-              className="bar-btn"
-              onClick={() => pty.handle.current?.write("\x15".repeat(20))}
-              title="Clear all input lines (Ctrl+Shift+X)"
-              aria-label="Clear all input lines"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z" />
-                <line x1="18" y1="9" x2="12" y2="15" />
-                <line x1="12" y1="9" x2="18" y2="15" />
-                <line x1="2" y1="22" x2="22" y2="22" />
               </svg>
             </button>
             <button

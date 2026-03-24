@@ -80,18 +80,17 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 
 - [TR-01] Scroll-to-top button appears at top-right when scrolled down; scroll-to-bottom button at bottom-right when scrolled up
 - [TR-02] Per-session token badge: shown on the tab card (top-right, absolutely positioned, hidden on hover to make room for action buttons) showing session token count; tooltip shows input/output breakdown; hidden when dead or zero tokens
-- [TR-03] Clear input button uses standard backspace icon (pointed rectangle with X); Lucide/Feather style
-- [TR-04] Ctrl+Home scrolls to top, Ctrl+End scrolls to bottom
+- [TR-03] Ctrl+Home scrolls to top, Ctrl+End scrolls to bottom
 - [TR-05] Hidden tabs use CSS `display: none` — never unmount/remount xterm.js (destroys state)
 - [TR-06] Fixed 100K scrollback buffer — no dynamic resizing
-- [TR-07] Vertical button bar (28px): right-side column with scroll-to-top, scroll-to-last-message, queue input, clear input, clear all input, and scroll-to-bottom. Conditionally rendered when visible and not dead; individual scroll buttons within use visibility toggling.
-  - Files: src/components/Terminal/TerminalPanel.tsx:666
+- [TR-07] Vertical button bar (28px): right-side column with scroll-to-top, scroll-to-last-message, queue input, and scroll-to-bottom. Conditionally rendered when visible and not dead; individual scroll buttons within use visibility toggling.
+  - Files: src/components/Terminal/TerminalPanel.tsx:689
 - [TR-08] Scroll to last user message: uses xterm.js buffer markers registered on user Enter presses (not prompt scanning), accessible via button bar and Ctrl+middle-click on terminal (capture phase listener)
-  - Files: src/hooks/useTerminal.ts:277, src/components/Terminal/TerminalPanel.tsx:615
+  - Files: src/hooks/useTerminal.ts:278, src/components/Terminal/TerminalPanel.tsx:659
 - [TR-09] Ctrl+wheel snaps to top/bottom; requires zoomHotkeysEnabled: false in tauri.conf.json to prevent WebView2 zoom interception
-  - Files: src/components/Terminal/TerminalPanel.tsx:619, src-tauri/tauri.conf.json:25
+  - Files: src/components/Terminal/TerminalPanel.tsx:651, src-tauri/tauri.conf.json:25
 - [TR-10] fit() deferred on tab switch via double requestAnimationFrame -- waits for browser layout reflow before sizing, prevents tiny-terminal bug. Cancels on rapid tab switching.
-  - Files: src/components/Terminal/TerminalPanel.tsx:488
+  - Files: src/components/Terminal/TerminalPanel.tsx:508
 - [TR-11] Subagent card shows selected highlight (accent-secondary left border + tinted background) when its inspector is open.
   - Files: src/App.tsx:515, src/App.css:574
 - [TR-12] Tool blocks in SubagentInspector are collapsible: collapsed by default with tool name + one-line preview, click to expand. Last tool block auto-expands while subagent is active.
@@ -229,8 +228,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 - [KB-04] Ctrl+Tab / Ctrl+Shift+Tab — Cycle tabs
 - [KB-05] Alt+1-9 — Jump to tab N
 - [KB-06] Ctrl+K — Command palette
-- [KB-07] Ctrl+Shift+X — Clear all input lines
-- [KB-08] Ctrl+, — Open Config Manager
+- [KB-07] Ctrl+, — Open Config Manager
 - [KB-09] Esc — Close modal / dismiss inspector (ordered: contextMenu -> palette -> debug -> config -> resume -> launcher -> inspector)
 - [KB-10] Alt+1-9 blocked from PTY (return false in attachCustomKeyEventHandler) -- handled by App.tsx global tab-switch handler without escape code artifacts
   - Files: src/hooks/useTerminal.ts:80

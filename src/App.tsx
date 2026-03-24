@@ -21,7 +21,6 @@ import { useNotifications } from "./hooks/useNotifications";
 import { useCommandDiscovery } from "./hooks/useCommandDiscovery";
 import { useCtrlKey } from "./hooks/useCtrlKey";
 import { useUiConfigStore } from "./lib/uiConfig";
-import { writeToPty } from "./lib/ptyRegistry";
 import { killAllActivePtys } from "./lib/ptyProcess";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { startTestHarness } from "./lib/testHarness";
@@ -250,11 +249,6 @@ export default function App() {
             : (idx + 1) % nonMeta.length;
           setActiveTab(nonMeta[next].id);
         }
-      }
-
-      if (e.ctrlKey && e.shiftKey && e.key === "X") {
-        e.preventDefault();
-        if (activeTabId) writeToPty(activeTabId, "\x15".repeat(20));
       }
 
       if (e.ctrlKey && e.key === "e") {
