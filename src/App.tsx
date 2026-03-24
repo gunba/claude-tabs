@@ -14,6 +14,7 @@ import { CommandBar } from "./components/CommandBar/CommandBar";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { ConfigManager } from "./components/ConfigManager/ConfigManager";
 import { DebugPanel } from "./components/DebugPanel/DebugPanel";
+import { DiffPanel } from "./components/DiffPanel/DiffPanel";
 import { ModalOverlay } from "./components/ModalOverlay/ModalOverlay";
 
 import { useCliWatcher } from "./hooks/useCliWatcher";
@@ -49,9 +50,10 @@ export default function App() {
   const setLastConfig = useSettingsStore((s) => s.setLastConfig);
   const showConfigManager = useSettingsStore((s) => s.showConfigManager);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
+  const sidePanel = useSettingsStore((s) => s.sidePanel);
+  const setSidePanel = useSettingsStore((s) => s.setSidePanel);
   const [showPalette, setShowPalette] = useState(false);
   const [showResumePicker, setShowResumePicker] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [inspectedSubagent, setInspectedSubagent] = useState<{ sessionId: string; subagentId: string } | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
@@ -226,13 +228,18 @@ export default function App() {
 
       if (e.ctrlKey && e.shiftKey && e.key === "D") {
         e.preventDefault();
-        setShowDebugPanel((v) => !v);
+        setSidePanel(sidePanel === "debug" ? null : "debug");
+      }
+
+      if (e.ctrlKey && e.shiftKey && e.key === "G") {
+        e.preventDefault();
+        setSidePanel(sidePanel === "diff" ? null : "diff");
       }
 
       if (e.key === "Escape") {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (showPalette) return;
-        if (showDebugPanel) { setShowDebugPanel(false); return; }
+        if (sidePanel) { setSidePanel(null); return; }
         if (showConfigManager) { setShowConfigManager(false); return; }
         if (showResumePicker) { setShowResumePicker(false); return; }
         if (showLauncher) { setShowLauncher(false); return; }
@@ -272,7 +279,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, showDebugPanel, inspectedSubagent, tabContextMenu, quickLaunch]);
+  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, sidePanel, inspectedSubagent, tabContextMenu, quickLaunch]);
 
   const regularSessions = useMemo(() => sessions.filter((s) => !s.isMetaAgent), [sessions]);
   const groups = useMemo(() => groupSessionsByDir(regularSessions), [regularSessions]);
@@ -590,8 +597,11 @@ export default function App() {
             </div>
           )}
         </div>
-        {showDebugPanel && (
-          <DebugPanel onClose={() => setShowDebugPanel(false)} />
+        {sidePanel === "debug" && (
+          <DebugPanel onClose={() => setSidePanel(null)} />
+        )}
+        {sidePanel === "diff" && (
+          <DiffPanel onClose={() => setSidePanel(null)} />
         )}
       </div>
 

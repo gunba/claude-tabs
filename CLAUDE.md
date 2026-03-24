@@ -74,7 +74,8 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── useCommandDiscovery.ts           # Slash command discovery (binary scan + --help fallback + plugins)
   │   ├── useCliWatcher.ts                 # CLI version + capabilities
   │   ├── useNotifications.ts              # Desktop notifications (WinRT toast, click-to-switch)
-  │   └── useCtrlKey.ts                    # Ctrl-key held state for alternate-action highlights
+  │   ├── useCtrlKey.ts                    # Ctrl-key held state for alternate-action highlights
+  │   └── useGitStatus.ts                  # Git status polling (2s interval) with change detection
   ├── components/
   │   ├── Terminal/TerminalPanel.tsx        # PTY + terminal + inspector + background buffering
   │   ├── SessionLauncher/SessionLauncher.tsx  # New/resume session modal
@@ -93,7 +94,8 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── ConfigManager/SettingsTab.tsx    # Unified per-scope settings layout with schema-driven fields
   │   ├── Icons/Icons.tsx                  # SVG icon components (shared Icon base, currentColor)
   │   ├── ModalOverlay/ModalOverlay.tsx    # Shared modal wrapper
-  │   └── DebugPanel/DebugPanel.tsx        # Debug log viewer (Ctrl+Shift+D)
+  │   ├── DebugPanel/DebugPanel.tsx        # Debug log viewer (Ctrl+Shift+D)
+  │   └── DiffPanel/DiffPanel.tsx          # Git diff side panel (Ctrl+Shift+G): file list, inline diffs
   ├── lib/
   │   ├── inspectorHooks.ts                # INSTALL_HOOK + POLL_STATE JS expressions for BUN_INSPECT
   │   ├── inspectorPort.ts                 # Inspector port allocation and registry
@@ -106,7 +108,8 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── settingsSchema.ts               # CLI settings.json schema discovery + parsing
   │   ├── testHarness.ts                   # Test bridge (writes state to JSON, accepts commands)
   │   ├── uiConfig.ts                     # Persisted UI configuration
-  │   └── perfTrace.ts                    # Performance tracing utilities
+  │   ├── perfTrace.ts                    # Performance tracing utilities
+  │   └── diffParser.ts                   # Git porcelain/numstat/unified-diff parsers
   └── types/
       ├── session.ts                       # TypeScript types mirroring Rust (camelCase)
       └── ipc.ts                           # Tauri IPC command signatures

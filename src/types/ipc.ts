@@ -1,4 +1,5 @@
 import type { ContentSearchMatch, Session, SessionConfig, SessionState } from "./session";
+import type { GitStatusRaw } from "./git";
 
 // Tauri IPC command signatures — mirrors src-tauri/src/commands.rs
 export interface IpcCommands {
@@ -37,4 +38,7 @@ export interface IpcCommands {
   plugin_enable: (args: { name: string }) => Promise<string>;
   plugin_disable: (args: { name: string }) => Promise<string>;
   check_port_available: (args: { port: number }) => Promise<boolean>;
+  git_repo_check: (args: { workingDir: string }) => Promise<boolean>;
+  git_status: (args: { workingDir: string }) => Promise<GitStatusRaw>;
+  git_diff_file: (args: { workingDir: string; filePath: string; staged: boolean; untracked?: boolean }) => Promise<string>;
 }
