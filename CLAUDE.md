@@ -6,9 +6,9 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
 
 ## Architecture
 
-- [AR-01] Core data flow: React UI (WebView2) communicates with Rust backend via Tauri IPC, which manages ConPTY sessions to the Claude Code CLI
+- [AR-01] Core data flow: React UI (WebView2) communicates with Rust backend via Tauri IPC, which manages PTY sessions to the Claude Code CLI
   ```
-  React UI (WebView2) ←→ Tauri IPC ←→ Rust Backend ←→ ConPTY ←→ Claude Code CLI
+  React UI (WebView2) ←→ Tauri IPC ←→ Rust Backend ←→ PTY (ConPTY/openpty) ←→ Claude Code CLI
   ```
 
 ## Build & Validate
@@ -17,8 +17,8 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   - `npm run build:quick` — Release binary, no installer (~30s after first build)
   - `npm run build:debug` — Debug binary, fastest (~10-15s incremental)
   - `npm run tauri dev` — Dev mode with hot-reload (frontend only, Rust recompiles on change)
-  - `npm run tauri build` — Full NSIS installer (only for releases)
-  - Portable exe: `src-tauri/target/release/claude-tabs.exe` (quick) or `src-tauri/target/debug/claude-tabs.exe` (debug)
+  - `npm run tauri build` — Full installer (NSIS on Windows, deb/rpm/appimage on Linux)
+  - Binary: `src-tauri/target/release/claude-tabs` (quick) or `src-tauri/target/debug/claude-tabs` (debug)
 - [BV-02] Never do a full NSIS build just to test. Use build:quick or build:debug.
 - [BV-03] Before every commit: `npx tsc --noEmit` (zero TS errors), `npm test` (all Vitest pass), `cargo check` in src-tauri (zero Rust errors)
 
@@ -74,7 +74,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── useInspectorState.ts             # BUN_INSPECT WebSocket: state detection, metadata, subagent tracking
   │   ├── useCommandDiscovery.ts           # Slash command discovery (binary scan + --help fallback + plugins)
   │   ├── useCliWatcher.ts                 # CLI version + capabilities
-  │   ├── useNotifications.ts              # Desktop notifications (WinRT toast, click-to-switch)
+  │   ├── useNotifications.ts              # Desktop notifications (WinRT toast on Windows, tauri-plugin-notification on Linux)
   │   ├── useCtrlKey.ts                    # Ctrl-key held state for alternate-action highlights
   │   └── useGitStatus.ts                  # Git status polling (2s interval) with change detection
   ├── components/
@@ -105,7 +105,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── ptyProcess.ts                    # Direct PTY wrapper + active PID cleanup registry
   │   ├── ptyRegistry.ts                   # Global PTY writer + kill registry
   │   ├── terminalRegistry.ts             # Terminal buffer reader registry
-  │   ├── paths.ts                         # Path helpers, worktree detection (parseWorktreePath, worktreeAcronym), tab grouping
+  │   ├── paths.ts                         # Path helpers, IS_WINDOWS detection, platform-aware normalizePath, worktree detection, tab grouping
   │   ├── settingsSchema.ts               # CLI settings.json schema discovery + parsing
   │   ├── debugLog.ts                      # Structured debug logging (dlog function, session-scoped entries)
   │   ├── testHarness.ts                   # Test bridge (writes state to JSON, accepts commands)

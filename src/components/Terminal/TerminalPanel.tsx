@@ -10,6 +10,7 @@ import { useInspectorState } from "../../hooks/useInspectorState";
 import { registerPtyWriter, unregisterPtyWriter, registerPtyKill, unregisterPtyKill } from "../../lib/ptyRegistry";
 import { registerBufferReader, unregisterBufferReader, registerTailReader, unregisterTailReader } from "../../lib/terminalRegistry";
 import { useSettingsStore } from "../../store/settings";
+import { normalizePath } from "../../lib/paths";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPanel.css";
@@ -400,8 +401,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         const args = await buildClaudeArgs(session.config);
         terminal.fit(); // Force fit before reading dimensions
         const { cols, rows } = terminal.getDimensions();
-        // Normalize path slashes for Windows PTY spawn
-        const cwd = session.config.workingDir.replace(/\//g, "\\");
+        const cwd = normalizePath(session.config.workingDir);
         // Pass BUN_INSPECT env for inspector-based state detection
         const env = { BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0` };
         const handle = await pty.spawn(claudePath, args, cwd, cols, rows, env);
