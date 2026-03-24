@@ -8,6 +8,7 @@ import {
   parseWorktreePath,
   worktreeAcronym,
   dirToTabName,
+  IS_WINDOWS,
 } from "../paths";
 // TabGroup type used implicitly via groupSessionsByDir return
 import { scopePath } from "../../components/ConfigManager/ThreePaneEditor";
@@ -16,24 +17,48 @@ import type { TabId } from "../../components/ConfigManager/ThreePaneEditor";
 // ── normalizePath ───────────────────────────────────────────────
 
 describe("normalizePath", () => {
-  it("converts forward slashes to backslashes", () => {
-    expect(normalizePath("C:/Users/jorda/code")).toBe("C:\\Users\\jorda\\code");
-  });
-
-  it("strips trailing backslash", () => {
-    expect(normalizePath("C:\\Users\\jorda\\")).toBe("C:\\Users\\jorda");
-  });
-
-  it("strips multiple trailing backslashes", () => {
-    expect(normalizePath("C:\\Users\\jorda\\\\")).toBe("C:\\Users\\jorda");
-  });
-
-  it("handles already-normalized path", () => {
-    expect(normalizePath("C:\\Users\\jorda")).toBe("C:\\Users\\jorda");
-  });
-
   it("handles empty string", () => {
     expect(normalizePath("")).toBe("");
+  });
+
+  describe.runIf(IS_WINDOWS)("Windows", () => {
+    it("converts forward slashes to backslashes", () => {
+      expect(normalizePath("C:/Users/jorda/code")).toBe("C:\\Users\\jorda\\code");
+    });
+
+    it("strips trailing backslash", () => {
+      expect(normalizePath("C:\\Users\\jorda\\")).toBe("C:\\Users\\jorda");
+    });
+
+    it("strips multiple trailing backslashes", () => {
+      expect(normalizePath("C:\\Users\\jorda\\\\")).toBe("C:\\Users\\jorda");
+    });
+
+    it("handles already-normalized path", () => {
+      expect(normalizePath("C:\\Users\\jorda")).toBe("C:\\Users\\jorda");
+    });
+  });
+
+  describe.runIf(!IS_WINDOWS)("Linux", () => {
+    it("preserves forward slashes", () => {
+      expect(normalizePath("/home/user/code")).toBe("/home/user/code");
+    });
+
+    it("strips trailing forward slash", () => {
+      expect(normalizePath("/home/user/code/")).toBe("/home/user/code");
+    });
+
+    it("strips multiple trailing forward slashes", () => {
+      expect(normalizePath("/home/user/code//")).toBe("/home/user/code");
+    });
+
+    it("handles already-clean path", () => {
+      expect(normalizePath("/home/user/code")).toBe("/home/user/code");
+    });
+
+    it("does not convert backslashes to forward slashes", () => {
+      expect(normalizePath("/home/user/my\\dir")).toBe("/home/user/my\\dir");
+    });
   });
 });
 
@@ -290,7 +315,7 @@ describe("groupSessionsByDir", () => {
     expect(groups[1].sessions.map((s) => s.id)).toEqual(["c"]);
   });
 
-  it("normalizes mixed slash styles into same group", () => {
+  it.runIf(IS_WINDOWS)("normalizes mixed slash styles into same group (Windows)", () => {
     const sessions = [
       mkSession("a", "C:/code/proj"),
       mkSession("b", "C:\\code\\proj"),
@@ -359,10 +384,9 @@ describe("groupSessionsByDir", () => {
   });
 
   it("merges trailing-slash variant into same group", () => {
-    const sessions = [
-      mkSession("a", "C:\\code\\proj\\"),
-      mkSession("b", "C:\\code\\proj"),
-    ];
+    const sessions = IS_WINDOWS
+      ? [mkSession("a", "C:\\code\\proj\\"), mkSession("b", "C:\\code\\proj")]
+      : [mkSession("a", "/code/proj/"), mkSession("b", "/code/proj")];
     const groups = groupSessionsByDir(sessions);
     expect(groups).toHaveLength(1);
     expect(groups[0].sessions).toHaveLength(2);
@@ -378,7 +402,7 @@ describe("groupSessionsByDir", () => {
     expect(groups).toHaveLength(2);
   });
 
-  it("uses first session's workingDir for fullPath when variants differ", () => {
+  it.runIf(IS_WINDOWS)("uses first session's workingDir for fullPath when variants differ (Windows)", () => {
     // Forward-slash variant appears first; fullPath preserves that original form
     const sessions = [
       mkSession("a", "C:/code/proj"),

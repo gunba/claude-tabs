@@ -112,7 +112,8 @@ pub async fn detect_claude_cli() -> Result<String, String> {
 }
 
 fn detect_claude_cli_sync() -> Result<String, String> {
-    let mut cmd = std::process::Command::new("where");
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let mut cmd = std::process::Command::new(which_cmd);
     cmd.arg("claude");
     #[cfg(target_os = "windows")]
     {
@@ -136,12 +137,18 @@ fn detect_claude_cli_sync() -> Result<String, String> {
 
     // Check common install locations
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+    #[cfg(target_os = "windows")]
     let candidates = [
         home.join(".npm-global").join("bin").join("claude.cmd"),
         home.join("AppData")
             .join("Roaming")
             .join("npm")
             .join("claude.cmd"),
+    ];
+    #[cfg(not(target_os = "windows"))]
+    let candidates = [
+        home.join(".npm-global").join("bin").join("claude"),
+        home.join(".local").join("bin").join("claude"),
     ];
 
     for candidate in &candidates {
@@ -654,6 +661,18 @@ fn read_claude_binary(cli_path: Option<&str>) -> Result<String, String> {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // Resolve symlink (Linux npm creates symlinks to node_modules)
+        #[cfg(not(target_os = "windows"))]
+        if path.is_symlink() {
+            if let Ok(resolved) = std::fs::canonicalize(path) {
+                if let Some(content) = read_if_exists(&resolved) {
+                    if is_claude_content(&content) {
+                        return Ok(content);
                     }
                 }
             }
@@ -1839,32 +1858,47 @@ pub async fn send_notification(
     body: String,
     session_id: String,
 ) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        use tauri::Emitter;
-        use tauri_winrt_notification::Toast;
+    #[cfg(target_os = "windows")]
+    {
+        tokio::task::spawn_blocking(move || {
+            use tauri::Emitter;
+            use tauri_winrt_notification::Toast;
 
-        // Debug builds use PowerShell app ID (matches notification plugin behavior);
-        // release builds use the bundle identifier
-        let app_id = if cfg!(debug_assertions) {
-            Toast::POWERSHELL_APP_ID.to_string()
-        } else {
-            app.config().identifier.clone()
-        };
+            // Debug builds use PowerShell app ID (matches notification plugin behavior);
+            // release builds use the bundle identifier
+            let app_id = if cfg!(debug_assertions) {
+                Toast::POWERSHELL_APP_ID.to_string()
+            } else {
+                app.config().identifier.clone()
+            };
 
-        let app_for_cb = app.clone();
+            let app_for_cb = app.clone();
 
-        Toast::new(&app_id)
+            Toast::new(&app_id)
+                .title(&title)
+                .text1(&body)
+                .on_activated(move |_action| {
+                    let _ = app_for_cb.emit("notification-clicked", session_id.clone());
+                    Ok(())
+                })
+                .show()
+                .map_err(|e| format!("Toast failed: {e}"))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use tauri_plugin_notification::NotificationExt;
+        let _ = session_id; // click-to-switch not supported on Linux
+        app.notification()
+            .builder()
             .title(&title)
-            .text1(&body)
-            .on_activated(move |_action| {
-                let _ = app_for_cb.emit("notification-clicked", session_id.clone());
-                Ok(())
-            })
+            .body(&body)
             .show()
-            .map_err(|e| format!("Toast failed: {e}"))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+            .map_err(|e| format!("Notification failed: {e}"))
+    }
 }
 
 #[tauri::command]

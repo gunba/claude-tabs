@@ -62,6 +62,17 @@ fn setup_job_object() {
     }
 }
 
+/// On Linux, become a child subreaper so orphaned descendants are reparented
+/// to us instead of init. Combined with ActivePids cleanup on exit, this
+/// prevents zombie processes from accumulating.
+#[cfg(target_os = "linux")]
+fn setup_child_reaper() {
+    let ret = unsafe { libc::prctl(36, 1, 0, 0, 0) }; // PR_SET_CHILD_SUBREAPER
+    if ret != 0 {
+        eprintln!("Failed to set child subreaper (prctl returned {})", ret);
+    }
+}
+
 pub fn run() {
     // Assign our process to a Job Object with KILL_ON_JOB_CLOSE.
     // When our process exits (clean, crash, or force-close), Windows
@@ -69,6 +80,9 @@ pub fn run() {
     // instances spawned by ConPTY and Claude CLI processes.
     #[cfg(target_os = "windows")]
     setup_job_object();
+
+    #[cfg(target_os = "linux")]
+    setup_child_reaper();
 
     // Strip CLAUDECODE env var so spawned Claude CLI sessions don't think
     // they're nested inside another Claude Code session. Claude Tabs manages

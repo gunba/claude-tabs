@@ -6,8 +6,8 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 
 ## Data Flow
 
-- [DF-01] User types in xterm.js -> `onData` -> PTY `write` -> ConPTY -> Claude stdin
-- [DF-02] Claude stdout -> ConPTY -> background reader thread (8 KiB) -> sync_channel(64) -> OutputFilter (security) -> SyncBlockDetector (DEC 2026 coalescing) -> IPC response -> Uint8Array
+- [DF-01] User types in xterm.js -> `onData` -> PTY `write` -> PTY (ConPTY on Windows, openpty on Linux) -> Claude stdin
+- [DF-02] Claude stdout -> PTY -> background reader thread (8 KiB) -> sync_channel(64) -> OutputFilter (security) -> SyncBlockDetector (DEC 2026 coalescing) -> IPC response -> Uint8Array
   - Files: src-tauri/pty-patch/src/lib.rs:179, src/lib/ptyProcess.ts:88
 - [DF-03] PTY data handler: `writeBytes(data)` to xterm.js (debounce-batched, 4ms/50ms). Background tabs buffer PTY data in bgBufferRef, flushed as single merged write on tab focus.
 - [DF-04] React re-renders from Zustand store: tab state dots, status bar, subagent cards

@@ -7,9 +7,17 @@
 
 import type { Session } from "../types/session";
 
-/** Normalize a Windows path: forward slashes to backslashes, strip trailing. */
+// Detect platform in both Tauri WebView (navigator) and Node/vitest (process)
+export const IS_WINDOWS =
+  ("process" in globalThis && ((globalThis as Record<string, unknown>).process as Record<string, string>)?.platform === "win32") ||
+  (navigator?.platform?.startsWith("Win") ?? false);
+
+/** Normalize a path: consistent separators per platform, strip trailing. */
 export function normalizePath(p: string): string {
-  return p.replace(/\//g, "\\").replace(/\\+$/, "");
+  if (IS_WINDOWS) {
+    return p.replace(/\//g, "\\").replace(/\\+$/, "");
+  }
+  return p.replace(/\/+$/, "");
 }
 
 export interface WorktreeInfo {

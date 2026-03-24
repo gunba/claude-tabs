@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useSessionStore } from "../store/sessions";
 import { INSTALL_HOOK, POLL_STATE } from "../lib/inspectorHooks";
 import { getSessionBufferTail } from "../lib/terminalRegistry";
+import { normalizePath } from "../lib/paths";
 import type { SessionState, SubagentMessage } from "../types/session";
 
 /** Compact state returned by POLL_STATE expression. */
@@ -203,8 +204,7 @@ export function useInspectorState(
     // Update workingDir so tab acronym, resume cwd, and prune all work.
     if (data.cwd && data.cwd !== lastCwdRef.current) {
       lastCwdRef.current = data.cwd;
-      // Normalize to backslashes on Windows for consistent comparison
-      const normalized = data.cwd.replace(/\//g, "\\");
+      const normalized = normalizePath(data.cwd);
       const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
       if (session && normalized !== session.config.workingDir) {
         updateConfig(sid, { workingDir: normalized });
