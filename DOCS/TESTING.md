@@ -24,7 +24,7 @@ Test framework, test suites, manual test cases, and coverage notes.
 | `normalizePlugins` | `src/lib/__tests__/normalizePlugins.test.ts` | 17 | Plugin normalization |
 | `deferredResize` | `src/lib/__tests__/deferredResize.test.ts` | 15 | Deferred terminal resize logic |
 | `ptyCleanup` | `src/lib/__tests__/ptyCleanup.test.ts` | 9 | PTY cleanup on session close |
-| `ptyRegistry` | `src/lib/__tests__/ptyRegistry.test.ts` | 6 | Global PTY writer registry |
+| `ptyRegistry` | `src/lib/__tests__/ptyRegistry.test.ts` | 9 | Global PTY writer + kill registry |
 | `theme` | `src/lib/__tests__/theme.test.ts` | 4 | Theme definitions, CSS variable generation |
 | `ptySpawn` | `src/lib/__tests__/ptySpawn.test.ts` | 4 | PTY spawn with parallel exit waiter |
 

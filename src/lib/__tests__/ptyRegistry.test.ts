@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerPtyWriter, unregisterPtyWriter, writeToPty } from "../ptyRegistry";
+import { registerPtyWriter, unregisterPtyWriter, writeToPty, registerPtyKill, unregisterPtyKill, killPty } from "../ptyRegistry";
 
 describe("ptyRegistry", () => {
   const SESSION_ID = "test-session-1";
@@ -7,6 +7,8 @@ describe("ptyRegistry", () => {
   beforeEach(() => {
     unregisterPtyWriter(SESSION_ID);
     unregisterPtyWriter("test-session-2");
+    unregisterPtyKill(SESSION_ID);
+    unregisterPtyKill("test-session-2");
   });
 
   it("registers a writer without throwing", () => {
@@ -44,5 +46,24 @@ describe("ptyRegistry", () => {
     const result = writeToPty(SESSION_ID, "hello");
     expect(result).toBe(false);
     expect(writeFn).not.toHaveBeenCalled();
+  });
+
+  it("killPty calls registered kill function and awaits it", async () => {
+    const killFn = vi.fn().mockResolvedValue(undefined);
+    registerPtyKill(SESSION_ID, killFn);
+    await killPty(SESSION_ID);
+    expect(killFn).toHaveBeenCalledOnce();
+  });
+
+  it("killPty is a no-op for unregistered session", async () => {
+    await expect(killPty("nonexistent")).resolves.toBeUndefined();
+  });
+
+  it("killPty is a no-op after unregistering", async () => {
+    const killFn = vi.fn().mockResolvedValue(undefined);
+    registerPtyKill(SESSION_ID, killFn);
+    unregisterPtyKill(SESSION_ID);
+    await killPty(SESSION_ID);
+    expect(killFn).not.toHaveBeenCalled();
   });
 });

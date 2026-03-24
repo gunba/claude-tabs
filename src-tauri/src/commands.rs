@@ -1874,13 +1874,9 @@ pub fn shell_open(path: String) -> Result<(), String> {
 
 /// Remove a git worktree directory.
 #[tauri::command]
-pub async fn prune_worktree(worktree_path: String, project_root: String, force: bool) -> Result<(), String> {
+pub async fn prune_worktree(worktree_path: String, project_root: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let mut args = vec!["worktree", "remove"];
-        if force {
-            args.push("--force");
-        }
-        args.push(&worktree_path);
+        let args = vec!["worktree", "remove", "--force", &worktree_path];
 
         let mut cmd = std::process::Command::new("git");
         cmd.args(&args).current_dir(&project_root);

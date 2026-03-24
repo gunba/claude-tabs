@@ -7,6 +7,7 @@
  */
 
 const ptyWriters = new Map<string, (data: string) => void>();
+const ptyKills = new Map<string, () => Promise<void>>();
 
 /** Register a PTY write function for a session. */
 export function registerPtyWriter(sessionId: string, write: (data: string) => void): void {
@@ -23,4 +24,20 @@ export function writeToPty(sessionId: string, data: string): boolean {
   const write = ptyWriters.get(sessionId);
   if (write) { write(data); return true; }
   return false;
+}
+
+/** Register a PTY kill function for a session. */
+export function registerPtyKill(sessionId: string, kill: () => Promise<void>): void {
+  ptyKills.set(sessionId, kill);
+}
+
+/** Unregister a PTY kill function when a session is cleaned up. */
+export function unregisterPtyKill(sessionId: string): void {
+  ptyKills.delete(sessionId);
+}
+
+/** Kill a session's PTY and wait for process exit. No-op if no PTY registered. */
+export async function killPty(sessionId: string): Promise<void> {
+  const kill = ptyKills.get(sessionId);
+  if (kill) await kill();
 }

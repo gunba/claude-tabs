@@ -103,7 +103,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── claude.ts                        # Color assignment, model resolution, resume helpers, stripWorktreeFlags, buildClaudeArgs
   │   ├── theme.ts                         # Theme definitions, CSS variable setter, xterm theme
   │   ├── ptyProcess.ts                    # Direct PTY wrapper + active PID cleanup registry
-  │   ├── ptyRegistry.ts                   # Global PTY writer registry
+  │   ├── ptyRegistry.ts                   # Global PTY writer + kill registry
   │   ├── terminalRegistry.ts             # Terminal buffer reader registry
   │   ├── paths.ts                         # Path helpers, worktree detection (parseWorktreePath, worktreeAcronym), tab grouping
   │   ├── settingsSchema.ts               # CLI settings.json schema discovery + parsing
