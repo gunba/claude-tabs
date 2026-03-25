@@ -10,6 +10,7 @@ import {
   IconWarning, IconHook, IconCircleFilled, IconCircleOutline,
   IconGitBranch,
 } from "../Icons/Icons";
+import { useGitStatus } from "../../hooks/useGitStatus";
 import type { Session, PermissionMode } from "../../types/session";
 import "./StatusBar.css";
 
@@ -115,6 +116,10 @@ export function StatusBar() {
   const sidePanel = useSettingsStore((s) => s.sidePanel);
   const setSidePanel = useSettingsStore((s) => s.setSidePanel);
 
+  const { isGitRepo, status: gitStatus } = useGitStatus(activeSession?.config.workingDir ?? null, true);
+  const hasChanges = gitStatus != null &&
+    (gitStatus.staged.length + gitStatus.unstaged.length + gitStatus.untracked.length) > 0;
+
   useEffect(() => {
     const dirs = sessions
       .filter((s) => !s.isMetaAgent && s.state !== "dead")
@@ -145,13 +150,15 @@ export function StatusBar() {
         <span className="status-empty">No active session</span>
       )}
       <div className="status-right">
-        <button
-          className={`status-item status-hooks-btn${sidePanel === "diff" ? " status-active-btn" : ""}`}
-          onClick={() => setSidePanel(sidePanel === "diff" ? null : "diff")}
-          title="Git changes (Ctrl+Shift+G)"
-        >
-          <IconGitBranch size={12} /> Changes
-        </button>
+        {isGitRepo && hasChanges && (
+          <button
+            className={`status-item status-hooks-btn${sidePanel === "diff" ? " status-active-btn" : ""}`}
+            onClick={() => setSidePanel(sidePanel === "diff" ? null : "diff")}
+            title="Git changes (Ctrl+Shift+G)"
+          >
+            <IconGitBranch size={12} /> Changes
+          </button>
+        )}
         <button
           className="status-item status-hooks status-hooks-btn"
           onClick={() => setShowConfigManager("hooks")}
