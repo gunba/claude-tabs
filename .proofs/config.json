@@ -6,9 +6,54 @@
     "DOCS/PHILOSOPHY.md"
   ],
   "review_agents": [
-    "reviewer",
-    "simplifier",
-    "tester"
+    {
+      "name": "reviewer",
+      "prompt_suffix": "Review these changes."
+    },
+    {
+      "name": "simplifier",
+      "prompt_suffix": "Analyze for simplification opportunities."
+    },
+    {
+      "name": "tester",
+      "prompt_suffix": "Run tests, identify coverage gaps, suggest tests to write."
+    }
+  ],
+  "plan_agents": [
+    {
+      "name": "planner",
+      "prompt_suffix": "Critique this plan. What could go wrong? Edge cases, regressions, race conditions, things missed."
+    },
+    {
+      "name": "planner",
+      "prompt_suffix": "Critique this plan. What existing code, patterns, or utilities already solve part of this? What can be reused instead of written from scratch?"
+    },
+    {
+      "name": "planner",
+      "prompt_suffix": "Critique this plan. Should anything be abstracted, generalised, or consolidated? Should any existing abstractions be removed?"
+    }
+  ],
+  "review_brief_fields": [
+    {
+      "flag": "intent",
+      "label": "Intent (what the user wanted)",
+      "required": true
+    },
+    {
+      "flag": "approach",
+      "label": "Approach (what was done and why)",
+      "required": true
+    },
+    {
+      "flag": "limitations",
+      "label": "Limitations",
+      "required": false
+    },
+    {
+      "flag": "alternatives",
+      "label": "Alternatives Considered",
+      "required": false
+    }
   ],
   "batch_size": 12
 }
