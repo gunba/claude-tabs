@@ -773,8 +773,12 @@ export const INSTALL_TAPS = `(function() {
           var result = origBunSpawn.apply(Bun, arguments);
           if (flags.bun) {
             try {
-              var c = Array.isArray(cmd) ? cmd.slice(0, 10).join(' ') : String(cmd);
-              var cwd = (opts && opts.cwd) ? String(opts.cwd).slice(-200) : null;
+              var c;
+              if (Array.isArray(cmd)) c = cmd.slice(0, 10).join(' ');
+              else if (cmd && Array.isArray(cmd.cmd)) c = cmd.cmd.slice(0, 10).join(' ');
+              else c = String(cmd);
+              var o = opts || cmd;
+              var cwd = (o && o.cwd) ? String(o.cwd).slice(-200) : null;
               push('bun.spawn', { cmd: c.slice(0, 500), cwd: cwd, pid: result && result.pid });
             } catch(e) {}
           }
@@ -788,8 +792,12 @@ export const INSTALL_TAPS = `(function() {
           var result = origBunSpawnSync.apply(Bun, arguments);
           if (flags.bun) {
             try {
-              var c = Array.isArray(cmd) ? cmd.slice(0, 10).join(' ') : String(cmd);
-              var cwd = (opts && opts.cwd) ? String(opts.cwd).slice(-200) : null;
+              var c;
+              if (Array.isArray(cmd)) c = cmd.slice(0, 10).join(' ');
+              else if (cmd && Array.isArray(cmd.cmd)) c = cmd.cmd.slice(0, 10).join(' ');
+              else c = String(cmd);
+              var o = opts || cmd;
+              var cwd = (o && o.cwd) ? String(o.cwd).slice(-200) : null;
               push('bun.spawnSync', { cmd: c.slice(0, 500), cwd: cwd, code: result && result.exitCode, dur: Date.now() - t0 });
             } catch(e) {}
           }
