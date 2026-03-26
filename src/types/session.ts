@@ -53,6 +53,20 @@ export interface SessionMetadata {
   assistantMessageCount: number;
   choiceHint: boolean;
   runtimeModel: string | null;
+  // Tap-derived enrichments
+  apiRegion: string | null;
+  lastRequestId: string | null;
+  subscriptionType: string | null;
+  hookStatus: string | null;
+  lastTurnCostUsd: number;
+  lastTurnTtftMs: number;
+  systemPromptLength: number;
+  toolCount: number;
+  conversationLength: number;
+  activeSubprocess: string | null;
+  filesTouched: string[];
+  rateLimitRemaining: string | null;
+  rateLimitReset: string | null;
 }
 
 export interface Session {

@@ -294,7 +294,7 @@ function mkSession(id: string, workingDir: string): Session {
     name: id,
     config: { ...DEFAULT_SESSION_CONFIG, workingDir },
     state: "idle",
-    metadata: { costUsd: 0, contextPercent: 0, durationSecs: 0, currentAction: null, nodeSummary: null, currentToolName: null, inputTokens: 0, outputTokens: 0, assistantMessageCount: 0, choiceHint: false, runtimeModel: null },
+    metadata: { costUsd: 0, contextPercent: 0, durationSecs: 0, currentAction: null, nodeSummary: null, currentToolName: null, inputTokens: 0, outputTokens: 0, assistantMessageCount: 0, choiceHint: false, runtimeModel: null, apiRegion: null, lastRequestId: null, subscriptionType: null, hookStatus: null, lastTurnCostUsd: 0, lastTurnTtftMs: 0, systemPromptLength: 0, toolCount: 0, conversationLength: 0, activeSubprocess: null, filesTouched: [], rateLimitRemaining: null, rateLimitReset: null },
     createdAt: "",
     lastActive: "",
   };

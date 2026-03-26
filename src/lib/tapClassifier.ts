@@ -1,0 +1,468 @@
+import type { TapEntry, TapEvent } from "../types/tapEvents";
+
+/**
+ * Shared helper: format tool_use name + input into a human-readable action string.
+ * Mirrors fmtToolAction in inspectorHooks.ts INSTALL_HOOK.
+ */
+const TOOL_ACTION_KEYS: Record<string, string> = {
+  Bash: "command", Read: "file_path", Write: "file_path", Edit: "file_path",
+  Grep: "pattern", Glob: "pattern", Agent: "description",
+};
+
+function fmtToolAction(name: string, inp: Record<string, unknown>): string {
+  const key = TOOL_ACTION_KEYS[name];
+  if (key && inp[key]) return name + ": " + String(inp[key]).slice(0, 80);
+  return name;
+}
+
+// ── Parse (SSE) classifiers ──
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function classifyParse(ts: number, parsed: any): TapEvent | null {
+  const type = parsed.type;
+  if (!type) return null;
+
+  // message_start → TurnStart
+  if (type === "message_start" && parsed.message) {
+    const msg = parsed.message;
+    return {
+      kind: "TurnStart", ts,
+      model: msg.model || "",
+      inputTokens: msg.usage?.input_tokens || 0,
+      outputTokens: msg.usage?.output_tokens || 0,
+      cacheRead: msg.usage?.cache_read_input_tokens || 0,
+      cacheCreation: msg.usage?.cache_creation_input_tokens || 0,
+    };
+  }
+
+  // content_block_start → ThinkingStart | TextStart | ToolCallStart
+  if (type === "content_block_start" && parsed.content_block) {
+    const cb = parsed.content_block;
+    if (cb.type === "thinking") return { kind: "ThinkingStart", ts, index: parsed.index ?? 0 };
+    if (cb.type === "text") return { kind: "TextStart", ts, index: parsed.index ?? 0 };
+    if (cb.type === "tool_use") return {
+      kind: "ToolCallStart", ts,
+      index: parsed.index ?? 0,
+      toolName: cb.name || "",
+      toolId: cb.id || "",
+    };
+  }
+
+  // content_block_stop → BlockStop
+  if (type === "content_block_stop") {
+    return { kind: "BlockStop", ts, index: parsed.index ?? 0 };
+  }
+
+  // message_delta → TurnEnd
+  if (type === "message_delta" && parsed.delta?.stop_reason) {
+    return {
+      kind: "TurnEnd", ts,
+      stopReason: parsed.delta.stop_reason,
+      outputTokens: parsed.usage?.output_tokens || 0,
+    };
+  }
+
+  // message_stop → MessageStop
+  if (type === "message_stop") {
+    return { kind: "MessageStop", ts };
+  }
+
+  // content_block_delta — high-frequency, NOT classified (disk only)
+  return null;
+}
+
+// ── Stringify (outgoing) classifiers ──
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function classifyStringify(ts: number, parsed: any): TapEvent | null {
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  // UserInput: has display + timestamp + project/sessionId
+  if (typeof parsed.display === "string" && parsed.timestamp) {
+    const display = parsed.display as string;
+    if (display.startsWith("/")) {
+      return {
+        kind: "SlashCommand", ts,
+        command: display.split(" ")[0],
+        display,
+      };
+    }
+    return {
+      kind: "UserInput", ts,
+      display,
+      sessionId: parsed.sessionId || "",
+    };
+  }
+
+  // ApiTelemetry: has costUSD + model + durationMs
+  if (typeof parsed.costUSD === "number" && typeof parsed.durationMs === "number") {
+    return {
+      kind: "ApiTelemetry", ts,
+      model: parsed.model || "",
+      costUSD: parsed.costUSD,
+      inputTokens: parsed.inputTokens || 0,
+      outputTokens: parsed.outputTokens || 0,
+      cachedInputTokens: parsed.cachedInputTokens || 0,
+      uncachedInputTokens: parsed.uncachedInputTokens || 0,
+      durationMs: parsed.durationMs,
+      ttftMs: parsed.ttftMs || 0,
+      queryChainId: parsed.queryChainId || null,
+      queryDepth: parsed.queryDepth || 0,
+      stopReason: parsed.stop_reason || null,
+    };
+  }
+
+  // ProcessHealth: has rss + heapUsed + uptime
+  if (typeof parsed.rss === "number" && typeof parsed.heapUsed === "number" && typeof parsed.uptime === "number") {
+    return {
+      kind: "ProcessHealth", ts,
+      rss: parsed.rss,
+      heapUsed: parsed.heapUsed,
+      heapTotal: parsed.heapTotal || 0,
+      uptime: parsed.uptime,
+      cpuPercent: parsed.cpuPercent || 0,
+    };
+  }
+
+  // RateLimit: has status + hoursTillReset
+  if (typeof parsed.status === "string" && typeof parsed.hoursTillReset === "number") {
+    return {
+      kind: "RateLimit", ts,
+      status: parsed.status,
+      hoursTillReset: parsed.hoursTillReset,
+    };
+  }
+
+  // HookProgress: type=progress with data.type=hook_progress
+  if (parsed.type === "progress" && parsed.data?.type === "hook_progress") {
+    return {
+      kind: "HookProgress", ts,
+      hookEvent: parsed.data.hookEvent || "",
+      hookName: parsed.data.hookName || "",
+      command: parsed.data.command || "",
+      statusMessage: parsed.data.statusMessage || "",
+    };
+  }
+
+  // SessionRegistration: has pid + sessionId + cwd + startedAt
+  if (typeof parsed.pid === "number" && parsed.sessionId && parsed.startedAt) {
+    return {
+      kind: "SessionRegistration", ts,
+      pid: parsed.pid,
+      sessionId: parsed.sessionId,
+      cwd: parsed.cwd || "",
+      name: parsed.name || null,
+    };
+  }
+
+  // CustomTitle: type=custom-title
+  if (parsed.type === "custom-title" && parsed.customTitle) {
+    return {
+      kind: "CustomTitle", ts,
+      title: parsed.customTitle,
+      sessionId: parsed.sessionId || "",
+    };
+  }
+
+  // SubagentNotification: type=queue-operation with task-notification XML
+  if (parsed.type === "queue-operation" && typeof parsed.content === "string") {
+    const content = parsed.content as string;
+    const statusMatch = content.match(/<status>(completed|killed)<\/status>/);
+    const summaryMatch = content.match(/<summary>(.*?)<\/summary>/);
+    if (statusMatch) {
+      return {
+        kind: "SubagentNotification", ts,
+        status: statusMatch[1] as "completed" | "killed",
+        summary: summaryMatch ? summaryMatch[1] : "",
+      };
+    }
+  }
+
+  // PermissionPromptShown: setMode array with acceptEdits destination
+  if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type === "setMode") {
+    return {
+      kind: "PermissionPromptShown", ts,
+      toolName: null,
+    };
+  }
+
+  // PermissionPromptShown (telemetry): tengu_tool_use_show_permission_request shape
+  if (parsed.toolName && parsed.decisionReasonType !== undefined && parsed.sandboxEnabled !== undefined) {
+    return {
+      kind: "PermissionPromptShown", ts,
+      toolName: parsed.toolName,
+    };
+  }
+
+  // PermissionApproved (telemetry): tengu_accept_submitted shape
+  if (parsed.toolName && parsed.has_instructions !== undefined && parsed.entered_feedback_mode !== undefined) {
+    return {
+      kind: "PermissionApproved", ts,
+      toolName: parsed.toolName,
+    };
+  }
+
+  // ModeChange: has rh + to
+  if (parsed.rh && typeof parsed.to === "string") {
+    return {
+      kind: "ModeChange", ts,
+      to: parsed.to,
+    };
+  }
+
+  // ConversationMessage: has type in (user, assistant, result) + message or specific structure
+  if (parsed.type === "user" || parsed.type === "assistant" || parsed.type === "result") {
+    // SessionResume: assistant with model "<synthetic>"
+    if (parsed.type === "assistant" && parsed.message?.model === "<synthetic>") {
+      return { kind: "SessionResume", ts };
+    }
+
+    // SubagentSpawn: stringify of Agent tool input (description + prompt)
+    // This is a ToolInput, but if it has description+prompt and no type/message, it's an Agent spawn
+    // Actually, Agent tool inputs come as standalone stringify objects, not wrapped in type=...
+    // So this won't match here. We handle it below.
+
+    // UserInterruption: user message with interruption text
+    if (parsed.type === "user" && parsed.message?.content) {
+      const content = parsed.message.content;
+      const text = typeof content === "string" ? content :
+        Array.isArray(content) ? content.find((c: { type: string; text?: string }) => c.type === "text")?.text : null;
+      if (typeof text === "string" && text.includes("[Request interrupted by user")) {
+        return {
+          kind: "UserInterruption", ts,
+          forToolUse: text.includes("for tool use"),
+        };
+      }
+      // PermissionRejected: tool_result with rejection text
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "tool_result") {
+            const resultText = typeof block.content === "string" ? block.content :
+              Array.isArray(block.content) ? block.content.map((c: { text?: string }) => c.text || "").join("") : "";
+            if (resultText.includes("The user doesn't want to proceed")) {
+              return { kind: "PermissionRejected", ts };
+            }
+          }
+        }
+      }
+    }
+
+    // General ConversationMessage
+    const msg = parsed.message;
+    const toolNames: string[] = [];
+    let toolAction: string | null = null;
+    let textSnippet: string | null = null;
+
+    if (parsed.type === "assistant" && msg?.content && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.type === "tool_use") {
+          toolNames.push(block.name);
+          toolAction = fmtToolAction(block.name, block.input || {});
+        }
+        if (block.type === "text" && block.text) {
+          textSnippet = block.text.slice(0, 300);
+        }
+      }
+    }
+
+    // Tool error extraction: scan user message content for is_error tool_result blocks
+    let hasToolError = false;
+    let toolErrorText: string | null = null;
+    if (parsed.type === "user" && Array.isArray(parsed.message?.content || parsed.message)) {
+      const blocks = Array.isArray(parsed.message?.content) ? parsed.message.content : [];
+      for (const block of blocks) {
+        if (block?.type === "tool_result" && block.is_error) {
+          hasToolError = true;
+          toolErrorText = typeof block.content === "string" ? block.content.slice(0, 200) :
+            Array.isArray(block.content) ? block.content.map((c: { text?: string }) => c.text || "").join("").slice(0, 200) : null;
+          break;
+        }
+      }
+    }
+
+    return {
+      kind: "ConversationMessage", ts,
+      messageType: parsed.type,
+      isSidechain: !!parsed.isSidechain,
+      agentId: parsed.agentId || null,
+      uuid: parsed.uuid || null,
+      parentUuid: parsed.parentUuid || null,
+      promptId: parsed.promptId || null,
+      stopReason: msg?.stop_reason || null,
+      toolNames,
+      toolAction,
+      textSnippet,
+      cwd: parsed.cwd || null,
+      hasToolError,
+      toolErrorText,
+    };
+  }
+
+  // ApiRequestInfo: API request body (has model + messages array)
+  if (parsed.model && Array.isArray(parsed.messages) && !parsed.costUSD) {
+    const system = parsed.system;
+    let systemLength = 0;
+    if (Array.isArray(system)) {
+      for (const s of system) systemLength += (s.text?.length || 0);
+    } else if (typeof system === "string") {
+      systemLength = system.length;
+    }
+    return {
+      kind: "ApiRequestInfo", ts,
+      model: parsed.model,
+      systemLength,
+      toolCount: Array.isArray(parsed.tools) ? parsed.tools.length : 0,
+      messageCount: parsed.messages.length,
+    };
+  }
+
+  // AccountInfo: has accountUuid + subscriptionType + billingType
+  if (parsed.accountUuid && parsed.subscriptionType && parsed.billingType) {
+    return {
+      kind: "AccountInfo", ts,
+      subscriptionType: parsed.subscriptionType,
+      rateLimitTier: parsed.rateLimitTier || "",
+      billingType: parsed.billingType,
+      displayName: parsed.displayName || "",
+    };
+  }
+
+  // FileHistorySnapshot: type=file-history-snapshot
+  if (parsed.type === "file-history-snapshot" && parsed.snapshot) {
+    return {
+      kind: "FileHistorySnapshot", ts,
+      messageId: parsed.messageId || "",
+      filePaths: Object.keys(parsed.snapshot?.trackedFileBackups || {}),
+    };
+  }
+
+  // agent-name → reuse CustomTitle
+  if (parsed.type === "agent-name" && parsed.agentName) {
+    return {
+      kind: "CustomTitle", ts,
+      title: parsed.agentName,
+      sessionId: parsed.sessionId || "",
+    };
+  }
+
+  // TurnDuration: type=system, subtype=turn_duration
+  if (parsed.type === "system" && parsed.subtype === "turn_duration") {
+    return {
+      kind: "TurnDuration", ts,
+      durationMs: parsed.durationMs || 0,
+      messageCount: parsed.messageCount || 0,
+    };
+  }
+
+  // SubagentSpawn: standalone object with description + prompt (Agent tool input)
+  if (typeof parsed.description === "string" && typeof parsed.prompt === "string" && !parsed.type) {
+    return {
+      kind: "SubagentSpawn", ts,
+      description: parsed.description.slice(0, 200),
+      prompt: parsed.prompt.slice(0, 500),
+    };
+  }
+
+  // ToolInput: standalone tool input objects (Bash, Read, Edit, etc.)
+  // Match by presence of known tool input keys without being a conversation message
+  if (!parsed.type) {
+    if (typeof parsed.command === "string" && typeof parsed.description === "string" && !parsed.prompt) {
+      return { kind: "ToolInput", ts, toolName: "Bash", input: parsed };
+    }
+    if (typeof parsed.file_path === "string" && parsed.old_string !== undefined) {
+      return { kind: "ToolInput", ts, toolName: "Edit", input: parsed };
+    }
+    if (typeof parsed.file_path === "string" && typeof parsed.content === "string") {
+      return { kind: "ToolInput", ts, toolName: "Write", input: parsed };
+    }
+    if (typeof parsed.file_path === "string" && !parsed.content && !parsed.old_string) {
+      return { kind: "ToolInput", ts, toolName: "Read", input: parsed };
+    }
+    if (typeof parsed.pattern === "string" && parsed.path !== undefined) {
+      return { kind: "ToolInput", ts, toolName: "Grep", input: parsed };
+    }
+    if (typeof parsed.pattern === "string" && !parsed.path) {
+      return { kind: "ToolInput", ts, toolName: "Glob", input: parsed };
+    }
+    if (parsed.questions && Array.isArray(parsed.questions)) {
+      return { kind: "ToolInput", ts, toolName: "AskUserQuestion", input: parsed };
+    }
+  }
+
+  return null;
+}
+
+// ── Fetch classifier ──
+
+function classifyFetch(ts: number, entry: TapEntry): TapEvent {
+  const hdrs = entry.hdrs as Record<string, string> | undefined;
+  return {
+    kind: "ApiFetch", ts,
+    url: String(entry.url || ""),
+    method: String(entry.method || "GET"),
+    status: typeof entry.status === "number" ? entry.status : null,
+    bodyLen: typeof entry.bodyLen === "number" ? entry.bodyLen : 0,
+    durationMs: typeof entry.dur === "number" ? entry.dur : 0,
+    requestId: hdrs?.reqId || null,
+    cfRay: hdrs?.cfRay || null,
+    rateLimitRemaining: hdrs?.rlRemain || null,
+    rateLimitReset: hdrs?.rlReset || null,
+  };
+}
+
+// ── Spawn classifier ──
+
+function classifySpawn(ts: number, entry: TapEntry): TapEvent {
+  return {
+    kind: "SubprocessSpawn", ts,
+    cmd: String(entry.cmd || ""),
+    cwd: typeof entry.cwd === "string" ? entry.cwd : null,
+    pid: typeof entry.pid === "number" ? entry.pid : null,
+  };
+}
+
+/**
+ * Classify a raw TapEntry into a typed TapEvent.
+ * Returns null for noise, deltas, and unrecognized entries.
+ * Pure function, no state.
+ */
+export function classifyTapEntry(entry: TapEntry): TapEvent | null {
+  try {
+    const { ts, cat } = entry;
+
+    // Parse (SSE): parse snap JSON, match on type field
+    if (cat === "parse" && typeof entry.snap === "string") {
+      try {
+        const parsed = JSON.parse(entry.snap);
+        return classifyParse(ts, parsed);
+      } catch {
+        return null;
+      }
+    }
+
+    // Stringify (outgoing): parse snap JSON, match on shape
+    if (cat === "stringify" && typeof entry.snap === "string") {
+      try {
+        const parsed = JSON.parse(entry.snap);
+        return classifyStringify(ts, parsed);
+      } catch {
+        return null;
+      }
+    }
+
+    // Fetch: direct mapping
+    if (cat === "fetch") {
+      return classifyFetch(ts, entry);
+    }
+
+    // Spawn: direct mapping (both child_process and Bun.spawn)
+    if (cat === "spawn" || cat === "bun.spawn") {
+      return classifySpawn(ts, entry);
+    }
+
+    // All other categories (console, fs, timer, stdout, stderr, etc.) → null (disk only)
+    return null;
+  } catch {
+    return null;
+  }
+}

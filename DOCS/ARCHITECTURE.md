@@ -127,11 +127,9 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 ## Inspector
 
 - [IN-01] Inspector port allocation and registry in `inspectorPort.ts`. Async `allocateInspectorPort()` probes OS via `check_port_available` IPC (Rust TcpListener::bind) and skips registry-held ports.
-- [IN-02] `INSTALL_HOOK` JS expression in `inspectorHooks.ts`; wraps JSON.stringify to capture events into globalThis.__inspectorState. Polled every 250ms via POLL_STATE.
-  - Files: src/lib/inspectorHooks.ts:27
+- [IN-02] INSTALL_TAPS JS expression in inspectorHooks.ts; wraps 12 function categories (parse, stringify, console, fs, spawn, fetch, exit, timer, stdout, stderr, require, bun). Push-based delivery via console.debug with \x00TAP prefix. parse and stringify always on for state detection; other categories opt-in for recording. Also contains WebFetch domain bypass and HTTPS/fetch timeout patches.
 - [IN-03] Subagent tracking: inspector detects Agent tool_use -> queues description -> matches with new session ID system event -> routes events to subagent entry
-- [IN-04] Subagent conversation messages captured via POLL_STATE splice (sub.msgs.splice(0)) in a try/catch for-loop each poll cycle; messages accumulated in INSTALL_HOOK's subagent tracking and drained by the frontend poller
-  - Files: src/lib/inspectorHooks.ts:748, src/hooks/useInspectorState.ts:190
+- [IN-04] Subagent conversation messages captured via tapSubagentTracker.ts processing ConversationMessage events with isSidechain:true and agentId routing. Token attribution via lastActiveAgent tracking + queryDepth>0 from ApiTelemetry.
 - [IN-05] Stale subagent detection removed -- push-based architecture handles subagent lifecycle via real-time state events only
   - Files: src/hooks/useInspectorState.ts:156
 - [IN-06] Dead subagent purge removed -- push-based architecture relies on real-time state transitions; idle subs remain visible until session ends
@@ -140,8 +138,12 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/lib/inspectorPort.ts:17, src-tauri/src/commands.rs:1914
 - [IN-08] SubagentInspector tool block collapse: MessageBlock uses local useState for collapsed state; getToolPreview extracts first non-empty line (120 char cap). Parent computes lastToolIndex via reduce; only the last tool message auto-expands when subagent is active (not dead/idle). React key={i} ensures stable mounting.
   - Files: src/components/SubagentInspector/SubagentInspector.tsx:12, src/components/SubagentInspector/SubagentInspector.tsx:78
-- [IN-09] choiceHint detection uses terminal buffer tail (last 15 lines from xterm.js) to find active Ink selectors via "> 1." + "2." pattern, replacing the previous lastText regex approach. getBufferTail reads only the last N lines for efficiency.
-  - Files: src/hooks/useInspectorState.ts:147, src/lib/terminalRegistry.ts:30, src/hooks/useTerminal.ts:345
+- [IN-09] choiceHint detection via ToolCallStart event with toolName=AskUserQuestion in tapMetadataAccumulator.ts. Full question schema available from ToolInput event.
+- [IN-10] Tap event pipeline: raw entries arrive via Console.messageAdded WebSocket push -> tapClassifier.ts classifies 31 typed events -> tapEventBus.ts dispatches per-session -> tapStateReducer.ts (state), tapMetadataAccumulator.ts (metadata), tapSubagentTracker.ts (subagents) -> store actions. See DOCS/TAP-SIGNALS.md.
+- [IN-11] StatusBar enrichment from tap events: model + subscription tier + API region (from cf-ray), context% with breakdown tooltip (tools, messages, system prompt, files touched), cost/TTFT/requestId tooltip, rate limit display, hook execution status, active subprocess indicator, memory in duration tooltip.
+  - Files: src/components/StatusBar/StatusBar.tsx:41, src/lib/tapMetadataAccumulator.ts:8
+- [IN-12] useInspectorConnection.ts: WebSocket lifecycle only (connect, Console.enable, retry, disconnect). No state derivation. useTapPipeline.ts: receives Console.messageAdded events, classifies, dispatches, buffers for disk. useTapEventProcessor.ts: subscribes to bus, runs reducers, calls store actions.
+  - Files: src/hooks/useInspectorConnection.ts:16, src/hooks/useTapPipeline.ts:31, src/hooks/useTapEventProcessor.ts:17
 
 ## Background Buffering
 

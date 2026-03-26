@@ -25,6 +25,9 @@
     "IN-07",
     "IN-08",
     "IN-09",
+    "IN-10",
+    "IN-11",
+    "IN-12",
     "PS-01",
     "PS-02",
     "PS-03",
@@ -574,13 +577,7 @@
       "note": "WebFetch timeout protection confirmed. (1) globalThis.fetch wrapper at inspectorHooks.ts:357-369: 120s timeout for non-streaming Anthropic API calls, checks for 'stream':true to distinguish. Wires caller's AbortSignal. (2) https.request hard timeout at inspectorHooks.ts:340-348: 90s wall clock via setTimeout+req.destroy. Counters fetchTimeouts and httpsTimeouts exposed in poll state."
     }
   ],
-  "unchecked": [
-    "PT-20",
-    "RC-19",
-    "SI-19",
-    "SI-20",
-    "SI-21"
-  ],
+  "unchecked": [],
   "summary": {
     "pass": 88,
     "drift": 6,
@@ -592,500 +589,513 @@
     "SI-06": {
       "up": 1,
       "down": 0,
-      "seen": 18
+      "seen": 22
     },
     "SI-14": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "SI-15": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "IN-04": {
-      "up": 0,
+      "up": 2,
       "down": 0,
-      "seen": 6
+      "seen": 3
     },
     "IN-08": {
       "up": 1,
       "down": 0,
-      "seen": 28
+      "seen": 32
     },
     "PT-15": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "PT-16": {
       "up": 2,
       "down": 0,
-      "seen": 18
+      "seen": 22
     },
     "PT-17": {
       "up": 1,
       "down": 0,
-      "seen": 18
+      "seen": 22
     },
     "PT-18": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "DF-02": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "RC-15": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "PT-11": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "PT-12": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "PT-13": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "RS-07": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "RS-08": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "RS-09": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "IN-09": {
-      "up": 0,
+      "up": 2,
       "down": 0,
-      "seen": 14
+      "seen": 3
     },
     "PT-19": {
       "up": 0,
       "down": 0,
-      "seen": 5
+      "seen": 9
     },
     "RC-16": {
       "up": 3,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-18": {
       "up": 2,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-17": {
       "up": 1,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-18": {
       "up": 2,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-11": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-12": {
       "up": 1,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-13": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-14": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-16": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-08": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "PT-09": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "BF-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "BF-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-04": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-05": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-06": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-07": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-08": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "DF-09": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "IN-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "IN-02": {
       "up": 0,
-      "down": 0,
-      "seen": 14
+      "down": 0
     },
     "IN-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "IN-05": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "IN-06": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "IN-07": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PS-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PS-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PS-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PS-04": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PS-05": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-04": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-05": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-06": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-07": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-10": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-04": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-05": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-06": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-07": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-08": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-09": {
       "up": 1,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RC-10": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RS-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RS-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RS-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RS-04": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RS-05": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "RS-06": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-03": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "SI-04": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-05": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-07": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-08": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-09": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-10": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-11": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-12": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SI-13": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "SI-17": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SS-01": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SS-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "SS-03": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "PT-20": {
       "up": 0,
       "down": 0,
-      "seen": 5
+      "seen": 9
     },
     "CI-01": {
       "up": 1,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "CI-02": {
       "up": 0,
       "down": 0,
-      "seen": 14
+      "seen": 18
     },
     "CI-03": {
       "up": 0,
       "down": 0,
-      "seen": 6
+      "seen": 10
     },
     "DF-10": {
       "up": 0,
       "down": 0,
-      "seen": 3
+      "seen": 7
     },
     "RC-19": {
       "up": 0,
       "down": 0,
-      "seen": 3
+      "seen": 7
     },
     "SI-19": {
       "up": 0,
       "down": 0,
-      "seen": 3
+      "seen": 7
     },
     "SI-20": {
       "up": 0,
       "down": 0,
-      "seen": 3
+      "seen": 7
     },
     "SI-21": {
       "up": 0,
+      "down": 0,
+      "seen": 7
+    },
+    "IN-10": {
+      "up": 0,
+      "down": 0
+    },
+    "IN-11": {
+      "up": 2,
+      "down": 0,
+      "seen": 3
+    },
+    "IN-12": {
+      "up": 2,
       "down": 0,
       "seen": 3
     }
@@ -1371,8 +1381,34 @@
       ],
       "verified": "2026-03-26",
       "notes": "Added during change documentation"
+    },
+    "IN-10": {
+      "files": [
+        "src/lib/tapClassifier.ts:349",
+        "src/hooks/useTapPipeline.ts:31",
+        "src/hooks/useTapEventProcessor.ts:17"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
+    },
+    "IN-11": {
+      "files": [
+        "src/components/StatusBar/StatusBar.tsx:41",
+        "src/lib/tapMetadataAccumulator.ts:8"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
+    },
+    "IN-12": {
+      "files": [
+        "src/hooks/useInspectorConnection.ts:16",
+        "src/hooks/useTapPipeline.ts:31",
+        "src/hooks/useTapEventProcessor.ts:17"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
     }
   },
-  "last_run": "2026-03-26T10:49:58.248577+00:00",
+  "last_run": "2026-03-26T16:19:05.867432+00:00",
   "cycle": 2
 }

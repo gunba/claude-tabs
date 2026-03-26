@@ -41,6 +41,9 @@ const DEFAULT_METADATA: SessionMetadata = {
   assistantMessageCount: 0,
   choiceHint: false,
   runtimeModel: null,
+  apiRegion: null, lastRequestId: null, subscriptionType: null, hookStatus: null,
+  lastTurnCostUsd: 0, lastTurnTtftMs: 0, systemPromptLength: 0, toolCount: 0, conversationLength: 0,
+  activeSubprocess: null, filesTouched: [], rateLimitRemaining: null, rateLimitReset: null,
 };
 
 function mockSession(overrides: Partial<Session> = {}): Session {

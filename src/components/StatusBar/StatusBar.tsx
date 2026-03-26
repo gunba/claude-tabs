@@ -42,6 +42,7 @@ function SessionStatus({ session }: { session: Session }) {
   const perm = permissionIcon(session.config.permissionMode);
   const inspectorOff = useSessionStore((s) => s.inspectorOffSessions.has(session.id));
   const tapEnabled = useSessionStore((s) => (s.tapCategories.get(session.id)?.size ?? 0) > 0);
+  const health = useSessionStore((s) => s.processHealth.get(session.id));
   const model = effectiveModel(session);
   const wt = parseWorktreePath(session.config.workingDir);
 
@@ -59,6 +60,12 @@ function SessionStatus({ session }: { session: Session }) {
       )}
       <span className="status-item status-model" title="Model" style={{ color: modelColor(model) }}>
         {modelLabel(model)}
+        {session.metadata.subscriptionType && (
+          <span style={{ opacity: 0.6 }}>{` · ${session.metadata.subscriptionType.charAt(0).toUpperCase() + session.metadata.subscriptionType.slice(1)}`}</span>
+        )}
+        {session.metadata.apiRegion && (
+          <span style={{ opacity: 0.6 }}>{` · ${session.metadata.apiRegion}`}</span>
+        )}
       </span>
       {wt && (
         <span className="status-item status-worktree" title={wt.worktreeName} style={{ color: "var(--accent-secondary)" }}>
@@ -70,20 +77,44 @@ function SessionStatus({ session }: { session: Session }) {
           {perm.icon}
         </span>
       )}
-      <span className="status-item status-context" title="Context usage">
+      <span className="status-item status-context" title={
+        session.metadata.contextPercent > 0
+          ? `Context: ${session.metadata.contextPercent}% · ${session.metadata.toolCount} tools · ${session.metadata.conversationLength} messages` +
+            (session.metadata.systemPromptLength > 0 ? ` · ${Math.round(session.metadata.systemPromptLength / 1000)}K system prompt` : "") +
+            (session.metadata.filesTouched?.length ? ` · ${session.metadata.filesTouched.length} files touched` : "")
+          : "Context usage"
+      }>
         <span className="status-icon"><IconHalfCircle size={12} /></span>
         {session.metadata.contextPercent > 0
           ? `${session.metadata.contextPercent.toFixed(0)}%`
           : "—"}
       </span>
-      <span className="status-item status-cost" title={`This session — Input: ${formatTokenCount(session.metadata.inputTokens)}, Output: ${formatTokenCount(session.metadata.outputTokens)}`}>
+      <span className="status-item status-cost" title={
+        `Total: $${session.metadata.costUsd.toFixed(4)} · Input: ${formatTokenCount(session.metadata.inputTokens)}, Output: ${formatTokenCount(session.metadata.outputTokens)}` +
+        (session.metadata.lastTurnCostUsd > 0 ? `\nLast turn: $${session.metadata.lastTurnCostUsd.toFixed(4)} · TTFT: ${session.metadata.lastTurnTtftMs}ms` : "") +
+        (session.metadata.rateLimitRemaining ? `\nRate limit: ${session.metadata.rateLimitRemaining} tokens remaining` + (session.metadata.rateLimitReset ? ` · resets ${session.metadata.rateLimitReset}` : "") : "") +
+        (session.metadata.lastRequestId ? `\nRequest: ${session.metadata.lastRequestId}` : "")
+      }>
         <span className="status-icon"><IconDiamond size={12} /></span>
         {formatTokenCount(session.metadata.inputTokens + session.metadata.outputTokens)} tokens
       </span>
-      <span className="status-item status-duration" title="Session uptime (since creation)">
+      <span className="status-item status-duration" title={
+        `Duration: ${formatDuration(session.metadata.durationSecs)}` +
+        (health ? `\nMemory: ${Math.round(health.rss / 1_000_000)}MB · Heap: ${Math.round(health.heapUsed / 1_000_000)}MB · Uptime: ${formatDuration(Math.floor(health.uptime))}` : "")
+      }>
         <span className="status-icon"><IconClock size={12} /></span>
         {formatDuration(session.metadata.durationSecs)}
       </span>
+      {session.metadata.hookStatus && (
+        <span className="status-item" style={{ color: "var(--accent-secondary)", fontSize: "0.85em" }} title="Hook executing">
+          {session.metadata.hookStatus}
+        </span>
+      )}
+      {!session.metadata.hookStatus && session.metadata.activeSubprocess && (
+        <span className="status-item" style={{ opacity: 0.6, fontSize: "0.85em" }} title="Subprocess running">
+          {session.metadata.activeSubprocess}
+        </span>
+      )}
       {session.config.maxBudget && (
         <span className="status-item status-budget" title={`Budget: $${session.config.maxBudget}`}>
           <span className="status-icon"><IconBudget size={12} /></span>

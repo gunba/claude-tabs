@@ -6,8 +6,9 @@ import { useSessionStore } from "../../store/sessions";
 import { buildClaudeArgs, getResumeId, canResumeSession, stripWorktreeFlags } from "../../lib/claude";
 import { dlog } from "../../lib/debugLog";
 import { allocateInspectorPort, registerInspectorPort, unregisterInspectorPort, registerInspectorCallbacks, unregisterInspectorCallbacks } from "../../lib/inspectorPort";
-import { useInspectorState } from "../../hooks/useInspectorState";
-import { useTapRecorder } from "../../hooks/useTapRecorder";
+import { useInspectorConnection } from "../../hooks/useInspectorConnection";
+import { useTapPipeline } from "../../hooks/useTapPipeline";
+import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
 import { registerPtyWriter, unregisterPtyWriter, registerPtyKill, unregisterPtyKill, writeToPty } from "../../lib/ptyRegistry";
 import { registerBufferReader, unregisterBufferReader, registerTailReader, unregisterTailReader } from "../../lib/terminalRegistry";
 import { useSettingsStore } from "../../store/settings";
@@ -152,22 +153,27 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const [inspectorReconnectKey, setInspectorReconnectKey] = useState(0);
 
   // Inspector port: allocated async in doSpawn via OS probe (check_port_available IPC).
-  // State triggers re-render so useInspectorState receives the port after allocation.
+  // State triggers re-render so useInspectorConnection receives the port after allocation.
   const [inspectorPort, setInspectorPort] = useState<number | null>(null);
-  const inspector = useInspectorState(
+  const inspector = useInspectorConnection(
     session.state !== "dead" ? session.id : null,
     inspectorPort,
     inspectorReconnectKey
   );
 
   const tapCategories = useSessionStore((s) => s.tapCategories.get(session.id) ?? EMPTY_TAP_SET);
-  useTapRecorder({
+  useTapPipeline({
     sessionId: session.state !== "dead" ? session.id : null,
     wsSend: inspector.wsSend,
     registerExternalHandler: inspector.registerExternalHandler,
     connected: inspector.connected,
     categories: tapCategories,
   });
+
+  // Tap event processor: sole source of state, metadata, subagent data
+  const tapProcessor = useTapEventProcessor(
+    session.state !== "dead" ? session.id : null
+  );
 
   // Register inspector disconnect/reconnect callbacks for external debugger support
   useEffect(() => {
@@ -192,17 +198,17 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // Sync Claude's internal session ID into config for persistence (plan-mode forks, compaction)
   const prevClaudeSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!inspector.claudeSessionId) return;
+    if (!tapProcessor.claudeSessionId) return;
     const prev = prevClaudeSessionIdRef.current;
-    prevClaudeSessionIdRef.current = inspector.claudeSessionId;
+    prevClaudeSessionIdRef.current = tapProcessor.claudeSessionId;
     // Clear terminal when session ID changes (context clear, plan approval, compaction)
-    if (prev && prev !== inspector.claudeSessionId) {
+    if (prev && prev !== tapProcessor.claudeSessionId) {
       terminal.termRef.current?.clear();
     }
-    if (inspector.claudeSessionId !== session.config.sessionId) {
-      updateConfig(session.id, { sessionId: inspector.claudeSessionId });
+    if (tapProcessor.claudeSessionId !== session.config.sessionId) {
+      updateConfig(session.id, { sessionId: tapProcessor.claudeSessionId });
     }
-  }, [inspector.claudeSessionId, session.id, session.config.sessionId, updateConfig]);
+  }, [tapProcessor.claudeSessionId, session.id, session.config.sessionId, updateConfig]);
 
   // Cache session config when inspector connects (for resume picker fallback)
   useEffect(() => {
@@ -575,7 +581,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   }, [queuedInput]);
 
   // Auto-send queued input on event-confirmed completion (not transient idle flashes).
-  // inspector.completionCount only increments on result/end_turn events or idleDetected.
+  // tapProcessor.completionCount only increments on result/end_turn events.
   useEffect(() => {
     if (!queuedInput) return;
     if (session.state === "dead") { setQueuedInput(null); return; }
@@ -587,7 +593,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     return () => clearTimeout(timer);
     // pty.handle is a stable ref — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inspector.completionCount, queuedInput, session.state]);
+  }, [tapProcessor.completionCount, queuedInput, session.state]);
 
   // Auto-restart session when hooks change, same timing as queued input
   useEffect(() => {

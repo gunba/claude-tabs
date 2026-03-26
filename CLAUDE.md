@@ -71,10 +71,11 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   ├── hooks/
   │   ├── useTerminal.ts                   # xterm.js lifecycle, write batching, fixed 100K scrollback
   │   ├── usePty.ts                        # PTY spawn wrapper (uses lib/ptyProcess)
-  │   ├── useInspectorState.ts             # BUN_INSPECT WebSocket: state detection, metadata, subagent tracking
+  │   ├── useInspectorConnection.ts        # BUN_INSPECT WebSocket lifecycle (connect, Console.enable, retry)
+  │   ├── useTapPipeline.ts                # Tap event receiver: Console.messageAdded → classify → dispatch → disk
+  │   ├── useTapEventProcessor.ts          # Tap event → store: state reducer, metadata accumulator, subagent tracker
   │   ├── useCommandDiscovery.ts           # Slash command discovery (binary scan + --help fallback + plugins)
   │   ├── useCliWatcher.ts                 # CLI version + capabilities
-  │   ├── useTapRecorder.ts                # Tap hook lifecycle: install, poll, batch, flush to JSONL
   │   ├── useNotifications.ts              # Desktop notifications (WinRT toast on Windows, tauri-plugin-notification on Linux)
   │   ├── useCtrlKey.ts                    # Ctrl-key held state for alternate-action highlights
   │   └── useGitStatus.ts                  # Git status polling (2s interval) with change detection
@@ -83,7 +84,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   ├── SessionLauncher/SessionLauncher.tsx  # New/resume session modal
   │   ├── ResumePicker/ResumePicker.tsx     # Browse past sessions to resume
   │   ├── CommandBar/CommandBar.tsx         # Slash commands with usage-based sorting
-  │   ├── StatusBar/StatusBar.tsx           # Model, cost, tokens, duration
+  │   ├── StatusBar/StatusBar.tsx           # Model, subscription, region, context%, cost/TTFT, duration, hooks, subprocess
   │   ├── CommandPalette/CommandPalette.tsx # Ctrl+K search
   │   ├── SubagentInspector/SubagentInspector.tsx  # Markdown-rendered subagent conversation viewer
   │   ├── ConfigManager/ConfigManager.tsx  # 5-tab config workspace (Ctrl+,): Settings, Claude, Hooks, Plugins, Agents
@@ -101,7 +102,12 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │       ├── DiffPanel.tsx                # Git diff side panel (Ctrl+Shift+G): file list, modal trigger
   │       └── DiffModal.tsx                # Side-by-side diff modal (96vw/88vh): highlight.js syntax, file nav
   ├── lib/
-  │   ├── inspectorHooks.ts                # INSTALL_HOOK + POLL_STATE JS expressions for BUN_INSPECT
+  │   ├── inspectorHooks.ts                # INSTALL_TAPS JS expression for BUN_INSPECT (push-based, no polling)
+  │   ├── tapClassifier.ts                 # Stateless: TapEntry → TapEvent | null (~28 event types)
+  │   ├── tapEventBus.ts                   # Per-session synchronous pub/sub for classified events
+  │   ├── tapStateReducer.ts               # Pure: (SessionState, TapEvent) → SessionState
+  │   ├── tapMetadataAccumulator.ts        # Stateful: events → Partial<SessionMetadata> diffs
+  │   ├── tapSubagentTracker.ts            # Subagent lifecycle: spawn → run → complete/kill
   │   ├── inspectorPort.ts                 # Inspector port allocation and registry
   │   ├── claude.ts                        # Color assignment, model resolution, resume helpers, stripWorktreeFlags, buildClaudeArgs
   │   ├── theme.ts                         # Theme definitions, CSS variable setter, xterm theme
@@ -118,6 +124,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   └── diffParser.ts                   # Git porcelain/numstat/unified-diff parsers
   └── types/
       ├── session.ts                       # TypeScript types mirroring Rust (camelCase)
+      ├── tapEvents.ts                     # Discriminated union of ~28 tap event types
       ├── ipc.ts                           # Tauri IPC command signatures
       └── git.ts                           # Git status and diff types (GitStatusData, FileDiff, DiffLine)
   ```

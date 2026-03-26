@@ -23,6 +23,7 @@ interface SessionsState {
   hookChangeCounter: number;
   inspectorOffSessions: Set<string>;
   tapCategories: Map<string, Set<string>>; // sessionId -> enabled tap category names
+  processHealth: Map<string, { rss: number; heapUsed: number; uptime: number }>;
 
   // Actions
   init: () => Promise<void>;
@@ -48,6 +49,7 @@ interface SessionsState {
   updateSubagent: (sessionId: string, subagentId: string, updates: Partial<Subagent>) => void;
   clearIdleSubagents: (sessionId: string) => void;
   addCommandHistory: (sessionId: string, command: string) => void;
+  updateProcessHealth: (id: string, data: { rss: number; heapUsed: number; uptime: number }) => void;
 }
 
 export const useSessionStore = create<SessionsState>((set) => ({
@@ -62,6 +64,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
   hookChangeCounter: 0,
   inspectorOffSessions: new Set(),
   tapCategories: new Map(),
+  processHealth: new Map(),
 
   init: async () => {
     trace("init: start");
@@ -337,6 +340,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const updated = [command, ...existing];
       map.set(sessionId, updated.length > 50 ? updated.slice(0, 50) : updated);
       return { commandHistory: map };
+    });
+  },
+
+  updateProcessHealth: (id, data) => {
+    set((s) => {
+      const next = new Map(s.processHealth);
+      next.set(id, data);
+      return { processHealth: next };
     });
   },
 }));
