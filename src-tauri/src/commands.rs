@@ -139,6 +139,7 @@ fn detect_claude_cli_sync() -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
     #[cfg(target_os = "windows")]
     let candidates = [
+        home.join(".local").join("bin").join("claude.exe"),
         home.join(".npm-global").join("bin").join("claude.cmd"),
         home.join("AppData")
             .join("Roaming")
