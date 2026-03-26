@@ -42,6 +42,7 @@ interface SessionsState {
   bumpHookChange: () => void;
   setInspectorOff: (id: string, off: boolean) => void;
   toggleTapCategory: (id: string, category: string) => void;
+  startAllTaps: (id: string) => void;
   stopAllTaps: (id: string) => void;
   addSubagent: (sessionId: string, subagent: Subagent) => void;
   updateSubagent: (sessionId: string, subagentId: string, updates: Partial<Subagent>) => void;
@@ -273,6 +274,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
       } else {
         next.set(id, cats);
       }
+      return { tapCategories: next };
+    });
+  },
+
+  startAllTaps: (id) => {
+    set((s) => {
+      const next = new Map(s.tapCategories);
+      next.set(id, new Set(["parse", "stringify", "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr", "require", "bun"]));
       return { tapCategories: next };
     });
   },

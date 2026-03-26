@@ -8,7 +8,7 @@ const POLL_INTERVAL_MS = 500;
 const FLUSH_INTERVAL_MS = 2000;
 const FLUSH_THRESHOLD = 50;
 
-const ALL_CATEGORIES: TapCategory[] = ["parse", "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "require"];
+const ALL_CATEGORIES: TapCategory[] = ["parse", "stringify", "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr", "require", "bun"];
 
 interface TapEntry {
   ts: number;

@@ -49,6 +49,7 @@ export default function App() {
   const setInspectorOff = useSessionStore((s) => s.setInspectorOff);
   const tapCategories = useSessionStore((s) => s.tapCategories);
   const toggleTapCategory = useSessionStore((s) => s.toggleTapCategory);
+  const startAllTaps = useSessionStore((s) => s.startAllTaps);
   const stopAllTaps = useSessionStore((s) => s.stopAllTaps);
   const showLauncher = useSettingsStore((s) => s.showLauncher);
   const setShowLauncher = useSettingsStore((s) => s.setShowLauncher);
@@ -755,22 +756,52 @@ export default function App() {
                     const hasTaps = cats && cats.size > 0;
                     const allCats: Array<{ key: string; label: string }> = [
                       { key: "parse", label: "JSON.parse" },
+                      { key: "stringify", label: "JSON.stringify" },
                       { key: "console", label: "console.*" },
                       { key: "fs", label: "fs ops" },
                       { key: "spawn", label: "child_process" },
                       { key: "fetch", label: "fetch" },
                       { key: "exit", label: "process.exit" },
-                      { key: "timer", label: "setTimeout" },
+                      { key: "timer", label: "timers" },
                       { key: "stdout", label: "stdout" },
+                      { key: "stderr", label: "stderr" },
                       { key: "require", label: "require()" },
+                      { key: "bun", label: "Bun.*" },
                     ];
+                    const allOn = cats && cats.size === allCats.length;
                     return (
                       <>
                         <div className="tab-context-menu-label">Tap Recording</div>
+                        <button
+                          className="tab-context-menu-item"
+                          style={{ fontWeight: 600 }}
+                          onClick={() => {
+                            if (allOn) {
+                              stopAllTaps(ctxSession.id);
+                            } else {
+                              startAllTaps(ctxSession.id);
+                            }
+                            setTabContextMenu(null);
+                          }}
+                        >
+                          {allOn ? "■ Stop All Taps" : "▶ Start All Taps"}
+                        </button>
+                        {hasTaps && (
+                          <button
+                            className="tab-context-menu-item"
+                            onClick={() => {
+                              invoke("open_tap_log", { sessionId: ctxSession.id });
+                              setTabContextMenu(null);
+                            }}
+                          >
+                            Open Tap Log
+                          </button>
+                        )}
                         {allCats.map(({ key, label }) => (
                           <button
                             key={key}
                             className="tab-context-menu-item"
+                            style={{ fontSize: "0.85em", paddingLeft: 16 }}
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleTapCategory(ctxSession.id, key);
@@ -780,28 +811,6 @@ export default function App() {
                             {label}
                           </button>
                         ))}
-                        {hasTaps && (
-                          <>
-                            <button
-                              className="tab-context-menu-item"
-                              onClick={() => {
-                                stopAllTaps(ctxSession.id);
-                                setTabContextMenu(null);
-                              }}
-                            >
-                              Stop All Taps
-                            </button>
-                            <button
-                              className="tab-context-menu-item"
-                              onClick={() => {
-                                invoke("open_tap_log", { sessionId: ctxSession.id });
-                                setTabContextMenu(null);
-                              }}
-                            >
-                              Open Tap Log
-                            </button>
-                          </>
-                        )}
                       </>
                     );
                   })()}

@@ -410,7 +410,7 @@ export const INSTALL_TAPS = `(function() {
   if (globalThis.__tapsInstalled) return 'already';
   globalThis.__tapsInstalled = true;
 
-  var flags = { parse: false, console: false, fs: false, spawn: false, fetch: false, exit: false, timer: false, stdout: false, require: false };
+  var flags = { parse: false, stringify: false, console: false, fs: false, spawn: false, fetch: false, exit: false, timer: false, stdout: false, stderr: false, require: false, bun: false };
   globalThis.__tapFlags = flags;
 
   var buf = [];
@@ -438,7 +438,21 @@ export const INSTALL_TAPS = `(function() {
     return result;
   };
 
-  // 2. Console hooks — Claude Code's internal debug output
+  // 2. JSON.stringify — outgoing API requests, state serialization, IPC messages
+  var origStringify = JSON.stringify;
+  JSON.stringify = function(value) {
+    var result = origStringify.apply(this, arguments);
+    if (flags.stringify) {
+      try {
+        if (typeof result === 'string') {
+          push('stringify', { len: result.length, snap: result.slice(0, 2000) });
+        }
+      } catch(e) {}
+    }
+    return result;
+  };
+
+  // 3. Console hooks — Claude Code's internal debug output
   var methods = ['log', 'warn', 'error'];
   for (var mi = 0; mi < methods.length; mi++) {
     (function(method) {
@@ -607,21 +621,23 @@ export const INSTALL_TAPS = `(function() {
         if (!flags.fetch) return prevFetch.apply(globalThis, arguments);
         var url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
         var method = (init && init.method) || 'GET';
+        var bodyLen = 0;
+        try { if (init && init.body) bodyLen = typeof init.body === 'string' ? init.body.length : (init.body.byteLength || 0); } catch(e) {}
         var t0 = Date.now();
         try {
           var p = prevFetch.apply(globalThis, arguments);
           if (p && typeof p.then === 'function') {
             return p.then(function(resp) {
-              try { push('fetch', { url: url.slice(0, 300), method: method, status: resp.status, dur: Date.now() - t0 }); } catch(e) {}
+              try { push('fetch', { url: url.slice(0, 300), method: method, status: resp.status, bodyLen: bodyLen, dur: Date.now() - t0 }); } catch(e) {}
               return resp;
             }, function(err) {
-              try { push('fetch', { url: url.slice(0, 300), method: method, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+              try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
               throw err;
             });
           }
           return p;
         } catch(err) {
-          try { push('fetch', { url: url.slice(0, 300), method: method, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+          try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
           throw err;
         }
       };
@@ -680,7 +696,21 @@ export const INSTALL_TAPS = `(function() {
     };
   } catch(e) {}
 
-  // 9. require() — module loading / dynamic imports
+  // 9. process.stderr.write — error output
+  try {
+    var origStderrWrite = process.stderr.write;
+    process.stderr.write = function(chunk) {
+      if (flags.stderr) {
+        try {
+          var s = typeof chunk === 'string' ? chunk : (Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+          if (s.length > 0) push('stderr', { len: s.length, snap: s.slice(0, 500) });
+        } catch(e) {}
+      }
+      return origStderrWrite.apply(process.stderr, arguments);
+    };
+  } catch(e) {}
+
+  // 10. require() — module loading / dynamic imports
   try {
     if (typeof require === 'function' && require.extensions) {
       var Module = require('module');
@@ -691,6 +721,81 @@ export const INSTALL_TAPS = `(function() {
         }
         return origModRequire.apply(this, arguments);
       };
+    }
+  } catch(e) {}
+
+  // 11. setInterval / clearInterval — polling loops
+  try {
+    var origSetInterval = globalThis.setInterval;
+    var origClearInterval = globalThis.clearInterval;
+    var intervalMap = {};
+    globalThis.setInterval = function(fn, delay) {
+      var result = origSetInterval.apply(globalThis, arguments);
+      if (flags.timer) {
+        try {
+          var seq = ++timerSeq;
+          var caller = '';
+          try { caller = (new Error()).stack.split('\\n')[2] || ''; caller = caller.trim().slice(0, 150); } catch(e) {}
+          intervalMap[result] = seq;
+          push('setInterval', { id: seq, delay: delay, caller: caller });
+        } catch(e) {}
+      }
+      return result;
+    };
+    globalThis.clearInterval = function(id) {
+      if (flags.timer && id && intervalMap[id]) {
+        try { push('clearInterval', { id: intervalMap[id] }); delete intervalMap[id]; } catch(e) {}
+      }
+      return origClearInterval.apply(globalThis, arguments);
+    };
+  } catch(e) {}
+
+  // 12. Bun-native APIs — file I/O and process spawning that bypasses Node compat
+  try {
+    if (typeof Bun !== 'undefined') {
+      var origBunWrite = Bun.write;
+      if (origBunWrite) {
+        Bun.write = function(dest, data) {
+          var result = origBunWrite.apply(Bun, arguments);
+          if (flags.bun) {
+            try {
+              var p = typeof dest === 'string' ? dest : (dest && dest.name ? dest.name : String(dest));
+              var size = typeof data === 'string' ? data.length : (data && data.byteLength ? data.byteLength : 0);
+              push('bun.write', { path: p.slice(-200), size: size });
+            } catch(e) {}
+          }
+          return result;
+        };
+      }
+      var origBunSpawn = Bun.spawn;
+      if (origBunSpawn) {
+        Bun.spawn = function(cmd, opts) {
+          var result = origBunSpawn.apply(Bun, arguments);
+          if (flags.bun) {
+            try {
+              var c = Array.isArray(cmd) ? cmd.slice(0, 10).join(' ') : String(cmd);
+              var cwd = (opts && opts.cwd) ? String(opts.cwd).slice(-200) : null;
+              push('bun.spawn', { cmd: c.slice(0, 500), cwd: cwd, pid: result && result.pid });
+            } catch(e) {}
+          }
+          return result;
+        };
+      }
+      var origBunSpawnSync = Bun.spawnSync;
+      if (origBunSpawnSync) {
+        Bun.spawnSync = function(cmd, opts) {
+          var t0 = Date.now();
+          var result = origBunSpawnSync.apply(Bun, arguments);
+          if (flags.bun) {
+            try {
+              var c = Array.isArray(cmd) ? cmd.slice(0, 10).join(' ') : String(cmd);
+              var cwd = (opts && opts.cwd) ? String(opts.cwd).slice(-200) : null;
+              push('bun.spawnSync', { cmd: c.slice(0, 500), cwd: cwd, code: result && result.exitCode, dur: Date.now() - t0 });
+            } catch(e) {}
+          }
+          return result;
+        };
+      }
     }
   } catch(e) {}
 
@@ -709,7 +814,7 @@ export const POLL_TAPS = `(function() {
 })()`;
 
 /** All tap category names. */
-export type TapCategory = "parse" | "console" | "fs" | "spawn" | "fetch" | "exit" | "timer" | "stdout" | "require";
+export type TapCategory = "parse" | "stringify" | "console" | "fs" | "spawn" | "fetch" | "exit" | "timer" | "stdout" | "stderr" | "require" | "bun";
 
 /**
  * Build a Runtime.evaluate expression to toggle a single tap category.

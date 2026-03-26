@@ -2668,36 +2668,39 @@ describe("INSTALL_TAPS JSON.parse hook", () => {
     const big = JSON.stringify({ type: "message", content: "x".repeat(100) });
     JSON.parse(big);
     const buf = g.__tapBuffer as Array<Record<string, unknown>>;
-    expect(buf.length).toBe(1);
-    expect(buf[0].cat).toBe("parse");
-    expect(buf[0].hint).toBe("api");
-    expect(typeof buf[0].ts).toBe("number");
-    expect(typeof buf[0].len).toBe("number");
-    expect(typeof buf[0].snap).toBe("string");
+    expect(buf.length).toBeGreaterThanOrEqual(1);
+    const entry = buf[buf.length - 1];
+    expect(entry.cat).toBe("parse");
+    expect(typeof entry.ts).toBe("number");
+    expect(typeof entry.len).toBe("number");
+    expect(typeof entry.snap).toBe("string");
   });
 
-  it("skips strings shorter than 50 chars", () => {
+  it("captures short strings (no length filter)", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = true;
+    const before = (g.__tapBuffer as unknown[]).length;
     JSON.parse('{"a":1}');
-    expect((g.__tapBuffer as unknown[]).length).toBe(0);
+    expect((g.__tapBuffer as unknown[]).length).toBe(before + 1);
   });
 
-  it("skips primitives", () => {
+  it("captures primitives (no type filter)", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = true;
-    // A long string that parses to a primitive-wrapping doesn't match
-    JSON.parse('"' + "x".repeat(100) + '"');
-    expect((g.__tapBuffer as unknown[]).length).toBe(0);
+    const before = (g.__tapBuffer as unknown[]).length;
+    JSON.parse('"hello"');
+    expect((g.__tapBuffer as unknown[]).length).toBe(before + 1);
   });
 
-  it("hints config when settings present", () => {
+  it("captures config without hint classification", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = true;
     const cfg = JSON.stringify({ settings: { model: "opus" }, padding: "x".repeat(50) });
     JSON.parse(cfg);
     const buf = g.__tapBuffer as Array<Record<string, unknown>>;
-    expect(buf[0].hint).toBe("config");
+    const entry = buf[buf.length - 1];
+    expect(entry.cat).toBe("parse");
+    expect(entry.hint).toBeUndefined();
   });
 });
 
