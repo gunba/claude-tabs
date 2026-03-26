@@ -424,17 +424,14 @@ export const INSTALL_TAPS = `(function() {
     buf.push(d);
   }
 
-  // 1. JSON.parse — captures API responses, config parsing, JSONL reads
+  // 1. JSON.parse — all parsed JSON, unfiltered
   var origParse = JSON.parse;
   JSON.parse = function(text) {
     var result = origParse.apply(this, arguments);
     if (flags.parse) {
       try {
-        if (typeof text === 'string' && text.length > 50 && typeof result === 'object' && result !== null) {
-          var hint = 'other';
-          if (text.indexOf('"type":"message"') !== -1 || text.indexOf('"content_block"') !== -1) hint = 'api';
-          else if (text.indexOf('"settings"') !== -1 || text.indexOf('"permissions"') !== -1) hint = 'config';
-          push('parse', { hint: hint, len: text.length, snap: text.slice(0, 2000) });
+        if (typeof text === 'string') {
+          push('parse', { len: text.length, snap: text.slice(0, 2000) });
         }
       } catch(e) {}
     }
