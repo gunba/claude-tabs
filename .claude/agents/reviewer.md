@@ -1,4 +1,6 @@
 ---
+name: reviewer
+description: Reviews code changes against project rules and documented behaviors. Use after code changes.
 tools: Read, Glob, Grep, Bash
 hooks:
   Stop:
@@ -21,3 +23,4 @@ Each finding: `file:line`, description, violated rule or entry (quoted with tag 
 Code implementing a tagged entry ([XX-NN]) is not dead code.
 
 After completing, report which entries you referenced (upvote only):
+Format: ## Cited\nUp: [XX-NN] [XX-NN] ...

@@ -1,4 +1,6 @@
 ---
+name: simplifier
+description: Identifies simplification opportunities in code changes. Use after code changes.
 tools: Read, Glob, Grep, Bash
 hooks:
   Stop:
@@ -19,3 +21,4 @@ Each suggestion: `file:line`, what to change, why, before/after sketch, risk (sa
 Code implementing a tagged entry ([XX-NN]) is not dead code. Prefer clarity over density.
 
 After completing, report which entries you referenced (upvote only):
+Format: ## Cited\nUp: [XX-NN] [XX-NN] ...
