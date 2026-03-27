@@ -27,9 +27,10 @@ import { killPty } from "./lib/ptyRegistry";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { startTestHarness } from "./lib/testHarness";
 import { dlog } from "./lib/debugLog";
-import { IconPencil, IconStop, IconClose, IconReturn, IconGear, IconArrowRight } from "./components/Icons/Icons";
+import { IconPencil, IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
-import type { Subagent } from "./types/session";
+import type { Subagent, SessionState } from "./types/session";
+import { isSessionIdle } from "./types/session";
 import "./App.css";
 
 export default function App() {
@@ -86,7 +87,7 @@ export default function App() {
     const timers = flashTimersRef.current;
     for (const s of sessions) {
       const prevState = prev.get(s.id);
-      if (prevState && prevState !== "idle" && prevState !== "dead" && prevState !== "starting" && s.state === "idle") {
+      if (prevState && !isSessionIdle(prevState as SessionState) && prevState !== "dead" && prevState !== "starting" && isSessionIdle(s.state)) {
         // Clear existing timer before setting new one
         const existing = timers.get(s.id);
         if (existing) clearTimeout(existing);
@@ -330,7 +331,7 @@ export default function App() {
               if (session.config.effort) metaSpans.push({ text: session.config.effort.charAt(0).toUpperCase() + session.config.effort.slice(1), color: "var(--accent)" });
               const totalTokens = session.metadata.inputTokens + session.metadata.outputTokens;
               const subs = subagentMap.get(session.id) || [];
-              const liveAgents = subs.filter((s) => s.state !== "dead" && s.state !== "idle").length;
+              const liveAgents = subs.filter((s) => s.state !== "dead" && s.state !== "idle" && s.state !== "interrupted").length;
               if (liveAgents > 0) metaSpans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--text-secondary)" });
               if (wt) metaSpans.push({ text: worktreeAcronym(wt.worktreeName), color: "var(--accent-tertiary)", title: wt.worktreeName });
 
@@ -416,6 +417,7 @@ export default function App() {
                         onBlur={() => {
                           if (!editDoneRef.current && editingTabName.trim()) {
                             renameSession(session.id, editingTabName.trim());
+                            useSessionStore.getState().setUserRenamed(session.id, true);
                             useSettingsStore.getState().setSessionName(getResumeId(session), editingTabName.trim());
                           }
                           editDoneRef.current = false;
@@ -429,6 +431,7 @@ export default function App() {
                             editDoneRef.current = true;
                             if (editingTabName.trim()) {
                               renameSession(session.id, editingTabName.trim());
+                              useSessionStore.getState().setUserRenamed(session.id, true);
                               useSettingsStore.getState().setSessionName(getResumeId(session), editingTabName.trim());
                             }
                             setEditingTabId(null);
@@ -544,23 +547,33 @@ export default function App() {
           {activeSubs.map((sub) => {
             const isActive = sub.state === "thinking" || sub.state === "toolUse" || sub.state === "starting";
             const isIdle = sub.state === "idle";
+            const isInterrupted = sub.state === "interrupted";
             const isSelected = inspectedSubagent?.subagentId === sub.id && inspectedSubagent?.sessionId === activeTabId;
             const lastMsg = sub.messages.length > 0
               ? sub.messages[sub.messages.length - 1].text.slice(0, 200)
               : null;
+            // Build meta spans (mirroring tab meta)
+            const metaParts: string[] = [];
+            if (sub.agentType) metaParts.push(sub.agentType);
+            if (sub.model) metaParts.push(sub.model.replace(/^claude-/, "").split("-")[0]);
+            if (sub.totalToolUses != null) metaParts.push(`${sub.totalToolUses} tools`);
+            if (sub.durationMs != null) metaParts.push(`${Math.round(sub.durationMs / 1000)}s`);
             return (
               <button
                 key={sub.id}
-                className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isSelected ? " subagent-selected" : ""}`}
+                className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
                 onClick={() => activeTabId && setInspectedSubagent({ sessionId: activeTabId, subagentId: sub.id })}
                 title={sub.description}
               >
-                <span className="subagent-icon"><IconArrowRight size={10} /></span>
+                <span className={`tab-dot state-${sub.state}`} />
                 <span className="subagent-label">
                   <span className="subagent-name">{sub.description}</span>
-                  <span className="subagent-last-msg">
-                    {isActive && sub.currentAction ? sub.currentAction : lastMsg || sub.state}
+                  <span className="subagent-summary">
+                    {isActive && sub.currentAction ? sub.currentAction : lastMsg || ""}
                   </span>
+                  {metaParts.length > 0 && (
+                    <span className="subagent-meta">{metaParts.join(" · ")}</span>
+                  )}
                 </span>
                 {sub.tokenCount > 0 && (
                   <span className="subagent-tokens">{formatTokenCount(sub.tokenCount)}</span>

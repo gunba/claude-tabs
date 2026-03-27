@@ -29,6 +29,8 @@
 .status-icon {
   font-size: 11px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .status-model {
@@ -125,4 +127,41 @@
 .status-id {
   font-family: 'Cascadia Code', monospace;
   color: var(--text-muted);
+}
+
+.status-dynamic {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-secondary);
+  font-size: 0.85em;
+}
+
+.status-lines {
+  font-family: 'Cascadia Code', monospace;
+  font-size: 10px;
+  gap: 4px;
+}
+
+.status-retry {
+  color: var(--warning);
+}
+
+.status-stall {
+  color: var(--warning);
+}
+
+.status-stall-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: status-stall-pulse 1s ease infinite;
+}
+
+@keyframes status-stall-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }

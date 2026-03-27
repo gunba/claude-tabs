@@ -31,7 +31,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   | `/j` | Maintain: prove entries (3 provers) → sync → audit in worktree |
   | `/b` | Build: [commit?] → build → [release+push?] — choose steps upfront |
   | `/rj` | Review then janitor in sequence (2 worktrees) |
-  | `/p` | Full pipeline: /r → /j → /b |
+  | `/c` | Commit, exit worktree, merge to main |
 
 ## Layout
 
@@ -71,8 +71,8 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   ├── hooks/
   │   ├── useTerminal.ts                   # xterm.js lifecycle, write batching, fixed 100K scrollback
   │   ├── usePty.ts                        # PTY spawn wrapper (uses lib/ptyProcess)
-  │   ├── useInspectorConnection.ts        # BUN_INSPECT WebSocket lifecycle (connect, Console.enable, retry)
-  │   ├── useTapPipeline.ts                # Tap event receiver: Console.messageAdded → classify → dispatch → disk
+  │   ├── useInspectorConnection.ts        # BUN_INSPECT WebSocket lifecycle (connect, retry, disconnect)
+  │   ├── useTapPipeline.ts                # Tap event receiver: TCP tap-entry events → classify → dispatch → disk
   │   ├── useTapEventProcessor.ts          # Tap event → store: state reducer, metadata accumulator, subagent tracker
   │   ├── useCommandDiscovery.ts           # Slash command discovery (binary scan + --help fallback + plugins)
   │   ├── useCliWatcher.ts                 # CLI version + capabilities
@@ -103,7 +103,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │       └── DiffModal.tsx                # Side-by-side diff modal (96vw/88vh): highlight.js syntax, file nav
   ├── lib/
   │   ├── inspectorHooks.ts                # INSTALL_TAPS JS expression for BUN_INSPECT (push-based, no polling)
-  │   ├── tapClassifier.ts                 # Stateless: TapEntry → TapEvent | null (~28 event types)
+  │   ├── tapClassifier.ts                 # Stateless: TapEntry → TapEvent | null (~42 event types)
   │   ├── tapEventBus.ts                   # Per-session synchronous pub/sub for classified events
   │   ├── tapStateReducer.ts               # Pure: (SessionState, TapEvent) → SessionState
   │   ├── tapMetadataAccumulator.ts        # Stateful: events → Partial<SessionMetadata> diffs
@@ -124,7 +124,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
   │   └── diffParser.ts                   # Git porcelain/numstat/unified-diff parsers
   └── types/
       ├── session.ts                       # TypeScript types mirroring Rust (camelCase)
-      ├── tapEvents.ts                     # Discriminated union of ~28 tap event types
+      ├── tapEvents.ts                     # Discriminated union of ~42 tap event types
       ├── ipc.ts                           # Tauri IPC command signatures
       └── git.ts                           # Git status and diff types (GitStatusData, FileDiff, DiffLine)
   ```
@@ -138,7 +138,7 @@ Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust ba
 - [DR-05] Add tests for any new pure-logic functions in `src/lib/` and store actions in `src/store/`
 - [DR-06] All Rust commands that spawn subprocesses MUST use `tokio::task::spawn_blocking()` to avoid blocking the WebView event loop
 - [DR-07] All Rust commands that spawn subprocesses MUST add `CREATE_NO_WINDOW` flag on Windows (`cmd.creation_flags(0x08000000)`)
-- [DR-08] Use `dlog(module, sessionId, message, level?)` from `src/lib/debugLog.ts` for all application logging. Never use raw `console.log/warn/error`. Module names: `pty`, `inspector`, `terminal`, `session`, `config`, `launcher`, `resume`. Pass `sessionId` when in scope, `null` otherwise. Use `"DEBUG"` level for verbose tracing, `"WARN"`/`"ERR"` for problems.
+- [DR-08] Use `dlog(module, sessionId, message, level?)` from `src/lib/debugLog.ts` for all application logging. Never use raw `console.log/warn/error`. Module names: `pty`, `inspector`, `terminal`, `session`, `config`, `launcher`, `resume`, `tap`. Pass `sessionId` when in scope, `null` otherwise. Use `"DEBUG"` level for verbose tracing, `"WARN"`/`"ERR"` for problems.
 
 ## Theme System
 

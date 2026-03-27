@@ -2,6 +2,7 @@
 name: critic-abstraction
 description: Critiques implementation plans for abstraction level. Use during plan mode.
 tools: Read, Glob, Grep, Bash
+model: sonnet
 ---
 
 Critique the provided implementation plan for abstraction level.

@@ -11,7 +11,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 - [TB-03] Three distinct top-right buttons: Resume (blue tint + blue icon), Config (purple tint + purple icon), New (orange/accent bg)
 - [TB-04] Native Windows dark-themed titlebar — `decorations: true` + `"theme": "Dark"` in tauri.conf.json, no custom window controls HTML
 - [TB-05] No `-webkit-app-region` drag regions — native titlebar handles window dragging
-- [TB-06] State dot colors: idle=green, thinking=clay pulse, toolUse=blue pulse, actionNeeded=purple pulse, waitingPermission=purple pulse, error=red, dead=muted, starting=muted pulse
+- [TB-06] State dot colors: idle=green, thinking=clay pulse, toolUse=blue pulse, actionNeeded=purple pulse, waitingPermission=purple pulse, error=red, interrupted=red (static), dead=muted, starting=muted pulse. Same dot system reused for subagent cards.
 - [TB-07] All dot pulse animations unified: `dot-pulse 2s ease infinite` with min opacity 0.5 (no separate scale animation)
 - [TB-08] Tab meta text color-coded: model color matches type (Opus=orange, Sonnet=purple, Haiku=blue via hardcoded hex), effort=clay, agents=muted text-secondary, worktree acronym=blue accent-secondary; dot separators
   - Files: src/App.tsx:294, src/lib/claude.ts:30
@@ -48,6 +48,8 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
   - Files: src/lib/paths.ts:18, src/App.tsx:293, src/App.tsx:304, src/components/StatusBar/StatusBar.tsx:55
 - [TB-30] Worktree prune on close: manually closing a worktree tab (Ctrl+W, X button, context menu Close) shows a confirmation dialog with "Keep worktree" and "Prune worktree" options. Pruning closes the dialog immediately, then kills the PTY (via `killPty` registry), closes the session, and runs `git worktree remove --force` in the background. Errors are logged via `dlog` to the debug panel. Skipped for bulk actions (Close Group, app close). Uses ModalOverlay, `killPty` from ptyRegistry, and `prune_worktree` IPC command [RC-19].
   - Files: src/App.tsx:173, src/App.tsx:614, src/lib/ptyRegistry.ts:28, src-tauri/src/commands.rs:1877
+- [TB-31] Subagent cards unified with tab appearance: state dot (same colors as tabs), bottom accent bar for active state, meta line (agentType, model, tool count, duration), summary line (current action/last message). Interrupted subagents show red dot. Cards use tab-dot CSS classes directly.
+  - Files: src/App.tsx:556, src/App.css:558
 
 ## Session Resume
 

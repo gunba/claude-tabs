@@ -415,18 +415,87 @@ export const INSTALL_TAPS = `(function() {
   if (globalThis.__tapsInstalled) return 'already';
   globalThis.__tapsInstalled = true;
 
-  var flags = { parse: true, stringify: true, console: false, fs: false, spawn: false, fetch: false, exit: false, timer: false, stdout: false, stderr: false, require: false, bun: false };
+  var flags = { parse: true, stringify: true, console: false, fs: false, spawn: false, fetch: false, exit: false, timer: false, stdout: false, stderr: false, require: false, bun: false, websocket: false, net: false, stream: false };
   globalThis.__tapFlags = flags;
 
   // Save originals BEFORE any wrapping — push() needs these to avoid recursion
   var origStringify = JSON.stringify;
   var origParse = JSON.parse;
-  var origStdoutWriteForTap = process.stdout.write;
+
+  // ── TCP socket for TAP event delivery ──────────────────────────────────
+  // Connects to the Rust TCP listener via TAP_PORT env var.
+  // If TAP_PORT is not set (CLI running standalone), push() is a no-op.
+  var tapPort = parseInt(process.env.TAP_PORT, 10);
+  var tapSocket = null;
+  var tapConnecting = false;
+  var tapQueue = [];
+  var tapDraining = true;
+
+  // Expose tap connection state for diagnostics via Runtime.evaluate
+  globalThis.__tapDiag = { port: tapPort, connected: false, queued: 0, errors: [] };
+
+  function tapConnect() {
+    if (tapConnecting || tapSocket || !tapPort) return;
+    tapConnecting = true;
+    try {
+      // Bun runtime: use native Bun.connect (require is not available in Runtime.evaluate)
+      // Test environment: globalThis.Bun is mocked
+      Bun.connect({
+        hostname: '127.0.0.1',
+        port: tapPort,
+        socket: {
+          open: function(socket) {
+            tapSocket = socket;
+            tapConnecting = false;
+            tapDraining = true;
+            globalThis.__tapDiag.connected = true;
+            for (var qi = 0; qi < tapQueue.length; qi++) {
+              try { socket.write(tapQueue[qi]); } catch(e) {}
+            }
+            globalThis.__tapDiag.queued = 0;
+            tapQueue = [];
+          },
+          data: function() {},
+          close: function() {
+            tapSocket = null;
+            tapConnecting = false;
+            globalThis.__tapDiag.connected = false;
+          },
+          error: function(socket, err) {
+            tapSocket = null;
+            tapConnecting = false;
+            globalThis.__tapDiag.connected = false;
+            globalThis.__tapDiag.errors.push('err:' + (err && err.message || err));
+          },
+          drain: function() { tapDraining = true; },
+        },
+      });
+    } catch(e) { tapConnecting = false; globalThis.__tapDiag.errors.push('catch:' + (e && e.message || e)); }
+  }
+
+  tapConnect();
 
   function push(cat, d) {
+    if (!tapPort) return;
     d.ts = Date.now();
     d.cat = cat;
-    try { origStdoutWriteForTap.call(process.stdout, 'TAP' + origStringify(d) + '\\n'); } catch(e) {}
+    try {
+      var line = origStringify(d) + '\\n';
+      if (tapSocket) {
+        if (tapDraining) {
+          tapSocket.write(line);
+        }
+      } else {
+        tapQueue.push(line);
+        globalThis.__tapDiag.queued = tapQueue.length;
+        if (tapQueue.length > 1000) tapQueue = tapQueue.slice(-500);
+        tapConnect();
+      }
+    } catch(e) {
+      tapSocket = null;
+      tapQueue.push(origStringify(d) + '\\n');
+      tapConnect();
+    }
   }
 
   // 1. JSON.parse — all parsed JSON, unfiltered
@@ -621,11 +690,12 @@ export const INSTALL_TAPS = `(function() {
       globalThis.__tapFetchInstalled = true;
       var prevFetch = globalThis.fetch;
       globalThis.fetch = function(input, init) {
-        if (!flags.fetch) return prevFetch.apply(globalThis, arguments);
         var url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
         var method = (init && init.method) || 'GET';
         var bodyLen = 0;
-        try { if (init && init.body) bodyLen = typeof init.body === 'string' ? init.body.length : (init.body.byteLength || 0); } catch(e) {}
+        if (flags.fetch) {
+          try { if (init && init.body) bodyLen = typeof init.body === 'string' ? init.body.length : (init.body.byteLength || 0); } catch(e) {}
+        }
         var t0 = Date.now();
         try {
           var p = prevFetch.apply(globalThis, arguments);
@@ -639,17 +709,24 @@ export const INSTALL_TAPS = `(function() {
                   hdrs.rlRemain = resp.headers.get('x-ratelimit-limit-tokens') || '';
                   hdrs.rlReset = resp.headers.get('x-ratelimit-reset-tokens') || '';
                 } catch(e2) {}
-                push('fetch', { url: url.slice(0, 300), method: method, status: resp.status, bodyLen: bodyLen, dur: Date.now() - t0, hdrs: hdrs });
+                // Always push headers (for region/rate-limits); full details only when fetch flag is on
+                push('fetch', flags.fetch
+                  ? { url: url.slice(0, 300), method: method, status: resp.status, bodyLen: bodyLen, dur: Date.now() - t0, hdrs: hdrs }
+                  : { url: '', method: method, status: resp.status, dur: Date.now() - t0, hdrs: hdrs });
               } catch(e) {}
               return resp;
             }, function(err) {
-              try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+              if (flags.fetch) {
+                try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+              }
               throw err;
             });
           }
           return p;
         } catch(err) {
-          try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+          if (flags.fetch) {
+            try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+          }
           throw err;
         }
       };
@@ -819,6 +896,87 @@ export const INSTALL_TAPS = `(function() {
     }
   } catch(e) {}
 
+  // ── Helper: wrap a method for post-call push ──
+  function wrapAfter(obj, method, cat, extract) {
+    try {
+      var orig = obj[method];
+      if (!orig) return;
+      obj[method] = function() {
+        var result = orig.apply(this, arguments);
+        if (flags[cat]) { try { push(cat, extract(arguments, result)); } catch(e) {} }
+        return result;
+      };
+    } catch(e) {}
+  }
+
+  // 13. WebSocket — track WebSocket connections
+  try {
+    if (typeof globalThis.WebSocket === 'function') {
+      var OrigWS = globalThis.WebSocket;
+      globalThis.WebSocket = function(url, protocols) {
+        var ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
+        if (flags.websocket) {
+          try { push('websocket.open', { url: String(url).slice(0, 300) }); } catch(e) {}
+          ws.addEventListener('close', function(ev) {
+            if (flags.websocket) {
+              try { push('websocket.close', { url: String(url).slice(0, 300), code: ev.code, reason: String(ev.reason || '').slice(0, 100) }); } catch(e) {}
+            }
+          });
+        }
+        var origSend = ws.send.bind(ws);
+        ws.send = function(data) {
+          if (flags.websocket) {
+            try {
+              var len = typeof data === 'string' ? data.length : (data.byteLength || 0);
+              push('websocket.send', { url: String(url).slice(0, 300), len: len });
+            } catch(e) {}
+          }
+          return origSend(data);
+        };
+        return ws;
+      };
+      globalThis.WebSocket.CONNECTING = OrigWS.CONNECTING;
+      globalThis.WebSocket.OPEN = OrigWS.OPEN;
+      globalThis.WebSocket.CLOSING = OrigWS.CLOSING;
+      globalThis.WebSocket.CLOSED = OrigWS.CLOSED;
+      globalThis.WebSocket.prototype = OrigWS.prototype;
+    }
+  } catch(e) {}
+
+  // 14. net/tls — raw TCP/TLS connections
+  try {
+    var net = require('net');
+    wrapAfter(net, 'createConnection', 'net', function(args, result) {
+      var opts = args[0] || {};
+      return { type: 'tcp', host: (opts.host || opts.path || '').toString().slice(0, 200), port: opts.port || 0, pid: result && result.remotePort };
+    });
+  } catch(e) {}
+  try {
+    var tls = require('tls');
+    wrapAfter(tls, 'connect', 'net', function(args, result) {
+      var opts = args[0] || {};
+      return { type: 'tls', host: (opts.host || opts.servername || '').toString().slice(0, 200), port: opts.port || 0 };
+    });
+  } catch(e) {}
+
+  // 15. stream — pipe connections
+  try {
+    var stream = require('stream');
+    if (stream.Readable && stream.Readable.prototype.pipe) {
+      var origPipe = stream.Readable.prototype.pipe;
+      stream.Readable.prototype.pipe = function(dest) {
+        if (flags.stream) {
+          try {
+            var srcName = (this.constructor && this.constructor.name) || 'Readable';
+            var destName = (dest && dest.constructor && dest.constructor.name) || 'Writable';
+            push('stream.pipe', { src: srcName, dest: destName });
+          } catch(e) {}
+        }
+        return origPipe.apply(this, arguments);
+      };
+    }
+  } catch(e) {}
+
   // ── Bypass WebFetch domain blocklist (checkDomainBlocklist → axios → https.request) ──
   try {
     var https = require('https');
@@ -912,7 +1070,7 @@ export const INSTALL_TAPS = `(function() {
 })()`;
 
 /** All tap category names. */
-export type TapCategory = "parse" | "stringify" | "console" | "fs" | "spawn" | "fetch" | "exit" | "timer" | "stdout" | "stderr" | "require" | "bun";
+export type TapCategory = "parse" | "stringify" | "console" | "fs" | "spawn" | "fetch" | "exit" | "timer" | "stdout" | "stderr" | "require" | "bun" | "websocket" | "net" | "stream";
 
 /**
  * Build a Runtime.evaluate expression to toggle a single tap category.
@@ -926,7 +1084,7 @@ export function tapToggleExpr(category: TapCategory, enabled: boolean): string {
  */
 export function tapToggleAllExpr(enabled: boolean): string {
   // parse and stringify are always-on (drive state detection) — only toggle optional categories
-  return `(function(){var f=globalThis.__tapFlags;if(f){f.console=${enabled};f.fs=${enabled};f.spawn=${enabled};f.fetch=${enabled};f.exit=${enabled};f.timer=${enabled};f.stdout=${enabled};f.stderr=${enabled};f.require=${enabled};f.bun=${enabled}}return 'ok'})()`;
+  return `(function(){var f=globalThis.__tapFlags;if(f){f.console=${enabled};f.fs=${enabled};f.spawn=${enabled};f.fetch=${enabled};f.exit=${enabled};f.timer=${enabled};f.stdout=${enabled};f.stderr=${enabled};f.require=${enabled};f.bun=${enabled};f.websocket=${enabled};f.net=${enabled};f.stream=${enabled}}return 'ok'})()`;
 }
 
 /**

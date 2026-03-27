@@ -36,6 +36,23 @@
   flex: 1;
 }
 
+.inspector-agent-type {
+  font-size: 9px;
+  color: var(--accent-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 6px;
+}
+
+.inspector-async-badge {
+  font-size: 9px;
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-right: 6px;
+}
+
 .inspector-header-meta {
   font-size: 11px;
   color: var(--text-muted);

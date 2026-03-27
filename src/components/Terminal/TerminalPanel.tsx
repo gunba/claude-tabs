@@ -14,6 +14,7 @@ import { registerBufferReader, unregisterBufferReader, registerTailReader, unreg
 import { useSettingsStore } from "../../store/settings";
 import { normalizePath } from "../../lib/paths";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
+import { isSessionIdle } from "../../types/session";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPanel.css";
 
@@ -165,7 +166,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   useTapPipeline({
     sessionId: session.state !== "dead" ? session.id : null,
     wsSend: inspector.wsSend,
-    registerExternalHandler: inspector.registerExternalHandler,
     connected: inspector.connected,
     categories: tapCategories,
   });
@@ -261,6 +261,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const handlePtyExit = useCallback(
     (info: { exitCode: number }) => {
       dlog("terminal", session.id, `exit code=${info.exitCode}`);
+      // Stop TCP tap server immediately (before any early-return paths)
+      invoke("stop_tap_server", { sessionId: session.id }).catch(() => {});
       // If the CLI exited because the session is already in use,
       // try to kill stale orphans (our own descendants) and retry.
       if (sessionInUseRef.current && !sessionInUseRetried.current) {
@@ -306,9 +308,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // Stable ref so callbacks can call triggerRespawn without stale closures
   triggerRespawnRef.current = (config?: SessionConfig, name?: string) => {
     dlog("terminal", session.id, "respawn triggered");
-    // 1. Clean up old PTY, watchers, and inspector
+    // 1. Clean up old PTY, watchers, inspector, and tap server
     pty.cleanup();
     inspector.disconnect();
+    invoke("stop_tap_server", { sessionId: session.id }).catch(() => {});
     unregisterPtyWriter(session.id);
     unregisterPtyKill(session.id);
     unregisterInspectorPort(session.id);
@@ -415,16 +418,26 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         registerInspectorPort(session.id, inspPort);
         setInspectorPort(inspPort);
 
+        // Start TCP tap server for this session (before PTY spawn so port is ready)
+        let tapPort: number | null = null;
+        try {
+          tapPort = await invoke<number>("start_tap_server", { sessionId: session.id });
+        } catch (err) {
+          dlog("terminal", session.id, `tap server failed: ${err}`, "WARN");
+        }
+
         const args = await buildClaudeArgs(session.config);
         terminal.fit(); // Force fit before reading dimensions
         const { cols, rows } = terminal.getDimensions();
         const cwd = normalizePath(session.config.workingDir);
-        // Pass BUN_INSPECT env for inspector-based state detection
-        const env = { BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0` };
+        // Pass BUN_INSPECT env for inspector-based hook injection,
+        // TAP_PORT for dedicated TCP event delivery
+        const env: Record<string, string> = { BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0` };
+        if (tapPort) env.TAP_PORT = String(tapPort);
         const handle = await pty.spawn(claudePath, args, cwd, cols, rows, env);
         registerPtyWriter(session.id, handle.write);
         registerPtyKill(session.id, () => handle.kill());
-        dlog("terminal", session.id, `spawned pid=${handle.pid} port=${inspPort} cols=${cols} rows=${rows}`);
+        dlog("terminal", session.id, `spawned pid=${handle.pid} port=${inspPort} tapPort=${tapPort} cols=${cols} rows=${rows}`);
         updateState(session.id, "idle");
 
         // Post-spawn dimension verification — catches cases where font metrics
@@ -474,6 +487,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   useEffect(() => {
     const id = session.id;
     return () => {
+      invoke("stop_tap_server", { sessionId: id }).catch(() => {});
       unregisterPtyWriter(id);
       unregisterPtyKill(id);
       unregisterBufferReader(id);
@@ -586,7 +600,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (!queuedInput) return;
     if (session.state === "dead") { setQueuedInput(null); return; }
     const timer = setTimeout(() => {
-      if (session.state !== "idle") return; // Belt-and-suspenders: verify still idle
+      if (!isSessionIdle(session.state)) return; // Belt-and-suspenders: verify still idle
       writeToPty(session.id, queuedInput + "\r");
       setQueuedInput(null);
     }, 300);
@@ -599,7 +613,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   useEffect(() => {
     if (hookChangeCounter <= lastHookChangeRef.current) return;
     if (session.state === "dead") { lastHookChangeRef.current = hookChangeCounter; return; }
-    if (session.state !== "idle") return;
+    if (!isSessionIdle(session.state)) return;
     const timer = setTimeout(() => {
       lastHookChangeRef.current = hookChangeCounter;
       triggerRespawnRef.current();

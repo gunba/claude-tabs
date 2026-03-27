@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
+import { isSessionIdle } from "../types/session";
 
 /**
  * Sends native desktop notifications when background sessions
@@ -86,7 +87,7 @@ export function useNotifications() {
         let title: string | null = null;
         let body: string | null = null;
 
-        if ((prev === "thinking" || prev === "toolUse") && session.state === "idle") {
+        if ((prev === "thinking" || prev === "toolUse") && isSessionIdle(session.state)) {
           title = `${session.name} — Response Complete`;
           body = session.metadata.currentAction || "Session is ready for input.";
         } else if (session.state === "actionNeeded") {

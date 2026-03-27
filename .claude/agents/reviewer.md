@@ -2,6 +2,7 @@
 name: reviewer
 description: Reviews code changes against project rules and documented behaviors. Use after code changes.
 tools: Read, Glob, Grep, Bash
+model: opus
 hooks:
   Stop:
     - matcher: ""

@@ -1,5 +1,6 @@
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState } from "../types/session";
+import { isSessionIdle } from "../types/session";
 
 /**
  * Pure state reducer: (state, event) → state.
@@ -41,7 +42,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
       return "idle";
 
     case "UserInterruption":
-      return "idle";
+      return "interrupted";
 
     case "UserInput":
     case "SlashCommand":
@@ -81,6 +82,17 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "AccountInfo":
     case "FileHistorySnapshot":
     case "TurnDuration":
+    case "ApiStreamError":
+    case "ToolResult":
+    case "ApiError":
+    case "ApiRetry":
+    case "StreamStall":
+    case "LinesChanged":
+    case "ContextBudget":
+    case "SubagentLifecycle":
+    case "PlanModeEvent":
+    case "WorktreeState":
+    case "HookTelemetry":
       return state;
   }
 }
@@ -99,7 +111,7 @@ export function reduceTapBatch(state: SessionState, events: TapEvent[]): Session
   }
 
   // waitingPermission takes priority over any subsequent state in the same batch
-  if (hasPermission && result !== "idle") return "waitingPermission";
+  if (hasPermission && !isSessionIdle(result)) return "waitingPermission";
 
   return result;
 }
@@ -109,6 +121,5 @@ export function reduceTapBatch(state: SessionState, events: TapEvent[]): Session
  * Used by useTapEventProcessor for queued input dispatch signaling.
  */
 export function isCompletionEvent(event: TapEvent): boolean {
-  if (event.kind === "TurnEnd" && event.stopReason === "end_turn") return true;
-  return false;
+  return event.kind === "TurnEnd" && event.stopReason === "end_turn";
 }

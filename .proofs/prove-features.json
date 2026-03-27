@@ -134,6 +134,7 @@
     "TB-28",
     "TB-29",
     "TB-30",
+    "TB-31",
     "TR-01",
     "TR-02",
     "TR-03",
@@ -861,610 +862,616 @@
   "citations": {
     "DP-10": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-09": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-26": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TR-08": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-09": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-14": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-18": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-14": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-15": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-14": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-15": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-16": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "CM-20": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-21": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-03": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "SL-16": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SR-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-25": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-11": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SR-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-10": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-08": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-17": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-24": {
       "up": 1,
-      "seen": 19
+      "seen": 23
     },
     "DS-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-13": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "KB-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-09": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "CM-25": {
       "up": 0,
-      "seen": 19
+      "seen": 23
     },
     "KB-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-08": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-07": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "CB-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-13": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-14": {
       "up": 1,
-      "seen": 12
+      "seen": 16
     },
     "SL-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-24": {
       "up": 0,
-      "seen": 29
+      "seen": 33
     },
     "SL-09": {
       "up": 1,
-      "seen": 19
+      "seen": 23
     },
     "SR-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-28": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-09": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-06": {
-      "up": 0,
-      "seen": 20
+      "up": 1,
+      "down": 0,
+      "seen": 1
     },
     "DP-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "WN-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-11": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-12": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TR-12": {
       "up": 3,
-      "seen": 35
+      "seen": 39
     },
     "CM-09": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "WN-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-17": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-27": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-09": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-10": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-13": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "DP-08": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-13": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SR-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-10": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-04": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "CM-15": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-10": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "WN-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SR-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-18": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-12": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-23": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-10": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-10": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "HM-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-08": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-08": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-08": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CB-01": {
       "up": 1,
-      "seen": 20
+      "seen": 24
     },
     "TB-16": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-06": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-22": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CB-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SL-12": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-23": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DS-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "MO-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-03": {
       "up": 0,
-      "seen": 35
+      "seen": 39
     },
     "HM-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "KB-07": {
       "up": 0,
-      "seen": 25
+      "seen": 29
     },
     "TR-11": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "SR-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-04": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "HM-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "SR-01": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-07": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TB-20": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CB-03": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "TR-05": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-05": {
       "up": 3,
-      "seen": 23
+      "seen": 27
     },
     "CB-05": {
       "up": 1,
-      "seen": 20
+      "seen": 24
     },
     "SL-05": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-11": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CB-09": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-11": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-01": {
       "up": 1,
-      "seen": 20
+      "seen": 24
     },
     "DS-09": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "DP-12": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CB-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-07": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-26": {
       "up": 0,
-      "seen": 12
+      "seen": 16
     },
     "TB-19": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "DP-02": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "CM-22": {
       "up": 0,
-      "seen": 20
+      "seen": 24
     },
     "GD-01": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "GD-02": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "GD-03": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "GD-04": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "GD-05": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "RC-19": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "SI-20": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "SR-08": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "TB-29": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
     },
     "TB-30": {
       "up": 0,
       "down": 0,
-      "seen": 9
+      "seen": 13
+    },
+    "TB-31": {
+      "up": 1,
+      "down": 0,
+      "seen": 1
     }
   },
   "metadata": {
@@ -1579,10 +1586,11 @@
     },
     "TR-14": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:48"
+        "src-tauri/pty-patch/src/lib.rs:43",
+        "src/hooks/useTerminal.ts:239"
       ],
-      "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "verified": "2026-03-27",
+      "notes": "Scroll preservation: ESC[3J conditional, ESC[2J replaced with H+J, baseY shrinkage detection, viewport restore"
     },
     "CM-12": {
       "files": [
@@ -1721,12 +1729,92 @@
       ],
       "verified": "2026-03-26",
       "notes": "Added during change documentation"
+    },
+    "TB-31": {
+      "files": [
+        "src/App.tsx:556",
+        "src/App.tsx:568"
+      ],
+      "verified": "2026-03-27",
+      "notes": "Subagent cards use tab-dot state-X classes, meta line with agentType/model/tools/duration, summary line"
+    },
+    "CM-02": {
+      "files": [
+        "src/lib/paths.ts:123"
+      ],
+      "verified": "2026-03-27",
+      "notes": "formatScopePath() normalizes backslashes, user-scope passthrough, abbreviatePath for project paths confirmed"
+    },
+    "CM-08": {
+      "files": [
+        "src-tauri/src/commands.rs:1783",
+        "src-tauri/src/commands.rs:1794"
+      ],
+      "verified": "2026-03-27",
+      "notes": "read_config_file/write_config_file: JSON validated before write, parent dirs auto-created"
+    },
+    "CM-14": {
+      "files": [
+        "src/components/ConfigManager/MarkdownPane.tsx:7"
+      ],
+      "verified": "2026-03-27",
+      "notes": "Scope-to-fileType mapping confirmed: user=claudemd-user, project=claudemd-root, project-local=claudemd-dotclaude"
+    },
+    "CM-18": {
+      "files": [
+        "src/components/ConfigManager/ConfigManager.tsx:11",
+        "src/components/Icons/Icons.tsx:1"
+      ],
+      "verified": "2026-03-27",
+      "notes": "5 inline SVG icons (IconGear, IconDocument, IconHook, IconPuzzle, IconBot) used for config tabs"
+    },
+    "DS-03": {
+      "files": [
+        "src/lib/claude.ts:20",
+        "src/components/Terminal/TerminalPanel.tsx:55"
+      ],
+      "verified": "2026-03-27",
+      "notes": "canResumeSession checks sessionId || resumeSession || nodeSummary, no JSONL check"
+    },
+    "RC-19": {
+      "files": [
+        "src-tauri/src/commands.rs:1981"
+      ],
+      "verified": "2026-03-27",
+      "notes": "prune_worktree: git worktree remove --force, spawn_blocking + CREATE_NO_WINDOW confirmed"
+    },
+    "SI-20": {
+      "files": [
+        "src/hooks/useTapEventProcessor.ts:54"
+      ],
+      "verified": "2026-03-27",
+      "notes": "Cwd detection moved from useInspectorState.ts (deleted) to useTapEventProcessor.ts. Functionality intact but via tap events, not POLL_STATE."
+    },
+    "TB-17": {
+      "files": [
+        "src/App.tsx:689",
+        "src/App.tsx:736"
+      ],
+      "verified": "2026-03-27",
+      "notes": "Opens debug.bun.sh URL, disconnects WebSocket, marks inspector-off (hollow dot + status bar)"
+    },
+    "TB-22": {
+      "files": [
+        "src/App.tsx:30",
+        "src/components/Icons/Icons.tsx:28"
+      ],
+      "verified": "2026-03-27",
+      "notes": "All tab bar icons are inline SVG components (IconPencil, IconStop, IconClose, IconReturn, IconGear)"
+    },
+    "TB-27": {
+      "files": [
+        "src/App.tsx:313"
+      ],
+      "verified": "2026-03-27",
+      "notes": "gi > 0 guard prevents separator before first group, confirmed at line 313"
     }
   },
-  "unchecked": [
-    "RC-19",
-    "SI-20"
-  ],
+  "unchecked": [],
   "cycle": 2,
-  "last_run": "2026-03-26T16:16:11.338086+00:00"
+  "last_run": "2026-03-27T13:00:11.470063+00:00"
 }

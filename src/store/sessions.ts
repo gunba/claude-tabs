@@ -36,6 +36,7 @@ interface SessionsState {
   reorderTabs: (order: string[]) => void;
   persist: () => Promise<void>;
   renameSession: (id: string, name: string) => void;
+  setUserRenamed: (id: string, value: boolean) => void;
   requestRespawn: (tabId: string, config: SessionConfig, name?: string) => void;
   clearRespawnRequest: () => void;
   requestKill: (id: string) => void;
@@ -231,6 +232,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
     }));
   },
 
+  setUserRenamed: (id, value) => {
+    set((s) => ({
+      sessions: s.sessions.map((x) =>
+        x.id === id ? { ...x, userRenamed: value } : x
+      ),
+    }));
+  },
+
   requestRespawn: (tabId, config, name) => {
     set({ respawnRequest: { tabId, config, name } });
   },
@@ -326,7 +335,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const map = new Map(s.subagents);
       const list = map.get(sessionId);
       if (!list) return s;
-      const active = list.filter((sa) => sa.state !== "idle");
+      const active = list.filter((sa) => sa.state !== "idle" && sa.state !== "interrupted");
       if (active.length === list.length) return s;
       map.set(sessionId, active);
       return { subagents: map };

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const process: any;
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { INSTALL_TAPS, tapToggleExpr, tapToggleAllExpr } from "../inspectorHooks";
 
 // Snapshot ALL patchable globals once at module load, before any INSTALL_TAPS.
@@ -18,6 +18,7 @@ const _pristine = {
   consoleError: console.error,
   consoleDebug: console.debug,
   processExit: process.exit,
+  Bun: (globalThis as any).Bun,
 };
 
 function restoreGlobals() {
@@ -34,6 +35,11 @@ function restoreGlobals() {
   console.error = _pristine.consoleError;
   console.debug = _pristine.consoleDebug;
   process.exit = _pristine.processExit;
+  if (_pristine.Bun) {
+    (globalThis as any).Bun = _pristine.Bun;
+  } else {
+    delete (globalThis as any).Bun;
+  }
 }
 
 function cleanupTapHooks() {
@@ -42,10 +48,12 @@ function cleanupTapHooks() {
   delete g.__tapFlags;
   delete g.__tapFetchInstalled;
   delete g.__tapFetchTimeoutInstalled;
+  delete g.__tapDiag;
+  delete process.env.TAP_PORT;
   restoreGlobals();
 }
 
-/** Mute always-on parse/stringify flags to prevent vitest's internal JSON ops from flooding the spy. */
+/** Mute always-on parse/stringify flags to prevent vitest's internal JSON ops from flooding captures. */
 function muteTapDefaults() {
   const g = globalThis as unknown as Record<string, unknown>;
   const flags = g.__tapFlags as Record<string, boolean> | undefined;
@@ -55,35 +63,65 @@ function muteTapDefaults() {
 /** Pre-compiled INSTALL_TAPS function. */
 const _installTapsFn = new Function(`return ${INSTALL_TAPS}`);
 
-/** Collect TAP entries pushed via console.debug with \x00TAP prefix.
- *  Uses _pristine.jsonParse to avoid triggering the wrapped JSON.parse (which would infinite-loop). */
-function collectTapEntries(debugSpy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+let mockTapWrites: string[] = [];
+
+/**
+ * INSTALL_TAPS push() connects to TAP_PORT via Bun.connect (native TCP).
+ * In vitest, we mock globalThis.Bun with a fake connect that captures socket writes.
+ * The open handler is deferred via queueMicrotask to match real async behavior.
+ */
+function setupMockTcpTransport() {
+  mockTapWrites = [];
+  process.env.TAP_PORT = "9999";
+
+  const mockSocket = {
+    write: (data: string) => { mockTapWrites.push(data); return data.length; },
+  };
+
+  (globalThis as any).Bun = {
+    connect: (opts: any) => {
+      // Defer the open callback — Bun.connect resolves async in real runtime
+      queueMicrotask(() => opts.socket.open(mockSocket));
+      return Promise.resolve(mockSocket);
+    },
+  };
+}
+
+/** Install taps, then await mock TCP connect (open handler fires via microtask). */
+async function installTaps() {
+  const result = _installTapsFn();
+  await new Promise<void>((r) => queueMicrotask(r));
+  return result;
+}
+
+/** Collect TAP entries from mock TCP socket writes.
+ *  Uses _pristine.jsonParse to avoid triggering the wrapped JSON.parse. */
+function collectTapEntries(): Array<Record<string, unknown>> {
   const entries: Array<Record<string, unknown>> = [];
-  const calls = debugSpy.mock.calls.slice(); // snapshot to avoid mutation during iteration
-  for (const call of calls) {
-    const arg = call[0];
-    if (typeof arg === "string" && arg.startsWith("\x00TAP")) {
-      try { entries.push(_pristine.jsonParse(arg.slice(4))); } catch {}
+  for (const line of mockTapWrites) {
+    const trimmed = line.trim();
+    if (trimmed) {
+      try { entries.push(_pristine.jsonParse(trimmed)); } catch {}
     }
   }
   return entries;
 }
 
 describe("INSTALL_TAPS", () => {
-  beforeEach(cleanupTapHooks);
+  beforeEach(() => { cleanupTapHooks(); setupMockTcpTransport(); });
   afterEach(cleanupTapHooks);
 
-  it("returns 'ok' on first install", () => {
-    expect(_installTapsFn()).toBe("ok");
+  it("returns 'ok' on first install", async () => {
+    expect(await installTaps()).toBe("ok");
   });
 
-  it("returns 'already' on second install", () => {
-    _installTapsFn();
-    expect(_installTapsFn()).toBe("already");
+  it("returns 'already' on second install", async () => {
+    await installTaps();
+    expect(await installTaps()).toBe("already");
   });
 
-  it("initializes __tapFlags with parse+stringify always-on", () => {
-    _installTapsFn();
+  it("initializes __tapFlags with parse+stringify always-on", async () => {
+    await installTaps();
     const g = globalThis as unknown as Record<string, unknown>;
     const flags = g.__tapFlags as Record<string, boolean>;
     expect(flags.parse).toBe(true);
@@ -100,26 +138,21 @@ describe("INSTALL_TAPS", () => {
 });
 
 describe("INSTALL_TAPS JSON.parse hook", () => {
-  let debugSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupTapHooks();
-    debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    _installTapsFn();
+    setupMockTcpTransport();
+    await installTaps();
     muteTapDefaults();
   });
-  afterEach(() => {
-    cleanupTapHooks();
-    debugSpy.mockRestore();
-  });
+  afterEach(cleanupTapHooks);
 
-  it("pushes parse entries via console.debug (parse is always-on)", () => {
+  it("pushes parse entries via TCP socket (parse is always-on)", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     const big = JSON.stringify({ type: "message", content: "x".repeat(100) });
     JSON.parse(big);
-    const entries = collectTapEntries(debugSpy);
+    const entries = collectTapEntries();
     const parseEntries = entries.filter((e) => e.cat === "parse");
     expect(parseEntries.length).toBeGreaterThanOrEqual(1);
     const entry = parseEntries[parseEntries.length - 1];
@@ -132,28 +165,28 @@ describe("INSTALL_TAPS JSON.parse hook", () => {
   it("is no-op when parse flag is disabled", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = false;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     const big = JSON.stringify({ type: "message", content: "x".repeat(100) });
     JSON.parse(big);
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "parse");
+    const entries = collectTapEntries().filter((e) => e.cat === "parse");
     expect(entries.length).toBe(0);
   });
 
   it("captures short strings (no length filter)", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     JSON.parse('{"a":1}');
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "parse");
+    const entries = collectTapEntries().filter((e) => e.cat === "parse");
     expect(entries.length).toBe(1);
   });
 
   it("captures primitives (no type filter)", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).parse = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     JSON.parse('"hello"');
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "parse");
+    const entries = collectTapEntries().filter((e) => e.cat === "parse");
     expect(entries.length).toBe(1);
   });
 });
@@ -162,15 +195,14 @@ describe("INSTALL_TAPS console hooks", () => {
   let origLog: typeof console.log;
   let origWarn: typeof console.warn;
   let origError: typeof console.error;
-  let debugSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupTapHooks();
     origLog = console.log;
     origWarn = console.warn;
     origError = console.error;
-    debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    _installTapsFn();
+    setupMockTcpTransport();
+    await installTaps();
     muteTapDefaults();
   });
   afterEach(() => {
@@ -178,29 +210,28 @@ describe("INSTALL_TAPS console hooks", () => {
     console.log = origLog;
     console.warn = origWarn;
     console.error = origError;
-    debugSpy.mockRestore();
   });
 
   it("captures console.warn when flag is true", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).console = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     console.warn("test warning");
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "console.warn");
+    const entries = collectTapEntries().filter((e) => e.cat === "console.warn");
     expect(entries.length).toBe(1);
     expect(entries[0].msg).toBe("test warning");
   });
 
   it("is no-op when console flag is false", () => {
-    debugSpy.mockClear();
+    mockTapWrites = [];
     console.log("invisible");
-    const entries = collectTapEntries(debugSpy).filter((e) => String(e.cat).startsWith("console."));
+    const entries = collectTapEntries().filter((e) => String(e.cat).startsWith("console."));
     expect(entries.length).toBe(0);
   });
 });
 
 describe("tapToggleExpr / tapToggleAllExpr", () => {
-  beforeEach(() => { cleanupTapHooks(); _installTapsFn(); muteTapDefaults(); });
+  beforeEach(async () => { cleanupTapHooks(); setupMockTcpTransport(); await installTaps(); muteTapDefaults(); });
   afterEach(cleanupTapHooks);
 
   it("toggles a single category", () => {
@@ -272,15 +303,14 @@ describe("INSTALL_TAPS console hooks — all methods", () => {
   let origLog: typeof console.log;
   let origWarn: typeof console.warn;
   let origError: typeof console.error;
-  let debugSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupTapHooks();
     origLog = console.log;
     origWarn = console.warn;
     origError = console.error;
-    debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    _installTapsFn();
+    setupMockTcpTransport();
+    await installTaps();
     muteTapDefaults();
   });
   afterEach(() => {
@@ -288,33 +318,32 @@ describe("INSTALL_TAPS console hooks — all methods", () => {
     console.log = origLog;
     console.warn = origWarn;
     console.error = origError;
-    debugSpy.mockRestore();
   });
 
   it("captures console.log", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).console = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     console.log("test log");
-    const entries = collectTapEntries(debugSpy);
+    const entries = collectTapEntries();
     expect(entries.some((e) => e.cat === "console.log" && e.msg === "test log")).toBe(true);
   });
 
   it("captures console.error", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).console = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     console.error("test error");
-    const entries = collectTapEntries(debugSpy);
+    const entries = collectTapEntries();
     expect(entries.some((e) => e.cat === "console.error" && e.msg === "test error")).toBe(true);
   });
 
   it("joins multiple arguments with space", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).console = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     console.log("a", "b", "c");
-    const entries = collectTapEntries(debugSpy);
+    const entries = collectTapEntries();
     expect(entries.some((e) => e.msg === "a b c")).toBe(true);
   });
 });
@@ -322,61 +351,54 @@ describe("INSTALL_TAPS console hooks — all methods", () => {
 describe("INSTALL_TAPS stdout hook", () => {
   const proc = () => (globalThis as unknown as { process: { stdout: { write: (s: string) => boolean } } }).process;
   let origWrite: (s: string) => boolean;
-  let debugSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupTapHooks();
     origWrite = proc().stdout.write;
-    debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    _installTapsFn();
+    setupMockTcpTransport();
+    await installTaps();
     muteTapDefaults();
   });
   afterEach(() => {
     cleanupTapHooks();
     proc().stdout.write = origWrite;
-    debugSpy.mockRestore();
   });
 
   it("captures stdout.write with length and snap", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).stdout = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     proc().stdout.write("test output");
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "stdout");
+    const entries = collectTapEntries().filter((e) => e.cat === "stdout");
     expect(entries.length).toBe(1);
     expect(entries[0].len).toBe(11);
     expect(entries[0].snap).toBe("test output");
   });
 
   it("is no-op when stdout flag is false", () => {
-    debugSpy.mockClear();
+    mockTapWrites = [];
     proc().stdout.write("invisible");
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "stdout");
+    const entries = collectTapEntries().filter((e) => e.cat === "stdout");
     expect(entries.length).toBe(0);
   });
 });
 
 describe("INSTALL_TAPS timer hook", () => {
-  let debugSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupTapHooks();
-    debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    _installTapsFn();
+    setupMockTcpTransport();
+    await installTaps();
     muteTapDefaults();
   });
-  afterEach(() => {
-    cleanupTapHooks();
-    debugSpy.mockRestore();
-  });
+  afterEach(cleanupTapHooks);
 
   it("captures setTimeout with delay >= 100", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).timer = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     const id = setTimeout(() => {}, 200);
     clearTimeout(id);
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "setTimeout");
+    const entries = collectTapEntries().filter((e) => e.cat === "setTimeout");
     expect(entries.length).toBe(1);
     expect(entries[0].delay).toBe(200);
     expect(typeof entries[0].caller).toBe("string");
@@ -385,10 +407,10 @@ describe("INSTALL_TAPS timer hook", () => {
   it("skips setTimeout with delay < 100", () => {
     const g = globalThis as unknown as Record<string, unknown>;
     (g.__tapFlags as Record<string, boolean>).timer = true;
-    debugSpy.mockClear();
+    mockTapWrites = [];
     const id = setTimeout(() => {}, 10);
     clearTimeout(id);
-    const entries = collectTapEntries(debugSpy).filter((e) => e.cat === "setTimeout");
+    const entries = collectTapEntries().filter((e) => e.cat === "setTimeout");
     expect(entries.length).toBe(0);
   });
 });

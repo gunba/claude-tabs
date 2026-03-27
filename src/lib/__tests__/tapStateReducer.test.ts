@@ -40,8 +40,12 @@ describe("reduceTapEvent", () => {
     expect(reduceTapEvent("waitingPermission", { kind: "PermissionRejected", ts: 0 })).toBe("idle");
   });
 
-  it("UserInterruption → idle", () => {
-    expect(reduceTapEvent("thinking", { kind: "UserInterruption", ts: 0, forToolUse: true })).toBe("idle");
+  it("UserInterruption → interrupted", () => {
+    expect(reduceTapEvent("thinking", { kind: "UserInterruption", ts: 0, forToolUse: true })).toBe("interrupted");
+  });
+
+  it("interrupted → thinking on UserInput", () => {
+    expect(reduceTapEvent("interrupted", { kind: "UserInput", ts: 0, display: "test", sessionId: "s1" })).toBe("thinking");
   });
 
   it("UserInput → thinking", () => {

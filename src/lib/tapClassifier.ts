@@ -67,6 +67,16 @@ function classifyParse(ts: number, parsed: any): TapEvent | null {
     return { kind: "MessageStop", ts };
   }
 
+  // error — API error during streaming (e.g. 529 overloaded)
+  if (type === "error") {
+    return {
+      kind: "ApiStreamError", ts,
+      type: parsed.error?.type || "unknown",
+      message: parsed.error?.message || "",
+      status: typeof parsed.status === "number" ? parsed.status : null,
+    };
+  }
+
   // content_block_delta — high-frequency, NOT classified (disk only)
   return null;
 }
@@ -202,6 +212,102 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
+  // ── rh-based telemetry events (must come BEFORE ModeChange which broadly matches rh + to) ──
+
+  // ToolResult: tool execution completed with metrics
+  if (parsed.rh && parsed.toolName && typeof parsed.durationMs === "number" && parsed.toolResultSizeBytes !== undefined) {
+    return {
+      kind: "ToolResult", ts,
+      toolName: parsed.toolName,
+      durationMs: parsed.durationMs,
+      toolResultSizeBytes: parsed.toolResultSizeBytes,
+      error: parsed.error ? String(parsed.error) : null,
+    };
+  }
+
+  // ApiRetry: retry attempt for failed API call
+  if (parsed.rh && typeof parsed.attempt === "number" && typeof parsed.delayMs === "number" && typeof parsed.status === "number") {
+    return {
+      kind: "ApiRetry", ts,
+      attempt: parsed.attempt,
+      delayMs: parsed.delayMs,
+      status: parsed.status,
+    };
+  }
+
+  // StreamStall: API stream stall detected
+  if (parsed.rh && typeof parsed.stall_duration_ms === "number") {
+    return {
+      kind: "StreamStall", ts,
+      stallDurationMs: parsed.stall_duration_ms,
+      stallCount: parsed.stall_count || 1,
+      totalStallTimeMs: parsed.total_stall_time_ms || parsed.stall_duration_ms,
+    };
+  }
+
+  // LinesChanged: lines added/removed by a tool
+  if (parsed.rh && typeof parsed.lines_added === "number" && typeof parsed.lines_removed === "number") {
+    return {
+      kind: "LinesChanged", ts,
+      linesAdded: parsed.lines_added,
+      linesRemoved: parsed.lines_removed,
+    };
+  }
+
+  // ContextBudget: context budget breakdown
+  if (parsed.rh && typeof parsed.total_context_size === "number" && parsed.mcp_tools_count !== undefined) {
+    return {
+      kind: "ContextBudget", ts,
+      claudeMdSize: parsed.claude_md_size || 0,
+      totalContextSize: parsed.total_context_size,
+      mcpToolsCount: parsed.mcp_tools_count || 0,
+      mcpToolsTokens: parsed.mcp_tools_tokens || 0,
+      nonMcpToolsCount: parsed.non_mcp_tools_count || 0,
+      nonMcpToolsTokens: parsed.non_mcp_tools_tokens || 0,
+      projectFileCount: parsed.project_file_count_rounded || 0,
+    };
+  }
+
+  // SubagentLifecycle: subagent start/end/killed telemetry
+  if (parsed.rh && parsed.agent_type && (parsed.is_async !== undefined || parsed.total_tokens !== undefined || parsed.reason)) {
+    let variant: "start" | "end" | "killed";
+    if (parsed.is_async !== undefined) variant = "start";
+    else if (parsed.total_tokens !== undefined) variant = "end";
+    else variant = "killed";
+    return {
+      kind: "SubagentLifecycle", ts,
+      variant,
+      agentType: parsed.agent_type || null,
+      isAsync: parsed.is_async ?? null,
+      model: parsed.model || null,
+      totalTokens: parsed.total_tokens ?? null,
+      totalToolUses: parsed.total_tool_uses ?? null,
+      durationMs: parsed.duration_ms ?? null,
+      reason: parsed.reason || null,
+    };
+  }
+
+  // PlanModeEvent: plan mode exit with outcome
+  if (parsed.rh && typeof parsed.planLengthChars === "number" && parsed.outcome) {
+    return {
+      kind: "PlanModeEvent", ts,
+      planLengthChars: parsed.planLengthChars,
+      outcome: parsed.outcome,
+    };
+  }
+
+  // HookTelemetry: hook execution results
+  if (parsed.rh && parsed.hookName && typeof parsed.totalDurationMs === "number" && parsed.numCommands !== undefined) {
+    return {
+      kind: "HookTelemetry", ts,
+      hookName: parsed.hookName,
+      totalDurationMs: parsed.totalDurationMs,
+      numCommands: parsed.numCommands || 0,
+      numSuccess: parsed.numSuccess || 0,
+      numErrors: (parsed.numNonBlockingError || 0) + (parsed.numCancelled || 0),
+    };
+  }
+
   // ModeChange: has rh + to
   if (parsed.rh && typeof parsed.to === "string") {
     return {
@@ -316,14 +422,26 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
-  // AccountInfo: has accountUuid + subscriptionType + billingType
-  if (parsed.accountUuid && parsed.subscriptionType && parsed.billingType) {
+  // AccountInfo: has accountUuid + billingType (subscriptionType may be absent in newer CLI)
+  if (parsed.accountUuid && parsed.billingType) {
     return {
       kind: "AccountInfo", ts,
-      subscriptionType: parsed.subscriptionType,
+      subscriptionType: parsed.subscriptionType ?? null,
       rateLimitTier: parsed.rateLimitTier || "",
       billingType: parsed.billingType,
       displayName: parsed.displayName || "",
+    };
+  }
+
+  // WorktreeState: type=worktree-state with session details
+  if (parsed.type === "worktree-state" && parsed.worktreeSession) {
+    const ws = parsed.worktreeSession;
+    return {
+      kind: "WorktreeState", ts,
+      originalCwd: ws.originalCwd || "",
+      worktreePath: ws.worktreePath || "",
+      worktreeName: ws.worktreeName || "",
+      worktreeBranch: ws.worktreeBranch || "",
     };
   }
 
@@ -342,6 +460,17 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
       kind: "CustomTitle", ts,
       title: parsed.agentName,
       sessionId: parsed.sessionId || "",
+    };
+  }
+
+  // ApiError: type=system, subtype=api_error (retry info, HTTP status)
+  if (parsed.type === "system" && parsed.subtype === "api_error") {
+    return {
+      kind: "ApiError", ts,
+      status: parsed.error?.status || 0,
+      message: parsed.error?.message || parsed.error?.type || "",
+      retryAttempt: parsed.retryAttempt ?? null,
+      retryInMs: parsed.retryInMs ?? null,
     };
   }
 

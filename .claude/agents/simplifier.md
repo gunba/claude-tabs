@@ -2,6 +2,7 @@
 name: simplifier
 description: Identifies simplification opportunities in code changes. Use after code changes.
 tools: Read, Glob, Grep, Bash
+model: opus
 hooks:
   Stop:
     - matcher: ""

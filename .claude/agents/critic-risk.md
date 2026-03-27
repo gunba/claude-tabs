@@ -2,6 +2,7 @@
 name: critic-risk
 description: Critiques implementation plans for risks, edge cases, and regressions. Use during plan mode.
 tools: Read, Glob, Grep, Bash
+model: sonnet
 ---
 
 Critique the provided implementation plan for risks.

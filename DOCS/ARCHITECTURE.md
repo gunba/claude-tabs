@@ -45,8 +45,8 @@ Technical implementation details. Code implementing a tagged entry is not dead c
   - Files: src/hooks/useInspectorState.ts:285, src/lib/inspectorHooks.ts:27, src/lib/inspectorHooks.ts:737
 - [SI-15] Poll result fields: InspectorPollResult includes n (event count), sid, cost, model, stop, tools, inTok/outTok, events (ring buffer), permPending/idleDetected (notification flags), subs (subagent state with spliced msgs), inputBuf/inputTs (stdin capture), choiceHint (terminal selector), promptDetected (terminal prompt fallback), cwd (process.cwd() for worktree detection). Note: slashCmd is still captured in POLL_STATE but no longer consumed — slash command detection moved to LineAccumulator in ptyRegistry.ts
   - Files: src/lib/inspectorHooks.ts:737, src/hooks/useInspectorState.ts:8
-- [SI-20] Worktree cwd detection: when POLL_STATE returns a changed cwd (e.g., after Claude enters a worktree via -w), useInspectorState updates the session's workingDir. Enables tab acronym display, correct resume cwd, and worktree prune on close. Uses a ref to fire only on change, not every poll cycle.
-  - Files: src/hooks/useInspectorState.ts:186
+- [SI-20] Worktree cwd detection: when tap events (ConversationMessage, SessionRegistration, WorktreeState) carry a cwd or worktreePath, useTapEventProcessor updates the session's workingDir via updateConfig. Enables tab acronym display, correct resume cwd, and worktree prune on close. Fires only on change (normalizePath comparison).
+  - Files: src/hooks/useTapEventProcessor.ts:54
 - [SI-16] WebFetch domain blocklist bypass: intercepts require('https').request to return can_fetch:true for api.anthropic.com/api/web/domain_info, eliminating the 10s preflight that blocks all WebFetch calls. Axios in Bun uses the Node http adapter (not globalThis.fetch), so the hook targets the shared https module singleton. Bypass count exposed as fetchBypassed in poll state.
   - Files: src/lib/inspectorHooks.ts:298
 - [SI-17] Interrupt signal detection: Ctrl+C (\x03) and Escape (\x1b) on stdin emit a synthetic result event, set state to end_turn, clear permission/tool flags, and mark all subagents idle — enabling immediate idle detection without waiting for Claude's actual response.
@@ -127,9 +127,9 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 ## Inspector
 
 - [IN-01] Inspector port allocation and registry in `inspectorPort.ts`. Async `allocateInspectorPort()` probes OS via `check_port_available` IPC (Rust TcpListener::bind) and skips registry-held ports.
-- [IN-02] INSTALL_TAPS JS expression in inspectorHooks.ts; wraps 12 function categories (parse, stringify, console, fs, spawn, fetch, exit, timer, stdout, stderr, require, bun). Push-based delivery via console.debug with \x00TAP prefix. parse and stringify always on for state detection; other categories opt-in for recording. Also contains WebFetch domain bypass and HTTPS/fetch timeout patches.
+- [IN-02] INSTALL_TAPS JS expression in inspectorHooks.ts; wraps 15 function categories (parse, stringify, console, fs, spawn, fetch, exit, timer, stdout, stderr, require, bun, websocket, net, stream). TCP push-based delivery via Bun.connect to TAP_PORT. parse and stringify always on for state detection; other categories opt-in via flags. Also contains WebFetch domain bypass, HTTPS/fetch timeout patches, and wrapAfter() helper for post-call hooks.
 - [IN-03] Subagent tracking: inspector detects Agent tool_use -> queues description -> matches with new session ID system event -> routes events to subagent entry
-- [IN-04] Subagent conversation messages captured via tapSubagentTracker.ts processing ConversationMessage events with isSidechain:true and agentId routing. Token attribution via lastActiveAgent tracking + queryDepth>0 from ApiTelemetry.
+- [IN-04] Subagent conversation messages captured via tapSubagentTracker.ts processing ConversationMessage events with isSidechain:true and agentId routing. Token attribution via lastActiveAgent tracking + queryDepth>0 from ApiTelemetry. SubagentLifecycle events enrich with agentType, isAsync, model, totalToolUses, durationMs. SubagentNotification marks ALL active subagents idle/dead (no break). Model tracked from ApiTelemetry queryDepth>0.
 - [IN-05] Stale subagent detection removed -- push-based architecture handles subagent lifecycle via real-time state events only
   - Files: src/hooks/useInspectorState.ts:156
 - [IN-06] Dead subagent purge removed -- push-based architecture relies on real-time state transitions; idle subs remain visible until session ends
@@ -139,11 +139,16 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [IN-08] SubagentInspector tool block collapse: MessageBlock uses local useState for collapsed state; getToolPreview extracts first non-empty line (120 char cap). Parent computes lastToolIndex via reduce; only the last tool message auto-expands when subagent is active (not dead/idle). React key={i} ensures stable mounting.
   - Files: src/components/SubagentInspector/SubagentInspector.tsx:12, src/components/SubagentInspector/SubagentInspector.tsx:78
 - [IN-09] choiceHint detection via ToolCallStart event with toolName=AskUserQuestion in tapMetadataAccumulator.ts. Full question schema available from ToolInput event.
-- [IN-10] Tap event pipeline: raw entries arrive via Console.messageAdded WebSocket push -> tapClassifier.ts classifies 31 typed events -> tapEventBus.ts dispatches per-session -> tapStateReducer.ts (state), tapMetadataAccumulator.ts (metadata), tapSubagentTracker.ts (subagents) -> store actions. See DOCS/TAP-SIGNALS.md.
-- [IN-11] StatusBar enrichment from tap events: model + subscription tier + API region (from cf-ray), context% with breakdown tooltip (tools, messages, system prompt, files touched), cost/TTFT/requestId tooltip, rate limit display, hook execution status, active subprocess indicator, memory in duration tooltip.
-  - Files: src/components/StatusBar/StatusBar.tsx:41, src/lib/tapMetadataAccumulator.ts:8
+- [IN-10] Tap event pipeline: raw entries arrive via TCP socket (TAP_PORT) -> tapClassifier.ts classifies 42 typed events (31 original + 11 expansion: ApiStreamError, ToolResult, ApiError, ApiRetry, StreamStall, LinesChanged, ContextBudget, SubagentLifecycle, PlanModeEvent, WorktreeState, HookTelemetry) -> tapEventBus.ts dispatches per-session -> tapStateReducer.ts (state), tapMetadataAccumulator.ts (metadata), tapSubagentTracker.ts (subagents) -> store actions.
+- [IN-11] StatusBar enrichment from tap events: model + subscription tier + API region (from cf-ray), context% with breakdown tooltip (tools, messages, system prompt, files touched, context budget when available), cost/TTFT/requestId tooltip, rate limit display, hook execution status, active subprocess indicator, memory in duration tooltip, lines changed (+/-), API retry count, stream stall indicator (yellow pulse), tool duration (ms), and dynamic status text (hookStatus/subprocess) positioned last with flex-fill.
 - [IN-12] useInspectorConnection.ts: WebSocket lifecycle only (connect, Console.enable, retry, disconnect). No state derivation. useTapPipeline.ts: receives Console.messageAdded events, classifies, dispatches, buffers for disk. useTapEventProcessor.ts: subscribes to bus, runs reducers, calls store actions.
   - Files: src/hooks/useInspectorConnection.ts:16, src/hooks/useTapPipeline.ts:31, src/hooks/useTapEventProcessor.ts:17
+- [IN-13] SessionState 'interrupted' added: UserInterruption transitions to interrupted (not idle). Visually distinct (red dot, no pulse) but functionally equivalent to idle via isSessionIdle() helper. Auto-clears to thinking on next UserInput/ConversationMessage. clearIdleSubagents also clears interrupted.
+  - Files: src/types/session.ts:1, src/lib/tapStateReducer.ts:44, src/store/sessions.ts:338
+- [IN-14] Model bleed fix: ApiTelemetry only updates runtimeModel when queryDepth===0, preventing subagent model (e.g. Haiku) from overwriting parent tab display. Subagent model tracked separately via tapSubagentTracker update action on ApiTelemetry with queryDepth>0.
+  - Files: src/lib/tapMetadataAccumulator.ts:63, src/lib/tapSubagentTracker.ts:140
+- [IN-15] AccountInfo classifier fix: guard relaxed from requiring subscriptionType to requiring only billingType (newer CLI omits subscriptionType). subscriptionType extracted with fallback to null.
+  - Files: src/lib/tapClassifier.ts:420
 
 ## Background Buffering
 

@@ -12,6 +12,7 @@ import {
 } from "../Icons/Icons";
 import { useGitStatus } from "../../hooks/useGitStatus";
 import type { Session, PermissionMode } from "../../types/session";
+import { isSessionIdle } from "../../types/session";
 import "./StatusBar.css";
 
 function formatDuration(secs: number): string {
@@ -81,7 +82,8 @@ function SessionStatus({ session }: { session: Session }) {
         session.metadata.contextPercent > 0
           ? `Context: ${session.metadata.contextPercent}% · ${session.metadata.toolCount} tools · ${session.metadata.conversationLength} messages` +
             (session.metadata.systemPromptLength > 0 ? ` · ${Math.round(session.metadata.systemPromptLength / 1000)}K system prompt` : "") +
-            (session.metadata.filesTouched?.length ? ` · ${session.metadata.filesTouched.length} files touched` : "")
+            (session.metadata.filesTouched?.length ? ` · ${session.metadata.filesTouched.length} files touched` : "") +
+            (session.metadata.contextBudget ? `\nBudget: ${formatTokenCount(session.metadata.contextBudget.totalContextSize)} total · ${session.metadata.contextBudget.mcpToolsCount} MCP tools (${formatTokenCount(session.metadata.contextBudget.mcpToolsTokens)}) · ${session.metadata.contextBudget.nonMcpToolsCount} built-in tools · ${formatTokenCount(session.metadata.contextBudget.projectFileCount)} project files` : "")
           : "Context usage"
       }>
         <span className="status-icon"><IconHalfCircle size={12} /></span>
@@ -105,14 +107,33 @@ function SessionStatus({ session }: { session: Session }) {
         <span className="status-icon"><IconClock size={12} /></span>
         {formatDuration(session.metadata.durationSecs)}
       </span>
-      {session.metadata.hookStatus && (
-        <span className="status-item" style={{ color: "var(--accent-secondary)", fontSize: "0.85em" }} title="Hook executing">
-          {session.metadata.hookStatus}
+      {(session.metadata.linesAdded > 0 || session.metadata.linesRemoved > 0) && (
+        <span className="status-item status-lines" title="Lines changed this session">
+          <span style={{ color: "var(--success)" }}>+{session.metadata.linesAdded}</span>
+          <span style={{ color: "var(--error)" }}>-{session.metadata.linesRemoved}</span>
         </span>
       )}
-      {!session.metadata.hookStatus && session.metadata.activeSubprocess && (
-        <span className="status-item" style={{ opacity: 0.6, fontSize: "0.85em" }} title="Subprocess running">
-          {session.metadata.activeSubprocess}
+      {session.metadata.lastToolDurationMs != null && session.state === "toolUse" && (
+        <span className="status-item" style={{ color: "var(--text-muted)", fontSize: "0.85em" }} title={
+          `Tool: ${session.metadata.lastToolDurationMs}ms` +
+          (session.metadata.lastToolResultSize != null ? ` · ${formatTokenCount(session.metadata.lastToolResultSize)} result` : "") +
+          (session.metadata.lastToolError ? ` · Error: ${session.metadata.lastToolError}` : "")
+        }>
+          {session.metadata.lastToolDurationMs}ms
+        </span>
+      )}
+      {session.metadata.apiRetryCount > 0 && (
+        <span className="status-item status-retry" title={
+          session.metadata.apiRetryInfo
+            ? `API retry: attempt ${session.metadata.apiRetryInfo.attempt}, ${Math.round(session.metadata.apiRetryInfo.delayMs)}ms delay, status ${session.metadata.apiRetryInfo.status}`
+            : `${session.metadata.apiRetryCount} API retries`
+        }>
+          <IconWarning size={10} /> {session.metadata.apiRetryCount}
+        </span>
+      )}
+      {session.metadata.stallCount > 0 && session.state === "thinking" && (
+        <span className="status-item status-stall" title={`Stream stalled ${session.metadata.stallCount} times, total ${Math.round(session.metadata.stallDurationMs / 1000)}s`}>
+          <span className="status-stall-dot" />
         </span>
       )}
       {session.config.maxBudget && (
@@ -124,6 +145,16 @@ function SessionStatus({ session }: { session: Session }) {
       {session.config.dangerouslySkipPermissions && (
         <span className="status-item status-dangerous" title="Dangerous mode — all permissions skipped">
           <IconWarning size={12} />
+        </span>
+      )}
+      {session.metadata.hookStatus && (
+        <span className="status-item status-dynamic" title="Hook executing">
+          {session.metadata.hookStatus}
+        </span>
+      )}
+      {!session.metadata.hookStatus && session.metadata.activeSubprocess && (
+        <span className="status-item status-dynamic" title="Subprocess running" style={{ opacity: 0.6 }}>
+          {session.metadata.activeSubprocess}
         </span>
       )}
     </div>
@@ -174,7 +205,7 @@ export function StatusBar() {
   }, [sessions]);
 
   const aliveSessions = sessions.filter((s) => s.state !== "dead");
-  const activeSessions = aliveSessions.filter((s) => s.state !== "idle").length;
+  const activeSessions = aliveSessions.filter((s) => !isSessionIdle(s.state)).length;
   const totalTokens = aliveSessions.reduce(
     (sum, s) => sum + s.metadata.inputTokens + s.metadata.outputTokens, 0
   );

@@ -2,6 +2,7 @@
 name: tester
 description: Runs tests and type checks, reports coverage gaps with suggested tests. Use after code changes.
 tools: Read, Glob, Grep, Bash
+model: sonnet
 hooks:
   Stop:
     - matcher: ""

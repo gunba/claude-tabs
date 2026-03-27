@@ -23,10 +23,13 @@ export class TapSubagentTracker {
   private subagentMsgs = new Map<string, SubagentMessage[]>(); // agentId → messages
   private agentStates = new Map<string, SessionState>();
   private lastActiveAgent: string | null = null;
-  private chainToAgent = new Map<string, string>(); // queryChainId → agentId
 
   constructor(parentSessionId: string) {
     this.parentSessionId = parentSessionId;
+  }
+
+  private isActive(state: SessionState | undefined): boolean {
+    return !!state && state !== "idle" && state !== "dead" && state !== "interrupted";
   }
 
   /** Process an event. Returns actions to apply to the store, or empty array. */
@@ -34,13 +37,6 @@ export class TapSubagentTracker {
     const actions: SubagentAction[] = [];
 
     switch (event.kind) {
-      case "ToolCallStart":
-        // Agent tool_use → pending spawn
-        if (event.toolName === "Agent") {
-          // Description comes from the next SubagentSpawn event
-        }
-        break;
-
       case "SubagentSpawn":
         // Agent tool input with description + prompt → queue description
         this.pendingDescs.push(event.description);
@@ -96,11 +92,6 @@ export class TapSubagentTracker {
           }
         }
 
-        if (event.messageType === "user") {
-          // Tool results from subagent's tool executions
-          // Already handled by ConversationMessage extraction
-        }
-
         // Derive state from stopReason
         let state: SessionState = "thinking";
         if (event.messageType === "assistant") {
@@ -140,26 +131,24 @@ export class TapSubagentTracker {
           const prev = this.subagentTokens.get(agentId) || 0;
           const newTotal = prev + event.inputTokens + event.outputTokens;
           this.subagentTokens.set(agentId, newTotal);
-          actions.push({
-            type: "update",
-            subagentId: agentId,
-            updates: { tokenCount: newTotal },
-          });
+          const updates: Partial<Subagent> = { tokenCount: newTotal };
+          if (event.model) updates.model = event.model;
+          actions.push({ type: "update", subagentId: agentId, updates });
         }
         break;
 
       case "SubagentNotification": {
+        // Mark ALL active subagents — notification doesn't identify which specific agent
         const targetState: SessionState = event.status === "killed" ? "dead" : "idle";
         for (const agentId of this.knownIds) {
           const currentState = this.agentStates.get(agentId);
-          if (currentState && currentState !== "idle" && currentState !== "dead") {
+          if (this.isActive(currentState)) {
             this.agentStates.set(agentId, targetState);
             actions.push({
               type: "update",
               subagentId: agentId,
               updates: { state: targetState },
             });
-            break;
           }
         }
         break;
@@ -168,13 +157,55 @@ export class TapSubagentTracker {
       case "UserInterruption":
         // Interrupt all active subagents
         for (const agentId of this.knownIds) {
+          const currentState = this.agentStates.get(agentId);
+          if (this.isActive(currentState)) {
+            this.agentStates.set(agentId, "interrupted");
+            actions.push({
+              type: "update",
+              subagentId: agentId,
+              updates: { state: "interrupted" as SessionState },
+            });
+          }
+        }
+        break;
+
+      case "SubagentLifecycle": {
+        // Enrich subagent data from lifecycle telemetry
+        // Find the target agent — use lastActiveAgent since lifecycle events don't carry agentId
+        const targetId = this.lastActiveAgent;
+        if (!targetId || !this.knownIds.has(targetId)) break;
+
+        if (event.variant === "start") {
           actions.push({
             type: "update",
-            subagentId: agentId,
-            updates: { state: "idle" as SessionState },
+            subagentId: targetId,
+            updates: {
+              agentType: event.agentType || undefined,
+              isAsync: event.isAsync ?? undefined,
+              model: event.model || undefined,
+            },
+          });
+        } else if (event.variant === "end") {
+          this.agentStates.set(targetId, "idle");
+          actions.push({
+            type: "update",
+            subagentId: targetId,
+            updates: {
+              state: "idle" as SessionState,
+              totalToolUses: event.totalToolUses ?? undefined,
+              durationMs: event.durationMs ?? undefined,
+            },
+          });
+        } else if (event.variant === "killed") {
+          this.agentStates.set(targetId, "dead");
+          actions.push({
+            type: "update",
+            subagentId: targetId,
+            updates: { state: "dead" as SessionState },
           });
         }
         break;
+      }
 
       default:
         break;
@@ -191,6 +222,5 @@ export class TapSubagentTracker {
     this.subagentMsgs.clear();
     this.agentStates.clear();
     this.lastActiveAgent = null;
-    this.chainToAgent.clear();
   }
 }

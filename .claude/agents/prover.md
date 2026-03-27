@@ -2,6 +2,7 @@
 name: prover
 description: Proves tagged documentation entries against the codebase. Use during /j maintenance.
 tools: Read, Write, Edit, Glob, Grep, Bash
+model: sonnet
 hooks:
   PreToolUse:
     - matcher: "Read"

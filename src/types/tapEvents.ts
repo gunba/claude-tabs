@@ -222,7 +222,7 @@ export interface ApiRequestInfo extends TapEventBase {
 
 export interface AccountInfo extends TapEventBase {
   kind: "AccountInfo";
-  subscriptionType: string;
+  subscriptionType: string | null;
   rateLimitTier: string;
   billingType: string;
   displayName: string;
@@ -238,6 +238,97 @@ export interface TurnDuration extends TapEventBase {
   kind: "TurnDuration";
   durationMs: number;
   messageCount: number;
+}
+
+// ── TAP pipeline expansion events ──
+
+export interface ApiStreamError extends TapEventBase {
+  kind: "ApiStreamError";
+  type: string;
+  message: string;
+  status: number | null;
+}
+
+export interface ToolResult extends TapEventBase {
+  kind: "ToolResult";
+  toolName: string;
+  durationMs: number;
+  toolResultSizeBytes: number;
+  error: string | null;
+}
+
+export interface ApiError extends TapEventBase {
+  kind: "ApiError";
+  status: number;
+  message: string;
+  retryAttempt: number | null;
+  retryInMs: number | null;
+}
+
+export interface ApiRetry extends TapEventBase {
+  kind: "ApiRetry";
+  attempt: number;
+  delayMs: number;
+  status: number;
+}
+
+export interface StreamStall extends TapEventBase {
+  kind: "StreamStall";
+  stallDurationMs: number;
+  stallCount: number;
+  totalStallTimeMs: number;
+}
+
+export interface LinesChanged extends TapEventBase {
+  kind: "LinesChanged";
+  linesAdded: number;
+  linesRemoved: number;
+}
+
+export interface ContextBudget extends TapEventBase {
+  kind: "ContextBudget";
+  claudeMdSize: number;
+  totalContextSize: number;
+  mcpToolsCount: number;
+  mcpToolsTokens: number;
+  nonMcpToolsCount: number;
+  nonMcpToolsTokens: number;
+  projectFileCount: number;
+}
+
+export interface SubagentLifecycle extends TapEventBase {
+  kind: "SubagentLifecycle";
+  variant: "start" | "end" | "killed";
+  agentType: string | null;
+  isAsync: boolean | null;
+  model: string | null;
+  totalTokens: number | null;
+  totalToolUses: number | null;
+  durationMs: number | null;
+  reason: string | null;
+}
+
+export interface PlanModeEvent extends TapEventBase {
+  kind: "PlanModeEvent";
+  planLengthChars: number;
+  outcome: string;
+}
+
+export interface WorktreeState extends TapEventBase {
+  kind: "WorktreeState";
+  originalCwd: string;
+  worktreePath: string;
+  worktreeName: string;
+  worktreeBranch: string;
+}
+
+export interface HookTelemetry extends TapEventBase {
+  kind: "HookTelemetry";
+  hookName: string;
+  totalDurationMs: number;
+  numCommands: number;
+  numSuccess: number;
+  numErrors: number;
 }
 
 // ── Discriminated union ──
@@ -278,4 +369,16 @@ export type TapEvent =
   | SubprocessSpawn
   // Classified metadata
   | FileHistorySnapshot
-  | TurnDuration;
+  | TurnDuration
+  // TAP pipeline expansion
+  | ApiStreamError
+  | ToolResult
+  | ApiError
+  | ApiRetry
+  | StreamStall
+  | LinesChanged
+  | ContextBudget
+  | SubagentLifecycle
+  | PlanModeEvent
+  | WorktreeState
+  | HookTelemetry;

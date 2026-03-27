@@ -103,7 +103,7 @@ export function useTapEventProcessor(
 
       if (event.kind === "CustomTitle") {
         const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-        if (session && event.title !== session.name) {
+        if (session && event.title !== session.name && !session.userRenamed) {
           useSessionStore.getState().renameSession(sid, event.title);
         }
       }
@@ -147,6 +147,10 @@ export function useTapEventProcessor(
       }
       if (event.kind === "SessionRegistration" && event.cwd) {
         updateCwdIfChanged(event.cwd);
+      }
+      // WorktreeState: authoritative worktree path from CLI
+      if (event.kind === "WorktreeState" && event.worktreePath) {
+        updateCwdIfChanged(event.worktreePath);
       }
     };
 

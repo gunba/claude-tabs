@@ -74,7 +74,7 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const isActive = subagent.state !== "dead" && subagent.state !== "idle";
+  const isActive = subagent.state !== "dead" && subagent.state !== "idle" && subagent.state !== "interrupted";
   const lastToolIndex = isActive
     ? subagent.messages.reduce((acc, m, idx) => m.role === "tool" ? idx : acc, -1)
     : -1;
@@ -82,9 +82,17 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
   return (
     <div className="inspector-overlay">
       <div className="inspector-header">
-        <span className="inspector-header-desc">{subagent.description}</span>
+        <span className="inspector-header-desc">
+          {subagent.agentType && <span className="inspector-agent-type">{subagent.agentType}</span>}
+          {subagent.isAsync && <span className="inspector-async-badge">async</span>}
+          {subagent.description}
+        </span>
         <span className="inspector-header-meta">
-          {subagent.state} · {formatTokenCount(subagent.tokenCount)}
+          {subagent.state}
+          {subagent.model && ` · ${subagent.model.replace(/^claude-/, "").split("-")[0]}`}
+          {subagent.totalToolUses != null && ` · ${subagent.totalToolUses} tools`}
+          {subagent.durationMs != null && ` · ${Math.round(subagent.durationMs / 1000)}s`}
+          {" · "}{formatTokenCount(subagent.tokenCount)}
         </span>
         <button className="inspector-header-close" onClick={onClose}>×</button>
       </div>

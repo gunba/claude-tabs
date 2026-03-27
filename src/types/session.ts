@@ -6,7 +6,13 @@ export type SessionState =
   | "actionNeeded"
   | "waitingPermission"
   | "error"
+  | "interrupted"
   | "dead";
+
+/** True if the session is idle or interrupted (functionally awaiting input). */
+export function isSessionIdle(state: SessionState): boolean {
+  return state === "idle" || state === "interrupted";
+}
 
 export type PermissionMode =
   | "default"
@@ -67,6 +73,40 @@ export interface SessionMetadata {
   filesTouched: string[];
   rateLimitRemaining: string | null;
   rateLimitReset: string | null;
+  // TAP pipeline expansion
+  linesAdded: number;
+  linesRemoved: number;
+  lastToolDurationMs: number | null;
+  lastToolResultSize: number | null;
+  lastToolError: string | null;
+  apiRetryCount: number;
+  apiErrorStatus: number | null;
+  apiRetryInfo: { attempt: number; delayMs: number; status: number } | null;
+  stallDurationMs: number;
+  stallCount: number;
+  contextBudget: {
+    claudeMdSize: number;
+    totalContextSize: number;
+    mcpToolsCount: number;
+    mcpToolsTokens: number;
+    nonMcpToolsCount: number;
+    nonMcpToolsTokens: number;
+    projectFileCount: number;
+  } | null;
+  hookTelemetry: {
+    hookName: string;
+    numCommands: number;
+    numSuccess: number;
+    numErrors: number;
+    durationMs: number;
+  } | null;
+  planOutcome: string | null;
+  worktreeInfo: {
+    originalCwd: string;
+    worktreePath: string;
+    worktreeName: string;
+    worktreeBranch: string;
+  } | null;
 }
 
 export interface Session {
@@ -77,6 +117,7 @@ export interface Session {
   metadata: SessionMetadata;
   createdAt: string;
   lastActive: string;
+  userRenamed?: boolean;
   isMetaAgent?: boolean;
 }
 
@@ -101,6 +142,11 @@ export interface Subagent {
   tokenCount: number;
   currentAction: string | null;
   messages: SubagentMessage[];
+  agentType?: string;
+  isAsync?: boolean;
+  totalToolUses?: number;
+  durationMs?: number;
+  model?: string;
 }
 
 export interface PastSession {

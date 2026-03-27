@@ -41,11 +41,32 @@ export class TapMetadataAccumulator {
   // Rate limits
   private rateLimitRemaining: string | null = null;
   private rateLimitReset: string | null = null;
+  // Dedup: skip consecutive identical ApiTelemetry (stringify can serialize the same object multiple times)
+  private lastTelemetryKey = "";
+  // TAP pipeline expansion
+  private linesAdded = 0;
+  private linesRemoved = 0;
+  private lastToolDurationMs: number | null = null;
+  private lastToolResultSize: number | null = null;
+  private lastToolError: string | null = null;
+  private apiRetryCount = 0;
+  private apiErrorStatus: number | null = null;
+  private apiRetryInfo: SessionMetadata["apiRetryInfo"] = null;
+  private stallDurationMs = 0;
+  private stallCount = 0;
+  private contextBudget: SessionMetadata["contextBudget"] = null;
+  private hookTelemetry: SessionMetadata["hookTelemetry"] = null;
+  private planOutcome: string | null = null;
+  private worktreeInfo: SessionMetadata["worktreeInfo"] = null;
 
   /** Process an event and return a metadata diff, or null if unchanged. */
   process(event: TapEvent): Partial<SessionMetadata> | null {
     switch (event.kind) {
-      case "ApiTelemetry":
+      case "ApiTelemetry": {
+        // Deduplicate: Claude Code may stringify the same telemetry object multiple times
+        const telKey = `${event.costUSD}:${event.inputTokens}:${event.outputTokens}:${event.cachedInputTokens}`;
+        if (telKey === this.lastTelemetryKey) break;
+        this.lastTelemetryKey = telKey;
         this.costUsd += event.costUSD;
         this.inputTokens += event.inputTokens + event.cachedInputTokens;
         this.outputTokens += event.outputTokens;
@@ -54,14 +75,21 @@ export class TapMetadataAccumulator {
         // Fallback: if no TurnDuration ever fires, durationSecs stays 0 — acceptable.
         this.lastTurnCostUsd = event.costUSD;
         this.lastTurnTtftMs = event.ttftMs;
-        if (event.model) this.runtimeModel = event.model;
+        if (event.model && event.queryDepth === 0) this.runtimeModel = event.model;
         break;
+      }
 
       case "TurnStart":
         if (event.model) this.runtimeModel = event.model;
         this.lastCacheRead = event.cacheRead;
         this.hookStatus = null;
         this.activeSubprocess = null;
+        this.lastToolDurationMs = null;
+        this.lastToolResultSize = null;
+        this.lastToolError = null;
+        this.apiErrorStatus = null;
+        this.apiRetryInfo = null;
+        this.hookTelemetry = null;
         break;
 
       case "ToolCallStart":
@@ -83,16 +111,6 @@ export class TapMetadataAccumulator {
       }
 
       case "UserInput":
-        if (!this.nodeSummary) {
-          this.nodeSummary = event.display.slice(0, 200);
-        }
-        this.currentToolName = null;
-        this.currentAction = null;
-        this.choiceHint = false;
-        this.hookStatus = null;
-        this.activeSubprocess = null;
-        break;
-
       case "SlashCommand":
         if (!this.nodeSummary) {
           this.nodeSummary = event.display.slice(0, 200);
@@ -102,6 +120,12 @@ export class TapMetadataAccumulator {
         this.choiceHint = false;
         this.hookStatus = null;
         this.activeSubprocess = null;
+        this.lastToolDurationMs = null;
+        this.lastToolResultSize = null;
+        this.lastToolError = null;
+        this.apiErrorStatus = null;
+        this.apiRetryInfo = null;
+        this.planOutcome = null;
         break;
 
       case "ConversationMessage":
@@ -201,6 +225,72 @@ export class TapMetadataAccumulator {
         this.durationMs += event.durationMs;
         break;
 
+      case "ToolResult":
+        this.lastToolDurationMs = event.durationMs;
+        this.lastToolResultSize = event.toolResultSizeBytes;
+        this.lastToolError = event.error;
+        break;
+
+      case "LinesChanged":
+        this.linesAdded += event.linesAdded;
+        this.linesRemoved += event.linesRemoved;
+        break;
+
+      case "ApiStreamError":
+      case "ApiError":
+        this.apiErrorStatus = event.status;
+        break;
+
+      case "ApiRetry":
+        this.apiRetryCount++;
+        this.apiRetryInfo = {
+          attempt: event.attempt,
+          delayMs: event.delayMs,
+          status: event.status,
+        };
+        break;
+
+      case "StreamStall":
+        this.stallDurationMs += event.stallDurationMs;
+        this.stallCount++;
+        break;
+
+      case "ContextBudget":
+        this.contextBudget = {
+          claudeMdSize: event.claudeMdSize,
+          totalContextSize: event.totalContextSize,
+          mcpToolsCount: event.mcpToolsCount,
+          mcpToolsTokens: event.mcpToolsTokens,
+          nonMcpToolsCount: event.nonMcpToolsCount,
+          nonMcpToolsTokens: event.nonMcpToolsTokens,
+          projectFileCount: event.projectFileCount,
+        };
+        break;
+
+      case "HookTelemetry":
+        this.hookTelemetry = {
+          hookName: event.hookName,
+          numCommands: event.numCommands,
+          numSuccess: event.numSuccess,
+          numErrors: event.numErrors,
+          durationMs: event.totalDurationMs,
+        };
+        this.hookStatus = `${event.hookName}: ${event.numSuccess}/${event.numCommands} (${event.totalDurationMs}ms)`;
+        break;
+
+      case "PlanModeEvent":
+        this.planOutcome = event.outcome;
+        break;
+
+      case "WorktreeState":
+        this.worktreeInfo = {
+          originalCwd: event.originalCwd,
+          worktreePath: event.worktreePath,
+          worktreeName: event.worktreeName,
+          worktreeBranch: event.worktreeBranch,
+        };
+        break;
+
       default:
         return null;
     }
@@ -238,6 +328,20 @@ export class TapMetadataAccumulator {
       filesTouched: [...this.filesTouched],
       rateLimitRemaining: this.rateLimitRemaining,
       rateLimitReset: this.rateLimitReset,
+      linesAdded: this.linesAdded,
+      linesRemoved: this.linesRemoved,
+      lastToolDurationMs: this.lastToolDurationMs,
+      lastToolResultSize: this.lastToolResultSize,
+      lastToolError: this.lastToolError,
+      apiRetryCount: this.apiRetryCount,
+      apiErrorStatus: this.apiErrorStatus,
+      apiRetryInfo: this.apiRetryInfo,
+      stallDurationMs: this.stallDurationMs,
+      stallCount: this.stallCount,
+      contextBudget: this.contextBudget,
+      hookTelemetry: this.hookTelemetry,
+      planOutcome: this.planOutcome,
+      worktreeInfo: this.worktreeInfo,
       ...(this.nodeSummary ? { nodeSummary: this.nodeSummary } : {}),
     };
 
@@ -274,5 +378,20 @@ export class TapMetadataAccumulator {
     this.filesTouched.clear();
     this.rateLimitRemaining = null;
     this.rateLimitReset = null;
+    this.lastTelemetryKey = "";
+    this.linesAdded = 0;
+    this.linesRemoved = 0;
+    this.lastToolDurationMs = null;
+    this.lastToolResultSize = null;
+    this.lastToolError = null;
+    this.apiRetryCount = 0;
+    this.apiErrorStatus = null;
+    this.apiRetryInfo = null;
+    this.stallDurationMs = 0;
+    this.stallCount = 0;
+    this.contextBudget = null;
+    this.hookTelemetry = null;
+    this.planOutcome = null;
+    this.worktreeInfo = null;
   }
 }

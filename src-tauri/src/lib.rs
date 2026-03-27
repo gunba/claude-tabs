@@ -2,6 +2,7 @@ mod commands;
 mod jsonl_watcher;
 mod path_utils;
 mod session;
+mod tap_server;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -10,6 +11,7 @@ use tauri::Manager;
 
 use jsonl_watcher::WatcherState;
 use session::SessionManager;
+use tap_server::TapServerState;
 
 /// OS PIDs of active PTY child processes, registered by the frontend.
 /// Killed on app exit to prevent orphaned Claude Code CLI processes.
@@ -128,6 +130,7 @@ pub fn run() {
         .manage(SessionManager::new())
         .manage(ActivePids(Mutex::new(HashSet::new())))
         .manage(Arc::new(Mutex::new(WatcherState::new())))
+        .manage(Arc::new(Mutex::new(TapServerState::new())))
         .invoke_handler(tauri::generate_handler![
             commands::create_session,
             commands::close_session,
@@ -191,11 +194,18 @@ pub fn run() {
             commands::git_repo_check,
             commands::git_status,
             commands::git_diff_file,
+            tap_server::start_tap_server,
+            tap_server::stop_tap_server,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Claude Tabs")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
+                // Stop all TCP tap server threads
+                let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
+                if let Ok(mut s) = tap_state.lock() {
+                    s.stop_all();
+                }
                 // Kill all active PTY process trees to prevent orphaned CLI processes
                 let active = app_handle.state::<ActivePids>();
                 let pids: Vec<u32> = active.0.lock().unwrap().drain().collect();

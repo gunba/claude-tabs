@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { INSTALL_TAPS, tapToggleExpr, tapToggleAllExpr } from "../lib/inspectorHooks";
 import type { TapCategory } from "../lib/inspectorHooks";
 import { classifyTapEntry } from "../lib/tapClassifier";
@@ -10,28 +11,27 @@ import type { TapEntry } from "../types/tapEvents";
 const FLUSH_INTERVAL_MS = 2000;
 const FLUSH_THRESHOLD = 50;
 
-const ALL_CATEGORIES: TapCategory[] = ["parse", "stringify", "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr", "require", "bun"];
+const ALL_CATEGORIES: TapCategory[] = ["parse", "stringify", "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr", "require", "bun", "websocket", "net", "stream"];
 
 interface TapPipelineOptions {
   sessionId: string | null;
   wsSend: (method: string, params?: Record<string, unknown>) => number;
-  registerExternalHandler: (handler: ((msg: Record<string, unknown>) => void) | null) => void;
   connected: boolean;
   categories: Set<string>; // empty = recording disabled (but core parse+stringify still run for state)
 }
 
 /**
- * Manages the tap pipeline: install hooks, receive events via Console.messageAdded,
+ * Manages the tap pipeline: install hooks via inspector WebSocket,
+ * receive events via dedicated TCP channel (Tauri events),
  * classify into typed events, dispatch to tapEventBus, and buffer for disk recording.
  *
  * Core categories (parse, stringify) are always on for state detection.
  * Optional categories are toggled by the user for disk recording.
- * No polling — events arrive via Console.messageAdded push.
+ * Events arrive via per-session Tauri events from the Rust TCP tap server.
  */
 export function useTapPipeline({
   sessionId,
   wsSend,
-  registerExternalHandler,
   connected,
   categories,
 }: TapPipelineOptions): void {
@@ -73,75 +73,43 @@ export function useTapPipeline({
     }
   }, []);
 
-  // Handle WebSocket messages — detect Console.messageAdded with TAP prefix
-  const handleMessage = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (msg: Record<string, any>) => {
-      // Console.messageAdded push events carry tap entries
-      if (msg.method === "Console.messageAdded") {
-        const text = msg.params?.message?.text;
-        if (typeof text === "string" && text.startsWith("\x00TAP")) {
-          try {
-            const entry = JSON.parse(text.slice(4)) as TapEntry;
-
-            // 1. Classify → dispatch (always, drives state)
-            const event = classifyTapEntry(entry);
-            if (event && sessionIdRef.current) {
-              tapEventBus.dispatch(sessionIdRef.current, event);
-            }
-
-            // 2. Buffer for disk (only if recording enabled for this category)
-            const cat = entry.cat;
-            const cats = prevCatsRef.current;
-            // Core categories always record if any recording is active
-            // Optional categories record only if enabled
-            if (cats.size > 0) {
-              const isCoreCat = cat === "parse" || cat === "stringify";
-              if (isCoreCat || cats.has(cat)) {
-                pendingRef.current.push(entry);
-                if (pendingRef.current.length >= FLUSH_THRESHOLD) {
-                  flush();
-                }
-              }
-            }
-          } catch {
-            // Invalid TAP JSON — skip
-          }
-        }
-        return;
-      }
-
-      // Legacy: handle poll-style results for backward compatibility during transition
-      // This can be removed once POLL_TAPS is fully eliminated
-      const val = msg.result?.result?.value;
-      if (val && typeof val === "object" && Array.isArray(val.entries)) {
-        const entries = val.entries as TapEntry[];
-        for (const entry of entries) {
-          const event = classifyTapEntry(entry);
-          if (event && sessionIdRef.current) {
-            tapEventBus.dispatch(sessionIdRef.current, event);
-          }
-          if (prevCatsRef.current.size > 0) {
-            pendingRef.current.push(entry);
-          }
-        }
-        if (pendingRef.current.length >= FLUSH_THRESHOLD) {
-          flush();
-        }
-      }
-    },
-    [flush],
-  );
-
-  // Register/unregister external handler — always active when connected
+  // Listen for tap events from the Rust TCP server via session-scoped Tauri events
   useEffect(() => {
-    if (connected) {
-      registerExternalHandler(handleMessage);
-    }
+    if (!sessionId) return;
+    const sid = sessionId;
+
+    const unlisten = listen<string>(`tap-entry-${sid}`, (event) => {
+      const line = event.payload;
+      try {
+        const entry = JSON.parse(line) as TapEntry;
+
+        // 1. Classify → dispatch (always, drives state)
+        const classified = classifyTapEntry(entry);
+        if (classified && sessionIdRef.current) {
+          tapEventBus.dispatch(sessionIdRef.current, classified);
+        }
+
+        // 2. Buffer for disk (only if recording enabled for this category)
+        const cat = entry.cat;
+        const cats = prevCatsRef.current;
+        if (cats.size > 0) {
+          const isCoreCat = cat === "parse" || cat === "stringify";
+          if (isCoreCat || cats.has(cat)) {
+            pendingRef.current.push(entry);
+            if (pendingRef.current.length >= FLUSH_THRESHOLD) {
+              flush();
+            }
+          }
+        }
+      } catch {
+        // Invalid JSON line — skip
+      }
+    });
+
     return () => {
-      registerExternalHandler(null);
+      unlisten.then((fn) => fn());
     };
-  }, [connected, registerExternalHandler, handleMessage]);
+  }, [sessionId, flush]);
 
   // Install taps on first connect + sync category flags
   useEffect(() => {
@@ -154,6 +122,16 @@ export function useTapPipeline({
       wsSend("Runtime.evaluate", { expression: INSTALL_TAPS, returnByValue: true });
       tapsInstalledRef.current = true;
       dlog("tap", sessionId, "taps installed (parse+stringify always-on)");
+
+      // Diagnostic: check TCP connection state after a short delay
+      const diagSid = sessionId;
+      setTimeout(() => {
+        const diagId = wsSend("Runtime.evaluate", {
+          expression: "JSON.stringify(globalThis.__tapDiag || 'no-diag')",
+          returnByValue: true,
+        });
+        dlog("tap", diagSid, `tap diag requested (msgId=${diagId})`, "DEBUG");
+      }, 2000);
     }
 
     // Toggle individual optional categories that changed
