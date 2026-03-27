@@ -203,7 +203,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     prevClaudeSessionIdRef.current = tapProcessor.claudeSessionId;
     // Clear terminal when session ID changes (context clear, plan approval, compaction)
     if (prev && prev !== tapProcessor.claudeSessionId) {
-      terminal.termRef.current?.clear();
+      bgBufferRef.current = [];
+      terminal.clearPending();
+      terminal.clear();
     }
     if (tapProcessor.claudeSessionId !== session.config.sessionId) {
       updateConfig(session.id, { sessionId: tapProcessor.claudeSessionId });

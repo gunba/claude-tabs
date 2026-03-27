@@ -86,7 +86,7 @@ User-facing behaviors. Code implementing a tagged entry is not dead code.
 - [TR-02] Per-session token badge: shown on the tab card (top-right, absolutely positioned, hidden on hover to make room for action buttons) showing session token count; tooltip shows input/output breakdown; hidden when dead or zero tokens
 - [TR-03] Ctrl+Home scrolls to top, Ctrl+End scrolls to bottom
 - [TR-05] Hidden tabs use CSS `display: none` — never unmount/remount xterm.js (destroys state)
-- [TR-06] Fixed 100K scrollback buffer — no dynamic resizing
+- [TR-06] Fixed 1M scrollback buffer — no dynamic resizing
 - [TR-07] Vertical button bar (28px): right-side column with scroll-to-top, scroll-to-last-message, queue input, and scroll-to-bottom. Conditionally rendered when visible and not dead; individual scroll buttons within use visibility toggling.
   - Files: src/components/Terminal/TerminalPanel.tsx:689
 - [TR-08] Scroll to last user message: uses xterm.js buffer markers registered on user Enter presses (not prompt scanning), accessible via button bar and Ctrl+middle-click on terminal (capture phase listener)
