@@ -425,13 +425,22 @@ export const INSTALL_TAPS = `(function() {
 
   // Suppress TAP output from reaching the terminal (stderr).
   // console.debug triggers Console.messageAdded over the BUN_INSPECT WebSocket (wanted)
-  // but also writes to stderr which floods the PTY (unwanted).
-  // Fix: intercept stderr.write and silently drop lines starting with \x00TAP.
+  // but also writes to stdout/stderr which floods the PTY (unwanted).
+  // Fix: intercept both stdout.write and stderr.write to silently drop TAP lines.
+  function isTapLine(chunk) {
+    if (typeof chunk === 'string') return chunk.charCodeAt(0) === 0 && chunk.indexOf('TAP{') === 1;
+    if (Buffer.isBuffer(chunk) && chunk.length > 4) return chunk[0] === 0 && chunk[1] === 84 && chunk[2] === 65 && chunk[3] === 80;
+    return false;
+  }
   try {
+    var origStdoutWriteForFilter = process.stdout.write;
+    process.stdout.write = function(chunk) {
+      if (isTapLine(chunk)) return true;
+      return origStdoutWriteForFilter.apply(process.stdout, arguments);
+    };
     var origStderrWriteForFilter = process.stderr.write;
     process.stderr.write = function(chunk) {
-      if (typeof chunk === 'string' && chunk.charCodeAt(0) === 0 && chunk.indexOf('TAP{') === 1) return true;
-      if (Buffer.isBuffer(chunk) && chunk.length > 4 && chunk[0] === 0 && chunk[1] === 84 && chunk[2] === 65 && chunk[3] === 80) return true;
+      if (isTapLine(chunk)) return true;
       return origStderrWriteForFilter.apply(process.stderr, arguments);
     };
   } catch(e) {}
