@@ -198,7 +198,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // Sync Claude's internal session ID into config for persistence (plan-mode forks, compaction)
   const prevClaudeSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!tapProcessor.claudeSessionId) return;
+    if (!tapProcessor.claudeSessionId) {
+      // Session reset (respawn/restart) — forget the previous ID so JSONL replay
+      // session registrations don't trigger a spurious terminal clear.
+      prevClaudeSessionIdRef.current = null;
+      return;
+    }
     const prev = prevClaudeSessionIdRef.current;
     prevClaudeSessionIdRef.current = tapProcessor.claudeSessionId;
     // Clear terminal when session ID changes (context clear, plan approval, compaction)
