@@ -245,11 +245,24 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           sessionInUseRef.current = true;
         }
       }
+      // Filter TAP lines from terminal display — they're consumed via
+      // BUN_INSPECT Console.messageAdded, not the PTY stream.
+      // Filtering here (frontend) instead of in process.stderr.write
+      // avoids killing the debugger protocol event that Bun derives from the write.
+      let filtered = data;
+      if (data.includes(0)) {
+        const text = new TextDecoder().decode(data);
+        if (text.includes("\x00TAP")) {
+          const cleaned = text.replace(/\x00TAP[^\n]*\n?/g, "");
+          if (cleaned.length === 0) return;
+          filtered = new TextEncoder().encode(cleaned);
+        }
+      }
       // Only write to xterm.js if the tab is visible; buffer otherwise
       if (visibleRef.current) {
-        terminalRef.current?.writeBytes(data);
+        terminalRef.current?.writeBytes(filtered);
       } else {
-        bgBufferRef.current.push(data);
+        bgBufferRef.current.push(filtered);
       }
     },
     []
