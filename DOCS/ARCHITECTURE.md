@@ -66,7 +66,7 @@ Technical implementation details. Code implementing a tagged entry is not dead c
 - [PT-03] `CLAUDECODE` env var must not leak into spawned PTYs
 - [PT-04] Kill button (`pty.kill()`) always fires exitCallback exactly once via `exitFired` guard — whether kill or natural exit completes first
 - [PT-05] Tab action buttons (edit/kill/close) suppress focus outline on mouse click via `:focus:not(:focus-visible)`, preserving keyboard accessibility
-- [PT-06] Fixed 100K scrollback buffer in `useTerminal` — no dynamic resizing
+- [PT-06] Fixed 1M scrollback buffer in `useTerminal` — no dynamic resizing
 - [PT-07] OS PID registered in global cleanup registry (`ptyProcess.ts`) immediately on PTY spawn; unregistered on explicit kill. Dual-layer: frontend fires `kill_process_tree` on `beforeunload`, Rust `ActivePids` state kills on `RunEvent::Exit` as backstop
   - Files: src/lib/ptyProcess.ts:9, src-tauri/src/lib.rs:16
 - [PT-08] Scroll desync fix: xterm-viewport uses overflow-y:scroll with hidden scrollbar (scrollbar-width:none + ::-webkit-scrollbar) instead of overflow:hidden. isAtBottom/wasAtBottom use 2-line tolerance for near-bottom snap.

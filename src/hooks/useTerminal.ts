@@ -41,7 +41,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       fontFamily: "'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace",
       theme: getXtermTheme(),
       allowProposedApi: true,
-      scrollback: 100000,
+      scrollback: 1_000_000,
     });
 
     const fit = new FitAddon();
