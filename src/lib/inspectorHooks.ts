@@ -423,6 +423,19 @@ export const INSTALL_TAPS = `(function() {
   var origStringify = JSON.stringify;
   var origParse = JSON.parse;
 
+  // Suppress TAP output from reaching the terminal (stderr).
+  // console.debug triggers Console.messageAdded over the BUN_INSPECT WebSocket (wanted)
+  // but also writes to stderr which floods the PTY (unwanted).
+  // Fix: intercept stderr.write and silently drop lines starting with \x00TAP.
+  try {
+    var origStderrWriteForFilter = process.stderr.write;
+    process.stderr.write = function(chunk) {
+      if (typeof chunk === 'string' && chunk.charCodeAt(0) === 0 && chunk.indexOf('TAP{') === 1) return true;
+      if (Buffer.isBuffer(chunk) && chunk.length > 4 && chunk[0] === 0 && chunk[1] === 84 && chunk[2] === 65 && chunk[3] === 80) return true;
+      return origStderrWriteForFilter.apply(process.stderr, arguments);
+    };
+  } catch(e) {}
+
   function push(cat, d) {
     d.ts = Date.now();
     d.cat = cat;
