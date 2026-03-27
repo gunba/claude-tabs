@@ -40,6 +40,14 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.7
 
+      - name: Verify sccache backend
+        run: |
+          if ! sccache --start-server 2>/dev/null && ! sccache rustc -vV 2>/dev/null; then
+            echo "::warning::sccache backend unavailable, falling back to direct compilation"
+            echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+            echo "SCCACHE_GHA_ENABLED=" >> "$GITHUB_ENV"
+          fi
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
