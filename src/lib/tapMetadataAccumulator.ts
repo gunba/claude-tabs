@@ -18,8 +18,6 @@ export class TapMetadataAccumulator {
   private lastFingerprint = "";
   // Context tracking
   private lastCacheRead = 0;
-  // Duration tracking (wall-clock from TurnDuration, fallback to API time)
-  private durationMs = 0;
   // API region + request ID
   private apiRegion: string | null = null;
   private lastRequestId: string | null = null;
@@ -220,13 +218,6 @@ export class TapMetadataAccumulator {
         }
         break;
 
-      // Turn duration (wall-clock) → replace API-only duration
-      case "TurnDuration":
-        // TurnDuration gives wall-clock time (includes tool exec, permission waits)
-        // More accurate than summing ApiTelemetry.durationMs
-        this.durationMs += event.durationMs;
-        break;
-
       case "ToolResult":
         this.lastToolDurationMs = event.durationMs;
         this.lastToolResultSize = event.toolResultSizeBytes;
@@ -319,7 +310,6 @@ export class TapMetadataAccumulator {
     const metadata: Partial<SessionMetadata> = {
       costUsd: this.costUsd,
       contextPercent,
-      durationSecs: Math.floor(this.durationMs / 1000),
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
       currentAction: this.currentAction,
@@ -377,7 +367,6 @@ export class TapMetadataAccumulator {
     this.choiceHint = false;
     this.lastFingerprint = "";
     this.lastCacheRead = 0;
-    this.durationMs = 0;
     this.apiRegion = null;
     this.lastRequestId = null;
     this.systemPromptLength = 0;

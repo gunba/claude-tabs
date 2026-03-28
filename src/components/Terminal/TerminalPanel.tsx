@@ -107,7 +107,7 @@ function DeadOverlay({ session, triggerRespawnRef, closeSession }: DeadOverlayPr
 
 const ACTIVE_STATES = new Set<SessionState>(["thinking", "toolUse", "actionNeeded", "waitingPermission", "error"]);
 
-function useDurationTimer(sessionId: string, state: SessionState): void {
+function useDurationTimer(sessionId: string, state: SessionState, respawnCounter: number): void {
   const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const accumulatedRef = useRef(0);
   const lastTickRef = useRef(Date.now());
@@ -115,6 +115,12 @@ function useDurationTimer(sessionId: string, state: SessionState): void {
 
   // Track state changes so we know when we transition active↔idle
   lastStateRef.current = state;
+
+  // Reset on respawn so the timer starts from 0 for the new session
+  useEffect(() => {
+    accumulatedRef.current = 0;
+    lastTickRef.current = Date.now();
+  }, [respawnCounter]);
 
   useEffect(() => {
     if (state === "dead") return;
@@ -225,7 +231,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   }, [inspector.connected, session.id, session.config.sessionId]);
 
   // Duration timer
-  useDurationTimer(session.id, session.state);
+  useDurationTimer(session.id, session.state, respawnCounter);
 
   // Use a ref to break the circular dependency:
   // handlePtyData needs terminal, terminal needs handleTermData, which needs pty,
