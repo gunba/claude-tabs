@@ -7,7 +7,7 @@ export interface PaneComponentProps {
   onStatus: (msg: StatusMessage | null) => void;
 }
 
-export type TabId = "settings" | "claudemd" | "hooks" | "plugins" | "agents";
+export type TabId = "settings" | "claudemd" | "hooks" | "plugins" | "agents" | "skills";
 
 interface ThreePaneEditorProps {
   component: React.ComponentType<PaneComponentProps>;
@@ -33,6 +33,10 @@ export function scopePath(scope: PaneComponentProps["scope"], dir: string, tabId
       if (scope === "user") return "~/.claude/agents/";
       if (scope === "project") return `${d}/.claude/agents/`;
       return `${d}/.claude/local/agents/`;
+    case "skills":
+      if (scope === "user") return "~/.claude/commands/";
+      if (scope === "project") return `${d}/.claude/commands/`;
+      return `${d}/.claude/local/commands/`;
   }
 }
 

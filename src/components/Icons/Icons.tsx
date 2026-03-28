@@ -62,12 +62,12 @@ export function IconReturn(props: IconProps) {
   );
 }
 
-/** 6-tooth gear + center circle — config/settings */
+/** 6-tooth cogwheel + center circle — config/settings */
 export function IconGear(props: IconProps) {
   return (
     <Icon {...props}>
-      <circle cx="8" cy="8" r="2.5" />
-      <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M3.05 12.95l1.06-1.06M11.89 4.11l1.06-1.06" />
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M7 1.5h2l.4 1.5a5 5 0 011.5.9l1.4-.6 1 1.7-1.1 1a5 5 0 010 1.8l1.1 1-1 1.7-1.4-.6a5 5 0 01-1.5.9L9 14.5H7l-.4-1.5a5 5 0 01-1.5-.9l-1.4.6-1-1.7 1.1-1a5 5 0 010-1.8l-1.1-1 1-1.7 1.4.6a5 5 0 011.5-.9z" />
     </Icon>
   );
 }
@@ -259,6 +259,16 @@ export function IconGitBranch(props: IconProps) {
       <circle cx="5" cy="12" r="1.5" />
       <circle cx="11" cy="6" r="1.5" />
       <path d="M5 5.5v5M5 8c0-2 6-2 6-2" />
+    </Icon>
+  );
+}
+
+/** Forward slash in rounded rect — skills/slash commands */
+export function IconSkill(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="2" width="12" height="12" rx="2" />
+      <path d="M10 4L6 12" />
     </Icon>
   );
 }

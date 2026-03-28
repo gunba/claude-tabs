@@ -1739,13 +1739,13 @@ fn kill_orphan_sessions_sync(session_ids: &[String]) -> Result<u32, String> {
 
 // ── Config Manager commands ────────────────────────────────────────
 
-/// Validate an agent name — only alphanumeric, hyphens, underscores.
-fn validate_agent_name(name: &str) -> Result<(), String> {
+/// Validate a markdown file name — only alphanumeric, hyphens, underscores.
+fn validate_md_file_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
-        return Err("Agent name cannot be empty".into());
+        return Err("Name cannot be empty".into());
     }
     if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err(format!("Invalid agent name '{}': only alphanumeric, hyphens, underscores allowed", name));
+        return Err(format!("Invalid name '{}': only alphanumeric, hyphens, underscores allowed", name));
     }
     Ok(())
 }
@@ -1766,11 +1766,21 @@ fn resolve_config_path(scope: &str, working_dir: &str, file_type: &str) -> Resul
         "claudemd-dotclaude" => Ok(std::path::Path::new(working_dir).join(".claude").join("CLAUDE.md")),
         _ if file_type.starts_with("agent:") || file_type.starts_with("agent-delete:") => {
             let name = file_type.split_once(':').map(|(_, n)| n).unwrap_or("");
-            validate_agent_name(name)?;
+            validate_md_file_name(name)?;
             match scope {
                 "user" => Ok(home.join(".claude").join("agents").join(format!("{}.md", name))),
                 "project" => Ok(std::path::Path::new(working_dir).join(".claude").join("agents").join(format!("{}.md", name))),
                 "project-local" => Ok(std::path::Path::new(working_dir).join(".claude").join("local").join("agents").join(format!("{}.md", name))),
+                _ => Err("Invalid scope".into()),
+            }
+        },
+        _ if file_type.starts_with("skill:") || file_type.starts_with("skill-delete:") => {
+            let name = file_type.split_once(':').map(|(_, n)| n).unwrap_or("");
+            validate_md_file_name(name)?;
+            match scope {
+                "user" => Ok(home.join(".claude").join("commands").join(format!("{}.md", name))),
+                "project" => Ok(std::path::Path::new(working_dir).join(".claude").join("commands").join(format!("{}.md", name))),
+                "project-local" => Ok(std::path::Path::new(working_dir).join(".claude").join("local").join("commands").join(format!("{}.md", name))),
                 _ => Err("Invalid scope".into()),
             }
         },
@@ -1792,8 +1802,8 @@ pub fn read_config_file(scope: String, working_dir: String, file_type: String) -
 /// For settings files, validates JSON. For agent-delete, deletes the file.
 #[tauri::command]
 pub fn write_config_file(scope: String, working_dir: String, file_type: String, content: String) -> Result<(), String> {
-    // Handle agent deletion
-    if file_type.starts_with("agent-delete:") {
+    // Handle agent/skill deletion
+    if file_type.starts_with("agent-delete:") || file_type.starts_with("skill-delete:") {
         let path = resolve_config_path(&scope, &working_dir, &file_type)?;
         if path.exists() {
             std::fs::remove_file(&path).map_err(|e| format!("Failed to delete: {}", e))?;
@@ -1819,42 +1829,59 @@ pub fn write_config_file(scope: String, working_dir: String, file_type: String, 
     std::fs::write(&path, &content).map_err(|e| format!("Failed to write {}: {}", path.display(), e))
 }
 
+/// List .md files in a directory, returning sorted [{name, path}].
+fn list_md_in_dir(dir: &std::path::Path) -> Vec<serde_json::Value> {
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                let name = path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !name.is_empty() {
+                    files.push(serde_json::json!({
+                        "name": name,
+                        "path": path.to_string_lossy().to_string(),
+                    }));
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| {
+        a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+    });
+    files
+}
+
 /// List agent definition files based on scope.
 #[tauri::command]
 pub fn list_agents(scope: String, working_dir: String) -> Result<Vec<serde_json::Value>, String> {
     let home = dirs::home_dir().ok_or("No home dir")?;
-    let agents_dir = match scope.as_str() {
+    let dir = match scope.as_str() {
         "user" => home.join(".claude").join("agents"),
         "project" => std::path::Path::new(&working_dir).join(".claude").join("agents"),
         "project-local" => std::path::Path::new(&working_dir).join(".claude").join("local").join("agents"),
         _ => return Err("Invalid scope".into()),
     };
-    if !agents_dir.exists() {
-        return Ok(Vec::new());
-    }
+    Ok(list_md_in_dir(&dir))
+}
 
-    let mut agents = Vec::new();
-    let entries = std::fs::read_dir(&agents_dir).map_err(|e| e.to_string())?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("md") {
-            let name = path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            if !name.is_empty() {
-                agents.push(serde_json::json!({
-                    "name": name,
-                    "path": path.to_string_lossy().to_string(),
-                }));
-            }
-        }
-    }
-
-    agents.sort_by(|a, b| {
-        a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
-    });
-    Ok(agents)
+/// List skill/command definition files based on scope.
+#[tauri::command]
+pub fn list_skills(scope: String, working_dir: String) -> Result<Vec<serde_json::Value>, String> {
+    let home = dirs::home_dir().ok_or("No home dir")?;
+    let dir = match scope.as_str() {
+        "user" => home.join(".claude").join("commands"),
+        "project" => std::path::Path::new(&working_dir).join(".claude").join("commands"),
+        "project-local" => std::path::Path::new(&working_dir).join(".claude").join("local").join("commands"),
+        _ => return Err("Invalid scope".into()),
+    };
+    Ok(list_md_in_dir(&dir))
 }
 
 #[tauri::command]

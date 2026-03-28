@@ -855,9 +855,9 @@
   color: var(--error);
 }
 
-/* ── Agent editor (carried over) ─────────────────────── */
+/* ── Markdown file editor (agents, skills) ────────────── */
 
-.config-agents {
+.config-md-editor {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -866,7 +866,7 @@
   padding: 6px;
 }
 
-.config-agent-list {
+.config-md-editor-list {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -874,7 +874,7 @@
   flex-shrink: 0;
 }
 
-.config-agent-item {
+.config-md-editor-item {
   background: var(--bg-primary);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
@@ -883,37 +883,40 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.config-agent-item:hover {
+.config-md-editor-item:hover {
   border-color: var(--border);
   color: var(--text-primary);
 }
 
-.config-agent-item.active {
+.config-md-editor-item.active {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-bg);
 }
 
-.config-agent-new {
+.config-md-editor-new {
   font-style: italic;
   color: var(--text-muted);
   border-style: dashed;
 }
 
-.config-agent-new.active {
+.config-md-editor-new.active {
   border-style: solid;
 }
 
-.config-agent-name-input {
+.config-md-editor-name-input {
   font-size: 13px;
   font-weight: 600;
   flex: 1;
   min-width: 0;
 }
 
-.config-agent-editor {
+.config-md-editor-body {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -921,8 +924,7 @@
   gap: 6px;
 }
 
-
-.config-agent-header {
+.config-md-editor-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -930,18 +932,18 @@
   flex-shrink: 0;
 }
 
-.config-agent-actions {
+.config-md-editor-actions {
   display: flex;
   gap: 6px;
 }
 
-.config-agent-name {
+.config-md-editor-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.config-agent-delete {
+.config-md-editor-delete {
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
@@ -952,9 +954,19 @@
   transition: all 0.15s;
 }
 
-.config-agent-delete:hover {
+.config-md-editor-delete:hover {
   border-color: var(--error);
   color: var(--error);
+}
+
+.config-md-editor-usage {
+  font-size: 9px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 0 5px;
+  margin-left: auto;
+  line-height: 1.4;
 }
 
 
