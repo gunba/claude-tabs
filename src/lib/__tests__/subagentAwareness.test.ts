@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isSubagentActive, isSessionIdle } from "../../types/session";
+import { isSubagentActive } from "../../types/session";
 import type { SessionState, Subagent } from "../../types/session";
 import { getEffectiveState } from "../claude";
 import { TapSubagentTracker } from "../tapSubagentTracker";
