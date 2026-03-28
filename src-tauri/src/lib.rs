@@ -163,6 +163,7 @@ pub fn run() {
             commands::read_config_file,
             commands::write_config_file,
             commands::list_agents,
+            commands::list_skills,
             commands::register_active_pid,
             commands::unregister_active_pid,
             commands::kill_process_tree,

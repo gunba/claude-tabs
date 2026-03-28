@@ -44,4 +44,6 @@ export interface IpcCommands {
   append_tap_data: (args: { sessionId: string; lines: string }) => Promise<number>;
   open_tap_log: (args: { sessionId: string }) => Promise<void>;
   cleanup_tap_logs: (args: { maxAgeHours: number }) => Promise<number>;
+  list_agents: (args: { scope: string; workingDir: string }) => Promise<Array<{ name: string; path: string }>>;
+  list_skills: (args: { scope: string; workingDir: string }) => Promise<Array<{ name: string; path: string }>>;
 }

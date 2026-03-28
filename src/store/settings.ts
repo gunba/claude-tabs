@@ -48,6 +48,7 @@ interface SettingsState {
 
   commandUsage: Record<string, number>;
   commandBarExpanded: boolean;
+  commandRefreshTrigger: number;
   showConfigManager: string | false;
   sidePanel: "debug" | "diff" | null;
   replaceSessionId: string | null; // Session to close when launcher launches (Ctrl+Click relaunch)
@@ -76,6 +77,7 @@ interface SettingsState {
   setCommandBarExpanded: (expanded: boolean) => void;
   setSidePanel: (panel: "debug" | "diff" | null) => void;
   bootstrapCommandUsage: () => Promise<void>;
+  triggerCommandRefresh: () => void;
   setSessionName: (id: string, name: string) => void;
   cacheSessionConfig: (id: string, config: SessionConfig) => void;
   loadPastSessions: () => Promise<void>;
@@ -105,6 +107,7 @@ export const useSettingsStore = create<SettingsState>()(
       slashCommands: [],
       commandUsage: {},
       commandBarExpanded: false,
+      commandRefreshTrigger: 0,
       showConfigManager: false,
       sidePanel: null,
       replaceSessionId: null,
@@ -209,6 +212,8 @@ export const useSettingsStore = create<SettingsState>()(
           // scan failed — no problem, in-app counts still work
         }
       },
+      triggerCommandRefresh: () =>
+        set((s) => ({ commandRefreshTrigger: s.commandRefreshTrigger + 1 })),
       setReplaceSessionId: (id) => set({ replaceSessionId: id }),
       setSessionName: (id, name) =>
         set((s) => ({
