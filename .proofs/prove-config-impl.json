@@ -10,17 +10,17 @@
     "CI-01": {
       "up": 3,
       "down": 0,
-      "seen": 27
+      "seen": 29
     },
     "CI-02": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 29
     },
     "CI-03": {
       "up": 0,
       "down": 0,
-      "seen": 19
+      "seen": 21
     }
   },
   "cycle": 4,

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { trace, traceAsync } from "../lib/perfTrace";
-import { assignSessionColor, releaseSessionColor } from "../lib/claude";
+import { assignSessionColor, releaseSessionColor, findNearestLiveTab } from "../lib/claude";
 import { dlog } from "../lib/debugLog";
 import type {
   Session,
@@ -145,8 +145,8 @@ export const useSessionStore = create<SessionsState>((set) => ({
       if (s.activeTabId !== id) {
         activeTabId = s.activeTabId;
       } else {
-        // Prefer tab to the right (same index after removal), then left
-        activeTabId = sessions[closedIndex]?.id ?? sessions[closedIndex - 1]?.id ?? null;
+        // Prefer nearest live (non-dead) tab; falls back to dead if all are dead
+        activeTabId = findNearestLiveTab(sessions, closedIndex);
       }
       const subagents = new Map(s.subagents);
       subagents.delete(id);

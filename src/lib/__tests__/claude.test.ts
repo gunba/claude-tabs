@@ -15,6 +15,7 @@ import {
   getResumeId,
   effectiveModel,
   stripWorktreeFlags,
+  findNearestLiveTab,
 } from "../claude";
 import type { Session } from "../../types/session";
 import { DEFAULT_SESSION_CONFIG } from "../../types/session";
@@ -441,5 +442,58 @@ describe("stripWorktreeFlags", () => {
 
   it("strips multiple occurrences of -w", () => {
     expect(stripWorktreeFlags("-w --verbose -w")).toBe("--verbose");
+  });
+});
+
+describe("findNearestLiveTab", () => {
+  const live = (id: string) => ({ ...makeSession({ id }), state: "idle" as const });
+  const dead = (id: string) => ({ ...makeSession({ id }), state: "dead" as const });
+
+  it("returns null for empty array", () => {
+    expect(findNearestLiveTab([], 0)).toBeNull();
+  });
+
+  it("returns the only live tab", () => {
+    expect(findNearestLiveTab([live("a")], 0)).toBe("a");
+  });
+
+  it("prefers the tab at fromIndex (right bias)", () => {
+    const sessions = [live("a"), live("b"), live("c")];
+    expect(findNearestLiveTab(sessions, 1)).toBe("b");
+  });
+
+  it("skips dead tabs and finds live tab to the right", () => {
+    const sessions = [dead("a"), dead("b"), live("c")];
+    expect(findNearestLiveTab(sessions, 0)).toBe("c");
+  });
+
+  it("skips dead tabs and finds live tab to the left", () => {
+    const sessions = [live("a"), dead("b"), dead("c")];
+    expect(findNearestLiveTab(sessions, 2)).toBe("a");
+  });
+
+  it("checks left at same distance when right is dead", () => {
+    const sessions = [live("a"), dead("b"), live("c")];
+    // fromIndex=1: dist=0 → right=1 (dead), left=0 (live "a") → returns "a"
+    expect(findNearestLiveTab(sessions, 1)).toBe("a");
+  });
+
+  it("falls back to dead tab when all are dead", () => {
+    const sessions = [dead("a"), dead("b"), dead("c")];
+    expect(findNearestLiveTab(sessions, 1)).toBe("b");
+  });
+
+  it("falls back to left dead tab when fromIndex is past end", () => {
+    const sessions = [dead("a"), dead("b")];
+    expect(findNearestLiveTab(sessions, 2)).toBe("b");
+  });
+
+  it("handles single dead tab", () => {
+    expect(findNearestLiveTab([dead("a")], 0)).toBe("a");
+  });
+
+  it("finds nearest live in mixed array", () => {
+    const sessions = [dead("a"), dead("b"), live("c"), dead("d"), dead("e")];
+    expect(findNearestLiveTab(sessions, 3)).toBe("c");
   });
 });

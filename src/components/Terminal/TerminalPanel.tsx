@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTerminal } from "../../hooks/useTerminal";
 import { usePty } from "../../hooks/usePty";
 import { useSessionStore } from "../../store/sessions";
-import { buildClaudeArgs, getResumeId, canResumeSession, stripWorktreeFlags } from "../../lib/claude";
+import { buildClaudeArgs, getResumeId, canResumeSession, stripWorktreeFlags, findNearestLiveTab } from "../../lib/claude";
 import { dlog } from "../../lib/debugLog";
 import { allocateInspectorPort, registerInspectorPort, unregisterInspectorPort, registerInspectorCallbacks, unregisterInspectorCallbacks } from "../../lib/inspectorPort";
 import { useInspectorConnection } from "../../hooks/useInspectorConnection";
@@ -23,84 +23,6 @@ const EMPTY_TAP_SET = new Set<string>();
 interface TerminalPanelProps {
   session: Session;
   visible: boolean;
-}
-
-// ── Dead Session Overlay ─────────────────────────────────────────────────
-
-interface DeadOverlayProps {
-  session: Session;
-  triggerRespawnRef: React.RefObject<(config?: SessionConfig, name?: string) => void>;
-  closeSession: (id: string) => void;
-}
-
-function DeadOverlay({ session, triggerRespawnRef, closeSession }: DeadOverlayProps) {
-  if (session.config.runMode) {
-    return (
-      <div className="dead-overlay dead-overlay-run">
-        <div className="dead-overlay-card">
-          <div className="dead-overlay-title">Command complete</div>
-          <div className="dead-overlay-actions">
-            <button className="dead-overlay-btn" onClick={() => closeSession(session.id)}>
-              Close tab
-            </button>
-          </div>
-          <div className="dead-overlay-hint">
-            <kbd>Ctrl+W</kbd> close
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const canResume = canResumeSession(session);
-  return (
-    <div className="dead-overlay">
-      <div className="dead-overlay-card">
-        <div className="dead-overlay-title">Session ended</div>
-        <div className="dead-overlay-actions">
-          {canResume && (
-            <button
-              className="dead-overlay-btn dead-overlay-btn-primary"
-              onClick={() => triggerRespawnRef.current()}
-            >
-              Resume
-            </button>
-          )}
-          <button
-            className="dead-overlay-btn"
-            onClick={() => {
-              window.dispatchEvent(new KeyboardEvent("keydown", { key: "R", ctrlKey: true, shiftKey: true }));
-            }}
-          >
-            Resume other...
-          </button>
-        </div>
-        <div className="dead-overlay-actions">
-          <button
-            className="dead-overlay-btn"
-            onClick={() => {
-              const freshConfig: SessionConfig = {
-                ...session.config,
-                resumeSession: null,
-                continueSession: false,
-                sessionId: null,
-              };
-              triggerRespawnRef.current(freshConfig);
-            }}
-          >
-            New session
-          </button>
-        </div>
-        <div className="dead-overlay-hint">
-          {canResume ? (
-            <><kbd>Enter</kbd> resume &middot; <kbd>Ctrl+Shift+R</kbd> browse</>
-          ) : (
-            <><kbd>Ctrl+Shift+R</kbd> browse</>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── Duration Timer (active time only) ────────────────────────────────────
@@ -146,7 +68,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const clearRespawnRequest = useSessionStore((s) => s.clearRespawnRequest);
   const killRequest = useSessionStore((s) => s.killRequest);
   const clearKillRequest = useSessionStore((s) => s.clearKillRequest);
-  const closeSession = useSessionStore((s) => s.closeSession);
   const hookChangeCounter = useSessionStore((s) => s.hookChangeCounter);
   const spawnedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -304,6 +225,13 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         updateSubagent(session.id, sub.id, { state: "dead" });
       }
       updateState(session.id, "dead");
+      // Switch away from the dead tab to the nearest live tab
+      const store = useSessionStore.getState();
+      if (store.activeTabId === session.id) {
+        const idx = store.sessions.findIndex((x) => x.id === session.id);
+        const next = findNearestLiveTab(store.sessions, idx);
+        if (next && next !== session.id) store.setActiveTab(next);
+      }
     },
     [session.id, session.config.resumeSession, session.config.sessionId, updateState]
   );
@@ -363,12 +291,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
   const handleTermData = useCallback(
     (data: string) => {
-      if (session.state === "dead") {
-        if (!session.config.runMode && (data === "\r" || data === "\n")) {
-          triggerRespawnRef.current();
-        }
-        return;
-      }
+      if (session.state === "dead") return; // Resume via tab click, not keyboard
       writeToPty(session.id, data);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -489,9 +412,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claudePath, session.id, respawnCounter]);
 
-  // Auto-resume dead tabs when they become visible (tab switch or startup).
-  // Only fires on hidden→visible transitions, NOT when state changes to "dead"
-  // while the tab is already visible (user should see the dead overlay in that case).
+  // Auto-resume dead tabs when they become visible (user clicks a dead tab).
+  // When a session dies while visible, handlePtyExit switches to another tab,
+  // hiding this one. Clicking the dead tab later triggers this effect.
   const prevVisibleRef = useRef(false);
   useEffect(() => {
     const becameVisible = visible && !prevVisibleRef.current;
@@ -851,9 +774,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
             </div>
           </div>
         </div>
-      )}
-      {showDeadOverlay && !externalHolder && (
-        <DeadOverlay session={session} triggerRespawnRef={triggerRespawnRef} closeSession={closeSession} />
       )}
     </div>
   );

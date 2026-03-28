@@ -20,7 +20,8 @@ paths:
 - [TB-09] Ctrl+E renames the active tab (inline input, Enter to confirm, Esc to cancel)
   - Files: src/App.tsx:239
 - [TB-10] Non-active tabs flash green for 5s when transitioning to idle from an active state; hovering or clicking dismisses early
-- [TB-11] Dead tabs dimmed (opacity 0.45), clickable to switch (overlay provides actions)
+- [TB-11] Dead tabs dimmed (opacity 0.45), clickable to auto-resume (triggers respawn via hidden-to-visible transition)
+  - Files: src/App.tsx, src/components/Terminal/TerminalPanel.tsx
 - [TB-12] Ctrl+Click tab opens relaunch modal; blue top-bar + tint when Ctrl is held
 - [TB-13] Tabs preferred at 200px, shrink to 90px min-width before scrolling; CSS ellipsis handles name truncation
 - [TB-14] Tabs draggable for reorder via native drag-and-drop; constrained to same workspace group

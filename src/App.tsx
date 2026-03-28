@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
-import { dirToTabName, effectiveModel, formatTokenCount, getResumeId, modelLabel, modelColor } from "./lib/claude";
+import { dirToTabName, effectiveModel, formatTokenCount, getResumeId, modelLabel, modelColor, canResumeSession, stripWorktreeFlags } from "./lib/claude";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { SubagentInspector } from "./components/SubagentInspector/SubagentInspector";
 
@@ -172,13 +172,24 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [persist]);
 
-  // Activate tab — dead tabs just switch to them (overlay provides actions)
+  // Activate tab — clicking a dead tab auto-resumes it
   const handleTabActivate = useCallback(
     (id: string) => {
       setInspectedSubagent(null);
       dismissFlash(id);
       if (id !== activeTabId) {
         setActiveTab(id);
+      } else {
+        // Clicking already-active dead tab: trigger respawn with proper resume config
+        const session = useSessionStore.getState().sessions.find((s) => s.id === id);
+        if (session?.state === "dead" && canResumeSession(session)) {
+          useSessionStore.getState().requestRespawn(id, {
+            ...session.config,
+            resumeSession: getResumeId(session),
+            continueSession: false,
+            extraFlags: stripWorktreeFlags(session.config.extraFlags),
+          });
+        }
       }
     },
     [activeTabId, dismissFlash, setActiveTab]
@@ -262,12 +273,14 @@ export default function App() {
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
         const nonMeta = sessions.filter((s) => !s.isMetaAgent);
-        const idx = nonMeta.findIndex((s) => s.id === activeTabId);
-        if (nonMeta.length > 0) {
+        const live = nonMeta.filter((s) => s.state !== "dead");
+        const pool = live.length > 0 ? live : nonMeta;
+        const idx = pool.findIndex((s) => s.id === activeTabId);
+        if (pool.length > 0) {
           const next = e.shiftKey
-            ? (idx - 1 + nonMeta.length) % nonMeta.length
-            : (idx + 1) % nonMeta.length;
-          setActiveTab(nonMeta[next].id);
+            ? (idx - 1 + pool.length) % pool.length
+            : (idx + 1) % pool.length;
+          setActiveTab(pool[next].id);
         }
       }
 
