@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { SettingsPane } from "./SettingsPane";
-import { scopePath } from "./ThreePaneEditor";
+import { scopePath, SCOPES } from "./ThreePaneEditor";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { formatScopePath } from "../../lib/paths";
 import { useSettingsStore } from "../../store/settings";
@@ -11,12 +11,6 @@ import {
 import type { SettingField, StatusMessage } from "../../lib/settingsSchema";
 
 type Scope = PaneComponentProps["scope"];
-
-const SCOPES: { value: Scope; label: string; colorVar: string; dotColor: string }[] = [
-  { value: "user", label: "USER", colorVar: "var(--accent)", dotColor: "var(--accent)" },
-  { value: "project", label: "PROJECT", colorVar: "var(--accent-secondary)", dotColor: "var(--accent-secondary)" },
-  { value: "project-local", label: "LOCAL", colorVar: "var(--accent-tertiary)", dotColor: "var(--accent-tertiary)" },
-];
 
 const TYPE_BADGE_CLASS: Record<string, string> = {
   boolean: "sr-type-boolean",
@@ -40,6 +34,18 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
     project: new Set(),
     "project-local": new Set(),
   });
+  const [filter, setFilter] = useState("");
+  const [refCollapsed, setRefCollapsed] = useState(() => {
+    try { return localStorage.getItem("settings-ref-collapsed") === "true"; } catch { return false; }
+  });
+
+  const toggleRefCollapsed = useCallback(() => {
+    setRefCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("settings-ref-collapsed", String(next));
+      return next;
+    });
+  }, []);
 
   const insertRefs = {
     user: useRef<((key: string, value: unknown) => void) | null>(null),
@@ -66,9 +72,10 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
   return (
     <div className="settings-tab">
       <div className="three-pane-grid">
-        {SCOPES.map(({ value, label, colorVar }) => (
+        {SCOPES.map(({ value, label, colorVar, icon }) => (
           <div key={value} className="three-pane-column" style={{ "--scope-color": colorVar } as React.CSSProperties}>
             <div className="three-pane-header">
+              <span className="three-pane-icon" style={{ color: colorVar }}>{icon}</span>
               <span className="three-pane-label">{label}</span>
               <span className="three-pane-path">{formatScopePath(scopePath(value, projectDir, "settings"))}</span>
             </div>
@@ -88,12 +95,26 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
       </div>
 
       {schema.length > 0 && (
-        <UnifiedSettingsReference
-          schema={schema}
-          scopeKeys={scopeKeys}
-          activeScope={activeScope}
-          onInsert={(key, value) => insertRefs[activeScope].current?.(key, value)}
-        />
+        <>
+          <div className="settings-search-bar">
+            <input
+              className="settings-search-input"
+              type="text"
+              placeholder="Search settings..."
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </div>
+          <UnifiedSettingsReference
+            schema={schema}
+            scopeKeys={scopeKeys}
+            activeScope={activeScope}
+            onInsert={(key, value) => insertRefs[activeScope].current?.(key, value)}
+            filter={filter}
+            collapsed={refCollapsed}
+            onToggleCollapsed={toggleRefCollapsed}
+          />
+        </>
       )}
     </div>
   );
@@ -104,25 +125,18 @@ function UnifiedSettingsReference({
   scopeKeys,
   activeScope,
   onInsert,
+  filter,
+  collapsed,
+  onToggleCollapsed,
 }: {
   schema: SettingField[];
   scopeKeys: Record<Scope, Set<string>>;
   activeScope: Scope;
   onInsert: (key: string, value: unknown) => void;
+  filter: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
-  const [filter, setFilter] = useState("");
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem("settings-ref-collapsed") === "true"; } catch { return false; }
-  });
-
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem("settings-ref-collapsed", String(next));
-      return next;
-    });
-  }, []);
-
   const sorted = useMemo(() => {
     const lf = filter.toLowerCase();
     const filtered = lf
@@ -139,25 +153,14 @@ function UnifiedSettingsReference({
     <div className="sr-panel sr-panel-wide">
       <button
         className="sr-toggle"
-        onClick={toggleCollapsed}
+        onClick={onToggleCollapsed}
         onKeyDown={(e) => {
-          if (e.key === " " && e.ctrlKey) { e.preventDefault(); toggleCollapsed(); }
+          if (e.key === " " && e.ctrlKey) { e.preventDefault(); onToggleCollapsed(); }
         }}
       >
         <span className="sr-toggle-arrow">{collapsed ? "\u25b6" : "\u25bc"}</span>
         <span>Available Settings</span>
-        <span className="sr-toggle-count">{schema.length}</span>
-        {!collapsed && (
-          <input
-            className="sr-filter"
-            type="text"
-            placeholder="Filter..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          />
-        )}
+        <span className="sr-toggle-count">{filter ? `${sorted.length} of ${schema.length}` : schema.length}</span>
       </button>
 
       {!collapsed && (

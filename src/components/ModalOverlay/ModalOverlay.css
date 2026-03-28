@@ -6,7 +6,6 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  backdrop-filter: blur(4px);
   outline: none;
 }
 
@@ -15,4 +14,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: color-mix(in srgb, var(--bg-surface) 93%, transparent);
+  backdrop-filter: blur(12px);
 }

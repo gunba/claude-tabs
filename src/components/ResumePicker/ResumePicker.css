@@ -8,11 +8,11 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
-  backdrop-filter: blur(4px);
 }
 
 .resume-picker {
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--bg-surface) 93%, transparent);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px;
@@ -54,7 +54,7 @@
   padding: 8px 12px;
   color: var(--text-primary);
   font-size: 12px;
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   outline: none;
   transition: border-color 0.15s;
   box-sizing: border-box;
@@ -66,7 +66,7 @@
 
 .resume-picker-filter::placeholder {
   color: var(--text-muted);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-ui);
 }
 
 .resume-picker-browse {

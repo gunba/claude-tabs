@@ -115,7 +115,7 @@
 }
 
 .status-id {
-  font-family: 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   color: var(--text-muted);
 }
 
@@ -129,7 +129,7 @@
 }
 
 .status-lines {
-  font-family: 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   gap: 4px;
 }

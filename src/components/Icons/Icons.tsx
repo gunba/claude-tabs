@@ -273,6 +273,37 @@ export function IconSkill(props: IconProps) {
   );
 }
 
+/** Head-and-shoulders silhouette — user scope */
+export function IconUser(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="5" r="2.5" />
+      <path d="M3 14.5c0-3 2.2-5 5-5s5 2 5 5" />
+    </Icon>
+  );
+}
+
+/** Curly brackets { } — project scope */
+export function IconBraces(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5.5 2.5c-1.5 0-2 1-2 2v2c0 .5-.5 1-1 1 .5 0 1 .5 1 1v2c0 1 .5 2 2 2" />
+      <path d="M10.5 2.5c1.5 0 2 1 2 2v2c0 .5.5 1 1 1-.5 0-1 .5-1 1v2c0 1-.5 2-2 2" />
+    </Icon>
+  );
+}
+
+/** Terminal prompt >_ — local scope */
+export function IconTerminal(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <path d="M4.5 6.5l2.5 2-2.5 2" />
+      <path d="M8.5 10.5h3" />
+    </Icon>
+  );
+}
+
 /** Counterclockwise circular arrow — reset */
 export function IconReset(props: IconProps) {
   return (

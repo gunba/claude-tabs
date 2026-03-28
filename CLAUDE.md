@@ -114,7 +114,7 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │   ├── DebugPanel/DebugPanel.tsx        # Structured log viewer: session/module filters, color-coded (Ctrl+Shift+D)
   │   └── DiffPanel/
   │       ├── DiffPanel.tsx                # Git diff side panel (Ctrl+Shift+G): file list, modal trigger
-  │       └── DiffModal.tsx                # Side-by-side diff modal (96vw/88vh): highlight.js syntax, file nav
+  │       └── DiffModal.tsx                # Side-by-side diff modal (84vw/78vh): highlight.js syntax, file nav
   ├── lib/
   │   ├── inspectorHooks.ts                # INSTALL_TAPS JS expression for BUN_INSPECT (push-based, no polling)
   │   ├── tapClassifier.ts                 # Stateless: TapEntry → TapEvent | null (~45 event types)
@@ -157,3 +157,5 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
 
 - [TH-01] All colors are CSS custom properties on `:root` — components use CSS variables, not hardcoded hex (exception: model rarity colors in `claude.ts` are fixed hex for cross-theme consistency). Applied at startup via `applyTheme()`. xterm.js colors from `getXtermTheme()` reading CSS variables.
 - [TH-02] Key variables: `--bg-primary`, `--bg-surface`, `--accent` (clay), `--accent-secondary` (blue), `--accent-tertiary` (purple), `--term-bg`, `--term-fg`
+- [TH-03] Font system: --font-ui (Inter variable + system fallback) and --font-mono (Cascadia Code + Fira Code + JetBrains Mono) defined in index.html :root block. Inter woff2 bundled in src/assets/fonts/ with @font-face (font-display: swap). All CSS files use var(--font-mono) and var(--font-ui) — no hardcoded font-family strings.
+  - Files: index.html

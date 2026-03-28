@@ -1,5 +1,6 @@
 import type { StatusMessage } from "../../lib/settingsSchema";
 import { formatScopePath } from "../../lib/paths";
+import { IconUser, IconBraces, IconTerminal } from "../Icons/Icons";
 
 export interface PaneComponentProps {
   scope: "user" | "project" | "project-local";
@@ -40,18 +41,19 @@ export function scopePath(scope: PaneComponentProps["scope"], dir: string, tabId
   }
 }
 
-const SCOPES: { value: PaneComponentProps["scope"]; label: string; colorVar: string }[] = [
-  { value: "user", label: "USER", colorVar: "var(--accent)" },
-  { value: "project", label: "PROJECT", colorVar: "var(--accent-secondary)" },
-  { value: "project-local", label: "LOCAL", colorVar: "var(--accent-tertiary)" },
+export const SCOPES: { value: PaneComponentProps["scope"]; label: string; colorVar: string; icon: React.ReactNode }[] = [
+  { value: "user", label: "USER", colorVar: "var(--accent)", icon: <IconUser size={12} /> },
+  { value: "project", label: "PROJECT", colorVar: "var(--accent-secondary)", icon: <IconBraces size={12} /> },
+  { value: "project-local", label: "LOCAL", colorVar: "var(--accent-tertiary)", icon: <IconTerminal size={12} /> },
 ];
 
 export function ThreePaneEditor({ component: PaneComponent, projectDir, onStatus, tabId }: ThreePaneEditorProps) {
   return (
     <div className="three-pane-grid">
-      {SCOPES.map(({ value, label, colorVar }) => (
+      {SCOPES.map(({ value, label, colorVar, icon }) => (
         <div key={value} className="three-pane-column" style={{ "--scope-color": colorVar } as React.CSSProperties}>
           <div className="three-pane-header">
+            <span className="three-pane-icon" style={{ color: colorVar }}>{icon}</span>
             <span className="three-pane-label">{label}</span>
             <span className="three-pane-path">{formatScopePath(scopePath(value, projectDir, tabId))}</span>
           </div>

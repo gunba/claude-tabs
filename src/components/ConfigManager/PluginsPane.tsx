@@ -108,7 +108,7 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
   const [error, setError] = useState<string | null>(null);
   const [pendingOp, setPendingOp] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
-  const [installScope, setInstallScope] = useState<"user" | "project">("user");
+  const [scopeFilter, setScopeFilter] = useState<"all" | "user" | "project">("all");
   const [sortBy, setSortBy] = useState<SortBy>("downloads");
 
   // MCP Servers from settings.json (manual config, not CLI-managed)
@@ -187,8 +187,9 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
   }, [loadPlugins, onStatus]);
 
   const handleInstall = useCallback((name: string) => {
-    doPluginOp("Install", name, () => invoke<string>("plugin_install", { name, scope: installScope }));
-  }, [doPluginOp, installScope]);
+    const scope = scopeFilter === "all" ? "user" : scopeFilter;
+    doPluginOp("Install", name, () => invoke<string>("plugin_install", { name, scope }));
+  }, [doPluginOp, scopeFilter]);
 
   const handleUninstall = useCallback((name: string) => {
     doPluginOp("Uninstall", name, () => invoke<string>("plugin_uninstall", { name }));
@@ -238,15 +239,17 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
     }
   }, [mcpServers, onStatus]);
 
-  // Sort installed plugins: enabled first, then alphabetical
+  // Filter by scope, then sort: enabled first, then alphabetical
   const sortedInstalled = useMemo(() => {
-    const sorted = [...installed];
-    sorted.sort((a, b) => {
+    const filtered = scopeFilter === "all"
+      ? [...installed]
+      : installed.filter((p) => p.scope === scopeFilter);
+    filtered.sort((a, b) => {
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
       return a.id.toLowerCase().localeCompare(b.id.toLowerCase());
     });
-    return sorted;
-  }, [installed]);
+    return filtered;
+  }, [installed, scopeFilter]);
 
   // Filter & sort marketplace plugins (exclude already-installed)
   const installedIds = useMemo(() => new Set(installed.map((p) => p.id)), [installed]);
@@ -275,10 +278,27 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
         <div className="plugins-error">{error}</div>
       )}
 
+      {/* Scope filter */}
+      {!error && (
+        <div className="plugins-marketplace-controls">
+          <select
+            className="config-select"
+            value={scopeFilter}
+            onChange={(e) => setScopeFilter(e.target.value as "all" | "user" | "project")}
+          >
+            <option value="all">All scopes</option>
+            <option value="user">User scope</option>
+            <option value="project">Project scope</option>
+          </select>
+        </div>
+      )}
+
       {/* Installed Plugins */}
       {!error && (
         <div className="plugins-section">
-          <div className="plugins-section-title">Installed Plugins</div>
+          <div className="plugins-section-title">
+            Installed Plugins{scopeFilter !== "all" && ` (${scopeFilter})`}
+          </div>
           {sortedInstalled.length > 0 ? (
             <div className="plugins-grid">
               {sortedInstalled.map((plugin) => {
@@ -331,7 +351,7 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
               })}
             </div>
           ) : (
-            <div className="pane-hint">No plugins installed</div>
+            <div className="pane-hint">{scopeFilter === "all" ? "No plugins installed" : `No ${scopeFilter}-scope plugins installed`}</div>
           )}
         </div>
       )}
@@ -360,14 +380,6 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
             >
               <option value="downloads">Most popular</option>
               <option value="name">A-Z</option>
-            </select>
-            <select
-              className="config-select"
-              value={installScope}
-              onChange={(e) => setInstallScope(e.target.value as "user" | "project")}
-            >
-              <option value="user">User scope</option>
-              <option value="project">Project scope</option>
             </select>
           </div>
 

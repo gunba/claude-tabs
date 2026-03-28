@@ -97,7 +97,7 @@
 /* ── Message blocks ── */
 
 .inspector-msg {
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -168,7 +168,7 @@
 /* ── Markdown rendering for assistant messages ── */
 
 .inspector-msg-md {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
@@ -180,7 +180,7 @@
 .inspector-msg-md h1, .inspector-msg-md h2, .inspector-msg-md h3 { margin: 8px 0 4px; font-size: 13px; color: var(--text-primary); }
 .inspector-msg-md ul, .inspector-msg-md ol { margin: 4px 0; padding-left: 18px; }
 .inspector-msg-md li { margin: 2px 0; }
-.inspector-msg-md code { background: var(--bg-selection); padding: 1px 4px; border-radius: 3px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; }
+.inspector-msg-md code { background: var(--bg-selection); padding: 1px 4px; border-radius: 3px; font-family: var(--font-mono); font-size: 11px; }
 .inspector-msg-md pre { background: var(--bg-primary); padding: 8px; border-radius: 4px; overflow-x: auto; margin: 4px 0; }
 .inspector-msg-md pre code { background: none; padding: 0; }
 .inspector-msg-md blockquote { border-left: 2px solid var(--border); padding-left: 8px; color: var(--text-muted); margin: 4px 0; }

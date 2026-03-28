@@ -19,7 +19,7 @@
   border-radius: 3px;
   background: transparent;
   color: var(--text-muted);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   cursor: pointer;
   white-space: nowrap;
@@ -94,7 +94,7 @@
   border-radius: 4px;
   background: var(--bg-primary);
   color: var(--text-muted);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   cursor: pointer;
   transition: all 0.12s;

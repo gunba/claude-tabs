@@ -40,7 +40,7 @@
   background: color-mix(in srgb, var(--accent-secondary) 10%, var(--bg-primary));
   padding: 1px 6px;
   border-radius: 8px;
-  font-family: var(--font-mono, "SF Mono", "Cascadia Code", "Consolas", monospace);
+  font-family: var(--font-mono);
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,7 +63,7 @@
   background: color-mix(in srgb, var(--success, #5cb85c) 10%, var(--bg-primary));
   padding: 1px 6px;
   border-radius: 8px;
-  font-family: var(--font-mono, "SF Mono", "Cascadia Code", "Consolas", monospace);
+  font-family: var(--font-mono);
 }
 
 .diff-stat-del {
@@ -72,7 +72,7 @@
   background: color-mix(in srgb, var(--error, #d84b4b) 10%, var(--bg-primary));
   padding: 1px 6px;
   border-radius: 8px;
-  font-family: var(--font-mono, "SF Mono", "Cascadia Code", "Consolas", monospace);
+  font-family: var(--font-mono);
 }
 
 .diff-stat-tick {
@@ -107,7 +107,7 @@
 .diff-panel-body {
   flex: 1;
   overflow-y: auto;
-  font-family: var(--font-mono, "SF Mono", "Cascadia Code", "Consolas", monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
   scrollbar-width: thin;
@@ -233,9 +233,10 @@
 /* ── Diff Modal ── */
 
 .diff-modal {
-  width: 96vw;
-  max-width: 1900px;
-  height: 88vh;
+  width: 84vw;
+  max-width: 1500px;
+  min-width: 900px;
+  height: 78vh;
   border-radius: 12px;
   background: var(--bg-surface);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
@@ -259,7 +260,7 @@
 }
 
 .diff-modal-path {
-  font-family: var(--font-mono, "SF Mono", "Cascadia Code", "Consolas", monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   min-width: 0;
   overflow: hidden;
@@ -315,7 +316,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  font-family: var(--font-mono, "SF Mono", "Cascadia Code", "Consolas", monospace);
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
   scrollbar-width: thin;
