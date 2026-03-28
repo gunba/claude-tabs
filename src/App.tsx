@@ -319,7 +319,13 @@ export default function App() {
       ) ?? null
     : null;
 
+<<<<<<< HEAD
   const activeSession = sessions.find((s) => s.id === activeTabId);
+=======
+  // Active session's subagents — show all (dead ones greyed out, cleared when new batch starts)
+  const activeSession = sessions.find((s) => s.id === activeTabId);
+  const allSubs = activeTabId ? (subagentMap.get(activeTabId) || []) : [];
+>>>>>>> worktree-whimsical-herding-spark
 
   return (
     <div className={`app${ctrlHeld ? " ctrl-held" : ""}`}>
@@ -564,11 +570,63 @@ export default function App() {
         </div>
 
       {/* Subagent row — conditional, only for active session */}
+<<<<<<< HEAD
       <SubagentBar
         sessionId={activeTabId}
         inspectedSubagent={inspectedSubagent}
         setInspectedSubagent={setInspectedSubagent}
       />
+=======
+      {allSubs.length > 0 && (
+        <div className="subagent-bar">
+          {allSubs.map((sub) => {
+            const isActive = isSubagentActive(sub.state);
+            const isIdle = sub.state === "idle";
+            const isDead = sub.state === "dead";
+            const isInterrupted = sub.state === "interrupted";
+            const isSelected = inspectedSubagent?.subagentId === sub.id && inspectedSubagent?.sessionId === activeTabId;
+            const lastMsg = sub.messages.length > 0
+              ? sub.messages[sub.messages.length - 1].text.slice(0, 200)
+              : null;
+            // Build meta spans (mirroring tab meta)
+            const metaParts: string[] = [];
+            if (sub.agentType) metaParts.push(sub.agentType);
+            if (sub.model) metaParts.push(sub.model.replace(/^claude-/, "").split("-")[0]);
+            if (sub.totalToolUses != null) metaParts.push(`${sub.totalToolUses} tools`);
+            if (sub.durationMs != null) metaParts.push(`${Math.round(sub.durationMs / 1000)}s`);
+            return (
+              <button
+                key={sub.id}
+                className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isDead ? " subagent-dead" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
+                onClick={() => activeTabId && setInspectedSubagent({ sessionId: activeTabId, subagentId: sub.id })}
+                title={sub.description}
+              >
+                <span className={`tab-dot state-${sub.state}`} />
+                <span className="subagent-label">
+                  <span className="subagent-name">{sub.description}</span>
+                  <span className="subagent-summary">
+                    {isActive && sub.currentAction ? sub.currentAction : lastMsg || ""}
+                  </span>
+                  {metaParts.length > 0 && (
+                    <span className="subagent-meta">{metaParts.join(" · ")}</span>
+                  )}
+                </span>
+                {sub.tokenCount > 0 && (
+                  <span className="subagent-tokens">{formatTokenCount(sub.tokenCount)}</span>
+                )}
+                {!isActive && !isDead && (
+                  <span
+                    className="subagent-close"
+                    onClick={(e) => { e.stopPropagation(); activeTabId && updateSubagent(activeTabId, sub.id, { state: "dead" }); }}
+                    title="Dismiss"
+                  ><IconClose size={12} /></span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+>>>>>>> worktree-whimsical-herding-spark
 
       {/* Main area: terminals */}
       <div className="app-main">

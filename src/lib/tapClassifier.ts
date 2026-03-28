@@ -214,6 +214,16 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
 
   // ── rh-based telemetry events (must come BEFORE ModeChange which broadly matches rh + to) ──
 
+  // SubagentEnd scope: definitive subagent completion signal
+  if (parsed.rh && parsed.scope === "subagent_end") {
+    return {
+      kind: "SubagentLifecycle", ts,
+      variant: "end",
+      agentType: null, isAsync: null, model: null,
+      totalTokens: null, totalToolUses: null, durationMs: null, reason: null,
+    };
+  }
+
   // ToolResult: tool execution completed with metrics
   if (parsed.rh && parsed.toolName && typeof parsed.durationMs === "number" && parsed.toolResultSizeBytes !== undefined) {
     return {
