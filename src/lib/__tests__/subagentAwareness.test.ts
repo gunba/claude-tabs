@@ -117,6 +117,85 @@ describe("TapSubagentTracker stale cleanup", () => {
   });
 });
 
+// ── SubagentLifecycle "end" marks all active dead ──
+
+describe("TapSubagentTracker SubagentLifecycle", () => {
+  function spawnAgent(tracker: TapSubagentTracker, agentId: string, desc: string) {
+    tracker.process({ kind: "SubagentSpawn", ts: 1, description: desc, prompt: "p" } as TapEvent);
+    tracker.process({
+      kind: "ConversationMessage", ts: 2, messageType: "assistant",
+      isSidechain: true, agentId, uuid: null, parentUuid: null, promptId: null,
+      stopReason: "tool_use", toolNames: ["Bash"], toolAction: "Bash: ls",
+      textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null,
+    } as TapEvent);
+  }
+
+  it("marks all active subagents dead on SubagentLifecycle end", () => {
+    const tracker = new TapSubagentTracker("s1");
+    spawnAgent(tracker, "agent-a", "A");
+    spawnAgent(tracker, "agent-b", "B");
+    expect(tracker.hasActiveAgents()).toBe(true);
+
+    const actions = tracker.process({
+      kind: "SubagentLifecycle", ts: 10, variant: "end",
+      agentType: null, isAsync: null, model: null,
+      totalTokens: null, totalToolUses: 5, durationMs: 3000, reason: null,
+    } as TapEvent);
+    expect(tracker.hasActiveAgents()).toBe(false);
+    const deadUpdates = actions.filter(a => a.type === "update" && a.updates?.state === "dead");
+    expect(deadUpdates).toHaveLength(2);
+  });
+
+  it("enriches lastActiveAgent with metadata on end", () => {
+    const tracker = new TapSubagentTracker("s1");
+    spawnAgent(tracker, "agent-x", "X");
+
+    const actions = tracker.process({
+      kind: "SubagentLifecycle", ts: 10, variant: "end",
+      agentType: null, isAsync: null, model: null,
+      totalTokens: null, totalToolUses: 7, durationMs: 4500, reason: null,
+    } as TapEvent);
+    const metaUpdate = actions.find(a => a.type === "update" && a.updates?.totalToolUses === 7);
+    expect(metaUpdate).toBeDefined();
+    expect(metaUpdate!.updates!.durationMs).toBe(4500);
+  });
+
+  it("marks all active dead on SubagentLifecycle killed", () => {
+    const tracker = new TapSubagentTracker("s1");
+    spawnAgent(tracker, "agent-1", "A");
+
+    const actions = tracker.process({
+      kind: "SubagentLifecycle", ts: 10, variant: "killed",
+      agentType: null, isAsync: null, model: null,
+      totalTokens: null, totalToolUses: null, durationMs: null, reason: "interrupted",
+    } as TapEvent);
+    expect(tracker.hasActiveAgents()).toBe(false);
+    expect(actions.some(a => a.updates?.state === "dead")).toBe(true);
+  });
+});
+
+// ── SubagentNotification marks dead ──
+
+describe("TapSubagentTracker SubagentNotification", () => {
+  it("marks active subagents dead regardless of status", () => {
+    const tracker = new TapSubagentTracker("s1");
+    tracker.process({ kind: "SubagentSpawn", ts: 1, description: "test", prompt: "p" } as TapEvent);
+    tracker.process({
+      kind: "ConversationMessage", ts: 2, messageType: "assistant",
+      isSidechain: true, agentId: "agent-1", uuid: null, parentUuid: null, promptId: null,
+      stopReason: "tool_use", toolNames: ["Bash"], toolAction: "Bash: ls",
+      textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null,
+    } as TapEvent);
+    expect(tracker.hasActiveAgents()).toBe(true);
+
+    const actions = tracker.process({
+      kind: "SubagentNotification", ts: 5, status: "completed", summary: "",
+    } as TapEvent);
+    expect(tracker.hasActiveAgents()).toBe(false);
+    expect(actions.some(a => a.updates?.state === "dead")).toBe(true);
+  });
+});
+
 // ── TapMetadataAccumulator queryDepth filtering ──
 
 describe("TapMetadataAccumulator queryDepth filtering", () => {

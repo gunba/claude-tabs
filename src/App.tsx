@@ -302,10 +302,9 @@ export default function App() {
       ) ?? null
     : null;
 
-  // Active session's subagents — show all non-dead ones while any exist
+  // Active session's subagents — show all (dead ones greyed out, cleared when new batch starts)
   const activeSession = sessions.find((s) => s.id === activeTabId);
   const allSubs = activeTabId ? (subagentMap.get(activeTabId) || []) : [];
-  const activeSubs = allSubs.filter((s) => s.state !== "dead");
 
   return (
     <div className={`app${ctrlHeld ? " ctrl-held" : ""}`}>
@@ -545,11 +544,12 @@ export default function App() {
         </div>
 
       {/* Subagent row — conditional, only for active session */}
-      {activeSubs.length > 0 && (
+      {allSubs.length > 0 && (
         <div className="subagent-bar">
-          {activeSubs.map((sub) => {
+          {allSubs.map((sub) => {
             const isActive = isSubagentActive(sub.state);
             const isIdle = sub.state === "idle";
+            const isDead = sub.state === "dead";
             const isInterrupted = sub.state === "interrupted";
             const isSelected = inspectedSubagent?.subagentId === sub.id && inspectedSubagent?.sessionId === activeTabId;
             const lastMsg = sub.messages.length > 0
@@ -564,7 +564,7 @@ export default function App() {
             return (
               <button
                 key={sub.id}
-                className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
+                className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isDead ? " subagent-dead" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
                 onClick={() => activeTabId && setInspectedSubagent({ sessionId: activeTabId, subagentId: sub.id })}
                 title={sub.description}
               >
@@ -581,7 +581,7 @@ export default function App() {
                 {sub.tokenCount > 0 && (
                   <span className="subagent-tokens">{formatTokenCount(sub.tokenCount)}</span>
                 )}
-                {!isActive && (
+                {!isActive && !isDead && (
                   <span
                     className="subagent-close"
                     onClick={(e) => { e.stopPropagation(); activeTabId && updateSubagent(activeTabId, sub.id, { state: "dead" }); }}

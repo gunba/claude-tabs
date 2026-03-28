@@ -201,6 +201,20 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
     }
   });
 
+  it("classifies scope:subagent_end → SubagentLifecycle end", () => {
+    const entry: TapEntry = {
+      ts: 2100, cat: "stringify", len: 97,
+      snap: JSON.stringify({ rh: "abc123", scope: "subagent_end", last_request_id: "req-123" }),
+    };
+    const event = classifyTapEntry(entry);
+    expect(event?.kind).toBe("SubagentLifecycle");
+    if (event?.kind === "SubagentLifecycle") {
+      expect(event.variant).toBe("end");
+      expect(event.agentType).toBeNull();
+      expect(event.totalTokens).toBeNull();
+    }
+  });
+
   it("classifies user interruption → UserInterruption", () => {
     const entry: TapEntry = {
       ts: 2010, cat: "stringify", len: 200,

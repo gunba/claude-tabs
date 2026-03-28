@@ -37,6 +37,19 @@ export class TapSubagentTracker {
     return false;
   }
 
+  /** Mark all active subagents with the given state, returning update actions. */
+  private markAllActive(targetState: SessionState): SubagentAction[] {
+    const actions: SubagentAction[] = [];
+    for (const agentId of this.knownIds) {
+      const currentState = this.agentStates.get(agentId);
+      if (currentState && isSubagentActive(currentState)) {
+        this.agentStates.set(agentId, targetState);
+        actions.push({ type: "update", subagentId: agentId, updates: { state: targetState } });
+      }
+    }
+    return actions;
+  }
+
   /** Process an event. Returns actions to apply to the store, or empty array. */
   process(event: TapEvent): SubagentAction[] {
     const actions: SubagentAction[] = [];
@@ -142,45 +155,21 @@ export class TapSubagentTracker {
         }
         break;
 
-      case "SubagentNotification": {
-        // Mark ALL active subagents — notification doesn't identify which specific agent
-        const targetState: SessionState = event.status === "killed" ? "dead" : "idle";
-        for (const agentId of this.knownIds) {
-          const currentState = this.agentStates.get(agentId);
-          if (currentState && isSubagentActive(currentState)) {
-            this.agentStates.set(agentId, targetState);
-            actions.push({
-              type: "update",
-              subagentId: agentId,
-              updates: { state: targetState },
-            });
-          }
-        }
+      case "SubagentNotification":
+        actions.push(...this.markAllActive("dead"));
         break;
-      }
 
       case "UserInterruption":
-        // Interrupt all active subagents
-        for (const agentId of this.knownIds) {
-          const currentState = this.agentStates.get(agentId);
-          if (currentState && isSubagentActive(currentState)) {
-            this.agentStates.set(agentId, "interrupted");
-            actions.push({
-              type: "update",
-              subagentId: agentId,
-              updates: { state: "interrupted" as SessionState },
-            });
-          }
-        }
+        actions.push(...this.markAllActive("interrupted"));
         break;
 
       case "SubagentLifecycle": {
         // Enrich subagent data from lifecycle telemetry
         // Find the target agent — use lastActiveAgent since lifecycle events don't carry agentId
         const targetId = this.lastActiveAgent;
-        if (!targetId || !this.knownIds.has(targetId)) break;
 
         if (event.variant === "start") {
+          if (!targetId || !this.knownIds.has(targetId)) break;
           actions.push({
             type: "update",
             subagentId: targetId,
@@ -191,23 +180,20 @@ export class TapSubagentTracker {
             },
           });
         } else if (event.variant === "end") {
-          this.agentStates.set(targetId, "idle");
-          actions.push({
-            type: "update",
-            subagentId: targetId,
-            updates: {
-              state: "idle" as SessionState,
-              totalToolUses: event.totalToolUses ?? undefined,
-              durationMs: event.durationMs ?? undefined,
-            },
-          });
+          // Enrich lastActiveAgent with metadata if available
+          if (targetId && this.knownIds.has(targetId)) {
+            const metaUpdates: Partial<Subagent> = {};
+            if (event.totalToolUses != null) metaUpdates.totalToolUses = event.totalToolUses;
+            if (event.durationMs != null) metaUpdates.durationMs = event.durationMs;
+            if (Object.keys(metaUpdates).length > 0) {
+              actions.push({ type: "update", subagentId: targetId, updates: metaUpdates });
+            }
+          }
+          // Mark ALL active subagents as dead — lifecycle "end" means the agent turn is done.
+          // Targeting all active handles parallel agents where lastActiveAgent may be wrong.
+          actions.push(...this.markAllActive("dead"));
         } else if (event.variant === "killed") {
-          this.agentStates.set(targetId, "dead");
-          actions.push({
-            type: "update",
-            subagentId: targetId,
-            updates: { state: "dead" as SessionState },
-          });
+          actions.push(...this.markAllActive("dead"));
         }
         break;
       }
@@ -215,13 +201,7 @@ export class TapSubagentTracker {
       case "UserInput":
       case "SlashCommand":
         // New user prompt → previous turn's agents are done; mark stale active agents idle
-        for (const agentId of this.knownIds) {
-          const currentState = this.agentStates.get(agentId);
-          if (currentState && isSubagentActive(currentState)) {
-            this.agentStates.set(agentId, "idle");
-            actions.push({ type: "update", subagentId: agentId, updates: { state: "idle" as SessionState } });
-          }
-        }
+        actions.push(...this.markAllActive("idle"));
         break;
 
       default:

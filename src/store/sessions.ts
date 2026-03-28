@@ -10,6 +10,7 @@ import type {
   SessionMetadata,
   Subagent,
 } from "../types/session";
+import { isSubagentActive } from "../types/session";
 
 interface SessionsState {
   sessions: Session[];
@@ -342,7 +343,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const map = new Map(s.subagents);
       const list = map.get(sessionId);
       if (!list) return s;
-      const active = list.filter((sa) => sa.state !== "idle" && sa.state !== "interrupted");
+      const active = list.filter((sa) => isSubagentActive(sa.state));
       if (active.length === list.length) return s;
       map.set(sessionId, active);
       return { subagents: map };
