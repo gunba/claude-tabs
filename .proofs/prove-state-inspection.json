@@ -21,103 +21,122 @@
     "SI-18",
     "SI-19",
     "SI-20",
-    "SI-21"
+    "SI-21",
+    "SI-23"
   ],
-  "unchecked": [],
+  "unchecked": [
+    "SI-23"
+  ],
   "citations": {
     "SI-01": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-02": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-03": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-04": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-05": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-06": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-07": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-08": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-09": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-10": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-11": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-12": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-13": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-14": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-15": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-20": {
       "up": 2,
       "down": 0,
-      "seen": 3
+      "seen": 6
     },
     "SI-16": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-17": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "SI-19": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-21": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "SI-18": {
       "up": 2,
       "down": 0,
-      "seen": 27
+      "seen": 30
+    },
+    "SI-23": {
+      "up": 0,
+      "down": 0,
+      "seen": 2
     }
   },
   "cycle": 4,
@@ -225,6 +244,13 @@
       ],
       "verified": "2026-03-23",
       "notes": "Edited via tag-edit.sh"
+    },
+    "SI-23": {
+      "files": [
+        "src/test.ts:1"
+      ],
+      "verified": "2026-03-28",
+      "notes": "Added during change documentation"
     }
   }
 }

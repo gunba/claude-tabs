@@ -114,7 +114,7 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │       └── DiffModal.tsx                # Side-by-side diff modal (96vw/88vh): highlight.js syntax, file nav
   ├── lib/
   │   ├── inspectorHooks.ts                # INSTALL_TAPS JS expression for BUN_INSPECT (push-based, no polling)
-  │   ├── tapClassifier.ts                 # Stateless: TapEntry → TapEvent | null (~42 event types)
+  │   ├── tapClassifier.ts                 # Stateless: TapEntry → TapEvent | null (~43 event types)
   │   ├── tapEventBus.ts                   # Per-session synchronous pub/sub for classified events
   │   ├── tapStateReducer.ts               # Pure: (SessionState, TapEvent) → SessionState
   │   ├── tapMetadataAccumulator.ts        # Stateful: events → Partial<SessionMetadata> diffs
@@ -134,7 +134,7 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │   └── diffParser.ts                   # Git porcelain/numstat/unified-diff parsers
   └── types/
       ├── session.ts                       # TypeScript types mirroring Rust (camelCase)
-      ├── tapEvents.ts                     # Discriminated union of ~42 tap event types
+      ├── tapEvents.ts                     # Discriminated union of ~43 tap event types
       ├── ipc.ts                           # Tauri IPC command signatures
       └── git.ts                           # Git status and diff types (GitStatusData, FileDiff, DiffLine)
   ```

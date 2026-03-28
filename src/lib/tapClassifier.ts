@@ -459,6 +459,14 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
+  // EffortLevel: settings object containing effortLevel (emitted on /effort changes)
+  if (typeof parsed.effortLevel === "string" && parsed.permissions !== undefined) {
+    return {
+      kind: "EffortLevel", ts,
+      level: parsed.effortLevel,
+    };
+  }
+
   // agent-name → reuse CustomTitle
   if (parsed.type === "agent-name" && parsed.agentName) {
     return {

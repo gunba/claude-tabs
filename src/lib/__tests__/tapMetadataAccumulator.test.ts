@@ -123,4 +123,23 @@ describe("TapMetadataAccumulator", () => {
     const exitDiff = acc.process({ kind: "WorktreeCleared", ts: 1 });
     expect(exitDiff?.worktreeInfo).toBeNull();
   });
+
+  it("tracks effortLevel from EffortLevel event", () => {
+    const acc = new TapMetadataAccumulator();
+    const diff = acc.process({ kind: "EffortLevel", ts: 0, level: "high" });
+    expect(diff?.effortLevel).toBe("high");
+
+    // Change to medium
+    const diff2 = acc.process({ kind: "EffortLevel", ts: 1, level: "medium" });
+    expect(diff2?.effortLevel).toBe("medium");
+  });
+
+  it("resets effortLevel on reset()", () => {
+    const acc = new TapMetadataAccumulator();
+    acc.process({ kind: "EffortLevel", ts: 0, level: "max" });
+    acc.reset();
+    // After reset, next event should not carry old effort
+    const diff = acc.process({ kind: "TurnStart", ts: 1, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 });
+    expect(diff?.effortLevel).toBeNull();
+  });
 });

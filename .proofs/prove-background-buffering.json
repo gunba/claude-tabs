@@ -9,16 +9,18 @@
   "citations": {
     "BF-01": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "BF-02": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "BF-03": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     }
   },
   "cycle": 4,

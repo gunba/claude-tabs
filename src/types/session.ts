@@ -106,6 +106,7 @@ export interface SessionMetadata {
     durationMs: number;
   } | null;
   planOutcome: string | null;
+  effortLevel: string | null;
   capturedSystemPrompt: string | null;
   worktreeInfo: {
     originalCwd: string;

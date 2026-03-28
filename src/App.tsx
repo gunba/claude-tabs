@@ -331,7 +331,8 @@ export default function App() {
                 const ver = vMatch ? ` ${vMatch[1]}.${vMatch[2]}` : "";
                 metaSpans.push({ text: modelLabel(m) + ver, color: modelColor(m) });
               }
-              if (session.config.effort) metaSpans.push({ text: session.config.effort.charAt(0).toUpperCase() + session.config.effort.slice(1), color: "var(--accent)" });
+              const effort = session.metadata.effortLevel ?? session.config.effort;
+              if (effort) metaSpans.push({ text: effort.charAt(0).toUpperCase() + effort.slice(1), color: "var(--accent)" });
               const totalTokens = session.metadata.inputTokens + session.metadata.outputTokens;
               const subs = subagentMap.get(session.id) || [];
               const liveAgents = subs.filter((s) => isSubagentActive(s.state)).length;

@@ -342,6 +342,11 @@ export interface SystemPromptCapture extends TapEventBase {
   messageCount: number;
 }
 
+export interface EffortLevel extends TapEventBase {
+  kind: "EffortLevel";
+  level: string;
+}
+
 // ── Discriminated union ──
 
 export type TapEvent =
@@ -394,4 +399,5 @@ export type TapEvent =
   | WorktreeState
   | WorktreeCleared
   | HookTelemetry
-  | SystemPromptCapture;
+  | SystemPromptCapture
+  | EffortLevel;

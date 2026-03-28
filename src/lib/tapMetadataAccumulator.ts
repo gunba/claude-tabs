@@ -57,6 +57,7 @@ export class TapMetadataAccumulator {
   private contextBudget: SessionMetadata["contextBudget"] = null;
   private hookTelemetry: SessionMetadata["hookTelemetry"] = null;
   private planOutcome: string | null = null;
+  private effortLevel: string | null = null;
   private capturedSystemPrompt: string | null = null;
   private worktreeInfo: SessionMetadata["worktreeInfo"] = null;
 
@@ -284,6 +285,10 @@ export class TapMetadataAccumulator {
         this.planOutcome = event.outcome;
         break;
 
+      case "EffortLevel":
+        this.effortLevel = event.level;
+        break;
+
       case "WorktreeState":
         this.worktreeInfo = {
           originalCwd: event.originalCwd,
@@ -353,6 +358,7 @@ export class TapMetadataAccumulator {
       contextBudget: this.contextBudget,
       hookTelemetry: this.hookTelemetry,
       planOutcome: this.planOutcome,
+      effortLevel: this.effortLevel,
       capturedSystemPrompt: this.capturedSystemPrompt,
       worktreeInfo: this.worktreeInfo,
       ...(this.nodeSummary ? { nodeSummary: this.nodeSummary } : {}),
@@ -405,6 +411,7 @@ export class TapMetadataAccumulator {
     this.contextBudget = null;
     this.hookTelemetry = null;
     this.planOutcome = null;
+    this.effortLevel = null;
     this.capturedSystemPrompt = null;
     this.worktreeInfo = null;
   }

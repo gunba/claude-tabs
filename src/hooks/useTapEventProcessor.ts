@@ -156,6 +156,11 @@ export function useTapEventProcessor(
         }
       }
 
+      // EffortLevel → persist to config for resume
+      if (event.kind === "EffortLevel") {
+        updateConfig(sid, { effort: event.level });
+      }
+
       // ModeChange → reactive permission icon
       if (event.kind === "ModeChange") {
         const modeMap: Record<string, PermissionMode> = {

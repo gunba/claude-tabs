@@ -47,6 +47,7 @@ function SessionStatus({ session }: { session: Session }) {
   const health = useSessionStore((s) => s.processHealth.get(session.id));
   const model = effectiveModel(session);
   const wt = parseWorktreePath(session.config.workingDir);
+  const effort = session.metadata.effortLevel ?? session.config.effort;
 
   return (
     <div className="status-bar-content">
@@ -62,6 +63,9 @@ function SessionStatus({ session }: { session: Session }) {
       )}
       <span className="status-item status-model" title="Model" style={{ color: modelColor(model) }}>
         {modelLabel(model)}
+        {effort && (
+          <span style={{ opacity: 0.6 }}>{` · ${effort.charAt(0).toUpperCase() + effort.slice(1)} effort`}</span>
+        )}
         {session.metadata.subscriptionType && (
           <span style={{ opacity: 0.6 }}>{` · ${session.metadata.subscriptionType.charAt(0).toUpperCase() + session.metadata.subscriptionType.slice(1)}`}</span>
         )}

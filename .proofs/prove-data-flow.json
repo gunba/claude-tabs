@@ -17,51 +17,52 @@
     "DF-01": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-02": {
       "up": 0,
       "down": 0,
-      "seen": 19
+      "seen": 22
     },
     "DF-03": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-04": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-05": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-06": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-07": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-08": {
       "up": 0,
-      "down": 0
+      "down": 0,
+      "seen": 3
     },
     "DF-09": {
       "up": 0,
       "down": 0,
-      "seen": 27
+      "seen": 30
     },
     "DF-10": {
       "up": 0,
       "down": 0,
-      "seen": 16
+      "seen": 19
     }
   },
   "cycle": 4,

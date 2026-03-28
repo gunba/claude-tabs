@@ -303,6 +303,34 @@ describe("classifyTapEntry — spawn", () => {
   });
 });
 
+describe("classifyTapEntry — effort level", () => {
+  it("classifies settings object with effortLevel → EffortLevel", () => {
+    const entry: TapEntry = {
+      ts: 5000, cat: "stringify", len: 775,
+      snap: JSON.stringify({
+        cleanupPeriodDays: 365,
+        permissions: { defaultMode: "bypassPermissions" },
+        effortLevel: "high",
+        autoUpdatesChannel: "latest",
+      }),
+    };
+    const event = classifyTapEntry(entry);
+    expect(event).toEqual({ kind: "EffortLevel", ts: 5000, level: "high" });
+  });
+
+  it("classifies medium effort level", () => {
+    const entry: TapEntry = {
+      ts: 5001, cat: "stringify", len: 777,
+      snap: JSON.stringify({
+        permissions: { defaultMode: "default" },
+        effortLevel: "medium",
+      }),
+    };
+    const event = classifyTapEntry(entry);
+    expect(event).toEqual({ kind: "EffortLevel", ts: 5001, level: "medium" });
+  });
+});
+
 describe("classifyTapEntry — worktree events", () => {
   it("classifies worktree-state with session → WorktreeState", () => {
     const entry: TapEntry = {
