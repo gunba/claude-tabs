@@ -6,10 +6,15 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 // Mock color assignment (no DOM/visual side effects in tests)
-vi.mock("../../lib/claude", () => ({
-  assignSessionColor: vi.fn(),
-  releaseSessionColor: vi.fn(),
-}));
+// Import the real findNearestLiveTab since it's pure logic used by closeSession
+vi.mock("../../lib/claude", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/claude")>();
+  return {
+    assignSessionColor: vi.fn(),
+    releaseSessionColor: vi.fn(),
+    findNearestLiveTab: actual.findNearestLiveTab,
+  };
+});
 
 import { useSessionStore } from "../sessions";
 import { DEFAULT_SESSION_CONFIG } from "../../types/session";
@@ -243,6 +248,24 @@ describe("closeSession tab selection", () => {
     });
     await useSessionStore.getState().closeSession("a");
     expect(useSessionStore.getState().activeTabId).toBeNull();
+  });
+
+  it("prefers live tab over adjacent dead tab when closing active tab", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a"), { ...makeSession("b"), state: "dead" as const }, makeSession("c")],
+      activeTabId: "a",
+    });
+    await useSessionStore.getState().closeSession("a");
+    expect(useSessionStore.getState().activeTabId).toBe("c");
+  });
+
+  it("falls back to dead tab when all remaining tabs are dead", async () => {
+    useSessionStore.setState({
+      sessions: [makeSession("a"), { ...makeSession("b"), state: "dead" as const }, { ...makeSession("c"), state: "dead" as const }],
+      activeTabId: "a",
+    });
+    await useSessionStore.getState().closeSession("a");
+    expect(useSessionStore.getState().activeTabId).toBe("b");
   });
 
   it("removes session from store even when close_session IPC rejects", async () => {

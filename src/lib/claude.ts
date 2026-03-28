@@ -22,6 +22,20 @@ export function canResumeSession(session: Session): boolean {
   return !!session.config.sessionId || !!session.config.resumeSession || !!session.metadata.nodeSummary;
 }
 
+/** Find the nearest non-dead tab from a given index. Searches right then left.
+ *  Falls back to any tab if all are dead. Returns null if the array is empty. */
+export function findNearestLiveTab(sessions: Session[], fromIndex: number): string | null {
+  // Pass 1: nearest non-dead tab
+  for (let dist = 0; dist < sessions.length; dist++) {
+    const right = fromIndex + dist;
+    if (right < sessions.length && sessions[right].state !== "dead") return sessions[right].id;
+    const left = fromIndex - dist - 1;
+    if (left >= 0 && sessions[left].state !== "dead") return sessions[left].id;
+  }
+  // Pass 2: all dead — fall back to nearest regardless of state
+  return sessions[fromIndex]?.id ?? sessions[fromIndex - 1]?.id ?? null;
+}
+
 /** Strip -w / --worktree from extra flags (used on resume to avoid creating a new worktree). */
 export function stripWorktreeFlags(flags: string | null): string | null {
   if (!flags) return null;
