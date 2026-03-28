@@ -95,6 +95,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "SubagentLifecycle":
     case "PlanModeEvent":
     case "WorktreeState":
+    case "WorktreeCleared":
     case "HookTelemetry":
     case "SystemPromptCapture":
       return state;

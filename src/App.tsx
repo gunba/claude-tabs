@@ -660,8 +660,13 @@ export default function App() {
                 setPruneConfirm(null);
                 closeSession(sessionId);
                 void (async () => {
-                  try { await killPty(sessionId); }
-                  catch (err) { dlog("session", sessionId, `prune: killPty failed: ${err}`, "ERR"); }
+                  // Kill PTY with timeout — ConPTY cleanup can hang on Windows
+                  try {
+                    await Promise.race([
+                      killPty(sessionId),
+                      new Promise<void>(r => setTimeout(r, 8000)),
+                    ]);
+                  } catch (err) { dlog("session", sessionId, `prune: killPty failed: ${err}`, "ERR"); }
                   try { await invoke("prune_worktree", { worktreePath, projectRoot }); }
                   catch (err) { dlog("session", sessionId, `prune: git worktree remove failed: ${err}`, "ERR"); }
                 })();

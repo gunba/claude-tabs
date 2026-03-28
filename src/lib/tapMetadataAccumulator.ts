@@ -293,6 +293,10 @@ export class TapMetadataAccumulator {
         };
         break;
 
+      case "WorktreeCleared":
+        this.worktreeInfo = null;
+        break;
+
       case "SystemPromptCapture":
         if (event.text !== this.capturedSystemPrompt) {
           this.capturedSystemPrompt = event.text;
