@@ -482,3 +482,22 @@
 }
 
 .btn-secondary:hover { background: var(--border); }
+
+/* System prompt dropdown group */
+.launcher-prompt-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  border-left: 1px solid var(--border-subtle);
+  padding-left: 8px;
+}
+
+.launcher-prompt-select {
+  max-width: 130px;
+}
+
+.launcher-prompt-mode {
+  font-size: 9px;
+  padding: 3px 8px;
+}

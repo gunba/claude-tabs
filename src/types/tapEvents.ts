@@ -331,6 +331,13 @@ export interface HookTelemetry extends TapEventBase {
   numErrors: number;
 }
 
+export interface SystemPromptCapture extends TapEventBase {
+  kind: "SystemPromptCapture";
+  text: string;
+  model: string;
+  messageCount: number;
+}
+
 // ── Discriminated union ──
 
 export type TapEvent =
@@ -381,4 +388,5 @@ export type TapEvent =
   | SubagentLifecycle
   | PlanModeEvent
   | WorktreeState
-  | HookTelemetry;
+  | HookTelemetry
+  | SystemPromptCapture;

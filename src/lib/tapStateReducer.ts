@@ -96,6 +96,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "PlanModeEvent":
     case "WorktreeState":
     case "HookTelemetry":
+    case "SystemPromptCapture":
       return state;
   }
 }

@@ -55,6 +55,8 @@ interface SettingsState {
   pastSessionsLoading: boolean;
   sessionNames: Record<string, string>;
   sessionConfigs: Record<string, Partial<SessionConfig>>;
+  capturedDefaultPrompt: string | null;
+  savedPrompts: Array<{ id: string; name: string; text: string }>;
 
   // Actions
   addRecentDir: (dir: string) => void;
@@ -79,6 +81,10 @@ interface SettingsState {
   loadPastSessions: () => Promise<void>;
   loadBinarySettingsSchema: () => Promise<void>;
   loadSettingsJsonSchema: () => Promise<void>;
+  setCapturedDefaultPrompt: (text: string) => void;
+  addSavedPrompt: (name: string, text: string) => void;
+  updateSavedPrompt: (id: string, updates: { name?: string; text?: string }) => void;
+  removeSavedPrompt: (id: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -106,6 +112,8 @@ export const useSettingsStore = create<SettingsState>()(
       pastSessionsLoading: false,
       sessionNames: {},
       sessionConfigs: {},
+      capturedDefaultPrompt: null,
+      savedPrompts: [],
 
       addRecentDir: (dir) =>
         set((s) => {
@@ -274,6 +282,25 @@ export const useSettingsStore = create<SettingsState>()(
           // Network fetch failed — Zustand persistence provides offline fallback
         }
       },
+
+      setCapturedDefaultPrompt: (text) => set((s) => {
+        if (s.capturedDefaultPrompt === text) return s;
+        return { capturedDefaultPrompt: text };
+      }),
+
+      addSavedPrompt: (name, text) => set((s) => ({
+        savedPrompts: [...s.savedPrompts, { id: crypto.randomUUID(), name, text }],
+      })),
+
+      updateSavedPrompt: (id, updates) => set((s) => ({
+        savedPrompts: s.savedPrompts.map((p) =>
+          p.id === id ? { ...p, ...updates } : p
+        ),
+      })),
+
+      removeSavedPrompt: (id) => set((s) => ({
+        savedPrompts: s.savedPrompts.filter((p) => p.id !== id),
+      })),
     }),
     {
       name: "claude-tabs-settings",
@@ -295,6 +322,8 @@ export const useSettingsStore = create<SettingsState>()(
         commandBarExpanded: state.commandBarExpanded,
         sessionNames: state.sessionNames,
         sessionConfigs: state.sessionConfigs,
+        capturedDefaultPrompt: state.capturedDefaultPrompt,
+        savedPrompts: state.savedPrompts,
       }),
     }
   )

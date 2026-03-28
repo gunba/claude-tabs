@@ -517,6 +517,20 @@ export const INSTALL_TAPS = `(function() {
     if (flags.stringify) {
       try {
         if (typeof result === 'string') {
+          // Detect API request body — extract full system prompt (bypasses 2000-char snap truncation)
+          if (value && value.model && Array.isArray(value.messages) && !value.costUSD && value.system) {
+            var sysText = '';
+            if (Array.isArray(value.system)) {
+              for (var si = 0; si < value.system.length; si++) {
+                sysText += (value.system[si].text || '');
+              }
+            } else if (typeof value.system === 'string') {
+              sysText = value.system;
+            }
+            if (sysText.length > 0) {
+              push('system-prompt', { text: sysText, model: value.model, msgCount: value.messages.length });
+            }
+          }
           push('stringify', { len: result.length, snap: result.slice(0, 2000) });
         }
       } catch(e) {}

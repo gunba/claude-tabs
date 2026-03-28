@@ -44,6 +44,7 @@ const DEDICATED_FLAGS = new Set([
   "--model", "--permission-mode", "--effort",
   "--dangerously-skip-permissions", "--project-dir",
   "--resume", "--session-id", "--continue",
+  "--system-prompt", "--append-system-prompt",
 ]);
 
 // Flags that don't start an interactive session
@@ -64,6 +65,7 @@ export function SessionLauncher() {
     useSettingsStore();
   const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
+  const savedPrompts = useSettingsStore((s) => s.savedPrompts);
 
   // savedDefaults (explicit "Save defaults") takes priority over lastConfig (auto-saved on launch)
   const defaults = savedDefaults ?? lastConfig;
@@ -82,6 +84,8 @@ export function SessionLauncher() {
   const [showCliOptions, setShowCliOptions] = useState(true);
   const [showUtility, setShowUtility] = useState(false);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
+  const [selectedPromptId, setSelectedPromptId] = useState<string>("");
+  const [promptMode, setPromptMode] = useState<"replace" | "append">("replace");
 
   // Unified command line: editable string that starts from config selections.
   // User can edit freely; reset button regenerates from current dropdowns.
@@ -189,8 +193,20 @@ export function SessionLauncher() {
       const parts = commandLine.replace(/^claude\s*/, "").trim();
       extra = parts || null;
     }
-    return { ...config, extraFlags: extra };
-  }, [config, commandLine, buildFullCommand]);
+    // Apply selected system prompt
+    const selectedPrompt = savedPrompts.find((p) => p.id === selectedPromptId);
+    const promptOverrides: Partial<SessionConfig> = {};
+    if (selectedPrompt) {
+      if (promptMode === "replace") {
+        promptOverrides.systemPrompt = selectedPrompt.text;
+        promptOverrides.appendSystemPrompt = null;
+      } else {
+        promptOverrides.systemPrompt = null;
+        promptOverrides.appendSystemPrompt = selectedPrompt.text;
+      }
+    }
+    return { ...config, extraFlags: extra, ...promptOverrides };
+  }, [config, commandLine, buildFullCommand, savedPrompts, selectedPromptId, promptMode]);
 
   const closeSession = useSessionStore((s) => s.closeSession);
 
@@ -437,6 +453,33 @@ export function SessionLauncher() {
           >
             Skip
           </button>
+
+          {savedPrompts.length > 0 && (
+            <span className="launcher-prompt-group">
+              <select
+                className="launcher-select launcher-prompt-select"
+                value={selectedPromptId}
+                onChange={(e) => setSelectedPromptId(e.target.value)}
+                disabled={isNonSessionCommand}
+                title="System prompt"
+              >
+                <option value="">Default Prompt</option>
+                {savedPrompts.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {selectedPromptId && (
+                <button
+                  className={`launcher-toggle-pill launcher-prompt-mode${promptMode === "append" ? " launcher-toggle-pill-on" : ""}`}
+                  onClick={() => setPromptMode((m) => m === "replace" ? "append" : "replace")}
+                  title={promptMode === "replace" ? "Replace system prompt" : "Append to system prompt"}
+                  type="button"
+                >
+                  {promptMode === "replace" ? "Replace" : "Append"}
+                </button>
+              )}
+            </span>
+          )}
 
         </div>
 

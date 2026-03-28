@@ -57,6 +57,7 @@ export class TapMetadataAccumulator {
   private contextBudget: SessionMetadata["contextBudget"] = null;
   private hookTelemetry: SessionMetadata["hookTelemetry"] = null;
   private planOutcome: string | null = null;
+  private capturedSystemPrompt: string | null = null;
   private worktreeInfo: SessionMetadata["worktreeInfo"] = null;
 
   /** Process an event and return a metadata diff, or null if unchanged. */
@@ -292,6 +293,12 @@ export class TapMetadataAccumulator {
         };
         break;
 
+      case "SystemPromptCapture":
+        if (event.text !== this.capturedSystemPrompt) {
+          this.capturedSystemPrompt = event.text;
+        }
+        break;
+
       default:
         return null;
     }
@@ -342,6 +349,7 @@ export class TapMetadataAccumulator {
       contextBudget: this.contextBudget,
       hookTelemetry: this.hookTelemetry,
       planOutcome: this.planOutcome,
+      capturedSystemPrompt: this.capturedSystemPrompt,
       worktreeInfo: this.worktreeInfo,
       ...(this.nodeSummary ? { nodeSummary: this.nodeSummary } : {}),
     };
@@ -393,6 +401,7 @@ export class TapMetadataAccumulator {
     this.contextBudget = null;
     this.hookTelemetry = null;
     this.planOutcome = null;
+    this.capturedSystemPrompt = null;
     this.worktreeInfo = null;
   }
 }

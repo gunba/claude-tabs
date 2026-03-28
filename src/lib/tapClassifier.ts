@@ -589,6 +589,16 @@ export function classifyTapEntry(entry: TapEntry): TapEvent | null {
       return classifySpawn(ts, entry);
     }
 
+    // System prompt: full text capture (bypasses 2000-char snap truncation)
+    if (cat === "system-prompt" && typeof entry.text === "string") {
+      return {
+        kind: "SystemPromptCapture", ts,
+        text: entry.text as string,
+        model: String(entry.model || ""),
+        messageCount: typeof entry.msgCount === "number" ? (entry.msgCount as number) : 0,
+      };
+    }
+
     // All other categories (console, fs, timer, stdout, stderr, etc.) → null (disk only)
     return null;
   } catch {

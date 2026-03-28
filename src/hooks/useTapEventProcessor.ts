@@ -130,6 +130,14 @@ export function useTapEventProcessor(
         useSettingsStore.getState().recordCommandUsage(event.command);
       }
 
+      // SystemPromptCapture → store the default prompt (only if user didn't set a custom one)
+      if (event.kind === "SystemPromptCapture") {
+        const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+        if (session && !session.config.systemPrompt) {
+          useSettingsStore.getState().setCapturedDefaultPrompt(event.text);
+        }
+      }
+
       // ProcessHealth → store (throttled to ~every 5s)
       if (event.kind === "ProcessHealth") {
         healthCountRef.current++;
