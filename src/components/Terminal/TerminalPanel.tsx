@@ -133,8 +133,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     }
     const prev = prevClaudeSessionIdRef.current;
     prevClaudeSessionIdRef.current = tapProcessor.claudeSessionId;
-    // Clear terminal when session ID changes (context clear, plan approval, compaction)
-    if (prev && prev !== tapProcessor.claudeSessionId) {
+    // Clear terminal when session ID changes (context clear, plan approval, compaction).
+    // Skip during resume loading: JSONL replay surfaces stale session IDs from old
+    // compaction/plan transitions, causing spurious clears that wipe the conversation.
+    if (prev && prev !== tapProcessor.claudeSessionId && !resumeLoadingRef.current) {
       bgBufferRef.current = [];
       terminal.clearPending();
       terminal.clear();
@@ -143,6 +145,14 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       updateConfig(session.id, { sessionId: tapProcessor.claudeSessionId });
     }
   }, [tapProcessor.claudeSessionId, session.id, session.config.sessionId, updateConfig]);
+
+  // Clear resume loading suppression when session reaches idle (resume is complete).
+  // After this, context-clear detection works normally for /clear, compaction, etc.
+  useEffect(() => {
+    if (resumeLoadingRef.current && isSessionIdle(session.state)) {
+      resumeLoadingRef.current = false;
+    }
+  }, [session.state]);
 
   // Cache session config when inspector connects (for resume picker fallback)
   useEffect(() => {
@@ -163,6 +173,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const visibleRef = useRef(visible);
   const bgBufferRef = useRef<Uint8Array[]>([]);
   visibleRef.current = visible;
+
+  // Suppress context-clear detection during resume loading phase.
+  // JSONL replay can surface stale session IDs from old compaction/plan transitions,
+  // causing spurious terminal.clear() calls that wipe the just-loaded conversation.
+  // Set true in triggerRespawn when resuming; cleared on first idle state.
+  const resumeLoadingRef = useRef(false);
 
   // Detect "session already in use" errors in early PTY output
   const earlyOutputRef = useRef("");
@@ -287,6 +303,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     earlyOutputRef.current = "";
     sessionInUseRef.current = false;
     sessionInUseRetried.current = false;
+    // Suppress context-clear during resume: JSONL replay surfaces stale session IDs
+    resumeLoadingRef.current = !!newConfig.resumeSession;
     setExternalHolder(null);
     setInspectorPort(null);
 
