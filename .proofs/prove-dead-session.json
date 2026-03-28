@@ -55,18 +55,28 @@
   "metadata": {
     "DS-03": {
       "files": [
-        "src/lib/claude.ts:20",
-        "src/components/Terminal/TerminalPanel.tsx:55"
+        "src/lib/claude.ts",
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-27",
-      "notes": "canResumeSession checks sessionId || resumeSession || nodeSummary, no JSONL check"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "canResumeSession checks sessionId || resumeSession || nodeSummary, no JSONL check"
+        }
+      ]
     },
     "DS-09": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:452"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     }
   }
 }

@@ -28,10 +28,15 @@
   "metadata": {
     "SS-01": {
       "files": [
-        "src/hooks/useTapEventProcessor.ts:101"
+        "src/hooks/useTapEventProcessor.ts"
       ],
       "verified": "2026-03-27",
-      "notes": "SessionRegistration event carries sessionId; setClaudeSessionId tracks changes (resume/compaction/fork)"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "SessionRegistration event carries sessionId; setClaudeSessionId tracks changes (resume/compaction/fork)"
+        }
+      ]
     }
   }
 }

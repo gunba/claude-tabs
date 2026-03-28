@@ -64,32 +64,52 @@
   "metadata": {
     "RS-03": {
       "files": [
-        "src/lib/claude.ts:21"
+        "src/lib/claude.ts"
       ],
       "verified": "2026-03-27",
-      "notes": "canResumeSession: sessionId || resumeSession || nodeSummary, in-memory, no JSONL"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "canResumeSession: sessionId || resumeSession || nodeSummary, in-memory, no JSONL"
+        }
+      ]
     },
     "RS-07": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:411"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RS-08": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:456"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RS-09": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:316",
-        "src/hooks/useTerminal.ts:390"
+        "src/components/Terminal/TerminalPanel.tsx",
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     }
   }
 }

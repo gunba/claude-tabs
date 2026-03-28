@@ -124,66 +124,106 @@
   "metadata": {
     "RC-11": {
       "files": [
-        "src-tauri/src/commands.rs:1370",
-        "src-tauri/src/lib.rs:176"
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RC-12": {
       "files": [
-        "src-tauri/src/commands.rs:1783",
-        "src-tauri/src/commands.rs:1794",
-        "src-tauri/src/commands.rs:1824"
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-27",
-      "notes": "read/write_config_file + list_agents with 3-scope agent paths. Parent dirs auto-created."
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "read/write_config_file + list_agents with 3-scope agent paths. Parent dirs auto-created."
+        }
+      ]
     },
     "RC-13": {
       "files": [
-        "src-tauri/src/commands.rs:1637",
-        "src/store/sessions.ts:90"
+        "src-tauri/src/commands.rs",
+        "src/store/sessions.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RC-14": {
       "files": [
-        "src-tauri/src/commands.rs:1836",
-        "src/hooks/useNotifications.ts:44"
+        "src-tauri/src/commands.rs",
+        "src/hooks/useNotifications.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RC-15": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:348"
+        "src-tauri/pty-patch/src/lib.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RC-16": {
       "files": [
-        "src-tauri/src/commands.rs:624"
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RC-17": {
       "files": [
-        "src-tauri/src/commands.rs:407",
-        "src-tauri/src/lib.rs:137"
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "RC-18": {
       "files": [
-        "src-tauri/src/commands.rs:1879",
-        "src-tauri/src/lib.rs:167"
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/lib.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     }
   }
 }

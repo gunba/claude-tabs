@@ -60,73 +60,123 @@
   "metadata": {
     "HM-01": {
       "files": [
-        "src/components/ConfigManager/HooksPane.tsx:60"
+        "src/components/ConfigManager/HooksPane.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Three scopes confirmed in HooksPane (scope param)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Three scopes confirmed in HooksPane (scope param)"
+        }
+      ]
     },
     "HM-07": {
       "files": [
-        "src/components/StatusBar/StatusBar.tsx:182"
+        "src/components/StatusBar/StatusBar.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "hookCount sums hooks[] within MatcherGroups at line 182"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "hookCount sums hooks[] within MatcherGroups at line 182"
+        }
+      ]
     },
     "HM-08": {
       "files": [
-        "src/components/StatusBar/StatusBar.tsx:263"
+        "src/components/StatusBar/StatusBar.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Sigma total tokens at line 263"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Sigma total tokens at line 263"
+        }
+      ]
     },
     "HM-09": {
       "files": [
-        "src/components/ConfigManager/HooksPane.tsx:20"
+        "src/components/ConfigManager/HooksPane.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "HOOK_TYPES=['command','prompt','agent'] at line 20"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "HOOK_TYPES=['command','prompt','agent'] at line 20"
+        }
+      ]
     },
     "HM-10": {
       "files": [
-        "src/components/StatusBar/StatusBar.tsx:7"
+        "src/components/StatusBar/StatusBar.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Line ref confirmed for SVG icon imports"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line ref confirmed for SVG icon imports"
+        }
+      ]
     },
     "HM-02": {
       "files": [
-        "src/components/ConfigManager/HooksPane.tsx:84"
+        "src/components/ConfigManager/HooksPane.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Scope separation via scopeKey at line 84 (project vs project-local distinct)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Scope separation via scopeKey at line 84 (project vs project-local distinct)"
+        }
+      ]
     },
     "HM-05": {
       "files": [
-        "src/components/ConfigManager/HooksPane.tsx:242"
+        "src/components/ConfigManager/HooksPane.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Custom event option __custom__ at line 242"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Custom event option __custom__ at line 242"
+        }
+      ]
     },
     "HM-03": {
       "files": [
-        "src-tauri/src/commands.rs:1271"
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "save_hooks merges into existing settings at line 1271 (reads then writes back, preserving other keys)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "save_hooks merges into existing settings at line 1271 (reads then writes back, preserving other keys)"
+        }
+      ]
     },
     "HM-04": {
       "files": [
-        "src/components/ConfigManager/HooksPane.tsx:174"
+        "src/components/ConfigManager/HooksPane.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Edit spreads original entry at HooksPane:174 (was confirmed)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Edit spreads original entry at HooksPane:174 (was confirmed)"
+        }
+      ]
     },
     "HM-06": {
       "files": [
-        "src/components/ConfigManager/HooksPane.tsx:188"
+        "src/components/ConfigManager/HooksPane.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "isCustomEvent check for unknown event names at line 188"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "isCustomEvent check for unknown event names at line 188"
+        }
+      ]
     }
   }
 }

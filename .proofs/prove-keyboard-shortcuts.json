@@ -57,45 +57,75 @@
   "metadata": {
     "KB-03": {
       "files": [
-        "src/App.tsx:233"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Ctrl+Shift+R at line 233 (was 197)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Ctrl+Shift+R at line 233 (was 197)"
+        }
+      ]
     },
     "KB-09": {
       "files": [
-        "src/App.tsx:253"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Escape handler ordering confirmed at line 253"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Escape handler ordering confirmed at line 253"
+        }
+      ]
     },
     "KB-10": {
       "files": [
-        "src/hooks/useTerminal.ts:80"
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Line ref confirmed: Alt+digit block at useTerminal.ts:80"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line ref confirmed: Alt+digit block at useTerminal.ts:80"
+        }
+      ]
     },
     "KB-01": {
       "files": [
-        "src/App.tsx:209"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Ctrl+T at line 209"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Ctrl+T at line 209"
+        }
+      ]
     },
     "KB-02": {
       "files": [
-        "src/App.tsx:223"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Ctrl+W at line 223"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Ctrl+W at line 223"
+        }
+      ]
     },
     "KB-06": {
       "files": [
-        "src/App.tsx:228"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Ctrl+K at line 228"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Ctrl+K at line 228"
+        }
+      ]
     }
   }
 }

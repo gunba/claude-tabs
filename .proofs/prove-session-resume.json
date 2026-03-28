@@ -51,11 +51,16 @@
   "metadata": {
     "SR-07": {
       "files": [
-        "src/components/ResumePicker/ResumePicker.tsx:121",
-        "src-tauri/src/commands.rs:407"
+        "src/components/ResumePicker/ResumePicker.tsx",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     }
   }
 }

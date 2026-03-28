@@ -28,11 +28,16 @@
   "metadata": {
     "BF-03": {
       "files": [
-        "src/hooks/useTerminal.ts:195",
-        "src/components/Terminal/TerminalPanel.tsx:395"
+        "src/hooks/useTerminal.ts",
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Added during change documentation"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Added during change documentation"
+        }
+      ]
     }
   }
 }

@@ -70,25 +70,40 @@
   "metadata": {
     "DF-02": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:179",
-        "src/lib/ptyProcess.ts:88"
+        "src-tauri/pty-patch/src/lib.rs",
+        "src/lib/ptyProcess.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "DF-08": {
       "files": [
-        "src/components/Icons/Icons.tsx:1"
+        "src/components/Icons/Icons.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Icon count updated from 25 to 26. New icons: IconSkill and IconReset added."
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Icon count updated from 25 to 26. New icons: IconSkill and IconReset added."
+        }
+      ]
     },
     "DF-10": {
       "files": [
-        "src/lib/diffParser.ts:268"
+        "src/lib/diffParser.ts"
       ],
       "verified": "2026-03-26",
-      "notes": "Added during change documentation"
+      "notes": [
+        {
+          "date": "2026-03-26",
+          "text": "Added during change documentation"
+        }
+      ]
     }
   }
 }

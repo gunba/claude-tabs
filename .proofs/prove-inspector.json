@@ -112,133 +112,218 @@
   "metadata": {
     "IN-04": {
       "files": [
-        "src/lib/tapSubagentTracker.ts:88",
-        "src/lib/tapSubagentTracker.ts:140"
+        "src/lib/tapSubagentTracker.ts",
+        "src/lib/tapSubagentTracker.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed"
+        }
+      ]
     },
     "IN-05": {
       "files": [
-        "src/lib/tapSubagentTracker.ts:1"
+        "src/lib/tapSubagentTracker.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Confirmed: no stale detection code"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Confirmed: no stale detection code"
+        }
+      ]
     },
     "IN-06": {
       "files": [
-        "src/lib/tapSubagentTracker.ts:1"
+        "src/lib/tapSubagentTracker.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Confirmed: no dead subagent purge code"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Confirmed: no dead subagent purge code"
+        }
+      ]
     },
     "IN-07": {
       "files": [
-        "src/lib/inspectorPort.ts:17",
-        "src-tauri/src/commands.rs:2164"
+        "src/lib/inspectorPort.ts",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "check_port_available at commands.rs:2164 (was 1914); inspectorPort.ts:17 confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "check_port_available at commands.rs:2164 (was 1914); inspectorPort.ts:17 confirmed"
+        }
+      ]
     },
     "IN-08": {
       "files": [
-        "src/components/SubagentInspector/SubagentInspector.tsx:19",
-        "src/components/SubagentInspector/SubagentInspector.tsx:80"
+        "src/components/SubagentInspector/SubagentInspector.tsx",
+        "src/components/SubagentInspector/SubagentInspector.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed"
+        }
+      ]
     },
     "IN-09": {
       "files": [
-        "src/lib/tapMetadataAccumulator.ts:100"
+        "src/lib/tapMetadataAccumulator.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "choiceHint via AskUserQuestion ToolCallStart confirmed at line 100"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "choiceHint via AskUserQuestion ToolCallStart confirmed at line 100"
+        }
+      ]
     },
     "IN-10": {
       "files": [
-        "src/types/tapEvents.ts:352"
+        "src/types/tapEvents.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "45 TapEvent types confirmed in union"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "45 TapEvent types confirmed in union"
+        }
+      ]
     },
     "IN-11": {
       "files": [
-        "src/components/StatusBar/StatusBar.tsx:1"
+        "src/components/StatusBar/StatusBar.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "StatusBar enrichment from tap events confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "StatusBar enrichment from tap events confirmed"
+        }
+      ]
     },
     "IN-12": {
       "files": [
-        "src/hooks/useInspectorConnection.ts:16",
-        "src/hooks/useTapPipeline.ts:31",
-        "src/hooks/useTapEventProcessor.ts:17"
+        "src/hooks/useInspectorConnection.ts",
+        "src/hooks/useTapPipeline.ts",
+        "src/hooks/useTapEventProcessor.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed"
+        }
+      ]
     },
     "IN-13": {
       "files": [
-        "src/types/session.ts:1",
-        "src/lib/tapStateReducer.ts:47",
-        "src/store/sessions.ts:340"
+        "src/types/session.ts",
+        "src/lib/tapStateReducer.ts",
+        "src/store/sessions.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "UserInterruption at tapStateReducer:47 (was 44); clearIdleSubagents at sessions.ts:340 (was 338)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "UserInterruption at tapStateReducer:47 (was 44); clearIdleSubagents at sessions.ts:340 (was 338)"
+        }
+      ]
     },
     "IN-14": {
       "files": [
-        "src/lib/tapMetadataAccumulator.ts:73",
-        "src/lib/tapSubagentTracker.ts:140"
+        "src/lib/tapMetadataAccumulator.ts",
+        "src/lib/tapSubagentTracker.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "queryDepth===0 guard at tapMetadataAccumulator:73 (was 63)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "queryDepth===0 guard at tapMetadataAccumulator:73 (was 63)"
+        }
+      ]
     },
     "IN-15": {
       "files": [
-        "src/lib/tapClassifier.ts:426"
+        "src/lib/tapClassifier.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "billingType guard at line 426 (was 420)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "billingType guard at line 426 (was 420)"
+        }
+      ]
     },
     "IN-16": {
       "files": [
-        "src/lib/tapSubagentTracker.ts:24",
-        "src/types/session.ts:157"
+        "src/lib/tapSubagentTracker.ts",
+        "src/types/session.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed: subagentCost Map at tracker:24; costUsd in session.ts:157"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed: subagentCost Map at tracker:24; costUsd in session.ts:157"
+        }
+      ]
     },
     "IN-17": {
       "files": [
-        "src/components/StatusBar/StatusBar.tsx:86",
-        "src/App.tsx:601"
+        "src/components/StatusBar/StatusBar.tsx",
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed"
+        }
+      ]
     },
     "IN-01": {
       "files": [
-        "src/lib/inspectorPort.ts:17",
-        "src-tauri/src/commands.rs:2164"
+        "src/lib/inspectorPort.ts",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "allocateInspectorPort at :17; check_port_available at commands.rs:2164"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "allocateInspectorPort at :17; check_port_available at commands.rs:2164"
+        }
+      ]
     },
     "IN-02": {
       "files": [
-        "src/lib/inspectorHooks.ts:414"
+        "src/lib/inspectorHooks.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "INSTALL_TAPS with 15 categories confirmed; flags object at line 418"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "INSTALL_TAPS with 15 categories confirmed; flags object at line 418"
+        }
+      ]
     },
     "IN-03": {
       "files": [
-        "src/lib/tapSubagentTracker.ts:1"
+        "src/lib/tapSubagentTracker.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "SubagentSpawn + SessionRegistration matching confirmed in tapSubagentTracker.ts"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "SubagentSpawn + SessionRegistration matching confirmed in tapSubagentTracker.ts"
+        }
+      ]
     }
   }
 }

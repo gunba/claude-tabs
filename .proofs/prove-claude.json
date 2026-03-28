@@ -120,173 +120,273 @@
   "metadata": {
     "BV-02": {
       "files": [
-        "package.json:13",
-        "package.json:14"
+        "package.json",
+        "package.json"
       ],
       "verified": "2026-03-27",
-      "notes": "build:quick and build:debug scripts confirmed in package.json"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "build:quick and build:debug scripts confirmed in package.json"
+        }
+      ]
     },
     "BV-03": {
       "files": [
-        "package.json:8"
+        "package.json"
       ],
       "verified": "2026-03-27",
-      "notes": "tsc/vitest/cargo check pattern confirmed as dev workflow"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "tsc/vitest/cargo check pattern confirmed as dev workflow"
+        }
+      ]
     },
     "CD-01": {
       "files": [
-        "~/.claude/commands/r.md:1",
-        "~/.claude/commands/j.md:1",
-        "~/.claude/commands/b.md:1",
-        "~/.claude/commands/rj.md:1",
-        "~/.claude/commands/c.md:1"
+        "~/.claude/commands/r.md",
+        "~/.claude/commands/j.md",
+        "~/.claude/commands/b.md",
+        "~/.claude/commands/rj.md",
+        "~/.claude/commands/c.md"
       ],
       "verified": "2026-03-27",
-      "notes": "Updated: /p removed (no p.md), /c added (commit/exit/merge). Files: r,j,b,rj,c confirmed."
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "Updated: /p removed (no p.md), /c added (commit/exit/merge). Files: r,j,b,rj,c confirmed."
+        }
+      ]
     },
     "DC-01": {
       "files": [
-        "DOCS/ARCHITECTURE.md:1"
+        "DOCS/ARCHITECTURE.md"
       ],
       "verified": "2026-03-27",
-      "notes": "File exists"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "File exists"
+        }
+      ]
     },
     "DC-02": {
       "files": [
-        "DOCS/FEATURES.md:1"
+        "DOCS/FEATURES.md"
       ],
       "verified": "2026-03-27",
-      "notes": "File exists"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "File exists"
+        }
+      ]
     },
     "DC-03": {
       "files": [
-        "DOCS/PHILOSOPHY.md:1"
+        "DOCS/PHILOSOPHY.md"
       ],
       "verified": "2026-03-27",
-      "notes": "File exists"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "File exists"
+        }
+      ]
     },
     "DC-04": {
       "files": [
-        ".proofs/config.json:1",
-        ".proofs/prove-claude.json:1",
-        ".proofs/prove-architecture.json:1",
-        ".proofs/prove-features.json:1",
-        ".proofs/prove-philosophy.json:1"
+        ".proofs/config.json",
+        ".proofs/prove-claude.json",
+        ".proofs/prove-architecture.json",
+        ".proofs/prove-features.json",
+        ".proofs/prove-philosophy.json"
       ],
       "verified": "2026-03-27",
-      "notes": "Prove infrastructure exists with config and per-doc proof files"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "Prove infrastructure exists with config and per-doc proof files"
+        }
+      ]
     },
     "DR-01": {
       "files": [
-        "src-tauri/src/commands.rs:1",
-        "src-tauri/src/jsonl_watcher.rs:1",
-        "src-tauri/src/lib.rs:134"
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/jsonl_watcher.rs",
+        "src-tauri/src/lib.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "generate_handler at lib.rs:134 confirmed; commands.rs and jsonl_watcher.rs confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "generate_handler at lib.rs:134 confirmed; commands.rs and jsonl_watcher.rs confirmed"
+        }
+      ]
     },
     "DR-04": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:1",
-        "src/components/StatusBar/StatusBar.tsx:1"
+        "src/components/Terminal/TerminalPanel.tsx",
+        "src/components/StatusBar/StatusBar.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Component structure confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Component structure confirmed"
+        }
+      ]
     },
     "DR-05": {
       "files": [
-        "src/lib/__tests__/tapClassifier.test.ts:1",
-        "src/lib/__tests__/tapStateReducer.test.ts:1",
-        "src/store/__tests__/sessions.test.ts:1"
+        "src/lib/__tests__/tapClassifier.test.ts",
+        "src/lib/__tests__/tapStateReducer.test.ts",
+        "src/store/__tests__/sessions.test.ts"
       ],
       "verified": "2026-03-27",
-      "notes": "23 test files found under src/lib/__tests__/ and src/store/__tests__/"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "23 test files found under src/lib/__tests__/ and src/store/__tests__/"
+        }
+      ]
     },
     "DR-06": {
       "files": [
-        "src-tauri/src/commands.rs:109"
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "spawn_blocking usage confirmed (multiple call sites)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "spawn_blocking usage confirmed (multiple call sites)"
+        }
+      ]
     },
     "DR-08": {
       "files": [
-        "src/lib/debugLog.ts:19"
+        "src/lib/debugLog.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "dlog function at line 19 confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "dlog function at line 19 confirmed"
+        }
+      ]
     },
     "FS-01": {
       "files": [
-        "src/App.tsx:1",
-        "src/store/sessions.ts:1",
-        "src/lib/tapClassifier.ts:1",
-        "src/types/tapEvents.ts:1",
-        "src/types/contextMeter.ts:1",
-        "src/components/ContextMeter/ContextMeter.tsx:1",
-        "src/components/SubagentBar/SubagentBar.tsx:1",
-        "src/lib/contextMeterAccumulator.ts:1"
+        "src/App.tsx",
+        "src/store/sessions.ts",
+        "src/lib/tapClassifier.ts",
+        "src/types/tapEvents.ts",
+        "src/types/contextMeter.ts",
+        "src/components/ContextMeter/ContextMeter.tsx",
+        "src/components/SubagentBar/SubagentBar.tsx",
+        "src/lib/contextMeterAccumulator.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "File tree confirmed; all referenced files exist; ~45 event types confirmed (actual count: 45)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "File tree confirmed; all referenced files exist; ~45 event types confirmed (actual count: 45)"
+        }
+      ]
     },
     "AR-01": {
       "files": [
-        "src/App.tsx:1",
-        "src-tauri/src/lib.rs:1",
-        "src-tauri/src/commands.rs:1"
+        "src/App.tsx",
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "Architecture: WebView2 <-> Tauri IPC <-> Rust <-> PTY confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Architecture: WebView2 <-> Tauri IPC <-> Rust <-> PTY confirmed"
+        }
+      ]
     },
     "BV-01": {
       "files": [
-        "package.json:1"
+        "package.json"
       ],
       "verified": "2026-03-28",
-      "notes": "build:quick (tauri build --no-bundle), build:debug (--debug --no-bundle) confirmed in package.json"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "build:quick (tauri build --no-bundle), build:debug (--debug --no-bundle) confirmed in package.json"
+        }
+      ]
     },
     "DR-07": {
       "files": [
-        "src-tauri/src/commands.rs:121"
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "CREATE_NO_WINDOW (0x08000000) confirmed at multiple sites"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "CREATE_NO_WINDOW (0x08000000) confirmed at multiple sites"
+        }
+      ]
     },
     "TH-01": {
       "files": [
-        "src/lib/theme.ts:102",
-        "src/lib/theme.ts:142"
+        "src/lib/theme.ts",
+        "src/lib/theme.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "applyTheme at line 102, getXtermTheme at line 142 confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "applyTheme at line 102, getXtermTheme at line 142 confirmed"
+        }
+      ]
     },
     "TH-02": {
       "files": [
-        "src/lib/theme.ts:106"
+        "src/lib/theme.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "CSS variable names confirmed in applyTheme body"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "CSS variable names confirmed in applyTheme body"
+        }
+      ]
     },
     "DR-02": {
       "files": [
-        "src/types/session.ts:1",
-        "src/types/ipc.ts:1",
-        "src/types/tapEvents.ts:1",
-        "src/types/git.ts:1",
-        "src/types/contextMeter.ts:1"
+        "src/types/session.ts",
+        "src/types/ipc.ts",
+        "src/types/tapEvents.ts",
+        "src/types/git.ts",
+        "src/types/contextMeter.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "TypeScript types in src/types/ confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "TypeScript types in src/types/ confirmed"
+        }
+      ]
     },
     "DR-03": {
       "files": [
-        "src/store/sessions.ts:1",
-        "src/store/settings.ts:1",
-        "src/hooks/useTerminal.ts:1"
+        "src/store/sessions.ts",
+        "src/store/settings.ts",
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Zustand stores and hooks confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Zustand stores and hooks confirmed"
+        }
+      ]
     }
   }
 }

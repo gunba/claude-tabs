@@ -124,90 +124,145 @@
   "metadata": {
     "PT-08": {
       "files": [
-        "src/components/Terminal/TerminalPanel.css:60",
-        "src/hooks/useTerminal.ts:304",
-        "src/hooks/useTerminal.ts:219",
-        "src/hooks/useTerminal.ts:10"
+        "src/components/Terminal/TerminalPanel.css",
+        "src/hooks/useTerminal.ts",
+        "src/hooks/useTerminal.ts",
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-09": {
       "files": [
-        "src/hooks/useTerminal.ts:317",
-        "src/hooks/useTerminal.ts:184",
-        "src/hooks/useTerminal.ts:191"
+        "src/hooks/useTerminal.ts",
+        "src/hooks/useTerminal.ts",
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-11": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:314",
-        "src/hooks/useTerminal.ts:390"
+        "src/components/Terminal/TerminalPanel.tsx",
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-12": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:417",
-        "src/components/Terminal/TerminalPanel.tsx:431-437"
+        "src/components/Terminal/TerminalPanel.tsx",
+        "src/components/Terminal/TerminalPanel.tsx-437"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-13": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:376"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-27",
-      "notes": "Same-dimension gate: last.cols===cols && last.rows===rows early return"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "Same-dimension gate: last.cols===cols && last.rows===rows early return"
+        }
+      ]
     },
     "PT-15": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:127"
+        "src-tauri/pty-patch/src/lib.rs"
       ],
       "verified": "2026-03-27",
-      "notes": "Background OS thread, 8KiB buffer, sync_channel(64) bounded channel"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "Background OS thread, 8KiB buffer, sync_channel(64) bounded channel"
+        }
+      ]
     },
     "PT-16": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:179",
-        "src-tauri/pty-patch/src/sync_detector.rs:1"
+        "src-tauri/pty-patch/src/lib.rs",
+        "src-tauri/pty-patch/src/sync_detector.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-17": {
       "files": [
-        "src-tauri/pty-patch/src/output_filter.rs:1"
+        "src-tauri/pty-patch/src/output_filter.rs"
       ],
       "verified": "2026-03-22",
-      "notes": "Added during change documentation"
+      "notes": [
+        {
+          "date": "2026-03-22",
+          "text": "Added during change documentation"
+        }
+      ]
     },
     "PT-18": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:348",
-        "src/lib/ptyProcess.ts:170"
+        "src-tauri/pty-patch/src/lib.rs",
+        "src/lib/ptyProcess.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-19": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:27",
-        "src-tauri/pty-patch/src/lib.rs:42"
+        "src-tauri/pty-patch/src/lib.rs",
+        "src-tauri/pty-patch/src/lib.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "PT-20": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:50"
+        "src-tauri/pty-patch/src/lib.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     }
   }
 }

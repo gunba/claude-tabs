@@ -40,40 +40,65 @@
   "metadata": {
     "PS-02": {
       "files": [
-        "src/App.tsx:174"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "beforeunload flushes sessions at App.tsx:174"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "beforeunload flushes sessions at App.tsx:174"
+        }
+      ]
     },
     "PS-05": {
       "files": [
-        "src/store/sessions.ts:96"
+        "src/store/sessions.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Promise.all for kill_orphan_sessions + detect_claude_cli at line 96 (was 86)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Promise.all for kill_orphan_sessions + detect_claude_cli at line 96 (was 86)"
+        }
+      ]
     },
     "PS-04": {
       "files": [
-        "src/App.tsx:171",
-        "src/lib/ptyProcess.ts:22"
+        "src/App.tsx",
+        "src/lib/ptyProcess.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "killAllActivePtys call at App.tsx:171 (was 151)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "killAllActivePtys call at App.tsx:171 (was 151)"
+        }
+      ]
     },
     "PS-01": {
       "files": [
-        "src-tauri/src/commands.rs:94",
-        "src/store/sessions.ts:229"
+        "src-tauri/src/commands.rs",
+        "src/store/sessions.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "persist_sessions_json Rust at line 94; frontend call at sessions.ts:229"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "persist_sessions_json Rust at line 94; frontend call at sessions.ts:229"
+        }
+      ]
     },
     "PS-03": {
       "files": [
-        "src/App.tsx:163"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "debounced persist: setTimeout 2000ms at App.tsx:163"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "debounced persist: setTimeout 2000ms at App.tsx:163"
+        }
+      ]
     }
   }
 }

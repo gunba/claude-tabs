@@ -75,64 +75,104 @@
   "metadata": {
     "TR-07": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:697"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-08": {
       "files": [
-        "src/hooks/useTerminal.ts:282",
-        "src/components/Terminal/TerminalPanel.tsx:662"
+        "src/hooks/useTerminal.ts",
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-09": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:650",
-        "src-tauri/tauri.conf.json:25"
+        "src/components/Terminal/TerminalPanel.tsx",
+        "src-tauri/tauri.conf.json"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-10": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:508"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-11": {
       "files": [
-        "src/App.tsx:516",
-        "src/App.css:576"
+        "src/App.tsx",
+        "src/App.css"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-12": {
       "files": [
-        "src/components/SubagentInspector/SubagentInspector.tsx:18",
-        "src/components/SubagentInspector/SubagentInspector.css:122"
+        "src/components/SubagentInspector/SubagentInspector.tsx",
+        "src/components/SubagentInspector/SubagentInspector.css"
       ],
       "verified": "2026-03-22",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-22",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-13": {
       "files": [
-        "src/components/Terminal/TerminalPanel.tsx:184"
+        "src/components/Terminal/TerminalPanel.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "TR-14": {
       "files": [
-        "src-tauri/pty-patch/src/lib.rs:43",
-        "src/hooks/useTerminal.ts:239"
+        "src-tauri/pty-patch/src/lib.rs",
+        "src/hooks/useTerminal.ts"
       ],
       "verified": "2026-03-27",
-      "notes": "Scroll preservation: ESC[3J conditional, ESC[2J replaced with H+J, baseY shrinkage detection, viewport restore"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "Scroll preservation: ESC[3J conditional, ESC[2J replaced with H+J, baseY shrinkage detection, viewport restore"
+        }
+      ]
     }
   }
 }

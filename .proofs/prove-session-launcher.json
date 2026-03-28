@@ -90,25 +90,40 @@
   "metadata": {
     "SL-04": {
       "files": [
-        "src/components/ResumePicker/ResumePicker.tsx:499"
+        "src/components/ResumePicker/ResumePicker.tsx"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "SL-05": {
       "files": [
-        "src/components/ResumePicker/ResumePicker.tsx:205",
-        "src-tauri/src/commands.rs:337"
+        "src/components/ResumePicker/ResumePicker.tsx",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     },
     "SL-07": {
       "files": [
-        "src/store/settings.ts:199"
+        "src/store/settings.ts"
       ],
       "verified": "2026-03-23",
-      "notes": "Edited via tag-edit.sh"
+      "notes": [
+        {
+          "date": "2026-03-23",
+          "text": "Edited via tag-edit.sh"
+        }
+      ]
     }
   }
 }

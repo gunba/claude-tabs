@@ -196,11 +196,16 @@
   "metadata": {
     "TB-17": {
       "files": [
-        "src/App.tsx:689",
-        "src/App.tsx:736"
+        "src/App.tsx",
+        "src/App.tsx"
       ],
       "verified": "2026-03-27",
-      "notes": "Opens debug.bun.sh URL, disconnects WebSocket, marks inspector-off (hollow dot + status bar)"
+      "notes": [
+        {
+          "date": "2026-03-27",
+          "text": "Opens debug.bun.sh URL, disconnects WebSocket, marks inspector-off (hollow dot + status bar)"
+        }
+      ]
     },
     "TB-24": {
       "files": [
@@ -209,120 +214,195 @@
         "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "Category count is now 15 (not 12): parse, stringify, console, fs, spawn, fetch, exit, timer, stdout, stderr, require, bun, websocket, net, stream"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Category count is now 15 (not 12): parse, stringify, console, fs, spawn, fetch, exit, timer, stdout, stderr, require, bun, websocket, net, stream"
+        }
+      ]
     },
     "TB-22": {
       "files": [
-        "src/App.tsx:32",
-        "src/components/Icons/Icons.tsx:1"
+        "src/App.tsx",
+        "src/components/Icons/Icons.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Icons import at App.tsx:32 (was 27)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Icons import at App.tsx:32 (was 27)"
+        }
+      ]
     },
     "TB-23": {
       "files": [
-        "src/App.tsx:302",
-        "src/App.tsx:317",
-        "src/App.css:456"
+        "src/App.tsx",
+        "src/App.tsx",
+        "src/App.css"
       ],
       "verified": "2026-03-28",
-      "notes": "groupSessionsByDir at 302, separator rendering at 317, CSS at 456 (was 263/282/406)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "groupSessionsByDir at 302, separator rendering at 317, CSS at 456 (was 263/282/406)"
+        }
+      ]
     },
     "TB-26": {
       "files": [
-        "src/App.tsx:432",
-        "src/App.tsx:443",
-        "src/App.tsx:447"
+        "src/App.tsx",
+        "src/App.tsx",
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "focusTerminal/requestAnimationFrame at lines 432/443/447 (doc said 391/401/405)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "focusTerminal/requestAnimationFrame at lines 432/443/447 (doc said 391/401/405)"
+        }
+      ]
     },
     "TB-27": {
       "files": [
-        "src/App.tsx:317"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "gi > 0 separator condition at line 317 (doc said 282)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "gi > 0 separator condition at line 317 (doc said 282)"
+        }
+      ]
     },
     "TB-28": {
       "files": [
-        "src/lib/tapStateReducer.ts:23",
-        "src/lib/tapStateReducer.ts:38"
+        "src/lib/tapStateReducer.ts",
+        "src/lib/tapStateReducer.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed: ExitPlanMode at 23, PermissionPromptShown at 38"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed: ExitPlanMode at 23, PermissionPromptShown at 38"
+        }
+      ]
     },
     "TB-31": {
       "files": [
-        "src/components/SubagentBar/SubagentBar.tsx:16",
-        "src/App.css:567"
+        "src/components/SubagentBar/SubagentBar.tsx",
+        "src/App.css"
       ],
       "verified": "2026-03-28",
-      "notes": "SubagentBar memo at line 16 (was 17); subagent-bar CSS at line 567 (was 558)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "SubagentBar memo at line 16 (was 17); subagent-bar CSS at line 567 (was 558)"
+        }
+      ]
     },
     "TB-32": {
       "files": [
-        "src/App.tsx:516",
-        "src/App.css:362"
+        "src/App.tsx",
+        "src/App.css"
       ],
       "verified": "2026-03-28",
-      "notes": "Line refs confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Line refs confirmed"
+        }
+      ]
     },
     "TB-09": {
       "files": [
-        "src/App.tsx:278"
+        "src/App.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "Ctrl+E handler moved to line 278 (was 239)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Ctrl+E handler moved to line 278 (was 239)"
+        }
+      ]
     },
     "TB-30": {
       "files": [
-        "src/App.tsx:190",
-        "src/App.tsx:616",
-        "src/lib/ptyRegistry.ts:28",
-        "src-tauri/src/commands.rs:2104"
+        "src/App.tsx",
+        "src/App.tsx",
+        "src/lib/ptyRegistry.ts",
+        "src-tauri/src/commands.rs"
       ],
       "verified": "2026-03-28",
-      "notes": "prune_worktree at commands.rs:2104 (doc said 1877); App.tsx prune dialog at 616 (was 614); worktree close logic at 190 (was 173)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "prune_worktree at commands.rs:2104 (doc said 1877); App.tsx prune dialog at 616 (was 614); worktree close logic at 190 (was 173)"
+        }
+      ]
     },
     "TB-08": {
       "files": [
-        "src/App.tsx:329",
-        "src/lib/claude.ts:61"
+        "src/App.tsx",
+        "src/lib/claude.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "metaSpans construction at App.tsx:329 (was 294); modelColor at claude.ts:61 (was 30)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "metaSpans construction at App.tsx:329 (was 294); modelColor at claude.ts:61 (was 30)"
+        }
+      ]
     },
     "TB-29": {
       "files": [
-        "src/lib/paths.ts:18",
-        "src/App.tsx:329",
-        "src/App.tsx:341",
-        "src/components/StatusBar/StatusBar.tsx:54"
+        "src/lib/paths.ts",
+        "src/App.tsx",
+        "src/App.tsx",
+        "src/components/StatusBar/StatusBar.tsx"
       ],
       "verified": "2026-03-28",
-      "notes": "StatusBar worktree display at 54 (was 55); App.tsx meta at 329/341 (was 293/304)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "StatusBar worktree display at 54 (was 55); App.tsx meta at 329/341 (was 293/304)"
+        }
+      ]
     },
     "TB-01": {
       "files": [
-        "src/App.css:1"
+        "src/App.css"
       ],
       "verified": "2026-03-28",
-      "notes": "Confirmed: tabs 66px height in App.css"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Confirmed: tabs 66px height in App.css"
+        }
+      ]
     },
     "TB-04": {
       "files": [
-        "src-tauri/tauri.conf.json:21"
+        "src-tauri/tauri.conf.json"
       ],
       "verified": "2026-03-28",
-      "notes": "decorations:true, theme:Dark confirmed"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "decorations:true, theme:Dark confirmed"
+        }
+      ]
     },
     "TB-25": {
       "files": [
-        "src/hooks/useNotifications.ts:97"
+        "src/hooks/useNotifications.ts"
       ],
       "verified": "2026-03-28",
-      "notes": "actionNeeded notification at line 97-98 (doc said 92, minor drift)"
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "actionNeeded notification at line 97-98 (doc said 92, minor drift)"
+        }
+      ]
     }
   }
 }
