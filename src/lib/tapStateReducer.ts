@@ -113,6 +113,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "HookTelemetry":
     case "SystemPromptCapture":
     case "EffortLevel":
+    case "StatusLineUpdate":
       return state;
   }
 }
