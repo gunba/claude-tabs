@@ -29,7 +29,7 @@ import { killPty, getPtyHandleId } from "./lib/ptyRegistry";
 import { save as saveDialog, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { dlog } from "./lib/debugLog";
-import { IconPencil, IconStop, IconClose, IconReturn, IconGear, IconSkill } from "./components/Icons/Icons";
+import { IconStop, IconClose, IconReturn, IconGear, IconSkill } from "./components/Icons/Icons";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
 import type { Subagent, SkillInvocation, SessionState } from "./types/session";
 import { isSessionIdle, isSubagentActive } from "./types/session";

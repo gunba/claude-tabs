@@ -50,7 +50,7 @@ export function ThreePaneEditor({ component: PaneComponent, projectDir, onStatus
   const visibleScopes = scopes ? SCOPES.filter((s) => scopes.includes(s.value)) : SCOPES;
   return (
     <div className="three-pane-grid" style={{ gridTemplateColumns: `repeat(${visibleScopes.length}, 1fr)` }}>
-      {visibleScopes.map(({ value, label, colorVar }) => (
+      {visibleScopes.map(({ value, label, colorVar, icon }) => (
         <div key={value} className="three-pane-column" style={{ "--scope-color": colorVar } as React.CSSProperties}>
           <div className="three-pane-header">
             <span className="three-pane-icon" style={{ color: colorVar }}>{icon}</span>

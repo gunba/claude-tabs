@@ -13,3 +13,4 @@ logs/
 # Test artifacts
 test-state.json
 test-commands.json
+node_modules

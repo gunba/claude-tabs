@@ -334,5 +334,4 @@ describe("isCompletionEvent", () => {
   it("IdlePrompt is completion", () => {
     expect(isCompletionEvent({ kind: "IdlePrompt", ts: 0 })).toBe(true);
   });
-  });
 });
