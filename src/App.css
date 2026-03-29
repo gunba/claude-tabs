@@ -11,148 +11,60 @@
   background: var(--term-bg, var(--bg-primary));
 }
 
-/* ── Tab bar ─────────────────────────────────────────────────── */
+/* ── Agent bar (replaces tab bar) ──────────────────────────── */
 
-.tab-bar {
+.agent-bar {
   display: flex;
   align-items: stretch;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-height: 32px;
+  max-height: 44px;
+  overflow: hidden;
 }
 
-.tab-bar-scroll {
+.agent-bar-items {
   display: flex;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  gap: 1px;
+  background: var(--border-subtle);
 }
 
-.tab-bar-scroll::-webkit-scrollbar {
+.agent-bar-items::-webkit-scrollbar {
   display: none;
 }
 
-.tab {
+.agent-bar-controls {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 10px;
-  border: none;
-  border-right: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, box-shadow 0.15s;
-  position: relative;
-  text-align: left;
-  flex: 0 1 200px;
-  min-width: 90px;
-  max-width: 200px;
-  height: 66px;
-  overflow: hidden;
-  box-sizing: border-box;
+  align-items: stretch;
+  flex-shrink: 0;
 }
 
-.tab.tab-drag-over {
-  border-left: 2px solid var(--accent);
-}
-
-.tab:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-primary);
-}
-
-.tab-active {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: inset 0 -2px 0 var(--accent);
-}
-
-/* Permission waiting: pulsing permission-colored bar matching the dot */
-.tab-active.tab-permission {
-  animation: permission-pulse 2s ease-in-out infinite;
-}
-
-@keyframes permission-pulse {
-  0%, 100% { box-shadow: inset 0 -2px 0 var(--accent); }
-  50% { box-shadow: inset 0 -2px 0 var(--accent-tertiary), 0 2px 6px color-mix(in srgb, var(--accent-tertiary) 20%, transparent); }
-}
-
-/* Purple attention pulse for inactive tabs needing user input */
-.tab-attention:not(.tab-active) {
+/* Attention pulse for mini-slot headers (mirrors tab-attention) */
+.tab-attention.mini-slot-header:not(.mini-slot-active) {
   animation: tab-attention-pulse 2s ease-in-out infinite;
 }
 
 @keyframes tab-attention-pulse {
   0%, 100% { background: transparent; }
-  50% { background: color-mix(in srgb, var(--accent-tertiary) 15%, var(--bg-surface)); }
+  50% { background: color-mix(in srgb, var(--accent-tertiary) 15%, transparent); }
 }
 
-/* Brief flash when a non-active tab transitions to idle (finished working) */
-.tab-flash:not(.tab-active) {
+/* Flash for mini-slot headers when session finishes */
+.tab-flash.mini-slot-header:not(.mini-slot-active) {
   animation: tab-done-flash 5s ease;
 }
 
 @keyframes tab-done-flash {
   0% {
-    background: color-mix(in srgb, var(--success) 40%, var(--bg-surface));
-    box-shadow: inset 0 -2px 0 var(--success), 0 0 6px color-mix(in srgb, var(--success) 30%, transparent);
+    background: color-mix(in srgb, var(--success) 30%, transparent);
+    box-shadow: inset 0 0 0 1px var(--success);
   }
   100% { background: transparent; box-shadow: none; }
-}
-
-.tab-dead {
-  opacity: 0.45;
-}
-
-.tab-dead:hover {
-  opacity: 0.8;
-}
-
-.tab-run .tab-name {
-  font-style: italic;
-  opacity: 0.85;
-}
-
-/* ── Ctrl-held: unified blue top-bar + tint ──────────── */
-.ctrl-held .tab:not(.tab-dead):not(.tab-active) {
-  background: color-mix(in srgb, var(--accent-secondary) 8%, var(--bg-surface));
-  box-shadow: inset 0 2px 0 var(--accent-secondary);
-}
-
-.ctrl-held .tab-active:not(.tab-dead) {
-  background: color-mix(in srgb, var(--accent-secondary) 8%, var(--bg-primary));
-  box-shadow: inset 0 -2px 0 var(--accent), inset 0 2px 0 var(--accent-secondary);
-}
-
-.ctrl-held .tab-active.tab-permission {
-  animation: none;
-  box-shadow: inset 0 -2px 0 var(--accent-tertiary), inset 0 2px 0 var(--accent-secondary);
-}
-
-/* Action needed: pulsing purple bar */
-.tab-active.tab-actionNeeded {
-  animation: actionNeeded-pulse 2s ease-in-out infinite;
-}
-
-@keyframes actionNeeded-pulse {
-  0%, 100% { box-shadow: inset 0 -2px 0 var(--accent); }
-  50% { box-shadow: inset 0 -2px 0 var(--accent-tertiary), 0 2px 6px color-mix(in srgb, var(--accent-tertiary) 20%, transparent); }
-}
-
-.ctrl-held .tab-active.tab-actionNeeded {
-  animation: none;
-  box-shadow: inset 0 -2px 0 var(--accent-tertiary), inset 0 2px 0 var(--accent-secondary);
-}
-
-.ctrl-held .tab-add {
-  background: var(--accent-secondary);
-}
-
-.ctrl-held .tab-add:hover {
-  background: color-mix(in srgb, var(--accent-secondary) 80%, white);
 }
 
 .tab-dot {
@@ -184,134 +96,31 @@
   50% { opacity: 0.5; }
 }
 
-.tab-label {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-  gap: 2px;
-  align-self: stretch;
-}
-
-.tab-name {
-  font-weight: 600;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 18px;
-}
-
-.tab-summary {
-  font-size: 9px;
-  color: var(--text-muted);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  line-height: 1.3;
-  word-break: break-word;
-}
-
-.tab-meta {
-  font-size: 9px;
-  color: var(--text-muted);
-  opacity: 0.7;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: auto;
-}
-
-/* Edit/close buttons: absolutely positioned top-right, overlaid on hover with fade */
-.tab-actions {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 1px 2px;
-  border-radius: 3px;
-  background: var(--bg-surface);
-  opacity: 0;
-  transition: opacity 0.1s;
-  pointer-events: none;
-}
-
-.tab:hover .tab-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 /* Suppress focus ring on mouse click; preserve for keyboard (Tab) */
-.tab-kill:focus:not(:focus-visible),
-.tab-close:focus:not(:focus-visible),
 .tab-config:focus:not(:focus-visible),
 .tab-resume:focus:not(:focus-visible),
 .tab-add:focus:not(:focus-visible) {
   outline: none;
 }
 
-/* Match active tab background */
-.tab-active .tab-actions {
-  background: var(--bg-primary);
+.ctrl-held .tab-add {
+  background: var(--accent-secondary);
 }
 
-.tab-kill {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 9px;
-  cursor: pointer;
-  padding: 0;
-  transition: color 0.1s, background 0.1s;
+.ctrl-held .tab-add:hover {
+  background: color-mix(in srgb, var(--accent-secondary) 80%, white);
 }
-
-.tab-kill:hover {
-  background: var(--warning, #c47a20);
-  color: var(--text-primary);
-}
-
-.tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0;
-  transition: color 0.1s, background 0.1s;
-}
-
-.tab-close:hover {
-  background: var(--error);
-  color: var(--text-primary);
-}
-
 
 .tab-add {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 66px;
-  height: 66px;
+  width: 40px;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: var(--accent);
   color: var(--text-on-accent);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 300;
   cursor: pointer;
   flex-shrink: 0;
@@ -326,13 +135,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 66px;
-  height: 66px;
+  width: 36px;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--accent-secondary) 12%, var(--bg-surface));
   color: var(--accent-secondary);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
@@ -347,13 +155,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 66px;
-  height: 66px;
+  width: 36px;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--accent-tertiary) 10%, var(--bg-surface));
   color: var(--accent-tertiary);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
@@ -364,65 +171,6 @@
   color: var(--accent-tertiary);
 }
 
-/* ── Tab group separators ────────────────────────────────────── */
-
-.tab-group-separator {
-  display: flex;
-  align-items: center;
-  padding: 0 4px;
-  flex-shrink: 0;
-}
-
-.tab-group-pip {
-  width: 2px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--text-muted);
-  opacity: 0.3;
-  transition: opacity 0.15s;
-}
-
-.tab-group-separator:hover .tab-group-pip {
-  opacity: 0.6;
-}
-
-/* ── Tab reorder arrows ─────────────────────────────────────── */
-
-.tab-reorder-arrows {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  padding: 0 2px;
-  z-index: 1;
-}
-
-.tab:hover .tab-reorder-arrows { opacity: 1; }
-
-.tab-arrow {
-  pointer-events: auto;
-  width: 16px;
-  height: 24px;
-  border: none;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
-  color: var(--text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tab-arrow:hover {
-  background: var(--bg-selection);
-  color: var(--text-primary);
-}
 
 /* ── Tab context menu ────────────────────────────────────────── */
 
@@ -475,21 +223,7 @@
   color: var(--error, #e55);
 }
 
-/* ── Subagent bar ────────────────────────────────────────────── */
-
-.subagent-bar {
-  display: flex;
-  gap: 1px;
-  background: var(--border-subtle);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.subagent-bar::-webkit-scrollbar {
-  display: none;
-}
+/* ── Subagent cards (inside agent-bar-items) ────────────────── */
 
 /* Subagent cards mirror tab structure but scaled down */
 .subagent-card {
@@ -600,6 +334,12 @@
   margin-top: auto;
 }
 
+.subagent-tokens {
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* ── Skill pills (livelog alongside subagent cards) ─────────── */
 
 .skill-pill {
@@ -656,16 +396,175 @@
 
 .app-main {
   flex: 1;
-  display: flex;
+  position: relative;
   overflow: hidden;
 }
 
-.terminal-area {
-  flex: 1;
+/* Active terminal overlay: side panels constrained to the 70% active area */
+.active-terminal-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.active-terminal-inner.has-mini-grid {
+  right: 30%;
+}
+
+.active-terminal-inner > * {
+  pointer-events: auto;
+}
+
+/* Mini grid overlay — slot header info on top of the mini terminals */
+.mini-grid-overlay {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 30%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Individual mini slot header — covers each mini terminal slot */
+.mini-slot-header {
   display: flex;
   flex-direction: column;
-  position: relative;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  border-left: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background 0.1s;
   overflow: hidden;
+  position: relative;
+}
+
+.mini-slot-header:hover {
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.mini-slot-active {
+  cursor: default;
+  pointer-events: none;
+  border-left-color: var(--accent);
+  border-left-width: 2px;
+}
+
+/* Snapshot image for dead sessions */
+.mini-slot-snapshot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* Header info strip at bottom of each mini slot */
+.mini-slot-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+  font-size: 9px;
+  line-height: 1.3;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  min-height: 18px;
+  flex-shrink: 0;
+}
+
+.mini-slot-name {
+  font-weight: 600;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.mini-slot-ctx {
+  font-size: 8px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.mini-slot-meta {
+  font-size: 8px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Kill + close buttons — only visible on hover */
+.mini-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+  pointer-events: auto;
+}
+
+.mini-slot-header:hover .mini-slot-actions {
+  opacity: 1;
+}
+
+.mini-slot-kill,
+.mini-slot-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.1s, background 0.1s;
+}
+
+.mini-slot-kill:hover {
+  background: var(--warning, #c47a20);
+  color: var(--text-primary);
+}
+
+.mini-slot-close:hover {
+  background: var(--error);
+  color: var(--text-primary);
+}
+
+/* ── Skill pills row in command bar ──────────────────────────── */
+
+.skill-pills-row {
+  display: flex;
+  gap: 4px;
+  padding: 2px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.skill-pills-row::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── Empty state ─────────────────────────────────────────────── */

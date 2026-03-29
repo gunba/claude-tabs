@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
 import { dirToTabName, effectiveModel, getResumeId, modelLabel, modelColor, canResumeSession, stripWorktreeFlags, formatTokenCount } from "./lib/claude";
+import type { MiniSlotInfo } from "./components/Terminal/TerminalPanel";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 import { SubagentInspector } from "./components/SubagentInspector/SubagentInspector";
 
@@ -29,12 +30,29 @@ import { killPty, getPtyHandleId } from "./lib/ptyRegistry";
 import { save as saveDialog, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { dlog } from "./lib/debugLog";
-import { IconStop, IconClose, IconReturn, IconGear, IconSkill } from "./components/Icons/Icons";
-import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
-import type { Subagent, SkillInvocation, SessionState } from "./types/session";
+import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
+import { parseWorktreePath, worktreeAcronym } from "./lib/paths";
+import type { Session, Subagent, SessionState } from "./types/session";
 import { isSessionIdle, isSubagentActive } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
 import "./App.css";
+
+function buildSessionMeta(session: Session, subs: Subagent[]): { text: string; color: string; title?: string }[] {
+  const m = effectiveModel(session);
+  const wt = parseWorktreePath(session.config.workingDir);
+  const spans: { text: string; color: string; title?: string }[] = [];
+  if (m) {
+    const vMatch = m.match(/(\d+)[.-](\d+)/);
+    const ver = vMatch ? ` ${vMatch[1]}.${vMatch[2]}` : "";
+    spans.push({ text: modelLabel(m) + ver, color: modelColor(m) });
+  }
+  const effort = session.metadata.effortLevel ?? session.config.effort;
+  if (effort) spans.push({ text: effort.charAt(0).toUpperCase() + effort.slice(1), color: "var(--accent)" });
+  const liveAgents = subs.filter((s) => isSubagentActive(s.state)).length;
+  if (liveAgents > 0) spans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--text-secondary)" });
+  if (wt) spans.push({ text: worktreeAcronym(wt.worktreeName), color: "var(--accent-tertiary)", title: wt.worktreeName });
+  return spans;
+}
 
 export default function App() {
   const init = useSessionStore((s) => s.init);
@@ -46,8 +64,6 @@ export default function App() {
   const createSession = useSessionStore((s) => s.createSession);
   const persist = useSessionStore((s) => s.persist);
   const updateSubagent = useSessionStore((s) => s.updateSubagent);
-  const removeSkillInvocation = useSessionStore((s) => s.removeSkillInvocation);
-  const reorderTabs = useSessionStore((s) => s.reorderTabs);
   const requestKill = useSessionStore((s) => s.requestKill);
   const inspectorOffSessions = useSessionStore((s) => s.inspectorOffSessions);
   const setInspectorOff = useSessionStore((s) => s.setInspectorOff);
@@ -69,13 +85,12 @@ export default function App() {
   const [showResumePicker, setShowResumePicker] = useState(false);
   const [inspectedSubagent, setInspectedSubagent] = useState<{ sessionId: string; subagentId: string } | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
-  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
   const [flashingTabs, setFlashingTabs] = useState<Set<string>>(new Set());
+  const [deadSnapshots, setDeadSnapshots] = useState<Record<string, string>>({});
   const ctrlHeld = useCtrlKey();
   const prevStatesRef = useRef<Map<string, string>>(new Map());
   const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingFlashRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const dragTabRef = useRef<string | null>(null);
   const initRef = useRef(false);
   const [pruneConfirm, setPruneConfirm] = useState<{
     sessionId: string; worktreePath: string; worktreeName: string; projectRoot: string;
@@ -89,7 +104,6 @@ export default function App() {
   // Track state transitions — flash tabs that become idle from an active state (5s, dismiss on hover)
   // Uses effective state (accounts for subagents) so flash only fires when all work is truly done.
   const subagentMap = useSessionStore((s) => s.subagents);
-  const skillInvocationMap = useSessionStore((s) => s.skillInvocations);
   useEffect(() => {
     const prev = prevStatesRef.current;
     const timers = flashTimersRef.current;
@@ -155,6 +169,13 @@ export default function App() {
     useUiConfigStore.getState().loadConfig();
     useSettingsStore.getState().loadPastSessions();
     invoke("cleanup_tap_logs", { maxAgeHours: 48 }).catch(() => {});
+    invoke("cleanup_session_snapshots", { knownIds: useSessionStore.getState().sessions.map((s) => s.id) }).catch(() => {});
+    // Load persisted snapshots for dead sessions from previous run
+    for (const s of useSessionStore.getState().sessions.filter((s) => s.state === "dead")) {
+      invoke<string | null>("load_session_snapshot", { sessionId: s.id })
+        .then((url) => { if (url) setDeadSnapshots((prev) => ({ ...prev, [s.id]: url })); })
+        .catch(() => {});
+    }
   }, [init]);
 
   // Quick launch with saved defaults (Ctrl+Click "+" or Ctrl+Shift+T)
@@ -326,7 +347,28 @@ export default function App() {
   }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, sidePanel, inspectedSubagent, tabContextMenu, quickLaunch]);
 
   const regularSessions = useMemo(() => sessions.filter((s) => !s.isMetaAgent), [sessions]);
-  const groups = useMemo(() => groupSessionsByDir(regularSessions), [regularSessions]);
+  const hasMiniGrid = regularSessions.length > 1;
+  const numCols = hasMiniGrid ? Math.ceil(regularSessions.length / 4) : 1;
+  const miniSlotMap = useMemo<Map<string, MiniSlotInfo>>(() => {
+    const map = new Map<string, MiniSlotInfo>();
+    regularSessions.forEach((session, i) => {
+      const colIndex = Math.floor(i / 4);
+      const rowInCol = i % 4;
+      const colStart = colIndex * 4;
+      const colEnd = Math.min(colStart + 4, regularSessions.length);
+      const itemsInCol = colEnd - colStart;
+      const heightPct = 100 / itemsInCol;
+      map.set(session.id, {
+        colIndex,
+        numCols,
+        top: `${rowInCol * heightPct}%`,
+        height: `${heightPct}%`,
+        scale: 3 / (7 * numCols),
+      });
+    });
+    return map;
+  }, [regularSessions, numCols]);
+
   const activeSubagent: Subagent | null = inspectedSubagent
     ? (subagentMap.get(inspectedSubagent.sessionId) || []).find(
         (s) => s.id === inspectedSubagent.subagentId
@@ -337,176 +379,68 @@ export default function App() {
   const activeSession = sessions.find((s) => s.id === activeTabId);
   const allSubs = activeTabId ? (subagentMap.get(activeTabId) || []) : [];
   const activeSubs = allSubs.filter((s) => s.state !== "dead");
-  const activeSkills = activeTabId ? (skillInvocationMap.get(activeTabId) || []) : [];
 
-  // Build unified bar items sorted by timestamp (newest first)
-  // Use stable store refs as deps (subagentMap/skillInvocationMap are new Map refs only on actual change)
-  type BarItem = { type: "subagent"; subagent: Subagent; ts: number } | { type: "skill"; skill: SkillInvocation; ts: number };
+  // Build agent bar items sorted by timestamp (newest first) — subagents only
+  // Skills are shown in CommandBar (they are slash-command results)
+  type BarItem = { type: "subagent"; subagent: Subagent; ts: number };
   const barItems = useMemo<BarItem[]>(() => {
     const items: BarItem[] = [];
     for (const sub of activeSubs) items.push({ type: "subagent", subagent: sub, ts: sub.createdAt || 0 });
-    for (const sk of activeSkills) items.push({ type: "skill", skill: sk, ts: sk.timestamp });
     items.sort((a, b) => b.ts - a.ts);
     return items;
-  }, [subagentMap, skillInvocationMap, activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSubs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`app${ctrlHeld ? " ctrl-held" : ""}`}>
-      {/* Tab bar */}
-      <div className="tab-bar">
-          <div className="tab-bar-scroll">
-            {groups.flatMap((group, gi) => [
-              ...(gi > 0 ? [<div key={`sep-${group.key}`} className="tab-group-separator" title={group.fullPath}>
-                <span className="tab-group-pip" />
-              </div>] : []),
-              ...group.sessions.map((session, si) => {
-              const isActive = session.id === activeTabId;
-              const fullName = session.name || dirToTabName(session.config.workingDir);
-              const isDead = session.state === "dead";
-              const summary = session.metadata.nodeSummary ?? session.metadata.currentAction;
-
-              // Meta row: model | effort | agents (each colored)
-              const m = effectiveModel(session);
-              const wt = parseWorktreePath(session.config.workingDir);
-              const metaSpans: { text: string; color: string; title?: string }[] = [];
-              if (m) {
-                const vMatch = m.match(/(\d+)[.-](\d+)/);
-                const ver = vMatch ? ` ${vMatch[1]}.${vMatch[2]}` : "";
-                metaSpans.push({ text: modelLabel(m) + ver, color: modelColor(m) });
-              }
-              const effort = session.metadata.effortLevel ?? session.config.effort;
-              if (effort) metaSpans.push({ text: effort.charAt(0).toUpperCase() + effort.slice(1), color: "var(--accent)" });
-              const subs = subagentMap.get(session.id) || [];
-              const liveAgents = subs.filter((s) => isSubagentActive(s.state)).length;
-              if (liveAgents > 0) metaSpans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--text-secondary)" });
-              if (wt) metaSpans.push({ text: worktreeAcronym(wt.worktreeName), color: "var(--accent-tertiary)", title: wt.worktreeName });
-
-              return (
-                <div
-                  key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${session.state === "actionNeeded" && isActive ? " tab-actionNeeded" : ""}${(session.state === "waitingPermission" || session.state === "actionNeeded") ? " tab-attention" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => {
-                    dragTabRef.current = session.id;
-                    const ghost = document.createElement("div");
-                    ghost.textContent = fullName;
-                    ghost.style.cssText = "position:absolute;top:-999px;padding:4px 8px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;border-radius:4px;white-space:nowrap;";
-                    document.body.appendChild(ghost);
-                    e.dataTransfer.setDragImage(ghost, 0, 0);
-                    setTimeout(() => document.body.removeChild(ghost), 0);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (dragTabRef.current && dragTabRef.current !== session.id) {
-                      if (group.sessions.some((s) => s.id === dragTabRef.current)) {
-                        setDragOverTabId(session.id);
-                      }
-                    }
-                  }}
-                  onDragLeave={() => {
-                    if (dragOverTabId === session.id) setDragOverTabId(null);
-                  }}
-                  onDrop={() => {
-                    setDragOverTabId(null);
-                    const from = dragTabRef.current;
-                    if (from && from !== session.id && group.sessions.some((s) => s.id === from)) {
-                      const order = regularSessions.map((s) => s.id);
-                      const fromIdx = order.indexOf(from);
-                      const toIdx = order.indexOf(session.id);
-                      if (fromIdx >= 0 && toIdx >= 0) {
-                        order.splice(fromIdx, 1);
-                        order.splice(toIdx, 0, from);
-                        reorderTabs(order);
-                      }
-                    }
-                    dragTabRef.current = null;
-                  }}
-                  onDragEnd={() => { dragTabRef.current = null; setDragOverTabId(null); }}
-                  onClick={(e) => {
-                    if (e.ctrlKey) {
-                      setLastConfig({
-                        ...session.config,
-                        resumeSession: getResumeId(session),
-                        continueSession: false,
-                      });
-                      useSettingsStore.getState().setReplaceSessionId(session.id);
-                      setShowLauncher(true);
-                    } else {
-                      handleTabActivate(session.id);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      handleTabActivate(session.id);
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: session.id });
-                  }}
-                  onMouseEnter={() => dismissFlash(session.id)}
-                  title={ctrlHeld ? `Ctrl+Click: Relaunch ${fullName}` : `${fullName} — ${getEffectiveState(session.state, subs)}\n${session.config.workingDir}${wt ? `\nWorktree: ${wt.worktreeName}` : ""}`}
-                >
-                  <span className={`tab-dot state-${getEffectiveState(session.state, subs)}${inspectorOffSessions.has(session.id) ? " inspector-off" : ""}`} />
-                  <span className="tab-label">
-                    <span className="tab-name">{fullName}</span>
-                    {summary && <span className="tab-summary">{summary}</span>}
-                    {metaSpans.length > 0 && (
-                      <span className="tab-meta">
-                        {metaSpans.map((s, i) => (
-                          <span key={i}>
-                            {i > 0 && <span style={{ color: "var(--text-muted)", opacity: 0.5 }}> &middot; </span>}
-                            <span style={{ color: s.color }} title={s.title}>{s.text}</span>
-                          </span>
-                        ))}
-                      </span>
-                    )}
+      {/* Agent bar — always visible; subagent/skill cards + session controls */}
+      <div className="agent-bar">
+        <div className="agent-bar-items">
+          {barItems.map((item) => {
+            const sub = item.subagent;
+            const isActive = isSubagentActive(sub.state);
+            const isIdle = sub.state === "idle";
+            const isInterrupted = sub.state === "interrupted";
+            const isSelected = inspectedSubagent?.subagentId === sub.id && inspectedSubagent?.sessionId === activeTabId;
+            const lastMsg = sub.messages.length > 0
+              ? sub.messages[sub.messages.length - 1].text.slice(0, 200)
+              : null;
+            const metaParts: string[] = [];
+            if (sub.agentType) metaParts.push(sub.agentType);
+            if (sub.model) metaParts.push(sub.model.replace(/^claude-/, "").split("-")[0]);
+            if (sub.totalToolUses != null) metaParts.push(`${sub.totalToolUses} tools`);
+            if (sub.durationMs != null) metaParts.push(`${Math.round(sub.durationMs / 1000)}s`);
+            return (
+              <button
+                key={sub.id}
+                className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
+                onClick={() => activeTabId && setInspectedSubagent({ sessionId: activeTabId, subagentId: sub.id })}
+                title={sub.description}
+              >
+                <span className={`tab-dot state-${sub.state}`} />
+                <span className="subagent-label">
+                  <span className="subagent-name">{sub.description}</span>
+                  <span className="subagent-summary">
+                    {isActive && sub.currentAction ? sub.currentAction : lastMsg || ""}
                   </span>
-                  {group.sessions.length > 1 && (
-                    <span className="tab-reorder-arrows">
-                      {si > 0 ? (
-                        <button className="tab-arrow" onClick={(e) => {
-                          e.stopPropagation();
-                          const order = swapWithinGroup(regularSessions.map(s => s.id), session.id, "left", groups);
-                          if (order) reorderTabs(order);
-                        }} title="Move left" aria-label="Move tab left">&#x2039;</button>
-                      ) : <span />}
-                      {si < group.sessions.length - 1 ? (
-                        <button className="tab-arrow" onClick={(e) => {
-                          e.stopPropagation();
-                          const order = swapWithinGroup(regularSessions.map(s => s.id), session.id, "right", groups);
-                          if (order) reorderTabs(order);
-                        }} title="Move right" aria-label="Move tab right">&#x203a;</button>
-                      ) : <span />}
-                    </span>
+                  {metaParts.length > 0 && (
+                    <span className="subagent-meta">{metaParts.join(" · ")}</span>
                   )}
-                  <span className="tab-actions">
-                    {session.state !== "dead" && (
-                      <button
-                        className="tab-kill"
-                        onClick={(e) => { e.stopPropagation(); requestKill(session.id); }}
-                        title="Kill agent (keep tab)"
-                      >
-                        <IconStop size={9} />
-                      </button>
-                    )}
-                    <button
-                      className="tab-close"
-                      onClick={(e) => { e.stopPropagation(); handleCloseSession(session.id); }}
-                      title="Close"
-                    >
-                      <IconClose size={12} />
-                    </button>
-                  </span>
-                </div>
-              );
-              }),
-            ])}
-          </div>
+                </span>
+                {sub.tokenCount > 0 && (
+                  <span className="subagent-tokens">{formatTokenCount(sub.tokenCount)}</span>
+                )}
+                {!isActive && (
+                  <span
+                    className="subagent-close"
+                    onClick={(e) => { e.stopPropagation(); activeTabId && updateSubagent(activeTabId, sub.id, { state: "dead" }); }}
+                    title="Dismiss"
+                  ><IconClose size={12} /></span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="agent-bar-controls">
           <button
             className="tab-resume"
             onClick={() => setShowResumePicker(true)}
@@ -529,111 +463,132 @@ export default function App() {
             +
           </button>
         </div>
+      </div>
 
-      {/* Subagent + skill bar — unified livelog, conditional */}
-      {barItems.length > 0 && (
-        <div className="subagent-bar">
-          {barItems.map((item) => {
-            if (item.type === "subagent") {
-              const sub = item.subagent;
-              const isActive = isSubagentActive(sub.state);
-              const isIdle = sub.state === "idle";
-              const isInterrupted = sub.state === "interrupted";
-              const isSelected = inspectedSubagent?.subagentId === sub.id && inspectedSubagent?.sessionId === activeTabId;
-              const lastMsg = sub.messages.length > 0
-                ? sub.messages[sub.messages.length - 1].text.slice(0, 200)
-                : null;
-              const metaParts: string[] = [];
-              if (sub.agentType) metaParts.push(sub.agentType);
-              if (sub.model) metaParts.push(sub.model.replace(/^claude-/, "").split("-")[0]);
-              if (sub.totalToolUses != null) metaParts.push(`${sub.totalToolUses} tools`);
-              if (sub.durationMs != null) metaParts.push(`${Math.round(sub.durationMs / 1000)}s`);
-              return (
-                <button
-                  key={sub.id}
-                  className={`subagent-card${isActive ? " subagent-active" : ""}${isIdle ? " subagent-idle" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
-                  onClick={() => activeTabId && setInspectedSubagent({ sessionId: activeTabId, subagentId: sub.id })}
-                  title={sub.description}
-                >
-                  <span className={`tab-dot state-${sub.state}`} />
-                  <span className="subagent-label">
-                    <span className="subagent-name">{sub.description}</span>
-                    <span className="subagent-summary">
-                      {isActive && sub.currentAction ? sub.currentAction : lastMsg || ""}
-                    </span>
-                    {metaParts.length > 0 && (
-                      <span className="subagent-meta">{metaParts.join(" · ")}</span>
-                    )}
-                  </span>
-                  {sub.tokenCount > 0 && (
-                    <span className="subagent-tokens">{formatTokenCount(sub.tokenCount)}</span>
-                  )}
-                  {!isActive && (
-                    <span
-                      className="subagent-close"
-                      onClick={(e) => { e.stopPropagation(); activeTabId && updateSubagent(activeTabId, sub.id, { state: "dead" }); }}
-                      title="Dismiss"
-                    ><IconClose size={12} /></span>
-                  )}
-                </button>
-              );
-            }
-            // Skill invocation pill
-            const sk = item.skill;
-            return (
-              <span
-                key={sk.id}
-                className={`skill-pill${sk.success ? "" : " skill-failed"}`}
-                title={`/${sk.skill}${sk.allowedTools.length ? ` (${sk.allowedTools.join(", ")})` : ""}`}
-              >
-                <IconSkill size={12} className="skill-icon" />
-                <span className="skill-name">{sk.skill}</span>
-                <span
-                  className="subagent-close"
-                  onClick={() => activeTabId && removeSkillInvocation(activeTabId, sk.id)}
-                  title="Dismiss"
-                ><IconClose size={12} /></span>
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Main area: terminals */}
+      {/* Main area: terminals + mini grid */}
       <div className="app-main">
-        <div className="terminal-area">
-          {/* Terminal panels — always mounted, hidden via CSS (including dead ones so errors remain visible) */}
-          {regularSessions.map((session) => (
+        {/* Terminal panels — always mounted, absolute positioned (active=70% wide, mini=30% right column) */}
+        {regularSessions.map((session) => {
+          const isActive = session.id === activeTabId;
+          const slot = miniSlotMap.get(session.id) ?? null;
+          return (
             <TerminalPanel
               key={session.id}
               session={session}
-              visible={session.id === activeTabId}
+              visible={isActive}
+              miniSlot={isActive ? null : (hasMiniGrid ? slot : null)}
+              hasMiniGrid={hasMiniGrid}
+              onSnapshotCaptured={(id, url) => setDeadSnapshots((prev) => ({ ...prev, [id]: url }))}
             />
-          ))}
+          );
+        })}
 
-          {/* Subagent inspector overlay */}
+        {/* Active terminal overlay: side panels + subagent inspector, constrained to active area */}
+        <div className={`active-terminal-inner${hasMiniGrid ? " has-mini-grid" : ""}`}>
           {activeSubagent && (
             <SubagentInspector
               subagent={activeSubagent}
               onClose={() => setInspectedSubagent(null)}
             />
           )}
-
-          {/* Empty state — no active terminal visible */}
-          {initialized && !regularSessions.some((s) => s.id === activeTabId) && (
-            <div className="empty-state">
-              <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+Shift+R</kbd> resume from history
-            </div>
+          {sidePanel === "debug" && (
+            <DebugPanel onClose={() => setSidePanel(null)} />
+          )}
+          {sidePanel === "diff" && (
+            <DiffPanel onClose={() => setSidePanel(null)} />
+          )}
+          {sidePanel === "search" && (
+            <SearchPanel onClose={() => setSidePanel(null)} />
           )}
         </div>
-        {sidePanel === "debug" && (
-          <DebugPanel onClose={() => setSidePanel(null)} />
+
+        {/* Mini grid overlay — slot headers for all sessions */}
+        {hasMiniGrid && (
+          <div className="mini-grid-overlay">
+            {regularSessions.map((session) => {
+              const slot = miniSlotMap.get(session.id)!;
+              const isActive = session.id === activeTabId;
+              const subs = subagentMap.get(session.id) || [];
+              const effState = getEffectiveState(session.state, subs);
+              const metaSpans = buildSessionMeta(session, subs);
+              const ctxPct = session.metadata.statusLine?.contextUsedPercent;
+              const fullName = session.name || dirToTabName(session.config.workingDir);
+              const isDead = session.state === "dead";
+              const snapshot = deadSnapshots[session.id];
+              const colWidth = 100 / numCols;
+              return (
+                <div
+                  key={session.id}
+                  className={`mini-slot-header${isActive ? " mini-slot-active" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}${session.state === "waitingPermission" || session.state === "actionNeeded" ? " tab-attention" : ""}`}
+                  style={{
+                    position: "absolute",
+                    left: `${slot.colIndex * colWidth}%`,
+                    top: slot.top,
+                    width: `${colWidth}%`,
+                    height: slot.height,
+                  }}
+                  onClick={() => !isActive && handleTabActivate(session.id)}
+                  onMouseEnter={() => dismissFlash(session.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: session.id });
+                  }}
+                  title={ctrlHeld ? `Ctrl+Click: Relaunch ${fullName}` : `${fullName} — ${effState}\n${session.config.workingDir}`}
+                >
+                  {isDead && snapshot && (
+                    <img
+                      src={snapshot}
+                      className="mini-slot-snapshot"
+                      alt=""
+                      draggable={false}
+                    />
+                  )}
+                  <div className="mini-slot-info">
+                    <span className={`tab-dot state-${effState}${inspectorOffSessions.has(session.id) ? " inspector-off" : ""}`} />
+                    <span className="mini-slot-name">{fullName}</span>
+                    {ctxPct != null && (
+                      <span
+                        className="mini-slot-ctx"
+                        style={{ color: ctxPct > 80 ? "var(--error)" : ctxPct > 50 ? "var(--warning)" : "var(--text-muted)" }}
+                      >{ctxPct}%</span>
+                    )}
+                    {metaSpans.length > 0 && (
+                      <span className="mini-slot-meta">
+                        {metaSpans.map((s, i) => (
+                          <span key={i} style={{ color: s.color }} title={s.title}>
+                            {i > 0 && <span style={{ opacity: 0.4 }}> · </span>}
+                            {s.text}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                    <span className="mini-slot-actions">
+                      {session.state !== "dead" && (
+                        <button
+                          className="mini-slot-kill"
+                          onClick={(e) => { e.stopPropagation(); requestKill(session.id); }}
+                          title="Kill"
+                        ><IconStop size={9} /></button>
+                      )}
+                      <button
+                        className="mini-slot-close"
+                        onClick={(e) => { e.stopPropagation(); handleCloseSession(session.id); }}
+                        title="Close"
+                      ><IconClose size={10} /></button>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
-        {sidePanel === "diff" && (
-          <DiffPanel onClose={() => setSidePanel(null)} />
-        )}
-        {sidePanel === "search" && (
-          <SearchPanel onClose={() => setSidePanel(null)} />
+
+        {/* Empty state — no active terminal visible */}
+        {initialized && !regularSessions.some((s) => s.id === activeTabId) && (
+          <div className="empty-state">
+            <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+Shift+R</kbd> resume from history
+          </div>
         )}
       </div>
 
@@ -891,17 +846,11 @@ export default function App() {
                   <button
                     className="tab-context-menu-item tab-context-menu-item-danger"
                     onClick={() => {
-                      const group = groups.find((g) => g.sessions.some((s) => s.id === ctxSession.id));
-                      if (group) {
-                        for (const s of group.sessions) closeSession(s.id);
-                      }
+                      handleCloseSession(ctxSession.id);
                       setTabContextMenu(null);
                     }}
                   >
-                    Close Group ({(() => {
-                      const group = groups.find((g) => g.sessions.some((s) => s.id === ctxSession.id));
-                      return group ? group.sessions.length : 0;
-                    })()})
+                    Close Session
                   </button>
                 </>
               );

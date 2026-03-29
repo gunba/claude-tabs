@@ -149,6 +149,38 @@ function SessionStatus({ session }: { session: Session }) {
           <IconWarning size={12} />
         </span>
       )}
+      {session.metadata.statusLine?.contextUsedPercent != null && (
+        <span
+          className="status-item"
+          title={`Context: ${session.metadata.statusLine.contextUsedPercent}% of ${session.metadata.statusLine.contextWindowSize?.toLocaleString() ?? "?"} tokens`}
+          style={{ color: session.metadata.statusLine.contextUsedPercent > 80 ? "var(--error)" : session.metadata.statusLine.contextUsedPercent > 50 ? "var(--warning)" : "var(--text-secondary)" }}
+        >
+          {session.metadata.statusLine.contextUsedPercent}% ctx
+        </span>
+      )}
+      {((session.metadata.statusLine?.currentInputTokens ?? 0) + (session.metadata.statusLine?.currentOutputTokens ?? 0)) > 0 && (
+        <span className="status-item" title="Session tokens (input + output)">
+          {formatTokenCount((session.metadata.statusLine!.currentInputTokens ?? 0) + (session.metadata.statusLine!.currentOutputTokens ?? 0))}
+        </span>
+      )}
+      {(session.metadata.statusLine?.fiveHourUsedPercent ?? 0) > 0 && (
+        <span
+          className="status-item"
+          title={`5-hour budget: ${session.metadata.statusLine!.fiveHourUsedPercent}% used`}
+          style={{ color: session.metadata.statusLine!.fiveHourUsedPercent > 80 ? "var(--error)" : "var(--text-muted)" }}
+        >
+          5h: {Math.round(session.metadata.statusLine!.fiveHourUsedPercent)}%
+        </span>
+      )}
+      {(session.metadata.statusLine?.sevenDayUsedPercent ?? 0) > 0 && (
+        <span
+          className="status-item"
+          title={`7-day budget: ${session.metadata.statusLine!.sevenDayUsedPercent}% used`}
+          style={{ color: session.metadata.statusLine!.sevenDayUsedPercent > 80 ? "var(--error)" : "var(--text-muted)" }}
+        >
+          7d: {Math.round(session.metadata.statusLine!.sevenDayUsedPercent)}%
+        </span>
+      )}
       {session.metadata.hookStatus && (
         <span className="status-item status-dynamic" title="Hook executing">
           {session.metadata.hookStatus}

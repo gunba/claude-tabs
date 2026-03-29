@@ -1,12 +1,17 @@
 .debug-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
   width: 350px;
   min-width: 250px;
   max-width: 50%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
   border-left: 1px solid var(--border);
   overflow: hidden;
+  z-index: 50;
 }
 
 .debug-panel-header {

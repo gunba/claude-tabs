@@ -2716,3 +2716,63 @@ pub async fn read_recording_file(path: String) -> Result<String, String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Session snapshots (mini-grid dead session thumbnails) ──────────────
+
+/// Save a dead session's terminal canvas as a WebP data URL.
+#[tauri::command]
+pub async fn save_session_snapshot(session_id: String, data_url: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = get_data_dir()?.join("snapshots");
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create snapshots dir: {}", e))?;
+        std::fs::write(dir.join(format!("{}.txt", session_id)), data_url.as_bytes())
+            .map_err(|e| format!("Failed to write snapshot: {}", e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Load a dead session's terminal canvas data URL from disk.
+#[tauri::command]
+pub async fn load_session_snapshot(session_id: String) -> Option<String> {
+    tokio::task::spawn_blocking(move || {
+        let path = get_data_dir()
+            .ok()?
+            .join("snapshots")
+            .join(format!("{}.txt", session_id));
+        std::fs::read_to_string(path).ok()
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Delete snapshot files for sessions that no longer exist.
+#[tauri::command]
+pub async fn cleanup_session_snapshots(known_ids: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let dir = match get_data_dir() {
+            Ok(d) => d.join("snapshots"),
+            Err(_) => return Ok(()),
+        };
+        if !dir.exists() {
+            return Ok(());
+        }
+        let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("txt") {
+                continue;
+            }
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                if !known_ids.contains(&stem.to_string()) {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

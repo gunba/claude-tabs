@@ -3,6 +3,7 @@ import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
 import { useSessionStore } from "../../store/sessions";
 import { computeHeatLevel, heatClassName } from "../../lib/claude";
+import { IconSkill, IconClose } from "../Icons/Icons";
 import "./CommandBar.css";
 
 // ── Component ───────────────────────────────────────────────────────
@@ -19,6 +20,8 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
   const expanded = useSettingsStore((s) => s.commandBarExpanded);
   const setExpanded = useSettingsStore((s) => s.setCommandBarExpanded);
   const history = useSessionStore((s) => sessionId ? s.commandHistory.get(sessionId) : undefined) ?? [];
+  const skillInvocations = useSessionStore((s) => sessionId ? (s.skillInvocations.get(sessionId) ?? []) : []);
+  const removeSkillInvocation = useSessionStore((s) => s.removeSkillInvocation);
 
   /** Send a slash command immediately. History recorded via PTY input and tap events. */
   const sendCommand = useCallback(
@@ -75,6 +78,26 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
 
   return (
     <div className="command-bar">
+      {/* Skill invocation pills — results from /skill runs */}
+      {skillInvocations.length > 0 && (
+        <div className="skill-pills-row">
+          {skillInvocations.map((sk) => (
+            <span
+              key={sk.id}
+              className={`skill-pill${sk.success ? "" : " skill-failed"}`}
+              title={`/${sk.skill}${sk.allowedTools.length ? ` (${sk.allowedTools.join(", ")})` : ""}`}
+            >
+              <IconSkill size={12} className="skill-icon" />
+              <span className="skill-name">{sk.skill}</span>
+              <span
+                className="subagent-close"
+                onClick={() => sessionId && removeSkillInvocation(sessionId, sk.id)}
+                title="Dismiss"
+              ><IconClose size={12} /></span>
+            </span>
+          ))}
+        </div>
+      )}
       {/* Toggle: chevron to expand/collapse slash commands */}
       <div className="command-bar-collapse" onClick={() => setExpanded(!expanded)}>
         <span className="command-bar-chevron">{expanded ? "\u25BC" : "\u25B3"}</span>
