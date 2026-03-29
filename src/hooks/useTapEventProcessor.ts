@@ -124,7 +124,7 @@ export function useTapEventProcessor(
 
       if (event.kind === "CustomTitle") {
         const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-        if (session && event.title !== session.name && !session.userRenamed) {
+        if (session && event.title !== session.name) {
           useSessionStore.getState().renameSession(sid, event.title);
         }
       }

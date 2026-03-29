@@ -125,7 +125,6 @@ export interface Session {
   metadata: SessionMetadata;
   createdAt: string;
   lastActive: string;
-  userRenamed?: boolean;
   isMetaAgent?: boolean;
 }
 

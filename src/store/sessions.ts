@@ -40,7 +40,6 @@ interface SessionsState {
   reorderTabs: (order: string[]) => void;
   persist: () => Promise<void>;
   renameSession: (id: string, name: string) => void;
-  setUserRenamed: (id: string, value: boolean) => void;
   requestRespawn: (tabId: string, config: SessionConfig, name?: string) => void;
   clearRespawnRequest: () => void;
   requestKill: (id: string) => void;
@@ -260,14 +259,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
     set((s) => ({
       sessions: s.sessions.map((x) =>
         x.id === id ? { ...x, name } : x
-      ),
-    }));
-  },
-
-  setUserRenamed: (id, value) => {
-    set((s) => ({
-      sessions: s.sessions.map((x) =>
-        x.id === id ? { ...x, userRenamed: value } : x
       ),
     }));
   },

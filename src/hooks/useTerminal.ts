@@ -100,10 +100,6 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
       if (ev.altKey && ev.key >= "0" && ev.key <= "9" && ev.type === "keydown") {
         return false;
       }
-      // Ctrl+E: block from PTY — handled by App.tsx (tab rename)
-      if (ev.ctrlKey && ev.key === "e" && ev.type === "keydown") {
-        return false;
-      }
       return true; // Let it through
     });
 

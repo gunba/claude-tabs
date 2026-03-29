@@ -379,12 +379,6 @@ describe("simple state actions", () => {
     expect(useSessionStore.getState().killRequest).toBeNull();
   });
 
-  it("renameSession updates session name", () => {
-    useSessionStore.setState({ sessions: [makeSession("s1", "old")] });
-    useSessionStore.getState().renameSession("s1", "new-name");
-    expect(useSessionStore.getState().sessions[0].name).toBe("new-name");
-  });
-
   it("updateMetadata merges partial metadata", () => {
     useSessionStore.setState({ sessions: [makeSession("s1")] });
     useSessionStore.getState().updateMetadata("s1", { costUsd: 1.5, inputTokens: 500 });

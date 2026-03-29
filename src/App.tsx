@@ -28,7 +28,7 @@ import { killPty, getPtyHandleId } from "./lib/ptyRegistry";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { dlog } from "./lib/debugLog";
-import { IconPencil, IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
+import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
 import type { Subagent, SessionState } from "./types/session";
 import { isSessionIdle, isSubagentActive } from "./types/session";
@@ -45,7 +45,6 @@ export default function App() {
   const createSession = useSessionStore((s) => s.createSession);
   const persist = useSessionStore((s) => s.persist);
   const reorderTabs = useSessionStore((s) => s.reorderTabs);
-  const renameSession = useSessionStore((s) => s.renameSession);
   const requestKill = useSessionStore((s) => s.requestKill);
   const inspectorOffSessions = useSessionStore((s) => s.inspectorOffSessions);
   const setInspectorOff = useSessionStore((s) => s.setInspectorOff);
@@ -68,15 +67,12 @@ export default function App() {
   const [inspectedSubagent, setInspectedSubagent] = useState<{ sessionId: string; subagentId: string } | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
-  const [editingTabId, setEditingTabId] = useState<string | null>(null);
-  const [editingTabName, setEditingTabName] = useState("");
   const [flashingTabs, setFlashingTabs] = useState<Set<string>>(new Set());
   const ctrlHeld = useCtrlKey();
   const prevStatesRef = useRef<Map<string, string>>(new Map());
   const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingFlashRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const dragTabRef = useRef<string | null>(null);
-  const editDoneRef = useRef(false);
   const initRef = useRef(false);
   const [pruneConfirm, setPruneConfirm] = useState<{
     sessionId: string; worktreePath: string; worktreeName: string; projectRoot: string;
@@ -306,17 +302,6 @@ export default function App() {
         }
       }
 
-      if (e.ctrlKey && e.key === "e") {
-        e.preventDefault();
-        if (activeTabId) {
-          const s = sessions.find(s => s.id === activeTabId);
-          if (s) {
-            setEditingTabId(s.id);
-            setEditingTabName(s.name || dirToTabName(s.config.workingDir));
-          }
-        }
-      }
-
       if (e.altKey && e.key >= "1" && e.key <= "9") {
         e.preventDefault();
         const nonMeta = sessions.filter((s) => !s.isMetaAgent);
@@ -427,7 +412,6 @@ export default function App() {
                     }
                   }}
                   onKeyDown={(e) => {
-                    if (editingTabId === session.id) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       handleTabActivate(session.id);
@@ -443,47 +427,7 @@ export default function App() {
                 >
                   <span className={`tab-dot state-${getEffectiveState(session.state, subs)}${inspectorOffSessions.has(session.id) ? " inspector-off" : ""}`} />
                   <span className="tab-label">
-                    {editingTabId === session.id ? (
-                      <input
-                        className="tab-name-input"
-                        value={editingTabName}
-                        onFocus={(e) => e.currentTarget.select()}
-                        onChange={(e) => setEditingTabName(e.target.value)}
-                        onBlur={() => {
-                          if (!editDoneRef.current && editingTabName.trim()) {
-                            renameSession(session.id, editingTabName.trim());
-                            useSessionStore.getState().setUserRenamed(session.id, true);
-                            useSettingsStore.getState().setSessionName(getResumeId(session), editingTabName.trim());
-                          }
-                          editDoneRef.current = false;
-                          setEditingTabId(null);
-                        }}
-                        onKeyDown={(e) => {
-                          const focusTerminal = () => requestAnimationFrame(() => {
-                            document.querySelector<HTMLElement>('.terminal-panel[style*="display: flex"] textarea')?.focus();
-                          });
-                          if (e.key === "Enter") {
-                            editDoneRef.current = true;
-                            if (editingTabName.trim()) {
-                              renameSession(session.id, editingTabName.trim());
-                              useSessionStore.getState().setUserRenamed(session.id, true);
-                              useSettingsStore.getState().setSessionName(getResumeId(session), editingTabName.trim());
-                            }
-                            setEditingTabId(null);
-                            focusTerminal();
-                          } else if (e.key === "Escape") {
-                            editDoneRef.current = true;
-                            setEditingTabId(null);
-                            focusTerminal();
-                          }
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                      />
-                    ) : (
-                      <span className="tab-name">{fullName}</span>
-                    )}
+                    <span className="tab-name">{fullName}</span>
                     {summary && <span className="tab-summary">{summary}</span>}
                     {metaSpans.length > 0 && (
                       <span className="tab-meta">
@@ -515,17 +459,6 @@ export default function App() {
                     </span>
                   )}
                   <span className="tab-actions">
-                    <button
-                      className="tab-edit"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingTabId(session.id);
-                        setEditingTabName(fullName);
-                      }}
-                      title="Rename"
-                    >
-                      <IconPencil size={11} />
-                    </button>
                     {session.state !== "dead" && (
                       <button
                         className="tab-kill"
@@ -680,17 +613,6 @@ export default function App() {
               const inspectorUrl = inspectorPort ? `https://debug.bun.sh/#127.0.0.1:${inspectorPort}/0` : null;
               return (
                 <>
-                  <button
-                    className="tab-context-menu-item"
-                    onClick={() => {
-                      const ctxName = ctxSession.name || dirToTabName(ctxSession.config.workingDir);
-                      setEditingTabId(ctxSession.id);
-                      setEditingTabName(ctxName);
-                      setTabContextMenu(null);
-                    }}
-                  >
-                    Rename
-                  </button>
                   <button
                     className="tab-context-menu-item"
                     onClick={() => {
