@@ -47,7 +47,7 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
 
 ## Layout
 
-- [LO-01] Main window layout: tab bar, subagent bar, terminal with button bar, command history, command bar, status bar
+- [LO-01] Main window layout: tab bar, subagent bar, terminal with button bar, command bar (slash commands), command history, status bar
   ```
   ┌──────────────────────────────────────────────────────────────┐
   │ Tab Bar  [● session1 | ● session2 | + ]                      │
@@ -57,8 +57,8 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │  Terminal (xterm.js 6.0)                              │ bar │
   │  (CSS display toggle, not unmount)                    │ 28px│
   ├──────────────────────────────────────────────────────────────┤
-  │ Command History  [/r] [/j] [/r] ...  (per-session, newest←)  │
   │ Command Bar (slash commands)                                  │
+  │ Command History  [/r] [/j] [/r] ...  (per-session, newest←)  │
   ├──────────────────────────────────────────────────────────────┤
   │ StatusBar (model, worktree, duration, hooks)                    │
   └──────────────────────────────────────────────────────────────┘

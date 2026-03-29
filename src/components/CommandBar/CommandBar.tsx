@@ -75,23 +75,7 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
 
   return (
     <div className="command-bar">
-      {/* Always show history when it exists */}
-      {history.length > 0 && (
-        <div className="command-history">
-          {history.map((cmd, i) => (
-            <button
-              key={`${i}-${cmd}`}
-              className="command-history-item"
-              onClick={() => sendCommand(cmd)}
-              title={`Re-send ${cmd}`}
-              type="button"
-            >
-              {cmd}
-            </button>
-          ))}
-        </div>
-      )}
-      {/* Toggle: reuse existing command-bar-collapse class */}
+      {/* Toggle: chevron to expand/collapse slash commands */}
       <div className="command-bar-collapse" onClick={() => setExpanded(!expanded)}>
         <span className="command-bar-chevron">{expanded ? "\u25BC" : "\u25B3"}</span>
       </div>
@@ -117,6 +101,22 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
               );
             })
           )}
+        </div>
+      )}
+      {/* Command history: below the expander with a separator */}
+      {history.length > 0 && (
+        <div className="command-history">
+          {history.map((cmd, i) => (
+            <button
+              key={`${i}-${cmd}`}
+              className="command-history-item"
+              onClick={() => sendCommand(cmd)}
+              title={`Re-send ${cmd}`}
+              type="button"
+            >
+              {cmd}
+            </button>
+          ))}
         </div>
       )}
     </div>
