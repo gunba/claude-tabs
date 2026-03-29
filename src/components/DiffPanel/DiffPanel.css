@@ -7,19 +7,14 @@
 /* ── Panel container ── */
 
 .diff-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
   width: 400px;
   min-width: 280px;
   max-width: 55%;
-  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg-surface);
   border-left: 1px solid var(--border);
   overflow: hidden;
-  z-index: 50;
 }
 
 /* ── Header ── */

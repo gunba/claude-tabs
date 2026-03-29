@@ -50,7 +50,6 @@ interface UseTerminalOptions {
 export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const fitPausedRef = useRef(false);
   const webglRef = useRef<WebglAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const webglRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,7 +198,6 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
 
     // Observe container size changes
     const observer = new ResizeObserver(() => {
-      if (fitPausedRef.current) return;
       try {
         const dims = fit.proposeDimensions();
         if (!dims || dims.rows <= 1) return;
@@ -345,18 +343,6 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     return "";
   }, []);
 
-  const pauseFit = useCallback(() => {
-    fitPausedRef.current = true;
-  }, []);
-
-  const resumeFit = useCallback(() => {
-    fitPausedRef.current = false;
-    try {
-      const dims = fitRef.current?.proposeDimensions();
-      if (dims && dims.rows > 1) fitRef.current?.fit();
-    } catch {}
-  }, []);
-
   // No-op: this branch has no write batching, so there is nothing to discard.
   // Called during respawn to prevent stale PTY data from being flushed after \x1bc.
   const clearPending = useCallback(() => {}, []);
@@ -374,8 +360,6 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     isAtBottom,
     isAtTop,
     fit,
-    pauseFit,
-    resumeFit,
     clearPending,
     getDimensions,
     getBufferText,

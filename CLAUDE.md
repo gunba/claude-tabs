@@ -47,16 +47,16 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
 
 ## Layout
 
-- [LO-01] Main window layout: agent bar (subagents + controls), multi-terminal area with mini-grid, command bar (slash commands + skill pills), status bar
+- [LO-01] Main window layout: tab bar, subagent bar, terminal with button bar, command bar (slash commands + skill pills), command history, status bar
   ```
   ┌──────────────────────────────────────────────────────────────┐
-  │ Agent Bar  [▐ agent-task-1] [▐ agent-task-2] ... [↩][⚙][+]  │
-  ├─────────────────────────────────────────────┬────────────────┤
-  │  Active Terminal (70%)              │ bar │ │ Mini Grid(30%) │
-  │  position:absolute; right:30%       │ 28px│ │ [slot 0: ████] │
-  │                                             │ [slot 1: live] │
-  │  Side panels overlay here (abs pos)         │ [slot 2: live] │
-  ├─────────────────────────────────────────────┴────────────────┤
+  │ Tab Bar  [● session1 | ● session2 | + ]                      │
+  ├──────────────────────────────────────────────────────────────┤
+  │ Subagent Bar  [▐ agent-task-1] [▐ agent-task-2]               │
+  ├──────────────────────────────────────────────────────────────┤
+  │  Terminal (xterm.js 6.0)                              │ bar │
+  │  (CSS display toggle, not unmount)                    │ 28px│
+  ├──────────────────────────────────────────────────────────────┤
   │ Command Bar (slash commands) + skill pills                    │
   │ Command History  [/r] [/j] [/r] ...  (per-session, newest←)  │
   ├──────────────────────────────────────────────────────────────┤
