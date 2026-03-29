@@ -6,16 +6,18 @@
 /// **Passes through** device queries (DA1, DA2, DSR, CPR, DECRQM, Kitty keyboard)
 /// — xterm.js IS the terminal and must respond to these for ConPTY/Claude handshake.
 ///
-/// Tracks BSU/ESU (DEC Mode 2026) synchronized update state so that
-/// ESC[2J is only stripped outside sync blocks. Inside sync blocks,
-/// ESC[2J is safe — the terminal renders atomically, preventing
-/// viewport jumps. ESC[3J (erase scrollback) is always stripped.
+/// Tracks BSU/ESU (DEC Mode 2026) synchronized update state.
+/// ESC[2J inside sync blocks (full redraws) is replaced with
+/// ESC[3J + ESC[H + ESC[J to clear scrollback before the redraw,
+/// preventing duplicate content from accumulating in scrollback.
+/// ESC[2J outside sync blocks is stripped after a startup grace period.
+/// ESC[3J (erase scrollback) from the application is always stripped.
 pub struct OutputFilter {
     state: FilterState,
     /// Output buffer for the current filter() call
     output: Vec<u8>,
     /// Whether we're inside a BSU/ESU synchronized update block.
-    /// ESC[2J is allowed through inside sync blocks (atomic render).
+    /// ESC[2J inside sync blocks is replaced with ESC[3J+ESC[H+ESC[J.
     in_sync_block: bool,
     /// Number of ESC[2J sequences allowed outside sync blocks during
     /// startup. The first 2 clear-screens are needed for the child
@@ -151,6 +153,20 @@ impl OutputFilter {
                             self.output.push(0x1B);
                             self.output.push(b'[');
                             self.output.extend_from_slice(&csi_buf);
+
+                            // Outside sync blocks, when Ink positions the cursor
+                            // to a row (CUP = CSI row;col H), erase the entire
+                            // line. This clears stale content both before AND after
+                            // the cursor — needed when fresh content is indented
+                            // (e.g., col 3) and stale content occupies cols 1-2.
+                            // CSI 2K erases the full line without moving the cursor.
+                            if !self.in_sync_block
+                                && csi_buf.last() == Some(&b'H')
+                                && csi_buf.len() > 1  // not bare ESC[H (cursor home)
+                                && csi_buf.iter().any(|&b| b == b';')  // has row;col
+                            {
+                                self.output.extend_from_slice(b"\x1b[2K");
+                            }
                         }
                     }
                     // Still accumulating parameter/intermediate bytes
@@ -245,7 +261,9 @@ impl OutputFilter {
         &self.output
     }
 
-    /// Check if a CSI sequence should be blocked.
+    /// Check if a CSI sequence should be blocked (returns true) or replaced.
+    /// When a sequence is replaced, the replacement is emitted directly to
+    /// self.output and true is returned so the caller doesn't emit the original.
     fn is_blocked_csi(&mut self, buf: &[u8]) -> bool {
         if buf.is_empty() {
             return false;
@@ -255,12 +273,24 @@ impl OutputFilter {
         let params = &buf[..buf.len() - 1];
 
         match final_byte {
-            // CSI 3 J — erase scrollback buffer. Always stripped.
-            // CSI 2 J — erase entire display. Stripped only OUTSIDE
-            // BSU/ESU sync blocks (with a startup grace period).
-            b'J' if params == b"3"
-                || (params == b"2" && !self.in_sync_block
-                    && self.startup_clears_remaining == 0) =>
+            // CSI 3 J — erase scrollback buffer. Always stripped from input.
+            b'J' if params == b"3" => {
+                self.clear_screen_stripped += 1;
+                true
+            }
+            // CSI 2 J inside sync block — full-redraw clear screen.
+            // Replace with ESC[3J (clear scrollback) + ESC[H (cursor home) +
+            // ESC[J (clear display from cursor). This prevents scrollback
+            // duplication: ESC[2J doesn't clear scrollback, so full-redraw
+            // content overflows into scrollback alongside the old copy.
+            // ESC[3J is written directly to output (bypasses input stripping).
+            b'J' if params == b"2" && self.in_sync_block => {
+                self.output.extend_from_slice(b"\x1b[3J\x1b[H\x1b[J");
+                true
+            }
+            // CSI 2 J outside sync block — stripped after startup grace.
+            b'J' if params == b"2" && !self.in_sync_block
+                && self.startup_clears_remaining == 0 =>
             {
                 self.clear_screen_stripped += 1;
                 true
@@ -442,10 +472,16 @@ mod tests {
     #[test]
     fn test_cursor_movement_passes_through() {
         let mut f = OutputFilter::new();
-        // CUP, CUU, CUD, CUF, CUB
-        assert_eq!(f.filter(b"\x1b[10;20H"), b"\x1b[10;20H");
+        // CUP outside sync block gets CSI 2K appended (erases entire line)
+        assert_eq!(f.filter(b"\x1b[10;20H"), b"\x1b[10;20H\x1b[2K");
+        // CUU, CUD, CUF, CUB pass through unchanged
         assert_eq!(f.filter(b"\x1b[5A"), b"\x1b[5A");
         assert_eq!(f.filter(b"\x1b[3B"), b"\x1b[3B");
+        // CUP inside sync block — no CSI K appended
+        assert_eq!(
+            f.filter(b"\x1b[?2026h\x1b[5;10H\x1b[?2026l"),
+            b"\x1b[?2026h\x1b[5;10H\x1b[?2026l"
+        );
     }
 
     #[test]
@@ -761,12 +797,15 @@ mod tests {
     }
 
     #[test]
-    fn test_clear_screen_passes_inside_sync_block() {
+    fn test_clear_screen_replaced_inside_sync_block() {
         let mut f = OutputFilter::new();
-        // BSU + ESC[2J + ESU — clear screen inside sync block passes through
+        // BSU + ESC[2J + ESC[H + content + ESU
+        // ESC[2J inside sync block is replaced with ESC[3J + ESC[H + ESC[J
         let input = b"\x1b[?2026h\x1b[2J\x1b[Hcontent\x1b[?2026l";
-        let result = f.filter(input);
-        assert_eq!(result, input.to_vec());
+        let result = f.filter(input).to_vec();
+        // Expected: BSU + replacement(ESC[3J+ESC[H+ESC[J) + ESC[H + content + ESU
+        let expected = b"\x1b[?2026h\x1b[3J\x1b[H\x1b[J\x1b[Hcontent\x1b[?2026l";
+        assert_eq!(result, expected.to_vec());
     }
 
     #[test]
@@ -787,9 +826,9 @@ mod tests {
         let r1 = f.filter(b"\x1b[?2026h").to_vec();
         assert_eq!(r1, b"\x1b[?2026h");
 
-        // ESC[2J in chunk 2 — should pass through (inside sync block)
+        // ESC[2J in chunk 2 — replaced inside sync block
         let r2 = f.filter(b"\x1b[2J\x1b[Hcontent").to_vec();
-        assert_eq!(r2, b"\x1b[2J\x1b[Hcontent");
+        assert_eq!(r2, b"\x1b[3J\x1b[H\x1b[J\x1b[Hcontent");
 
         // ESU in chunk 3
         let r3 = f.filter(b"\x1b[?2026l").to_vec();
@@ -803,8 +842,9 @@ mod tests {
         f.filter(b"\x1b[2J");
         f.filter(b"\x1b[2J");
 
-        // Complete sync block — ESC[2J passes through (inside sync)
-        f.filter(b"\x1b[?2026h\x1b[2Jcontent\x1b[?2026l");
+        // Complete sync block — ESC[2J replaced inside sync
+        let result = f.filter(b"\x1b[?2026h\x1b[2Jcontent\x1b[?2026l").to_vec();
+        assert_eq!(result, b"\x1b[?2026h\x1b[3J\x1b[H\x1b[Jcontent\x1b[?2026l");
 
         // ESC[2J after sync block ends — should be stripped (grace exhausted)
         let result = f.filter(b"\x1b[2Jmore");

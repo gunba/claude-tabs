@@ -4,7 +4,7 @@ use std::{
     io::{Read, Write as IoWrite, BufWriter},
     fs::File,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -95,6 +95,9 @@ struct Session {
     /// Set by resize() before the PTY resize call so the flag is visible
     /// by the time reflow data arrives in the channel.
     drain_after_resize: AtomicBool,
+    /// Current terminal width. Used by read() to detect Ink's cursor-park
+    /// pattern (CUF matching cols) and append ESC[J to clear stale rows.
+    cols: AtomicU16,
 }
 
 type PtyHandler = u32;
@@ -174,6 +177,7 @@ async fn spawn<R: Runtime>(
         output_filter: Mutex::new(OutputFilter::new()),
         recorder: std::sync::Mutex::new(None),
         drain_after_resize: AtomicBool::new(false),
+        cols: AtomicU16::new(cols),
     });
     state.sessions.write().await.insert(handler, session);
     Ok(handler)
@@ -264,7 +268,24 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
         if let Some(rec) = recorder.as_mut() { rec.flush(); }
         drop(recorder);
 
-        Ok(filtered.to_vec())
+        // Detect Ink's cursor-park pattern at the end of a render: CUF matching
+        // terminal width (CSI <cols> C). Ink parks the cursor here after drawing.
+        // When content contracts (e.g., user deletes text), Ink skips rows between
+        // the old and new layout, leaving stale content. Appending ESC[J (clear
+        // from cursor to end of screen) after the park clears those stale rows.
+        let cols = session.cols.load(Ordering::Relaxed);
+        let mut result = filtered.to_vec();
+        if cols > 0 {
+            let suffix = format!("\x1b[{}C", cols);
+            let suffix_bytes = suffix.as_bytes();
+            if result.len() >= suffix_bytes.len()
+                && result[result.len() - suffix_bytes.len()..] == *suffix_bytes
+            {
+                result.extend_from_slice(b"\x1b[J");
+            }
+        }
+
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -287,6 +308,7 @@ async fn resize(
     // Set drain flag BEFORE PTY resize so read() discards ConPTY reflow.
     // The flag must be visible before the resize call produces reflow data.
     session.drain_after_resize.store(true, Ordering::Release);
+    session.cols.store(cols, Ordering::Release);
 
     session
         .pair
