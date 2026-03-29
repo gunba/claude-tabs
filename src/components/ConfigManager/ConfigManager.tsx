@@ -115,13 +115,13 @@ export function ConfigManager() {
         )}
         <PluginsTab visible={tab === "plugins"} projectDir={projectDir} onStatus={setStatusMsg} />
         {tab === "agents" && (
-          <ThreePaneEditor component={AgentEditor} projectDir={projectDir} onStatus={setStatusMsg} tabId="agents" />
+          <ThreePaneEditor component={AgentEditor} projectDir={projectDir} onStatus={setStatusMsg} tabId="agents" scopes={["user", "project"]} />
         )}
         {tab === "prompts" && (
           <PromptsTab onStatus={setStatusMsg} />
         )}
         {tab === "skills" && (
-          <ThreePaneEditor component={SkillsEditor} projectDir={projectDir} onStatus={setStatusMsg} tabId="skills" />
+          <ThreePaneEditor component={SkillsEditor} projectDir={projectDir} onStatus={setStatusMsg} tabId="skills" scopes={["user", "project"]} />
         )}
         <ProvidersPane visible={tab === "providers"} onStatus={setStatusMsg} />
       </div>

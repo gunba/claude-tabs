@@ -3,7 +3,7 @@ import type { CliOption } from "../store/settings";
 
 export type Scope = "user" | "project" | "project-local";
 
-export type ClaudeMdType = "claudemd-root" | "claudemd-dotclaude" | "claudemd-user";
+export type ClaudeMdType = "claudemd-root" | "claudemd-local" | "claudemd-user";
 
 export interface AgentFile {
   name: string;

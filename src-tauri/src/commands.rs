@@ -1859,14 +1859,13 @@ fn resolve_config_path(scope: &str, working_dir: &str, file_type: &str) -> Resul
         },
         "claudemd-user" => Ok(home.join(".claude").join("CLAUDE.md")),
         "claudemd-root" => Ok(std::path::Path::new(working_dir).join("CLAUDE.md")),
-        "claudemd-dotclaude" => Ok(std::path::Path::new(working_dir).join(".claude").join("CLAUDE.md")),
+        "claudemd-local" => Ok(std::path::Path::new(working_dir).join("CLAUDE.local.md")),
         _ if file_type.starts_with("agent:") || file_type.starts_with("agent-delete:") => {
             let name = file_type.split_once(':').map(|(_, n)| n).unwrap_or("");
             validate_md_file_name(name)?;
             match scope {
                 "user" => Ok(home.join(".claude").join("agents").join(format!("{}.md", name))),
                 "project" => Ok(std::path::Path::new(working_dir).join(".claude").join("agents").join(format!("{}.md", name))),
-                "project-local" => Ok(std::path::Path::new(working_dir).join(".claude").join("local").join("agents").join(format!("{}.md", name))),
                 _ => Err("Invalid scope".into()),
             }
         },
@@ -1876,7 +1875,6 @@ fn resolve_config_path(scope: &str, working_dir: &str, file_type: &str) -> Resul
             match scope {
                 "user" => Ok(home.join(".claude").join("commands").join(format!("{}.md", name))),
                 "project" => Ok(std::path::Path::new(working_dir).join(".claude").join("commands").join(format!("{}.md", name))),
-                "project-local" => Ok(std::path::Path::new(working_dir).join(".claude").join("local").join("commands").join(format!("{}.md", name))),
                 _ => Err("Invalid scope".into()),
             }
         },
@@ -1961,7 +1959,6 @@ pub fn list_agents(scope: String, working_dir: String) -> Result<Vec<serde_json:
     let dir = match scope.as_str() {
         "user" => home.join(".claude").join("agents"),
         "project" => std::path::Path::new(&working_dir).join(".claude").join("agents"),
-        "project-local" => std::path::Path::new(&working_dir).join(".claude").join("local").join("agents"),
         _ => return Err("Invalid scope".into()),
     };
     Ok(list_md_in_dir(&dir))
@@ -1974,7 +1971,6 @@ pub fn list_skills(scope: String, working_dir: String) -> Result<Vec<serde_json:
     let dir = match scope.as_str() {
         "user" => home.join(".claude").join("commands"),
         "project" => std::path::Path::new(&working_dir).join(".claude").join("commands"),
-        "project-local" => std::path::Path::new(&working_dir).join(".claude").join("local").join("commands"),
         _ => return Err("Invalid scope".into()),
     };
     Ok(list_md_in_dir(&dir))

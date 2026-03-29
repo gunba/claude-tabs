@@ -162,8 +162,8 @@ describe("scopePath", () => {
       expect(scopePath("project", dir, "claudemd")).toBe(`${dir}/CLAUDE.md`);
     });
 
-    it("project-local scope — CLAUDE.md in .claude/", () => {
-      expect(scopePath("project-local", dir, "claudemd")).toBe(`${dir}/.claude/CLAUDE.md`);
+    it("project-local scope — CLAUDE.local.md at project root", () => {
+      expect(scopePath("project-local", dir, "claudemd")).toBe(`${dir}/CLAUDE.local.md`);
     });
   });
 
@@ -175,9 +175,15 @@ describe("scopePath", () => {
     it("project scope", () => {
       expect(scopePath("project", dir, "agents")).toBe(`${dir}/.claude/agents/`);
     });
+  });
 
-    it("project-local scope — uses local/ subdir", () => {
-      expect(scopePath("project-local", dir, "agents")).toBe(`${dir}/.claude/local/agents/`);
+  describe("skills tab", () => {
+    it("user scope", () => {
+      expect(scopePath("user", dir, "skills")).toBe("~/.claude/commands/");
+    });
+
+    it("project scope", () => {
+      expect(scopePath("project", dir, "skills")).toBe(`${dir}/.claude/commands/`);
     });
   });
 

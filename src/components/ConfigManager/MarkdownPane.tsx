@@ -6,7 +6,7 @@ import type { PaneComponentProps } from "./ThreePaneEditor";
 const SCOPE_TO_FILETYPE: Record<string, string> = {
   user: "claudemd-user",
   project: "claudemd-root",
-  "project-local": "claudemd-dotclaude",
+  "project-local": "claudemd-local",
 };
 
 export function MarkdownPane({ scope, projectDir, onStatus }: PaneComponentProps) {
@@ -20,7 +20,7 @@ export function MarkdownPane({ scope, projectDir, onStatus }: PaneComponentProps
   const load = useCallback(async () => {
     try {
       const result = await invoke<string>("read_config_file", {
-        scope: scope === "project-local" ? "project" : scope,
+        scope,
         workingDir: scope === "user" ? "" : projectDir,
         fileType,
       });
@@ -38,7 +38,7 @@ export function MarkdownPane({ scope, projectDir, onStatus }: PaneComponentProps
   const handleSave = useCallback(async () => {
     try {
       await invoke("write_config_file", {
-        scope: scope === "project-local" ? "project" : scope,
+        scope,
         workingDir: scope === "user" ? "" : projectDir,
         fileType,
         content: text,

@@ -15,6 +15,7 @@ interface ThreePaneEditorProps {
   projectDir: string;
   onStatus: (msg: StatusMessage | null) => void;
   tabId: TabId;
+  scopes?: PaneComponentProps["scope"][];
 }
 
 export function scopePath(scope: PaneComponentProps["scope"], dir: string, tabId: TabId): string {
@@ -29,15 +30,13 @@ export function scopePath(scope: PaneComponentProps["scope"], dir: string, tabId
     case "claudemd":
       if (scope === "user") return "~/.claude/CLAUDE.md";
       if (scope === "project") return `${d}/CLAUDE.md`;
-      return `${d}/.claude/CLAUDE.md`;
+      return `${d}/CLAUDE.local.md`;
     case "agents":
       if (scope === "user") return "~/.claude/agents/";
-      if (scope === "project") return `${d}/.claude/agents/`;
-      return `${d}/.claude/local/agents/`;
+      return `${d}/.claude/agents/`;
     case "skills":
       if (scope === "user") return "~/.claude/commands/";
-      if (scope === "project") return `${d}/.claude/commands/`;
-      return `${d}/.claude/local/commands/`;
+      return `${d}/.claude/commands/`;
   }
 }
 
@@ -47,10 +46,11 @@ export const SCOPES: { value: PaneComponentProps["scope"]; label: string; colorV
   { value: "project-local", label: "LOCAL", colorVar: "var(--accent-tertiary)", icon: <IconTerminal size={12} /> },
 ];
 
-export function ThreePaneEditor({ component: PaneComponent, projectDir, onStatus, tabId }: ThreePaneEditorProps) {
+export function ThreePaneEditor({ component: PaneComponent, projectDir, onStatus, tabId, scopes }: ThreePaneEditorProps) {
+  const visibleScopes = scopes ? SCOPES.filter((s) => scopes.includes(s.value)) : SCOPES;
   return (
-    <div className="three-pane-grid">
-      {SCOPES.map(({ value, label, colorVar, icon }) => (
+    <div className="three-pane-grid" style={{ gridTemplateColumns: `repeat(${visibleScopes.length}, 1fr)` }}>
+      {visibleScopes.map(({ value, label, colorVar }) => (
         <div key={value} className="three-pane-column" style={{ "--scope-color": colorVar } as React.CSSProperties}>
           <div className="three-pane-header">
             <span className="three-pane-icon" style={{ color: colorVar }}>{icon}</span>
