@@ -10,4 +10,6 @@ permissions = [
     "allow-destroy",
     "allow-get-child-pid",
     "allow-drain-output",
+    "allow-start-pty-recording",
+    "allow-stop-pty-recording",
 ]

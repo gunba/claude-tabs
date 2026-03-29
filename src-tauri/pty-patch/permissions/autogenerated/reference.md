@@ -13,6 +13,8 @@ Allows all PTY commands
 - `allow-destroy`
 - `allow-get-child-pid`
 - `allow-drain-output`
+- `allow-start-pty-recording`
+- `allow-stop-pty-recording`
 
 ## Permission Table
 
@@ -227,6 +229,58 @@ Enables the spawn command without any pre-configured scope.
 <td>
 
 Denies the spawn command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pty:allow-start-pty-recording`
+
+</td>
+<td>
+
+Enables the start_pty_recording command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pty:deny-start-pty-recording`
+
+</td>
+<td>
+
+Denies the start_pty_recording command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pty:allow-stop-pty-recording`
+
+</td>
+<td>
+
+Enables the stop_pty_recording command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`pty:deny-stop-pty-recording`
+
+</td>
+<td>
+
+Denies the stop_pty_recording command without any pre-configured scope.
 
 </td>
 </tr>

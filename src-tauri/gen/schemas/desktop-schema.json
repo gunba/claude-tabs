@@ -2667,10 +2667,10 @@
           "markdownDescription": "Denies the restart command without any pre-configured scope."
         },
         {
-          "description": "Allows all PTY commands\n#### This default permission set includes:\n\n- `allow-spawn`\n- `allow-read`\n- `allow-write`\n- `allow-resize`\n- `allow-kill`\n- `allow-exitstatus`\n- `allow-destroy`\n- `allow-get-child-pid`\n- `allow-drain-output`",
+          "description": "Allows all PTY commands\n#### This default permission set includes:\n\n- `allow-spawn`\n- `allow-read`\n- `allow-write`\n- `allow-resize`\n- `allow-kill`\n- `allow-exitstatus`\n- `allow-destroy`\n- `allow-get-child-pid`\n- `allow-drain-output`\n- `allow-start-pty-recording`\n- `allow-stop-pty-recording`",
           "type": "string",
           "const": "pty:default",
-          "markdownDescription": "Allows all PTY commands\n#### This default permission set includes:\n\n- `allow-spawn`\n- `allow-read`\n- `allow-write`\n- `allow-resize`\n- `allow-kill`\n- `allow-exitstatus`\n- `allow-destroy`\n- `allow-get-child-pid`\n- `allow-drain-output`"
+          "markdownDescription": "Allows all PTY commands\n#### This default permission set includes:\n\n- `allow-spawn`\n- `allow-read`\n- `allow-write`\n- `allow-resize`\n- `allow-kill`\n- `allow-exitstatus`\n- `allow-destroy`\n- `allow-get-child-pid`\n- `allow-drain-output`\n- `allow-start-pty-recording`\n- `allow-stop-pty-recording`"
         },
         {
           "description": "Enables the destroy command without any pre-configured scope.",
@@ -2719,6 +2719,18 @@
           "type": "string",
           "const": "pty:allow-spawn",
           "markdownDescription": "Enables the spawn command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_pty_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "pty:allow-start-pty-recording",
+          "markdownDescription": "Enables the start_pty_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_pty_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "pty:allow-stop-pty-recording",
+          "markdownDescription": "Enables the stop_pty_recording command without any pre-configured scope."
         },
         {
           "description": "Enables the write command without any pre-configured scope.",
@@ -2773,6 +2785,18 @@
           "type": "string",
           "const": "pty:deny-spawn",
           "markdownDescription": "Denies the spawn command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_pty_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "pty:deny-start-pty-recording",
+          "markdownDescription": "Denies the start_pty_recording command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_pty_recording command without any pre-configured scope.",
+          "type": "string",
+          "const": "pty:deny-stop-pty-recording",
+          "markdownDescription": "Denies the stop_pty_recording command without any pre-configured scope."
         },
         {
           "description": "Denies the write command without any pre-configured scope.",
