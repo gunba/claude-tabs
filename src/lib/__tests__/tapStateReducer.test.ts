@@ -158,10 +158,19 @@ describe("reduceTapEvent", () => {
     expect(reduceTapEvent("actionNeeded", { kind: "TextStart", ts: 0, index: 0 })).toBe("actionNeeded");
   });
 
-  it("ConversationMessage(user) when actionNeeded → actionNeeded (sticky guard)", () => {
+  it("ConversationMessage(user, !isSidechain) when actionNeeded → thinking (plan approval clears guard)", () => {
     expect(reduceTapEvent("actionNeeded", {
       kind: "ConversationMessage", ts: 0, messageType: "user",
       isSidechain: false, agentId: null, uuid: null, parentUuid: null,
+      promptId: null, stopReason: null, toolNames: [], toolAction: null,
+      textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null,
+    })).toBe("thinking");
+  });
+
+  it("ConversationMessage(user, isSidechain) when actionNeeded → actionNeeded (subagent doesn't clear guard)", () => {
+    expect(reduceTapEvent("actionNeeded", {
+      kind: "ConversationMessage", ts: 0, messageType: "user",
+      isSidechain: true, agentId: "sub-1", uuid: null, parentUuid: null,
       promptId: null, stopReason: null, toolNames: [], toolAction: null,
       textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null,
     })).toBe("actionNeeded");
@@ -288,6 +297,14 @@ describe("reduceTapBatch", () => {
       { kind: "IdlePrompt", ts: 1 },
     ];
     expect(reduceTapBatch("idle", events)).toBe("idle");
+  });
+
+  it("actionNeeded + TurnStart + ConversationMessage(user) batch → thinking (plan approval)", () => {
+    const events: TapEvent[] = [
+      { kind: "TurnStart", ts: 0, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 },
+      convMsg({ messageType: "user" }),
+    ];
+    expect(reduceTapBatch("actionNeeded", events)).toBe("thinking");
   });
 });
 

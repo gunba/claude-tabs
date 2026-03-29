@@ -8,7 +8,8 @@ import { isSessionIdle } from "../types/session";
  * No polling, no terminal buffer fallback — event-driven only.
  */
 export function reduceTapEvent(state: SessionState, event: TapEvent): SessionState {
-  // actionNeeded is sticky — only explicit user actions can clear it
+  // actionNeeded is sticky — only explicit user actions can clear it.
+  // Currently only reachable via ToolCallStart(ExitPlanMode).
   if (state === "actionNeeded") {
     switch (event.kind) {
       case "UserInput":
@@ -20,6 +21,10 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
         return "waitingPermission"; // edge case: plan triggers permission
       case "IdlePrompt":
         return "idle";              // task completed without explicit user message
+      case "ConversationMessage":
+        // Plan approval injects a tool_result ConversationMessage(user) — no UserInput fires.
+        if (event.messageType === "user" && !event.isSidechain) return "thinking";
+        return "actionNeeded";
       default:
         return "actionNeeded";      // all other events preserve it
     }
