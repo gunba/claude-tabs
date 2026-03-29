@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useTerminal, TERMINAL_FONTS, resolveFont } from "../../hooks/useTerminal";
@@ -23,9 +23,20 @@ import "./TerminalPanel.css";
 
 const EMPTY_TAP_SET = new Set<string>();
 
+export interface MiniSlotInfo {
+  top: string;       // e.g. "0%", "25%"
+  height: string;    // e.g. "25%"
+  colIndex: number;  // 0 = leftmost column in mini grid
+  numCols: number;   // total columns in mini grid
+  scale: number;     // CSS transform scale factor
+}
+
 interface TerminalPanelProps {
   session: Session;
   visible: boolean;
+  miniSlot: MiniSlotInfo | null;
+  hasMiniGrid: boolean;
+  onSnapshotCaptured?: (sessionId: string, dataUrl: string) => void;
 }
 
 // ── Duration Timer (active time only) ────────────────────────────────────
@@ -68,7 +79,7 @@ function useDurationTimer(sessionId: string, state: SessionState, respawnCounter
 
 // ── Terminal Panel ──────────────────────────────────────────────────────
 
-export function TerminalPanel({ session, visible }: TerminalPanelProps) {
+export function TerminalPanel({ session, visible, miniSlot, hasMiniGrid, onSnapshotCaptured }: TerminalPanelProps) {
   const claudePath = useSessionStore((s) => s.claudePath);
   const updateState = useSessionStore((s) => s.updateState);
   const updateConfig = useSessionStore((s) => s.updateConfig);
@@ -80,6 +91,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const hookChangeCounter = useSessionStore((s) => s.hookChangeCounter);
   const spawnedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const onSnapshotCapturedRef = useRef(onSnapshotCaptured);
+  onSnapshotCapturedRef.current = onSnapshotCaptured;
   const [respawnCounter, setRespawnCounter] = useState(0);
   const [inspectorReconnectKey, setInspectorReconnectKey] = useState(0);
   const [termContextMenu, setTermContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -256,6 +269,24 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           });
         return;
       }
+      // Capture terminal snapshot before session dies (terminal is still visible/rendered)
+      const captureEl = containerRef.current;
+      if (captureEl && visibleRef.current) {
+        requestAnimationFrame(() => {
+          const canvases = Array.from(captureEl.querySelectorAll<HTMLCanvasElement>('canvas'));
+          if (!canvases.length) return;
+          const w = canvases[0].width, h = canvases[0].height;
+          if (!w || !h) return;
+          const off = document.createElement('canvas');
+          off.width = w; off.height = h;
+          const ctx = off.getContext('2d');
+          if (!ctx) return;
+          canvases.forEach(c => { try { ctx.drawImage(c, 0, 0); } catch {} });
+          const url = off.toDataURL('image/webp', 0.7);
+          invoke("save_session_snapshot", { sessionId: session.id, dataUrl: url }).catch(() => {});
+          onSnapshotCapturedRef.current?.(session.id, url);
+        });
+      }
       // Cascade dead state to all subagents so they get cleaned up from canvas
       const subagents = useSessionStore.getState().subagents.get(session.id) || [];
       const { updateSubagent } = useSessionStore.getState();
@@ -372,6 +403,18 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     onResize: handleResize,
   });
   terminalRef.current = terminal;
+
+  // Pause FitAddon when in mini mode so PTY dimensions don't get resized to mini slot size
+  const isMini = miniSlot !== null;
+  useEffect(() => {
+    if (isMini) {
+      terminal.pauseFit();
+    } else {
+      terminal.resumeFit();
+    }
+    // terminal callbacks are stable refs — safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMini]);
 
   // Attach terminal to container
   const setContainer = useCallback(
@@ -700,8 +743,36 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 
-  const showDeadOverlay = session.state === "dead" && visible;
-  const showButtonBar = visible && session.state !== "dead";
+  const showDeadOverlay = session.state === "dead" && visible && !miniSlot;
+  const showButtonBar = visible && !miniSlot && session.state !== "dead";
+
+  // Compute outer panel style based on active/mini/hidden state
+  const panelStyle: React.CSSProperties = miniSlot
+    ? session.state === "dead"
+      ? { display: "none" } // dead sessions in mini slot: hidden (snapshot shown by overlay)
+      : {
+          position: "absolute",
+          left: `${70 + miniSlot.colIndex * (30 / miniSlot.numCols)}%`,
+          top: miniSlot.top,
+          width: `${30 / miniSlot.numCols}%`,
+          height: miniSlot.height,
+          overflow: "hidden",
+        }
+    : visible
+    ? { position: "absolute", left: 0, right: hasMiniGrid ? "30%" : 0, top: 0, bottom: 0, display: "flex" }
+    : { display: "none" };
+
+  // Inner container transform for mini mode (keeps cols/rows at last-active size)
+  const innerStyle: React.CSSProperties = miniSlot && session.state !== "dead"
+    ? {
+        width: `${100 / miniSlot.scale}%`,
+        height: `${100 / miniSlot.scale}%`,
+        transform: `scale(${miniSlot.scale})`,
+        transformOrigin: "top left",
+        pointerEvents: "none",
+        flexShrink: 0,
+      }
+    : {};
 
   // Ctrl+mouse shortcuts (capture phase — fires before xterm.js ScrollableElement's stopPropagation)
   useEffect(() => {
@@ -772,16 +843,16 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
   return (
     <div
-      className="terminal-panel"
-      style={{ display: visible ? "flex" : "none" }}
+      className={`terminal-panel${miniSlot ? " terminal-mini" : visible ? " terminal-active" : ""}`}
+      style={panelStyle}
     >
-      {loading && visible && (
+      {loading && visible && !miniSlot && (
         <div className="terminal-loading">
           <div className="terminal-loading-spinner" />
           <span>Loading conversation...</span>
         </div>
       )}
-<div className="terminal-inner">
+      <div className="terminal-inner" style={innerStyle}>
         <div className="terminal-container" ref={setContainer} />
         {showButtonBar && (
           <div className="terminal-button-bar">
