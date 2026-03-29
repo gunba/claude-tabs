@@ -74,54 +74,50 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
   const discovering = slashCommands.length === 0;
 
   return (
-    <div
-      className={`command-bar${expanded ? "" : " command-bar--collapsed"}`}
-      onClick={expanded ? undefined : () => setExpanded(true)}
-    >
-      {expanded ? (
-        <>
-          <div className="command-bar-collapse" onClick={() => setExpanded(false)}>
-            <span className="command-bar-chevron">{"\u25BC"}</span>
-          </div>
-          {history.length > 0 && (
-            <div className="command-history">
-              {history.map((cmd, i) => (
+    <div className="command-bar">
+      {/* Always show history when it exists */}
+      {history.length > 0 && (
+        <div className="command-history">
+          {history.map((cmd, i) => (
+            <button
+              key={`${i}-${cmd}`}
+              className="command-history-item"
+              onClick={() => sendCommand(cmd)}
+              title={`Re-send ${cmd}`}
+              type="button"
+            >
+              {cmd}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Toggle: reuse existing command-bar-collapse class */}
+      <div className="command-bar-collapse" onClick={() => setExpanded(!expanded)}>
+        <span className="command-bar-chevron">{expanded ? "\u25BC" : "\u25B3"}</span>
+      </div>
+      {/* Slash commands grid: only when expanded */}
+      {expanded && (
+        <div className="command-bar-scroll">
+          {discovering ? (
+            <span className="command-bar-discovering">Discovering commands...</span>
+          ) : (
+            sortedCommands.map((cmd) => {
+              const usageCount = commandUsage[cmd.cmd] || 0;
+              const heatClass = heatClassName(computeHeatLevel(usageCount, maxCount));
+              return (
                 <button
-                  key={`${i}-${cmd}`}
-                  className="command-history-item"
-                  onClick={() => sendCommand(cmd)}
-                  title={`Re-send ${cmd}`}
+                  key={cmd.cmd}
+                  className={`command-btn${heatClass ? ` ${heatClass}` : ""}`}
+                  onClick={(e) => handleClick(cmd.cmd, e)}
+                  title={ctrlHeld ? `Ctrl+Click: Send "${cmd.cmd}"` : `Click: Type "${cmd.cmd}" into terminal\n${cmd.desc}`}
                   type="button"
                 >
-                  {cmd}
+                  {cmd.cmd}
                 </button>
-              ))}
-            </div>
+              );
+            })
           )}
-          <div className="command-bar-scroll">
-            {discovering ? (
-              <span className="command-bar-discovering">Discovering commands...</span>
-            ) : (
-              sortedCommands.map((cmd) => {
-                const usageCount = commandUsage[cmd.cmd] || 0;
-                const heatClass = heatClassName(computeHeatLevel(usageCount, maxCount));
-                return (
-                  <button
-                    key={cmd.cmd}
-                    className={`command-btn${heatClass ? ` ${heatClass}` : ""}`}
-                    onClick={(e) => handleClick(cmd.cmd, e)}
-                    title={ctrlHeld ? `Ctrl+Click: Send "${cmd.cmd}"` : `Click: Type "${cmd.cmd}" into terminal\n${cmd.desc}`}
-                    type="button"
-                  >
-                    {cmd.cmd}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </>
-      ) : (
-        <span className="command-bar-chevron">{"\u25B2"}</span>
+        </div>
       )}
     </div>
   );

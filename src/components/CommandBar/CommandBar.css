@@ -34,17 +34,6 @@
   color: var(--text-primary);
 }
 
-/* ── Command Bar Collapsed ───────────────────────────────── */
-
-.command-bar--collapsed {
-  justify-content: center;
-  cursor: pointer;
-}
-
-.command-bar--collapsed:hover .command-bar-chevron {
-  color: var(--accent);
-}
-
 /* ── Command Bar Chevron ─────────────────────────────────── */
 
 .command-bar-chevron {

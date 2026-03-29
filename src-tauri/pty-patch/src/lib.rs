@@ -4,7 +4,7 @@ use std::{
     io::{Read, Write as IoWrite, BufWriter},
     fs::File,
     sync::{
-        atomic::{AtomicU16, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -18,14 +18,12 @@ use tauri::{
 };
 
 mod output_filter;
-mod sync_detector;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use output_filter::OutputFilter;
-use sync_detector::{SyncBlockDetector, SyncEvent};
 
-/// NDJSON PTY recorder — captures raw, filtered, and final pipeline output
+/// NDJSON PTY recorder — captures raw and filtered output with timestamps
 /// plus resize and input events for terminal debugging.
 struct PtyRecorder {
     writer: BufWriter<File>,
@@ -73,39 +71,6 @@ impl PtyRecorder {
     }
 }
 
-/// Copy `src` into `dst`, skipping all occurrences of ESC[2J (Clear Screen).
-/// Uses SIMD-accelerated memchr::memmem for efficient scanning.
-fn strip_clear_screen_into(src: &[u8], dst: &mut Vec<u8>) {
-    const CLEAR_SCREEN: &[u8] = b"\x1b[2J";
-    let finder = memchr::memmem::Finder::new(CLEAR_SCREEN);
-    let mut pos = 0;
-    while let Some(found) = finder.find(&src[pos..]) {
-        dst.extend_from_slice(&src[pos..pos + found]);
-        pos += found + CLEAR_SCREEN.len();
-    }
-    dst.extend_from_slice(&src[pos..]);
-}
-
-/// Re-wrap a completed sync block with BSU/ESU for xterm.js.
-/// Full-redraw blocks replace ESC[2J with ESC[H ESC[J (viewport overwrite).
-/// ESC[3J is only added when content exceeds terminal height — this prevents
-/// scrollback duplication from overflow while preserving scrollback (and thus
-/// scroll position) for redraws that fit within the viewport.
-fn emit_sync_block(data: &[u8], is_full_redraw: bool, rows: u16, result: &mut Vec<u8>) {
-    result.extend_from_slice(b"\x1b[?2026h"); // BSU
-    if is_full_redraw {
-        let line_count = memchr::memchr_iter(b'\n', data).count();
-        if line_count >= rows as usize {
-            result.extend_from_slice(b"\x1b[3J"); // Overflow prevention
-        }
-        result.extend_from_slice(b"\x1b[H\x1b[J");  // Cursor home + clear viewport
-        strip_clear_screen_into(data, result);
-    } else {
-        result.extend_from_slice(data);
-    }
-    result.extend_from_slice(b"\x1b[?2026l"); // ESU
-}
-
 #[derive(Default)]
 struct PluginState {
     session_id: AtomicU32,
@@ -119,9 +84,11 @@ struct Session {
     writer: Mutex<Box<dyn std::io::Write + Send>>,
     output_rx: Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
     output_filter: Mutex<OutputFilter>,
-    sync_detector: Mutex<SyncBlockDetector>,
-    rows: AtomicU16,
     recorder: std::sync::Mutex<Option<PtyRecorder>>,
+    /// When true, the next read() discards ConPTY's broken reflow output.
+    /// Set by resize() before the PTY resize call so the flag is visible
+    /// by the time reflow data arrives in the channel.
+    drain_after_resize: AtomicBool,
 }
 
 type PtyHandler = u32;
@@ -174,8 +141,7 @@ async fn spawn<R: Runtime>(
     let handler = state.session_id.fetch_add(1, Ordering::Relaxed);
 
     // Spawn background reader thread: reads from ConPTY pipe into a bounded channel.
-    // This decouples the blocking pipe read from the IPC read command, enabling
-    // timeout-based sync block coalescing.
+    // This decouples the blocking pipe read from the IPC read command.
     let (output_tx, output_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(64);
     std::thread::spawn(move || {
         let mut reader = reader;
@@ -200,9 +166,8 @@ async fn spawn<R: Runtime>(
         writer: Mutex::new(writer),
         output_rx: Mutex::new(output_rx),
         output_filter: Mutex::new(OutputFilter::new()),
-        sync_detector: Mutex::new(SyncBlockDetector::new()),
-        rows: AtomicU16::new(rows),
         recorder: std::sync::Mutex::new(None),
+        drain_after_resize: AtomicBool::new(false),
     });
     state.sessions.write().await.insert(handler, session);
     Ok(handler)
@@ -235,13 +200,14 @@ async fn write(
     Ok(())
 }
 
-/// Read filtered, sync-coalesced output from a PTY session.
+/// Read filtered output from a PTY session.
 ///
 /// Pipeline: ConPTY pipe → background reader thread → channel →
-/// OutputFilter (security) → SyncBlockDetector (coalescing) → IPC response.
+/// OutputFilter (scrollback fix + security) → IPC response.
 ///
-/// Blocks on the first chunk, then if mid-sync-block, continues reading
-/// with a 50ms timeout to coalesce the complete synchronized update.
+/// Blocks on the first chunk, then returns immediately. The frontend
+/// polls read() repeatedly, and xterm.js 6.0 handles DEC 2026 sync
+/// updates natively.
 #[tauri::command]
 async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<Vec<u8>, String> {
     let session = state
@@ -254,70 +220,45 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
     tauri::async_runtime::spawn_blocking(move || {
         let output_rx = session.output_rx.blocking_lock();
         let mut output_filter = session.output_filter.blocking_lock();
-        let mut sync_detector = session.sync_detector.blocking_lock();
-        let rows = session.rows.load(Ordering::Relaxed);
 
         // Block until first chunk arrives (or channel disconnects = EOF).
-        // The recorder lock is NOT held here so start/stop recording can proceed.
         let first = output_rx.recv().map_err(|_| "EOF".to_string())?;
+
+        // If resize set the drain flag, discard ConPTY's broken reflow output
+        // and wait for the application's proper redraw after SIGWINCH.
+        let data = if session.drain_after_resize.load(Ordering::Acquire) {
+            // Drain all reflow chunks. ConPTY reflow arrives in rapid
+            // succession; a 5ms gap indicates reflow is complete.
+            loop {
+                match output_rx.recv_timeout(Duration::from_millis(5)) {
+                    Ok(_) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        session.drain_after_resize.store(false, Ordering::Release);
+                        return Err("EOF".to_string());
+                    }
+                }
+            }
+            session.drain_after_resize.store(false, Ordering::Release);
+            // Wait for the application's proper redraw after SIGWINCH.
+            output_rx.recv().map_err(|_| "EOF".to_string())?
+        } else {
+            first
+        };
 
         // Acquire recorder lock after data arrives — scoped block ensures
         // the MutexGuard drops immediately after processing + flush.
         let mut recorder = session.recorder.lock().unwrap();
 
-        if let Some(rec) = recorder.as_mut() { rec.record("raw", &first); }
+        if let Some(rec) = recorder.as_mut() { rec.record("raw", &data); }
 
-        let mut result = Vec::new();
-
-        // Filter for security, then detect sync blocks
-        let filtered = output_filter.filter(&first);
+        // Filter for scrollback fix and security
+        let filtered = output_filter.filter(&data);
         if let Some(rec) = recorder.as_mut() { rec.record("filtered", filtered); }
-        for event in sync_detector.process(filtered) {
-            match event {
-                SyncEvent::PassThrough(data) => result.extend_from_slice(data),
-                SyncEvent::SyncBlock { data, is_full_redraw } => {
-                    emit_sync_block(&data, is_full_redraw, rows, &mut result);
-                }
-            }
-        }
-
-        // If we're mid-sync-block, keep reading with timeout to coalesce
-        // the complete DEC 2026 synchronized update into a single IPC response
-        if sync_detector.in_sync_block() {
-            let deadline = Instant::now() + Duration::from_millis(50);
-            while sync_detector.in_sync_block() {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
-                    break;
-                }
-                match output_rx.recv_timeout(remaining) {
-                    Ok(chunk) => {
-                        if let Some(rec) = recorder.as_mut() { rec.record("raw", &chunk); }
-                        let filtered = output_filter.filter(&chunk);
-                        if let Some(rec) = recorder.as_mut() { rec.record("filtered", filtered); }
-                        for event in sync_detector.process(filtered) {
-                            match event {
-                                SyncEvent::PassThrough(data) => {
-                                    result.extend_from_slice(data);
-                                }
-                                SyncEvent::SyncBlock { data, is_full_redraw } => {
-                                    emit_sync_block(&data, is_full_redraw, rows, &mut result);
-                                }
-                            }
-                        }
-                    }
-                    Err(_) => break, // Timeout or disconnected
-                }
-            }
-        }
-
-        if let Some(rec) = recorder.as_mut() {
-            rec.record("final", &result);
-            rec.flush();
-        }
+        if let Some(rec) = recorder.as_mut() { rec.flush(); }
         drop(recorder);
 
-        Ok(result)
+        Ok(filtered.to_vec())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -337,6 +278,10 @@ async fn resize(
         .get(&pid)
         .ok_or("Unavaliable pid")?
         .clone();
+    // Set drain flag BEFORE PTY resize so read() discards ConPTY reflow.
+    // The flag must be visible before the resize call produces reflow data.
+    session.drain_after_resize.store(true, Ordering::Release);
+
     session
         .pair
         .lock()
@@ -349,7 +294,6 @@ async fn resize(
             pixel_height: 0,
         })
         .map_err(|e| e.to_string())?;
-    session.rows.store(rows, Ordering::Relaxed);
     // Record resize event if recording is active
     if let Some(rec) = session.recorder.lock().unwrap().as_mut() {
         rec.record_resize(cols, rows);
@@ -488,359 +432,6 @@ async fn drain_output(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> 
     })
     .await
     .map_err(|e| e.to_string())?
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_strip_clear_screen_no_occurrences() {
-        let src = b"hello world";
-        let mut dst = Vec::new();
-        strip_clear_screen_into(src, &mut dst);
-        assert_eq!(dst, b"hello world");
-    }
-
-    #[test]
-    fn test_strip_clear_screen_single() {
-        let mut src = Vec::new();
-        src.extend_from_slice(b"before\x1b[2Jafter");
-        let mut dst = Vec::new();
-        strip_clear_screen_into(&src, &mut dst);
-        assert_eq!(dst, b"beforeafter");
-    }
-
-    #[test]
-    fn test_strip_clear_screen_multiple() {
-        let mut src = Vec::new();
-        src.extend_from_slice(b"\x1b[2J\x1b[Hcontent\x1b[2J");
-        let mut dst = Vec::new();
-        strip_clear_screen_into(&src, &mut dst);
-        assert_eq!(dst, b"\x1b[Hcontent");
-    }
-
-    #[test]
-    fn test_strip_clear_screen_preserves_other_escapes() {
-        let mut src = Vec::new();
-        src.extend_from_slice(b"\x1b[2J\x1b[H\x1b[1;31mred\x1b[0m");
-        let mut dst = Vec::new();
-        strip_clear_screen_into(&src, &mut dst);
-        assert_eq!(dst, b"\x1b[H\x1b[1;31mred\x1b[0m");
-    }
-
-    #[test]
-    fn test_strip_clear_screen_empty() {
-        let mut dst = Vec::new();
-        strip_clear_screen_into(b"", &mut dst);
-        assert!(dst.is_empty());
-    }
-
-    #[test]
-    fn test_emit_sync_block_non_full_redraw() {
-        let mut result = Vec::new();
-        emit_sync_block(b"content", false, 40, &mut result);
-        // Should wrap with BSU/ESU, no ESC[2J replacement
-        let mut expected = Vec::new();
-        expected.extend_from_slice(b"\x1b[?2026h");
-        expected.extend_from_slice(b"content");
-        expected.extend_from_slice(b"\x1b[?2026l");
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_emit_sync_block_full_redraw_strips_clear() {
-        let mut data = Vec::new();
-        data.extend_from_slice(b"\x1b[2J\x1b[Hscreen content");
-        let mut result = Vec::new();
-        // Short content (0 newlines < 40 rows) — no ESC[3J
-        emit_sync_block(&data, true, 40, &mut result);
-        let mut expected = Vec::new();
-        expected.extend_from_slice(b"\x1b[?2026h");
-        expected.extend_from_slice(b"\x1b[H\x1b[J");
-        expected.extend_from_slice(b"\x1b[Hscreen content"); // ESC[2J removed
-        expected.extend_from_slice(b"\x1b[?2026l");
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_emit_sync_block_full_redraw_no_clear_in_data() {
-        // Full redraw flagged but data happens to not contain ESC[2J
-        // Short content (0 newlines < 40 rows) — no ESC[3J
-        let mut result = Vec::new();
-        emit_sync_block(b"\x1b[Hcontent", true, 40, &mut result);
-        let mut expected = Vec::new();
-        expected.extend_from_slice(b"\x1b[?2026h");
-        expected.extend_from_slice(b"\x1b[H\x1b[J");
-        expected.extend_from_slice(b"\x1b[Hcontent");
-        expected.extend_from_slice(b"\x1b[?2026l");
-        assert_eq!(result, expected);
-    }
-
-    // --- Edge case: input is exactly ESC[2J with nothing else ---
-    #[test]
-    fn test_strip_clear_screen_only_clear() {
-        let src = b"\x1b[2J";
-        let mut dst = Vec::new();
-        strip_clear_screen_into(src, &mut dst);
-        assert!(dst.is_empty(), "stripping sole ESC[2J should produce empty output");
-    }
-
-    // --- Edge case: adjacent ESC[2J sequences with no bytes between them ---
-    #[test]
-    fn test_strip_clear_screen_adjacent() {
-        let src = b"\x1b[2J\x1b[2J";
-        let mut dst = Vec::new();
-        strip_clear_screen_into(src, &mut dst);
-        assert!(dst.is_empty(), "two adjacent ESC[2J should both be stripped");
-    }
-
-    // --- Sync block has ESC[2J but is NOT a full redraw (no cursor-home) ---
-    // Verifies SyncBlockDetector returns is_full_redraw=false and preserves ESC[2J
-    #[test]
-    fn test_sync_block_clear_screen_without_cursor_home_not_full_redraw() {
-        let mut detector = SyncBlockDetector::new();
-        let mut data = Vec::new();
-        data.extend_from_slice(b"\x1b[?2026h"); // BSU
-        data.extend_from_slice(b"\x1b[2J");     // Clear screen, no cursor-home
-        data.extend_from_slice(b"new content");
-        data.extend_from_slice(b"\x1b[?2026l"); // ESU
-
-        let events = detector.process(&data);
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            SyncEvent::SyncBlock { data, is_full_redraw } => {
-                assert!(!is_full_redraw,
-                    "ESC[2J without cursor-home should NOT be a full redraw");
-                // Block data must still contain ESC[2J unchanged
-                assert!(data.windows(4).any(|w| w == b"\x1b[2J"),
-                    "block data must preserve ESC[2J when is_full_redraw=false");
-            }
-            _ => panic!("expected SyncBlock"),
-        }
-    }
-
-    // --- emit_sync_block: non-full-redraw preserves ESC[2J in data ---
-    #[test]
-    fn test_emit_sync_block_non_full_redraw_preserves_clear_screen() {
-        let block_data = b"\x1b[2Jsome content";
-        let mut result = Vec::new();
-        emit_sync_block(block_data, false, 40, &mut result);
-
-        assert!(result.starts_with(b"\x1b[?2026h"), "must start with BSU");
-        assert!(result.ends_with(b"\x1b[?2026l"), "must end with ESU");
-        // Inner content must match block_data exactly -- ESC[2J NOT stripped
-        let inner = &result[8..result.len() - 8];
-        assert_eq!(inner, block_data,
-            "non-full-redraw must pass ESC[2J through unchanged");
-    }
-
-    // --- emit_sync_block: full redraw with multiple ESC[2J strips all ---
-    #[test]
-    fn test_emit_sync_block_full_redraw_strips_all_clears() {
-        let mut block_data = Vec::new();
-        block_data.extend_from_slice(b"\x1b[2J\x1b[Hscreen\x1b[2Jmore\x1b[2J");
-        let mut result = Vec::new();
-        // Short content (0 newlines < 40 rows) — no ESC[3J
-        emit_sync_block(&block_data, true, 40, &mut result);
-
-        // No ESC[2J should remain anywhere in the output
-        assert!(!result.windows(4).any(|w| w == b"\x1b[2J"),
-            "all ESC[2J must be stripped from full redraw output");
-        // Structure: BSU + ESC[H ESC[J + stripped content + ESU (no ESC[3J)
-        assert!(result.starts_with(b"\x1b[?2026h\x1b[H\x1b[J"),
-            "full redraw must have BSU + ESC[H + ESC[J prefix");
-        assert!(!result.windows(4).any(|w| w == b"\x1b[3J"),
-            "short content must NOT emit ESC[3J");
-        assert!(result.ends_with(b"\x1b[?2026l"), "must end with ESU");
-        // Verify content survived (only ESC[2J removed)
-        let inner = &result[8..result.len() - 8]; // skip BSU and ESU
-        assert!(inner.windows(6).any(|w| w == b"screen"),
-            "screen content must be preserved");
-        assert!(inner.windows(4).any(|w| w == b"more"),
-            "more content must be preserved");
-    }
-
-    // --- emit_sync_block: non-full-redraw must NOT contain ESC[3J ---
-    #[test]
-    fn test_emit_sync_block_non_full_redraw_no_scrollback_clear() {
-        let mut result = Vec::new();
-        emit_sync_block(b"some update", false, 40, &mut result);
-        assert!(!result.windows(4).any(|w| w == b"\x1b[3J"),
-            "non-full-redraw must NOT emit ESC[3J (scrollback clear)");
-    }
-
-    // --- emit_sync_block: ESC[3J is conditional on content height ---
-    #[test]
-    fn test_emit_sync_block_short_content_no_scrollback_clear() {
-        let mut result = Vec::new();
-        // 0 newlines < 40 rows — no ESC[3J
-        emit_sync_block(b"\x1b[2Jcontent", true, 40, &mut result);
-
-        assert!(!result.windows(4).any(|w| w == b"\x1b[3J"),
-            "short content must NOT emit ESC[3J");
-        assert!(result.windows(3).any(|w| w == b"\x1b[H"),
-            "ESC[H must be present in full redraw");
-        assert!(result.windows(3).any(|w| w == b"\x1b[J"),
-            "ESC[J must be present in full redraw");
-    }
-
-    #[test]
-    fn test_emit_sync_block_long_content_has_scrollback_clear() {
-        // Build content with 41 newlines (>= 40 rows) — triggers ESC[3J
-        let mut data = Vec::new();
-        for i in 0..41 {
-            data.extend_from_slice(format!("line{}\n", i).as_bytes());
-        }
-        let mut result = Vec::new();
-        emit_sync_block(&data, true, 40, &mut result);
-
-        assert!(result.windows(4).any(|w| w == b"\x1b[3J"),
-            "long content (>= rows newlines) MUST emit ESC[3J");
-        assert!(result.windows(3).any(|w| w == b"\x1b[H"),
-            "ESC[H must be present in full redraw");
-    }
-
-    // --- Boundary tests: exactly rows-1 vs exactly rows newlines ---
-    #[test]
-    fn test_emit_sync_block_boundary_below_no_scrollback_clear() {
-        // Exactly 39 newlines (rows-1) — should NOT emit ESC[3J
-        let mut data = Vec::new();
-        for i in 0..39 {
-            data.extend_from_slice(format!("l{}\n", i).as_bytes());
-        }
-        let mut result = Vec::new();
-        emit_sync_block(&data, true, 40, &mut result);
-        assert!(!result.windows(4).any(|w| w == b"\x1b[3J"),
-            "exactly rows-1 newlines must NOT emit ESC[3J");
-    }
-
-    #[test]
-    fn test_emit_sync_block_boundary_at_rows_has_scrollback_clear() {
-        // Exactly 40 newlines (== rows) — should emit ESC[3J
-        let mut data = Vec::new();
-        for i in 0..40 {
-            data.extend_from_slice(format!("l{}\n", i).as_bytes());
-        }
-        let mut result = Vec::new();
-        emit_sync_block(&data, true, 40, &mut result);
-        assert!(result.windows(4).any(|w| w == b"\x1b[3J"),
-            "exactly rows newlines MUST emit ESC[3J");
-    }
-
-    // --- emit_sync_block: empty data with full redraw ---
-    // Edge case: is_full_redraw=true but no content at all
-    #[test]
-    fn test_emit_sync_block_full_redraw_empty_data() {
-        let mut result = Vec::new();
-        // Empty data (0 newlines < 40 rows) — no ESC[3J
-        emit_sync_block(b"", true, 40, &mut result);
-        let mut expected = Vec::new();
-        expected.extend_from_slice(b"\x1b[?2026h");
-        expected.extend_from_slice(b"\x1b[H\x1b[J");
-        expected.extend_from_slice(b"\x1b[?2026l");
-        assert_eq!(result, expected);
-    }
-
-    // --- End-to-end pipeline: short full redraw preserves scrollback ---
-    #[test]
-    fn test_pipeline_short_full_redraw_preserves_scrollback() {
-        let mut detector = SyncBlockDetector::new();
-        let mut input = Vec::new();
-        input.extend_from_slice(b"\x1b[?2026h"); // BSU
-        input.extend_from_slice(b"\x1b[2J");     // Clear screen
-        input.extend_from_slice(b"\x1b[H");      // Cursor home → full redraw
-        input.extend_from_slice(b"full conversation re-render");
-        input.extend_from_slice(b"\x1b[?2026l"); // ESU
-
-        let events = detector.process(&input);
-        let mut result = Vec::new();
-        for event in &events {
-            match event {
-                SyncEvent::PassThrough(data) => result.extend_from_slice(data),
-                SyncEvent::SyncBlock { data, is_full_redraw } => {
-                    emit_sync_block(data, *is_full_redraw, 40, &mut result);
-                }
-            }
-        }
-
-        // Short content — no ESC[3J (scrollback preserved)
-        assert!(!result.windows(4).any(|w| w == b"\x1b[3J"),
-            "short full redraw must NOT emit ESC[3J");
-        // Must NOT contain ESC[2J (original clear screen should be stripped)
-        assert!(!result.windows(4).any(|w| w == b"\x1b[2J"),
-            "full redraw pipeline must strip ESC[2J");
-        // Content must survive
-        assert!(result.windows(10).any(|w| w == b"full conve"),
-            "content must be preserved through pipeline");
-    }
-
-    // --- End-to-end pipeline: long full redraw clears scrollback ---
-    #[test]
-    fn test_pipeline_long_full_redraw_clears_scrollback() {
-        let mut detector = SyncBlockDetector::new();
-        let mut input = Vec::new();
-        input.extend_from_slice(b"\x1b[?2026h"); // BSU
-        input.extend_from_slice(b"\x1b[2J");     // Clear screen
-        input.extend_from_slice(b"\x1b[H");      // Cursor home → full redraw
-        for i in 0..50 {
-            input.extend_from_slice(format!("line {}\n", i).as_bytes());
-        }
-        input.extend_from_slice(b"\x1b[?2026l"); // ESU
-
-        let events = detector.process(&input);
-        let mut result = Vec::new();
-        for event in &events {
-            match event {
-                SyncEvent::PassThrough(data) => result.extend_from_slice(data),
-                SyncEvent::SyncBlock { data, is_full_redraw } => {
-                    emit_sync_block(data, *is_full_redraw, 40, &mut result);
-                }
-            }
-        }
-
-        // Long content (50 newlines >= 40 rows) — ESC[3J present
-        assert!(result.windows(4).any(|w| w == b"\x1b[3J"),
-            "long full redraw MUST emit ESC[3J");
-        assert!(!result.windows(4).any(|w| w == b"\x1b[2J"),
-            "full redraw pipeline must strip ESC[2J");
-    }
-
-    // --- End-to-end: non-full-redraw sync block through detector + emit ---
-    // Verifies the full pipeline: detector identifies is_full_redraw=false,
-    // then emit_sync_block wraps without stripping ESC[2J.
-    #[test]
-    fn test_pipeline_non_full_redraw_preserves_clear_screen() {
-        let mut detector = SyncBlockDetector::new();
-        let mut input = Vec::new();
-        input.extend_from_slice(b"\x1b[?2026h"); // BSU
-        input.extend_from_slice(b"\x1b[2J");     // Clear screen, no cursor-home
-        input.extend_from_slice(b"partial update");
-        input.extend_from_slice(b"\x1b[?2026l"); // ESU
-
-        let events = detector.process(&input);
-        // Now run through emit_sync_block (as read() would)
-        let mut result = Vec::new();
-        for event in &events {
-            match event {
-                SyncEvent::PassThrough(data) => result.extend_from_slice(data),
-                SyncEvent::SyncBlock { data, is_full_redraw } => {
-                    emit_sync_block(data, *is_full_redraw, 40, &mut result);
-                }
-            }
-        }
-
-        // BSU + block_data + ESU
-        assert!(result.starts_with(b"\x1b[?2026h"), "must start with BSU");
-        assert!(result.ends_with(b"\x1b[?2026l"), "must end with ESU");
-        // ESC[2J must survive -- not stripped because is_full_redraw=false
-        let inner = &result[8..result.len() - 8];
-        assert!(inner.windows(4).any(|w| w == b"\x1b[2J"),
-            "ESC[2J must pass through unchanged for non-full-redraw");
-        // No ESC[H ESC[J prepended
-        assert!(!inner.starts_with(b"\x1b[H\x1b[J"),
-            "non-full-redraw must NOT prepend ESC[H ESC[J");
-    }
 }
 
 /// Initializes the plugin.

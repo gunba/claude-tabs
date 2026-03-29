@@ -28,6 +28,7 @@ pub struct OutputFilter {
     clear_screen_stripped: u64,
     queries_stripped: u64,
     titles_sanitized: u64,
+    links_stripped: u64,
 }
 
 #[derive(Debug)]
@@ -67,6 +68,7 @@ impl OutputFilter {
             clear_screen_stripped: 0,
             queries_stripped: 0,
             titles_sanitized: 0,
+            links_stripped: 0,
         }
     }
 
@@ -295,8 +297,8 @@ impl OutputFilter {
                 self.emit_sanitized_osc2(buf);
             }
             Some(8) => {
-                // OSC 8 — hyperlinks — always pass through
-                self.emit_osc_passthrough(buf);
+                // OSC 8 — hyperlink — check URL scheme whitelist
+                self.handle_osc8(buf);
             }
             _ => {
                 // Other OSC sequences — pass through
@@ -344,6 +346,58 @@ impl OutputFilter {
         self.output.push(0x07);
     }
 
+    /// Handle OSC 8 hyperlinks with URL scheme whitelist.
+    /// Format: "8;params;URI" (opening) or "8;;" (closing)
+    /// Allowed schemes: http, https, file. Others are stripped (link wrapper
+    /// removed, visible text preserved).
+    fn handle_osc8(&mut self, buf: &[u8]) {
+        // Find the two semicolons: "8;params;URI"
+        // First semicolon separates "8" from params
+        let after_type = match buf.iter().position(|&b| b == b';') {
+            Some(pos) => pos + 1,
+            None => {
+                // Malformed — pass through
+                self.emit_osc_passthrough(buf);
+                return;
+            }
+        };
+
+        // Second semicolon separates params from URI
+        let uri_start = match buf[after_type..].iter().position(|&b| b == b';') {
+            Some(pos) => after_type + pos + 1,
+            None => {
+                // Malformed — pass through
+                self.emit_osc_passthrough(buf);
+                return;
+            }
+        };
+
+        let uri = &buf[uri_start..];
+
+        // Empty URI = closing tag — always pass through
+        if uri.is_empty() {
+            self.emit_osc_passthrough(buf);
+            return;
+        }
+
+        // Check the URI scheme against the whitelist
+        if self.is_allowed_scheme(uri) {
+            self.emit_osc_passthrough(buf);
+        } else {
+            // Strip the OSC 8 wrapper — the visible text between opening and
+            // closing tags will still appear, just without the hyperlink
+            self.links_stripped += 1;
+        }
+    }
+
+    /// Check if a URI has an allowed scheme.
+    fn is_allowed_scheme(&self, uri: &[u8]) -> bool {
+        let uri_lower: Vec<u8> = uri.iter().map(|b| b.to_ascii_lowercase()).collect();
+        uri_lower.starts_with(b"http://")
+            || uri_lower.starts_with(b"https://")
+            || uri_lower.starts_with(b"file://")
+    }
+
     #[allow(dead_code)]
     pub fn metrics(&self) -> OutputFilterMetrics {
         OutputFilterMetrics {
@@ -352,6 +406,7 @@ impl OutputFilter {
             c1_bytes_stripped: self.c1_bytes_stripped,
             queries_stripped: self.queries_stripped,
             titles_sanitized: self.titles_sanitized,
+            links_stripped: self.links_stripped,
         }
     }
 }
@@ -364,6 +419,7 @@ pub struct OutputFilterMetrics {
     pub c1_bytes_stripped: u64,
     pub queries_stripped: u64,
     pub titles_sanitized: u64,
+    pub links_stripped: u64,
 }
 
 #[cfg(test)]
@@ -519,16 +575,32 @@ mod tests {
     }
 
     #[test]
-    fn test_osc8_non_standard_scheme_passes_through() {
+    fn test_osc8_ssh_stripped() {
         let mut f = OutputFilter::new();
-        // SSH, javascript, x-man-page — all pass through (no scheme filtering)
-        let input = b"\x1b]8;;ssh://example.com\x07click\x1b]8;;\x07";
+        // SSH scheme — blocked
+        let input = b"\x1b]8;;ssh://evil.com\x07click here\x1b]8;;\x07";
         let result = f.filter(input);
-        assert_eq!(result, input.to_vec());
+        // Opening link stripped, visible text preserved, closing link passed through
+        assert_eq!(result, b"click here\x1b]8;;\x07");
+        assert_eq!(f.metrics().links_stripped, 1);
+    }
 
-        let input2 = b"\x1b]8;;javascript:alert(1)\x07click\x1b]8;;\x07";
-        let result2 = f.filter(input2);
-        assert_eq!(result2, input2.to_vec());
+    #[test]
+    fn test_osc8_javascript_stripped() {
+        let mut f = OutputFilter::new();
+        let input = b"\x1b]8;;javascript:alert(1)\x07click\x1b]8;;\x07";
+        let result = f.filter(input);
+        assert_eq!(result, b"click\x1b]8;;\x07");
+        assert_eq!(f.metrics().links_stripped, 1);
+    }
+
+    #[test]
+    fn test_osc8_x_man_page_stripped() {
+        let mut f = OutputFilter::new();
+        let input = b"\x1b]8;;x-man-page://1/ls\x07ls(1)\x1b]8;;\x07";
+        let result = f.filter(input);
+        assert_eq!(result, b"ls(1)\x1b]8;;\x07");
+        assert_eq!(f.metrics().links_stripped, 1);
     }
 
     #[test]
