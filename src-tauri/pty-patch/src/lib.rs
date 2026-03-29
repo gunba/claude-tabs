@@ -255,11 +255,15 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
         let output_rx = session.output_rx.blocking_lock();
         let mut output_filter = session.output_filter.blocking_lock();
         let mut sync_detector = session.sync_detector.blocking_lock();
-        let mut recorder = session.recorder.lock().unwrap();
         let rows = session.rows.load(Ordering::Relaxed);
 
-        // Block until first chunk arrives (or channel disconnects = EOF)
+        // Block until first chunk arrives (or channel disconnects = EOF).
+        // The recorder lock is NOT held here so start/stop recording can proceed.
         let first = output_rx.recv().map_err(|_| "EOF".to_string())?;
+
+        // Acquire recorder lock after data arrives — scoped block ensures
+        // the MutexGuard drops immediately after processing + flush.
+        let mut recorder = session.recorder.lock().unwrap();
 
         if let Some(rec) = recorder.as_mut() { rec.record("raw", &first); }
 
@@ -307,7 +311,11 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
             }
         }
 
-        if let Some(rec) = recorder.as_mut() { rec.record("final", &result); }
+        if let Some(rec) = recorder.as_mut() {
+            rec.record("final", &result);
+            rec.flush();
+        }
+        drop(recorder);
 
         Ok(result)
     })
@@ -368,7 +376,7 @@ async fn start_pty_recording(
         (size.cols, size.rows)
     };
     let recorder = PtyRecorder::new(&path, cols.0, cols.1).map_err(|e| e.to_string())?;
-    *session.recorder.lock().unwrap() = Some(recorder);
+    *session.recorder.lock().unwrap_or_else(|e| e.into_inner()) = Some(recorder);
     Ok(())
 }
 
@@ -384,7 +392,7 @@ async fn stop_pty_recording(
         .get(&pid)
         .ok_or("Unavaliable pid")?
         .clone();
-    if let Some(mut rec) = session.recorder.lock().unwrap().take() {
+    if let Some(mut rec) = session.recorder.lock().unwrap_or_else(|e| e.into_inner()).take() {
         rec.flush();
     }
     Ok(())

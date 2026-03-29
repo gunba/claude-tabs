@@ -1,0 +1,177 @@
+/* ── Replay Viewer Modal ── */
+
+.replay-modal {
+  width: 90vw;
+  max-width: 1400px;
+  height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.replay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.replay-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.replay-filename {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replay-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.replay-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.replay-close:hover {
+  color: var(--text-primary);
+}
+
+/* ── Terminal container ── */
+
+.replay-terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 4px;
+  background: var(--term-bg);
+}
+
+/* ── Error message ── */
+
+.replay-error {
+  padding: 12px 14px;
+  color: var(--error);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* ── Controls bar ── */
+
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.replay-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  width: 32px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.replay-btn:hover {
+  background: var(--bg-surface-hover);
+}
+
+/* ── Seek slider ── */
+
+.replay-seek {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.replay-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Time display ── */
+
+.replay-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 80px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Speed buttons ── */
+
+.replay-speed-group,
+.replay-phase-group {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.replay-speed,
+.replay-phase {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 6px;
+  line-height: 1;
+}
+
+.replay-speed:hover,
+.replay-phase:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.replay-speed.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.replay-phase.active {
+  color: var(--accent-secondary);
+  border-color: var(--accent-secondary);
+  background: color-mix(in srgb, var(--accent-secondary) 10%, transparent);
+}

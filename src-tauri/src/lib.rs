@@ -195,6 +195,7 @@ pub fn run() {
             commands::git_repo_check,
             commands::git_status,
             commands::git_diff_file,
+            commands::read_recording_file,
             tap_server::start_tap_server,
             tap_server::stop_tap_server,
             proxy::start_api_proxy,

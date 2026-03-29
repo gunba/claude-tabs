@@ -17,6 +17,7 @@ import { ConfigManager } from "./components/ConfigManager/ConfigManager";
 import { DebugPanel } from "./components/DebugPanel/DebugPanel";
 import { DiffPanel } from "./components/DiffPanel/DiffPanel";
 import { SearchPanel } from "./components/SearchPanel/SearchPanel";
+import { ReplayViewer } from "./components/ReplayViewer/ReplayViewer";
 import { ModalOverlay } from "./components/ModalOverlay/ModalOverlay";
 
 import { useCliWatcher } from "./hooks/useCliWatcher";
@@ -26,7 +27,7 @@ import { useCtrlKey } from "./hooks/useCtrlKey";
 import { useUiConfigStore } from "./lib/uiConfig";
 import { killAllActivePtys, startPtyRecording, stopPtyRecording } from "./lib/ptyProcess";
 import { killPty, getPtyHandleId } from "./lib/ptyRegistry";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { save as saveDialog, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { dlog } from "./lib/debugLog";
 import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
@@ -78,6 +79,7 @@ export default function App() {
   const [pruneConfirm, setPruneConfirm] = useState<{
     sessionId: string; worktreePath: string; worktreeName: string; projectRoot: string;
   } | null>(null);
+  const [replayFile, setReplayFile] = useState<string | null>(null);
 
   useCliWatcher();
   useNotifications();
@@ -286,6 +288,7 @@ export default function App() {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (showPalette) return;
         if (sidePanel) { setSidePanel(null); return; }
+        if (replayFile) { setReplayFile(null); return; }
         if (showConfigManager) { setShowConfigManager(false); return; }
         if (showResumePicker) { setShowResumePicker(false); return; }
         if (showLauncher) { setShowLauncher(false); return; }
@@ -602,6 +605,9 @@ export default function App() {
         </ModalOverlay>
       )}
 
+      {/* Replay viewer */}
+      {replayFile && <ReplayViewer filePath={replayFile} onClose={() => setReplayFile(null)} />}
+
       {/* Tab context menu portal */}
       {tabContextMenu && createPortal(
         <div
@@ -723,9 +729,16 @@ export default function App() {
                             if (isRecording) {
                               const ptyPid = getPtyHandleId(ctxSession.id);
                               if (ptyPid != null) {
-                                await stopPtyRecording(ptyPid).catch((e) => dlog("pty", ctxSession.id, `Stop recording failed: ${e}`, "ERR"));
+                                try {
+                                  await stopPtyRecording(ptyPid);
+                                } catch (e) {
+                                  dlog("pty", ctxSession.id, `Stop recording failed: ${e}`, "ERR");
+                                } finally {
+                                  stopPtyRecordingStore(ctxSession.id);
+                                }
+                              } else {
+                                stopPtyRecordingStore(ctxSession.id);
                               }
-                              stopPtyRecordingStore(ctxSession.id);
                               setTabContextMenu(null);
                             } else {
                               const ptyPid = getPtyHandleId(ctxSession.id);
@@ -742,13 +755,29 @@ export default function App() {
                                 setTabContextMenu(null);
                                 return;
                               }
-                              await startPtyRecording(ptyPid, path).catch((e) => dlog("pty", ctxSession.id, `Start recording failed: ${e}`, "ERR"));
-                              startPtyRecordingStore(ctxSession.id, path);
+                              try {
+                                await startPtyRecording(ptyPid, path);
+                                startPtyRecordingStore(ctxSession.id, path);
+                              } catch (e) {
+                                dlog("pty", ctxSession.id, `Start recording failed: ${e}`, "ERR");
+                              }
                               setTabContextMenu(null);
                             }
                           }}
                         >
                           {isRecording ? "■ Stop Terminal Recording" : "▶ Start Terminal Recording"}
+                        </button>
+                        <button
+                          className="tab-context-menu-item"
+                          onClick={async () => {
+                            const path = await openDialog({
+                              filters: [{ name: "NDJSON", extensions: ["ndjson"] }],
+                            });
+                            if (path) setReplayFile(path as string);
+                            setTabContextMenu(null);
+                          }}
+                        >
+                          Replay Recording
                         </button>
                       </>
                     );

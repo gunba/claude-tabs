@@ -2672,3 +2672,15 @@ mod tests {
         assert_eq!(keys, vec!["alphaSetting", "middleSetting", "zebraSetting"], "should be sorted alphabetically");
     }
 }
+
+// ── Terminal recording replay ──────────────────────────────────────────
+
+/// Read a terminal recording NDJSON file for replay.
+#[tauri::command]
+pub async fn read_recording_file(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path, e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
