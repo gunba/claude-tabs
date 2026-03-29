@@ -40,6 +40,10 @@ describe("reduceTapEvent", () => {
     expect(reduceTapEvent("thinking", { kind: "ToolCallStart", ts: 0, index: 1, toolName: "ExitPlanMode", toolId: "t1" })).toBe("actionNeeded");
   });
 
+  it("ToolCallStart AskUserQuestion → actionNeeded", () => {
+    expect(reduceTapEvent("thinking", { kind: "ToolCallStart", ts: 0, index: 1, toolName: "AskUserQuestion", toolId: "t1" })).toBe("actionNeeded");
+  });
+
   it("TurnEnd tool_use → toolUse", () => {
     expect(reduceTapEvent("thinking", { kind: "TurnEnd", ts: 0, stopReason: "tool_use", outputTokens: 100 })).toBe("toolUse");
   });
@@ -262,6 +266,14 @@ describe("reduceTapBatch", () => {
       convMsg({ stopReason: "end_turn" }),
     ];
     expect(reduceTapBatch("idle", events)).toBe("idle");
+  });
+
+  it("AskUserQuestion + TurnEnd(tool_use) batch → actionNeeded", () => {
+    const events: TapEvent[] = [
+      { kind: "ToolCallStart", ts: 0, index: 0, toolName: "AskUserQuestion", toolId: "t1" },
+      { kind: "TurnEnd", ts: 1, stopReason: "tool_use", outputTokens: 50 },
+    ];
+    expect(reduceTapBatch("thinking", events)).toBe("actionNeeded");
   });
 
   it("ExitPlanMode + TurnEnd(tool_use) batch → actionNeeded", () => {

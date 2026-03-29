@@ -9,7 +9,7 @@ import { isSessionIdle } from "../types/session";
  */
 export function reduceTapEvent(state: SessionState, event: TapEvent): SessionState {
   // actionNeeded is sticky — only explicit user actions can clear it.
-  // Currently only reachable via ToolCallStart(ExitPlanMode).
+  // Reachable via ToolCallStart(ExitPlanMode) or ToolCallStart(AskUserQuestion).
   if (state === "actionNeeded") {
     switch (event.kind) {
       case "UserInput":
@@ -42,7 +42,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
 
     case "ToolCallStart":
       // Still streaming tool input — stay in thinking until turn ends
-      if (event.toolName === "ExitPlanMode") return "actionNeeded";
+      if (event.toolName === "ExitPlanMode" || event.toolName === "AskUserQuestion") return "actionNeeded";
       return "thinking";
 
     case "TurnEnd":
