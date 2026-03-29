@@ -45,10 +45,9 @@ function findPromptLine(buf: IBuffer, fromLine: number): number {
 interface UseTerminalOptions {
   onData?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
-  onBeforeFit?: () => void;
 }
 
-export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOptions = {}) {
+export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const webglRef = useRef<WebglAddon | null>(null);
@@ -56,19 +55,6 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
   const webglRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const attachedRef = useRef(false);
-
-  // Stable ref for onBeforeFit callback (captured once by ResizeObserver closure)
-  const onBeforeFitRef = useRef<(() => void) | undefined>(undefined);
-  onBeforeFitRef.current = onBeforeFit;
-
-  // Write batching — accumulate PTY chunks and flush via debounce.
-  // ConPTY fragments ink's redraws into many small chunks; batching
-  // ensures xterm.js processes them as fewer, larger writes. xterm.js 6
-  // handles DEC 2026 synchronized output natively, so the batching here
-  // is defense-in-depth for data that arrives outside sync blocks.
-  const writeBatchRef = useRef<Uint8Array[]>([]);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const debounceStartRef = useRef(0);
 
   // Create terminal instance once on hook mount
   useEffect(() => {
@@ -129,7 +115,6 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
     fitRef.current = fit;
 
     return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       if (webglRetryTimerRef.current) clearTimeout(webglRetryTimerRef.current);
       observerRef.current?.disconnect();
       webglRef.current?.dispose();
@@ -216,7 +201,6 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
       try {
         const dims = fit.proposeDimensions();
         if (!dims || dims.rows <= 1) return;
-        onBeforeFitRef.current?.();
         fit.fit();
       } catch {}
     });
@@ -228,61 +212,9 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
     termRef.current?.write(data);
   }, []);
 
-  // Flush all accumulated write chunks to xterm.js as a single write.
-  const flushWrites = useCallback(() => {
-    const term = termRef.current;
-    if (!term) return;
-
-    const chunks = writeBatchRef.current;
-    writeBatchRef.current = [];
-    debounceStartRef.current = 0;
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-
-    if (chunks.length === 0) return;
-
-    // Merge chunks into a single buffer
-    let merged: Uint8Array;
-    if (chunks.length === 1) {
-      merged = chunks[0];
-    } else {
-      let totalLen = 0;
-      for (const c of chunks) totalLen += c.length;
-      merged = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const c of chunks) {
-        merged.set(c, offset);
-        offset += c.length;
-      }
-    }
-
-    term.write(merged);
-  }, []);
-
-  // Debounced write: accumulates ConPTY chunks and flushes after 4ms of
-  // quiet or 50ms max latency. xterm.js 6's native DEC 2026 support
-  // handles ink's synchronized output; this batching reduces writes for
-  // data outside sync blocks.
   const writeBytes = useCallback((data: Uint8Array) => {
-    const term = termRef.current;
-    if (!term) return;
-
-    writeBatchRef.current.push(data);
-
-    if (debounceStartRef.current === 0) {
-      debounceStartRef.current = performance.now();
-    }
-
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-
-    if (performance.now() - debounceStartRef.current >= 50) {
-      flushWrites();
-    } else {
-      debounceTimerRef.current = setTimeout(flushWrites, 4);
-    }
-  }, [flushWrites]);
+    termRef.current?.write(data);
+  }, []);
 
   const clear = useCallback(() => {
     termRef.current?.clear();
@@ -307,8 +239,6 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
   const scrollToLastUserMessage = useCallback(() => {
     const term = termRef.current;
     if (!term) return;
-    // Flush pending writes so the buffer reflects latest PTY output
-    flushWrites();
     const buf = term.buffer.active;
     const atBottom = buf.viewportY >= buf.baseY - BOTTOM_TOLERANCE;
 
@@ -328,7 +258,7 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
         term.scrollToTop();
       }
     }
-  }, [flushWrites]);
+  }, []);
 
   const isAtBottom = useCallback(() => {
     const term = termRef.current;
@@ -413,24 +343,11 @@ export function useTerminal({ onData, onResize, onBeforeFit }: UseTerminalOption
     return "";
   }, []);
 
-  // Discard any pending write-batch chunks and cancel debounce timer.
-  // Called during respawn to prevent stale PTY data from being flushed
-  // after the terminal reset (\x1bc).
-  const clearPending = useCallback(() => {
-    writeBatchRef.current = [];
-    debounceStartRef.current = 0;
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-  }, []);
-
   return {
     attach,
     write,
     writeBytes,
     clear,
-    clearPending,
     focus,
     scrollToBottom,
     scrollToTop,

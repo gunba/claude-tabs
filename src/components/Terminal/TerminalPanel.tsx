@@ -142,7 +142,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // compaction/plan transitions, causing spurious clears that wipe the conversation.
     if (prev && prev !== tapProcessor.claudeSessionId && !resumeLoadingRef.current) {
       bgBufferRef.current = [];
-      terminal.clearPending();
       terminal.clear();
     }
     if (tapProcessor.claudeSessionId !== session.config.sessionId) {
@@ -309,7 +308,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // [PT-11] Clear stale buffers before terminal reset
     bgBufferRef.current = [];
     deferredResizeRef.current = null;
-    terminal.clearPending();
     terminalRef.current?.write("\x1bc");  // RIS: full terminal reset
     terminal.fit();
     terminalRef.current?.write("\x1b[90m[Resuming...]\x1b[0m\r\n");
@@ -343,7 +341,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const lastPtyDimsRef = useRef<{ cols: number; rows: number } | null>(null);
   const deferredResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   // Tracks pending onRender reveal listener — disposed on cleanup to prevent leaks
-  const occludeDisposableRef = useRef<{ dispose(): void } | null>(null);
+  const revealDisposableRef = useRef<{ dispose(): void } | null>(null);
   const handleResize = useCallback(
     (cols: number, rows: number) => {
       const last = lastPtyDimsRef.current;
@@ -358,32 +356,20 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         return;
       }
       pty.handle.current?.resize(cols, rows);
+      // Send focus-in after resize: Claude Code's Ink renderer marks new columns as
+      // dirty after SIGWINCH and fills them lazily on the next focus event. Sending
+      // the focus-in sequence immediately triggers that fill without waiting for the
+      // user to click away and back.
+      writeToPty(session.id, '\x1b[I');
     },
     // pty.handle and bgBufferRef are stable refs — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [session.id]
   );
-
-  // Occlude terminal during resize on visible tabs — arm one-shot onRender to reveal
-  const handleBeforeFit = useCallback(() => {
-    const container = containerRef.current;
-    const term = terminalRef.current?.termRef.current;
-    if (!container || !term || !visibleRef.current) return;
-    occludeDisposableRef.current?.dispose();
-    container.style.opacity = '0';
-    const d = term.onRender(() => {
-      d.dispose();
-      occludeDisposableRef.current = null;
-      container.style.opacity = '';
-    });
-    occludeDisposableRef.current = d;
-    dlog("terminal", null, "occlude: resize", "DEBUG");
-  }, []);
 
   const terminal = useTerminal({
     onData: handleTermData,
     onResize: handleResize,
-    onBeforeFit: handleBeforeFit,
   });
   terminalRef.current = terminal;
 
@@ -503,7 +489,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   useEffect(() => {
     const id = session.id;
     return () => {
-      occludeDisposableRef.current?.dispose();
+      revealDisposableRef.current?.dispose();
       invoke("stop_tap_server", { sessionId: id }).catch(() => {});
       unregisterPtyWriter(id);
       unregisterPtyKill(id);
@@ -543,8 +529,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // terminal is NOT in deps because useTerminal returns a new object on every render.
   useLayoutEffect(() => {
     // Dispose any pending reveal from a prior transition
-    occludeDisposableRef.current?.dispose();
-    occludeDisposableRef.current = null;
+    revealDisposableRef.current?.dispose();
+    revealDisposableRef.current = null;
 
     if (!visible) return;
 
@@ -570,13 +556,13 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         term.scrollToBottom();
         // Reveal after renderer paints the new content at the correct scroll position
         if (container) {
-          occludeDisposableRef.current?.dispose();
+          revealDisposableRef.current?.dispose();
           const d = term.onRender(() => {
             d.dispose();
-            occludeDisposableRef.current = null;
+            revealDisposableRef.current = null;
             container.style.opacity = '';
           });
-          occludeDisposableRef.current = d;
+          revealDisposableRef.current = d;
         }
       });
     }
@@ -588,6 +574,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (deferred) {
       deferredResizeRef.current = null;
       pty.handle.current?.resize(deferred.cols, deferred.rows);
+      writeToPty(session.id, '\x1b[I');
     }
 
     if (!hasBuffer && term) {
@@ -597,10 +584,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       if (container) {
         const d = term.onRender(() => {
           d.dispose();
-          occludeDisposableRef.current = null;
+          revealDisposableRef.current = null;
           container.style.opacity = '';
         });
-        occludeDisposableRef.current = d;
+        revealDisposableRef.current = d;
       }
     }
 
@@ -608,8 +595,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
     // Cleanup: if tab hides before reveal fires, dispose listener and reset opacity
     return () => {
-      occludeDisposableRef.current?.dispose();
-      occludeDisposableRef.current = null;
+      revealDisposableRef.current?.dispose();
+      revealDisposableRef.current = null;
       if (containerRef.current) containerRef.current.style.opacity = '';
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -747,7 +734,14 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const terminalFont = useSettingsStore((s) => s.terminalFont);
   useEffect(() => {
     const term = terminalRef.current?.termRef.current;
-    if (term) term.options.fontFamily = resolveFont(terminalFont);
+    if (!term) return;
+    term.options.fontFamily = resolveFont(terminalFont);
+    // WebGL caches glyph bitmaps in a texture atlas — must clear it so the
+    // renderer re-rasterizes glyphs from the new font. Also recalculate
+    // dimensions since the new font may have different character metrics.
+    term.clearTextureAtlas?.();
+    term.refresh(0, term.rows - 1);
+    terminalRef.current?.fit();
   }, [terminalFont]);
 
   // Suppress native context menu and show custom menu instead
