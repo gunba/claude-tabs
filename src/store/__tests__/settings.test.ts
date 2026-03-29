@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock Tauri IPC
 vi.mock("@tauri-apps/api/core", () => ({
@@ -141,6 +141,48 @@ describe("savedPrompts CRUD", () => {
     useSettingsStore.getState().addSavedPrompt("Keep", "text");
     useSettingsStore.getState().removeSavedPrompt("nonexistent-id");
     expect(useSettingsStore.getState().savedPrompts).toHaveLength(1);
+  });
+});
+
+describe("loadKnownEnvVars", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ knownEnvVars: [] });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("sets knownEnvVars from invoke result", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const mockVars = [
+      { name: "ANTHROPIC_API_KEY", description: "API key", category: "api", documented: true },
+      { name: "HTTP_PROXY", description: "Proxy", category: "network", documented: true },
+    ];
+    vi.mocked(invoke).mockResolvedValueOnce(mockVars);
+
+    await useSettingsStore.getState().loadKnownEnvVars(null);
+
+    expect(useSettingsStore.getState().knownEnvVars).toEqual(mockVars);
+  });
+
+  it("leaves knownEnvVars empty when invoke throws", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("binary not found"));
+
+    await useSettingsStore.getState().loadKnownEnvVars(null);
+
+    expect(useSettingsStore.getState().knownEnvVars).toEqual([]);
+  });
+
+  it("falls back to session store claudePath when cliPath is undefined", async () => {
+    // Module mock returns claudePath: null from session store
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockResolvedValueOnce([]);
+
+    await useSettingsStore.getState().loadKnownEnvVars(); // no args → reads session store
+
+    expect(invoke).toHaveBeenCalledWith("discover_env_vars", { cliPath: null });
   });
 });
 

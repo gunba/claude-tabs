@@ -151,6 +151,7 @@ pub fn run() {
             commands::build_claude_args,
             commands::discover_builtin_commands,
             commands::discover_settings_schema,
+            commands::discover_env_vars,
             commands::fetch_settings_schema,
             commands::discover_plugin_commands,
             commands::list_past_sessions,

@@ -73,6 +73,30 @@ export function insertIntoJson(json: string, key: string, value: unknown): strin
   }
 }
 
+/**
+ * Insert a key:value pair into the `env` sub-object of a settings JSON string.
+ * Returns null if `env` exists but is not a plain object (prevents clobbering).
+ */
+export function insertIntoEnv(json: string, name: string, value: string): string | null {
+  const trimmed = json.trim();
+  let obj: Record<string, unknown>;
+  try {
+    obj = trimmed && trimmed !== "{}" ? (JSON.parse(trimmed) as Record<string, unknown>) : {};
+  } catch {
+    // Malformed JSON — insert cannot proceed safely
+    return null;
+  }
+
+  // If env exists but is not a plain object, refuse to clobber
+  if ("env" in obj && (typeof obj.env !== "object" || obj.env === null || Array.isArray(obj.env))) {
+    return null;
+  }
+
+  const env = (obj.env as Record<string, string> | undefined) ?? {};
+  obj.env = { ...env, [name]: value };
+  return JSON.stringify(obj, null, 2);
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   general: "General",
   permissions: "Permissions",
@@ -191,10 +215,12 @@ export interface SettingsPaneExtraProps {
   hideReference?: boolean;
   onKeysChange?: (keys: Set<string>) => void;
   insertRef?: React.MutableRefObject<((key: string, value: unknown) => void) | null>;
+  insertEnvRef?: React.MutableRefObject<((name: string, value: string) => void) | null>;
+  onEnvKeysChange?: (keys: Set<string>) => void;
   onEditorFocus?: () => void;
 }
 
-export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKeysChange, insertRef, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
+export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKeysChange, insertRef, insertEnvRef, onEnvKeysChange, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(true);
@@ -209,11 +235,15 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
   }), [cliCapabilities.options, binarySettingsSchema, settingsJsonSchema]);
 
   // Parse current JSON for validation + "already set" tracking
-  const { currentKeys, unknownKeys, typeMismatches, parseError } = useMemo(() => {
+  const { currentKeys, envKeys, unknownKeys, typeMismatches, parseError } = useMemo(() => {
     try {
       const obj = JSON.parse(text) as Record<string, unknown>;
+      const envObj = obj.env;
       return {
         currentKeys: new Set(Object.keys(obj)),
+        envKeys: (envObj && typeof envObj === "object" && !Array.isArray(envObj))
+          ? new Set(Object.keys(envObj as Record<string, unknown>))
+          : new Set<string>(),
         unknownKeys: getUnknownKeys(obj, schema),
         typeMismatches: getTypeMismatches(obj, schema),
         parseError: null as string | null,
@@ -221,6 +251,7 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
     } catch (e) {
       return {
         currentKeys: new Set<string>(),
+        envKeys: new Set<string>(),
         unknownKeys: [] as string[],
         typeMismatches: [] as { key: string; expected: string; actual: string }[],
         parseError: e instanceof Error ? e.message : String(e),
@@ -273,16 +304,38 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
     setText((prev) => insertIntoJson(prev, key, value));
   }, []);
 
+  const handleInsertEnv = useCallback((name: string, value: string) => {
+    setText((prev) => {
+      const result = insertIntoEnv(prev, name, value);
+      if (result === null) {
+        onStatus({ text: "Cannot insert: env key exists but is not an object", type: "error" });
+        return prev;
+      }
+      return result;
+    });
+  }, [onStatus]);
+
   // Report current keys to parent
   useEffect(() => {
     onKeysChange?.(currentKeys);
   }, [currentKeys, onKeysChange]);
+
+  // Report current env var keys to parent
+  useEffect(() => {
+    onEnvKeysChange?.(envKeys);
+  }, [envKeys, onEnvKeysChange]);
 
   // Expose handleInsert via ref
   useEffect(() => {
     if (insertRef) insertRef.current = handleInsert;
     return () => { if (insertRef) insertRef.current = null; };
   }, [handleInsert, insertRef]);
+
+  // Expose handleInsertEnv via ref
+  useEffect(() => {
+    if (insertEnvRef) insertEnvRef.current = handleInsertEnv;
+    return () => { if (insertEnvRef) insertEnvRef.current = null; };
+  }, [handleInsertEnv, insertEnvRef]);
 
   const syncScroll = () => {
     if (textareaRef.current && preRef.current) {

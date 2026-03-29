@@ -105,7 +105,8 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │   ├── ConfigManager/HooksPane.tsx      # Per-scope hooks CRUD (absorbed from HooksManager)
   │   ├── ConfigManager/PluginsPane.tsx    # CLI-driven plugin manager (single-pane, install/enable/disable + MCP servers)
   │   ├── ConfigManager/AgentEditor.tsx    # Per-scope agent file list + markdown editor
-  │   ├── ConfigManager/SettingsTab.tsx    # Unified per-scope settings layout with schema-driven fields
+  │   ├── ConfigManager/SettingsTab.tsx    # Unified per-scope settings layout with schema-driven fields + env vars column
+  │   ├── ConfigManager/EnvVarsReference.tsx  # Categorized searchable env var reference panel (grouped, collapsible)
   │   ├── ConfigManager/PromptsTab.tsx     # Split sidebar: My Prompts (editable) + Observed (auto-captured, read-only)
   │   ├── ConfigManager/SkillsEditor.tsx   # Per-scope skills file list + markdown editor
   │   ├── ConfigManager/ProvidersPane.tsx  # Multi-provider config: provider cards + model routes table
@@ -135,6 +136,7 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │   ├── replayParser.ts                 # NDJSON terminal recording parser (header + timed events)
   │   ├── paths.ts                         # Path helpers, IS_WINDOWS detection, platform-aware normalizePath, worktree detection, tab grouping
   │   ├── settingsSchema.ts               # CLI settings.json schema discovery + parsing
+  │   ├── envVars.ts                       # Env var catalog: EnvVarEntry, groupEnvVars, CATEGORY_ORDER/LABELS
   │   ├── debugLog.ts                      # Structured debug logging (dlog function, session-scoped entries)
   │   ├── uiConfig.ts                     # Persisted UI configuration
   │   ├── perfTrace.ts                    # Performance tracing utilities

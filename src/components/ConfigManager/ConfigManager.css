@@ -1337,6 +1337,97 @@
   padding: 2px 6px;
 }
 
+/* ── Settings bottom two-panel layout ─────────────── */
+
+.settings-bottom-panels {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-bottom-half {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-bottom-half .settings-search-bar {
+  padding: 4px 6px;
+}
+
+.settings-bottom-half .settings-search-input {
+  max-width: none;
+}
+
+@media (max-width: 900px) {
+  .settings-bottom-panels {
+    flex-direction: column;
+  }
+}
+
+/* ── Env Vars Reference ────────────────────────────── */
+
+.ev-entry {
+  align-items: flex-start;
+}
+
+.ev-category-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 6px 8px 3px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-ui);
+}
+
+.ev-category-header:hover {
+  color: var(--text-primary);
+}
+
+.ev-badge-documented {
+  background: color-mix(in srgb, var(--accent-secondary) 20%, transparent);
+  color: var(--accent-secondary);
+  border: 1px solid color-mix(in srgb, var(--accent-secondary) 30%, transparent);
+}
+
+.ev-badge-discovered {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+}
+
+.ev-scope-chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.ev-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+  color: var(--bg-primary);
+  font-family: var(--font-ui);
+}
+
 /* ── Markdown Preview ──────────────────────────────── */
 
 .pane-preview-btn {

@@ -5,6 +5,7 @@ import type { LaunchPreset, SessionConfig, PastSession, ProviderConfig, ModelRou
 import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG } from "../types/session";
 import { normalizePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
+import type { EnvVarEntry } from "../lib/envVars";
 import { useSessionStore } from "./sessions";
 
 function syncRulesToProxy() {
@@ -58,6 +59,7 @@ interface SettingsState {
   cliCapabilities: CliCapabilities;
   binarySettingsSchema: BinarySettingField[];
   settingsJsonSchema: JsonSchema | null;
+  knownEnvVars: EnvVarEntry[];
   slashCommands: SlashCommand[];
 
   commandUsage: Record<string, number>;
@@ -102,6 +104,7 @@ interface SettingsState {
   loadPastSessions: () => Promise<void>;
   loadBinarySettingsSchema: () => Promise<void>;
   loadSettingsJsonSchema: () => Promise<void>;
+  loadKnownEnvVars: (cliPath?: string | null) => Promise<void>;
   addObservedPrompt: (text: string, model: string) => void;
   addSavedPrompt: (name: string, text: string) => void;
   updateSavedPrompt: (id: string, updates: { name?: string; text?: string }) => void;
@@ -132,6 +135,7 @@ export const useSettingsStore = create<SettingsState>()(
       cliCapabilities: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
       binarySettingsSchema: [],
       settingsJsonSchema: null,
+      knownEnvVars: [],
       slashCommands: [],
       commandUsage: {},
       commandBarExpanded: false,
@@ -321,6 +325,15 @@ export const useSettingsStore = create<SettingsState>()(
           set({ settingsJsonSchema: schema });
         } catch {
           // Network fetch failed — Zustand persistence provides offline fallback
+        }
+      },
+      loadKnownEnvVars: async (cliPath) => {
+        try {
+          const path = cliPath ?? useSessionStore.getState().claudePath;
+          const vars = await invoke<EnvVarEntry[]>("discover_env_vars", { cliPath: path ?? null });
+          set({ knownEnvVars: vars });
+        } catch {
+          // Binary scan failed — no problem, UI just shows empty env vars panel
         }
       },
 
