@@ -9,6 +9,7 @@ import {
   defaultForType,
 } from "../../lib/settingsSchema";
 import type { SettingField, StatusMessage } from "../../lib/settingsSchema";
+import { EnvVarsReference } from "./EnvVarsReference";
 
 type Scope = PaneComponentProps["scope"];
 
@@ -34,9 +35,18 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
     project: new Set(),
     "project-local": new Set(),
   });
+  const [scopeEnvKeys, setScopeEnvKeys] = useState<Record<Scope, Set<string>>>({
+    user: new Set(),
+    project: new Set(),
+    "project-local": new Set(),
+  });
   const [filter, setFilter] = useState("");
+  const [envFilter, setEnvFilter] = useState("");
   const [refCollapsed, setRefCollapsed] = useState(() => {
     try { return localStorage.getItem("settings-ref-collapsed") === "true"; } catch { return false; }
+  });
+  const [envRefCollapsed, setEnvRefCollapsed] = useState(() => {
+    try { return localStorage.getItem("env-vars-ref-collapsed") === "true"; } catch { return false; }
   });
 
   const toggleRefCollapsed = useCallback(() => {
@@ -47,10 +57,24 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
     });
   }, []);
 
+  const toggleEnvRefCollapsed = useCallback(() => {
+    setEnvRefCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("env-vars-ref-collapsed", String(next));
+      return next;
+    });
+  }, []);
+
   const insertRefs = {
     user: useRef<((key: string, value: unknown) => void) | null>(null),
     project: useRef<((key: string, value: unknown) => void) | null>(null),
     "project-local": useRef<((key: string, value: unknown) => void) | null>(null),
+  };
+
+  const insertEnvRefs = {
+    user: useRef<((name: string, value: string) => void) | null>(null),
+    project: useRef<((name: string, value: string) => void) | null>(null),
+    "project-local": useRef<((name: string, value: string) => void) | null>(null),
   };
 
   const makeKeysHandler = useCallback(
@@ -63,7 +87,17 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
     [],
   );
 
-  const { cliCapabilities, binarySettingsSchema, settingsJsonSchema } = useSettingsStore();
+  const makeEnvKeysHandler = useCallback(
+    (scope: Scope) => (keys: Set<string>) => {
+      setScopeEnvKeys((prev) => {
+        if (prev[scope] === keys) return prev;
+        return { ...prev, [scope]: keys };
+      });
+    },
+    [],
+  );
+
+  const { cliCapabilities, binarySettingsSchema, settingsJsonSchema, knownEnvVars } = useSettingsStore();
   const schema = useMemo(
     () => buildSettingsSchema(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema),
     [cliCapabilities.options, binarySettingsSchema, settingsJsonSchema],
@@ -87,6 +121,8 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
                 hideReference
                 onKeysChange={makeKeysHandler(value)}
                 insertRef={insertRefs[value]}
+                insertEnvRef={insertEnvRefs[value]}
+                onEnvKeysChange={makeEnvKeysHandler(value)}
                 onEditorFocus={() => setActiveScope(value)}
               />
             </div>
@@ -94,28 +130,50 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
         ))}
       </div>
 
-      {schema.length > 0 && (
-        <>
+      <div className="settings-bottom-panels">
+        {schema.length > 0 && (
+          <div className="settings-bottom-half">
+            <div className="settings-search-bar">
+              <input
+                className="settings-search-input"
+                type="text"
+                placeholder="Search settings..."
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </div>
+            <UnifiedSettingsReference
+              schema={schema}
+              scopeKeys={scopeKeys}
+              activeScope={activeScope}
+              onInsert={(key, value) => insertRefs[activeScope].current?.(key, value)}
+              filter={filter}
+              collapsed={refCollapsed}
+              onToggleCollapsed={toggleRefCollapsed}
+            />
+          </div>
+        )}
+        <div className="settings-bottom-half">
           <div className="settings-search-bar">
             <input
               className="settings-search-input"
               type="text"
-              placeholder="Search settings..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search env vars..."
+              value={envFilter}
+              onChange={(e) => setEnvFilter(e.target.value)}
             />
           </div>
-          <UnifiedSettingsReference
-            schema={schema}
-            scopeKeys={scopeKeys}
+          <EnvVarsReference
+            envVars={knownEnvVars}
+            scopeEnvKeys={scopeEnvKeys}
             activeScope={activeScope}
-            onInsert={(key, value) => insertRefs[activeScope].current?.(key, value)}
-            filter={filter}
-            collapsed={refCollapsed}
-            onToggleCollapsed={toggleRefCollapsed}
+            onInsert={(name) => insertEnvRefs[activeScope].current?.(name, "")}
+            filter={envFilter}
+            collapsed={envRefCollapsed}
+            onToggleCollapsed={toggleEnvRefCollapsed}
           />
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

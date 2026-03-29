@@ -52,6 +52,9 @@ export function useCliWatcher(): void {
           // Discover settings schema from binary (runs in background, non-blocking)
           useSettingsStore.getState().loadBinarySettingsSchema();
 
+          // Discover env vars from binary catalog + process.env scan (runs in background, non-blocking)
+          useSettingsStore.getState().loadKnownEnvVars();
+
           // Fetch JSON Schema from schemastore (runs in background, non-blocking)
           useSettingsStore.getState().loadSettingsJsonSchema();
 

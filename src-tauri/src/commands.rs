@@ -909,6 +909,89 @@ fn discover_settings_schema_sync(cli_path: Option<&str>) -> Result<Vec<serde_jso
     Ok(fields)
 }
 
+/// Discovered environment variable entry.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct DiscoveredEnvVar {
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub documented: bool,
+}
+
+/// Mine the Claude CLI binary for environment variable names used via process.env.
+/// Returns the hardcoded catalog merged with any additional names found in the binary.
+#[tauri::command]
+pub async fn discover_env_vars(cli_path: Option<String>) -> Result<Vec<DiscoveredEnvVar>, String> {
+    tokio::task::spawn_blocking(move || discover_env_vars_sync(cli_path.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn env_var_catalog() -> Vec<DiscoveredEnvVar> {
+    vec![
+        DiscoveredEnvVar { name: "ANTHROPIC_API_KEY".into(), description: "Anthropic API key for authentication".into(), category: "api".into(), documented: true },
+        DiscoveredEnvVar { name: "ANTHROPIC_BASE_URL".into(), description: "Custom API base URL (for proxies or alternative endpoints)".into(), category: "api".into(), documented: true },
+        DiscoveredEnvVar { name: "ANTHROPIC_AUTH_TOKEN".into(), description: "Bearer token (alternative to API key)".into(), category: "api".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_API_KEY_HELPER_TTY".into(), description: "Program path that outputs an API key to stdout".into(), category: "api".into(), documented: true },
+        DiscoveredEnvVar { name: "ANTHROPIC_MODEL".into(), description: "Default model override".into(), category: "model".into(), documented: true },
+        DiscoveredEnvVar { name: "ANTHROPIC_SMALL_FAST_MODEL".into(), description: "Small/fast model for lightweight tasks".into(), category: "model".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_MAX_OUTPUT_TOKENS".into(), description: "Maximum output tokens per response".into(), category: "model".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_DISABLE_TELEMETRY".into(), description: "Disable usage telemetry (set to \"1\")".into(), category: "features".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_GIT_BASH_PATH".into(), description: "Path to Git Bash executable (Windows)".into(), category: "features".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_ENABLE_UNIFIED_READ_WRITE".into(), description: "Enable unified read+write tool".into(), category: "features".into(), documented: true },
+        DiscoveredEnvVar { name: "BASH_DEFAULT_TIMEOUT_MS".into(), description: "Default bash command timeout in milliseconds".into(), category: "features".into(), documented: true },
+        DiscoveredEnvVar { name: "BASH_MAX_TIMEOUT_MS".into(), description: "Maximum allowed bash timeout in milliseconds".into(), category: "features".into(), documented: true },
+        DiscoveredEnvVar { name: "DISABLE_AUTOUPDATER".into(), description: "Disable automatic updates (set to \"1\")".into(), category: "features".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_USE_BEDROCK".into(), description: "Use AWS Bedrock instead of direct API (set to \"1\")".into(), category: "aws".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_BEDROCK_REGION".into(), description: "AWS region for Bedrock".into(), category: "aws".into(), documented: true },
+        DiscoveredEnvVar { name: "AWS_PROFILE".into(), description: "AWS credential profile for Bedrock authentication".into(), category: "aws".into(), documented: true },
+        DiscoveredEnvVar { name: "AWS_REGION".into(), description: "AWS region (fallback for Bedrock region)".into(), category: "aws".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_USE_VERTEX".into(), description: "Use Google Vertex AI instead of direct API (set to \"1\")".into(), category: "gcp".into(), documented: true },
+        DiscoveredEnvVar { name: "ANTHROPIC_VERTEX_PROJECT_ID".into(), description: "Google Cloud project ID for Vertex AI".into(), category: "gcp".into(), documented: true },
+        DiscoveredEnvVar { name: "ANTHROPIC_VERTEX_REGION".into(), description: "Google Cloud region for Vertex AI".into(), category: "gcp".into(), documented: true },
+        DiscoveredEnvVar { name: "HTTP_PROXY".into(), description: "HTTP proxy server URL".into(), category: "network".into(), documented: true },
+        DiscoveredEnvVar { name: "HTTPS_PROXY".into(), description: "HTTPS proxy server URL".into(), category: "network".into(), documented: true },
+        DiscoveredEnvVar { name: "NO_PROXY".into(), description: "Comma-separated hosts to bypass proxy".into(), category: "network".into(), documented: true },
+        DiscoveredEnvVar { name: "NODE_TLS_REJECT_UNAUTHORIZED".into(), description: "TLS cert validation — set \"0\" to disable (insecure)".into(), category: "network".into(), documented: true },
+        DiscoveredEnvVar { name: "CLAUDE_CODE_SKIP_BINARY_CHECK".into(), description: "Skip binary integrity check on startup".into(), category: "debug".into(), documented: true },
+    ]
+}
+
+fn discover_env_vars_sync(cli_path: Option<&str>) -> Result<Vec<DiscoveredEnvVar>, String> {
+    let catalog = env_var_catalog();
+    let catalog_names: std::collections::HashSet<String> =
+        catalog.iter().map(|e| e.name.clone()).collect();
+
+    let mut result: Vec<DiscoveredEnvVar> = catalog;
+
+    // Attempt binary mining: look for process.env.VAR_NAME patterns in the JS bundle
+    if let Ok(content) = read_claude_binary(cli_path) {
+        let env_re = regex::Regex::new(r"process\.env\.([A-Z][A-Z0-9_]{2,})").unwrap();
+        let mut seen: std::collections::HashSet<String> = catalog_names;
+
+        for cap in env_re.captures_iter(&content) {
+            let name = cap[1].to_string();
+            if seen.insert(name.clone()) {
+                result.push(DiscoveredEnvVar {
+                    name,
+                    description: String::new(),
+                    category: "other".into(),
+                    documented: false,
+                });
+            }
+        }
+    }
+
+    // Sort: documented first, then by category, then by name
+    result.sort_by(|a, b| {
+        b.documented.cmp(&a.documented)
+            .then(a.category.cmp(&b.category))
+            .then(a.name.cmp(&b.name))
+    });
+
+    Ok(result)
+}
+
 /// Fetch the Claude Code JSON Schema from schemastore.org.
 /// Done server-side to avoid CORS restrictions in the WebView.
 #[tauri::command]

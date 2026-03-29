@@ -47,4 +47,5 @@ export interface IpcCommands {
   list_agents: (args: { scope: string; workingDir: string }) => Promise<Array<{ name: string; path: string }>>;
   list_skills: (args: { scope: string; workingDir: string }) => Promise<Array<{ name: string; path: string }>>;
   resolve_api_host: () => Promise<string>;
+  discover_env_vars: (args: { cliPath: string | null }) => Promise<Array<{ name: string; description: string; category: string; documented: boolean }>>;
 }

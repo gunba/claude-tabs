@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { highlightJson, insertIntoJson } from "../../components/ConfigManager/SettingsPane";
+import { highlightJson, insertIntoJson, insertIntoEnv } from "../../components/ConfigManager/SettingsPane";
 
 describe("highlightJson", () => {
   it("wraps object keys in sh-key spans", () => {
@@ -171,5 +171,53 @@ describe("insertIntoJson", () => {
     const padded = "  \n  {} \n  ";
     const result = insertIntoJson(padded, "key", "val");
     expect(JSON.parse(result)).toEqual({ key: "val" });
+  });
+});
+
+describe("insertIntoEnv", () => {
+  it("creates env object from empty JSON", () => {
+    const result = insertIntoEnv("{}", "ANTHROPIC_API_KEY", "my-key");
+    expect(JSON.parse(result!)).toEqual({ env: { ANTHROPIC_API_KEY: "my-key" } });
+  });
+
+  it("creates env from empty string", () => {
+    const result = insertIntoEnv("", "MY_VAR", "value");
+    expect(JSON.parse(result!)).toEqual({ env: { MY_VAR: "value" } });
+  });
+
+  it("adds to existing env object", () => {
+    const existing = JSON.stringify({ env: { FOO: "bar" } }, null, 2);
+    const result = insertIntoEnv(existing, "BAZ", "qux");
+    expect(JSON.parse(result!)).toEqual({ env: { FOO: "bar", BAZ: "qux" } });
+  });
+
+  it("overwrites same env key", () => {
+    const existing = JSON.stringify({ env: { FOO: "old" } }, null, 2);
+    const result = insertIntoEnv(existing, "FOO", "new");
+    expect(JSON.parse(result!)).toEqual({ env: { FOO: "new" } });
+  });
+
+  it("preserves other top-level keys", () => {
+    const existing = JSON.stringify({ model: "claude-3", env: { X: "1" } }, null, 2);
+    const result = insertIntoEnv(existing, "Y", "2");
+    const parsed = JSON.parse(result!);
+    expect(parsed.model).toBe("claude-3");
+    expect(parsed.env).toEqual({ X: "1", Y: "2" });
+  });
+
+  it("returns null for malformed JSON", () => {
+    expect(insertIntoEnv("{ invalid json", "VAR", "val")).toBeNull();
+  });
+
+  it("returns null if env exists but is not an object", () => {
+    expect(insertIntoEnv(JSON.stringify({ env: "not-an-object" }), "VAR", "val")).toBeNull();
+  });
+
+  it("returns null if env is an array", () => {
+    expect(insertIntoEnv(JSON.stringify({ env: ["a", "b"] }), "VAR", "val")).toBeNull();
+  });
+
+  it("returns null if env is null", () => {
+    expect(insertIntoEnv(JSON.stringify({ env: null }), "VAR", "val")).toBeNull();
   });
 });
