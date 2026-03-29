@@ -33,7 +33,7 @@ describe("reduceTapEvent", () => {
     expect(reduceTapEvent("thinking", { kind: "TurnEnd", ts: 0, stopReason: "tool_use", outputTokens: 100 })).toBe("toolUse");
   });
 
-  it("TurnEnd tool_use preserves actionNeeded (ExitPlanMode race)", () => {
+  it("TurnEnd tool_use preserves actionNeeded (early-return guard)", () => {
     expect(reduceTapEvent("actionNeeded", { kind: "TurnEnd", ts: 0, stopReason: "tool_use", outputTokens: 100 })).toBe("actionNeeded");
   });
 
@@ -114,6 +114,58 @@ describe("reduceTapEvent", () => {
       promptId: null, stopReason: "tool_use", toolNames: ["Bash"], toolAction: "Bash: ls",
       textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null,
     })).toBe("actionNeeded");
+  });
+
+  // Sticky actionNeeded guard tests: all non-user events preserve actionNeeded
+  it("TurnEnd(end_turn) when actionNeeded → actionNeeded (sticky guard)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 100 })).toBe("actionNeeded");
+  });
+
+  it("TurnStart when actionNeeded → actionNeeded (sticky guard)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "TurnStart", ts: 0, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 })).toBe("actionNeeded");
+  });
+
+  it("ThinkingStart when actionNeeded → actionNeeded (sticky guard)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "ThinkingStart", ts: 0, index: 0 })).toBe("actionNeeded");
+  });
+
+  it("TextStart when actionNeeded → actionNeeded (sticky guard)", () => {
+    // TextStart is thinking in the main switch, but sticky guard preserves actionNeeded
+    expect(reduceTapEvent("actionNeeded", { kind: "TextStart", ts: 0, index: 0 })).toBe("actionNeeded");
+  });
+
+  it("ConversationMessage(user) when actionNeeded → actionNeeded (sticky guard)", () => {
+    expect(reduceTapEvent("actionNeeded", {
+      kind: "ConversationMessage", ts: 0, messageType: "user",
+      isSidechain: false, agentId: null, uuid: null, parentUuid: null,
+      promptId: null, stopReason: null, toolNames: [], toolAction: null,
+      textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null,
+    })).toBe("actionNeeded");
+  });
+
+  it("ToolCallStart(non-ExitPlanMode) when actionNeeded → actionNeeded (sticky guard)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "ToolCallStart", ts: 0, index: 1, toolName: "Bash", toolId: "t1" })).toBe("actionNeeded");
+  });
+
+  // Sticky guard exit: user actions clear actionNeeded
+  it("UserInput when actionNeeded → thinking (user approved plan)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "UserInput", ts: 0, display: "yes", sessionId: "s1" })).toBe("thinking");
+  });
+
+  it("SlashCommand when actionNeeded → thinking (user ran command)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "SlashCommand", ts: 0, command: "/rj", display: "/rj" })).toBe("thinking");
+  });
+
+  it("UserInterruption when actionNeeded → interrupted (user cancelled plan)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "UserInterruption", ts: 0, forToolUse: false })).toBe("interrupted");
+  });
+
+  it("PermissionPromptShown when actionNeeded → waitingPermission (edge case)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "PermissionPromptShown", ts: 0, toolName: "Bash" })).toBe("waitingPermission");
+  });
+
+  it("informational events preserve actionNeeded (default branch)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "ApiTelemetry", ts: 0, model: "opus", costUSD: 0.01, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, uncachedInputTokens: 0, durationMs: 100, ttftMs: 50, queryChainId: null, queryDepth: 0, stopReason: null })).toBe("actionNeeded");
   });
 
   it("content-based plan detection: numbered list in textSnippet → actionNeeded", () => {

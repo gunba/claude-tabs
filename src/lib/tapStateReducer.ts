@@ -12,6 +12,21 @@ const PLAN_ITEM_2 = /\b2\.\s/;
  * No polling, no terminal buffer fallback — event-driven only.
  */
 export function reduceTapEvent(state: SessionState, event: TapEvent): SessionState {
+  // actionNeeded is sticky — only explicit user actions can clear it
+  if (state === "actionNeeded") {
+    switch (event.kind) {
+      case "UserInput":
+      case "SlashCommand":
+        return "thinking";          // user approved/interacted
+      case "UserInterruption":
+        return "interrupted";       // user hit escape
+      case "PermissionPromptShown":
+        return "waitingPermission"; // edge case: plan triggers permission
+      default:
+        return "actionNeeded";      // all other events preserve it
+    }
+  }
+
   switch (event.kind) {
     case "TurnStart":
       return "thinking";
@@ -29,8 +44,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
 
     case "TurnEnd":
       if (event.stopReason === "tool_use") {
-        // ExitPlanMode sets actionNeeded; the structural TurnEnd(tool_use) must not clobber it
-        return state === "actionNeeded" ? "actionNeeded" : "toolUse";
+        return "toolUse";
       }
       if (event.stopReason === "end_turn") return "idle";
       return state;
@@ -69,9 +83,6 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
             PLAN_ITEM_1.test(event.textSnippet) && PLAN_ITEM_2.test(event.textSnippet)) {
           return "actionNeeded";
         }
-        // Preserve actionNeeded set by ToolCallStart(ExitPlanMode) — the
-        // ConversationMessage arrives later and must not clobber it.
-        if (state === "actionNeeded") return "actionNeeded";
         if (event.stopReason === "tool_use") return "toolUse";
         if (event.stopReason === "end_turn") return "idle";
       }
