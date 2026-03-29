@@ -62,6 +62,9 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "PermissionRejected":
       return "idle";
 
+    case "IdlePrompt":
+      return "idle";
+
     case "UserInterruption":
       return "interrupted";
 
@@ -153,5 +156,6 @@ export function reduceTapBatch(state: SessionState, events: TapEvent[]): Session
  * Used by useTapEventProcessor for queued input dispatch signaling.
  */
 export function isCompletionEvent(event: TapEvent): boolean {
-  return event.kind === "TurnEnd" && event.stopReason === "end_turn";
+  return (event.kind === "TurnEnd" && event.stopReason === "end_turn")
+    || event.kind === "IdlePrompt";
 }

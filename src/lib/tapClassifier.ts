@@ -326,6 +326,11 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
+  // IdlePrompt: CLI idle notification (authoritative idle signal)
+  if (parsed.notification_type === "idle_prompt") {
+    return { kind: "IdlePrompt", ts };
+  }
+
   // ConversationMessage: has type in (user, assistant, result) + message or specific structure
   if (parsed.type === "user" || parsed.type === "assistant" || parsed.type === "result") {
     // SessionResume: assistant with model "<synthetic>"

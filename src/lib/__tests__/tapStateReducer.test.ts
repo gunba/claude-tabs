@@ -202,6 +202,14 @@ describe("reduceTapEvent", () => {
     })).toBe("idle");
   });
 
+  it("IdlePrompt → idle", () => {
+    expect(reduceTapEvent("thinking", { kind: "IdlePrompt", ts: 0 })).toBe("idle");
+  });
+
+  it("IdlePrompt → idle from toolUse", () => {
+    expect(reduceTapEvent("toolUse", { kind: "IdlePrompt", ts: 0 })).toBe("idle");
+  });
+
   it("informational events don't change state", () => {
     expect(reduceTapEvent("idle", { kind: "ProcessHealth", ts: 0, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0 })).toBe("idle");
     expect(reduceTapEvent("thinking", { kind: "ApiTelemetry", ts: 0, model: "opus", costUSD: 0.01, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, uncachedInputTokens: 0, durationMs: 100, ttftMs: 50, queryChainId: null, queryDepth: 0, stopReason: null })).toBe("thinking");
@@ -242,6 +250,14 @@ describe("reduceTapBatch", () => {
       { kind: "ToolCallStart", ts: 2, index: 0, toolName: "Bash", toolId: "t1" },
     ];
     expect(reduceTapBatch("idle", events)).toBe("waitingPermission");
+  });
+
+  it("IdlePrompt in batch drives state back to idle", () => {
+    const events: TapEvent[] = [
+      { kind: "ThinkingStart", ts: 0, index: 0 },
+      { kind: "IdlePrompt", ts: 1 },
+    ];
+    expect(reduceTapBatch("idle", events)).toBe("idle");
   });
 });
 
@@ -284,5 +300,10 @@ describe("isCompletionEvent", () => {
       sevenDayUsedPercent: 0, sevenDayResetsAt: 0,
       vimMode: "",
     })).toBe("thinking");
+  });
+
+  it("IdlePrompt is completion", () => {
+    expect(isCompletionEvent({ kind: "IdlePrompt", ts: 0 })).toBe(true);
+  });
   });
 });

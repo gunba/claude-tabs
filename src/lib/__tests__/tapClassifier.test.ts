@@ -276,6 +276,23 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
     };
     expect(classifyTapEntry(entry)).toBeNull();
   });
+
+  it("classifies notification_type idle_prompt → IdlePrompt", () => {
+    const entry: TapEntry = {
+      ts: 2020, cat: "stringify", len: 50,
+      snap: JSON.stringify({ notification_type: "idle_prompt" }),
+    };
+    const event = classifyTapEntry(entry);
+    expect(event).toEqual({ kind: "IdlePrompt", ts: 2020 });
+  });
+
+  it("returns null for other notification_type values", () => {
+    const entry: TapEntry = {
+      ts: 2021, cat: "stringify", len: 50,
+      snap: JSON.stringify({ notification_type: "other_thing" }),
+    };
+    expect(classifyTapEntry(entry)).toBeNull();
+  });
 });
 
 describe("classifyTapEntry — fetch", () => {

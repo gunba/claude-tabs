@@ -342,6 +342,10 @@ export interface SystemPromptCapture extends TapEventBase {
   messageCount: number;
 }
 
+export interface IdlePrompt extends TapEventBase {
+  kind: "IdlePrompt";
+}
+
 export interface EffortLevel extends TapEventBase {
   kind: "EffortLevel";
   level: string;
@@ -431,4 +435,5 @@ export type TapEvent =
   | HookTelemetry
   | SystemPromptCapture
   | EffortLevel
-  | StatusLineUpdate;
+  | StatusLineUpdate
+  | IdlePrompt;
