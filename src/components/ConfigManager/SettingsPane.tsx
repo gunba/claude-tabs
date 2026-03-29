@@ -215,12 +215,10 @@ export interface SettingsPaneExtraProps {
   hideReference?: boolean;
   onKeysChange?: (keys: Set<string>) => void;
   insertRef?: React.MutableRefObject<((key: string, value: unknown) => void) | null>;
-  insertEnvRef?: React.MutableRefObject<((name: string, value: string) => void) | null>;
-  onEnvKeysChange?: (keys: Set<string>) => void;
   onEditorFocus?: () => void;
 }
 
-export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKeysChange, insertRef, insertEnvRef, onEnvKeysChange, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
+export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKeysChange, insertRef, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(true);
@@ -235,15 +233,11 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
   }), [cliCapabilities.options, binarySettingsSchema, settingsJsonSchema]);
 
   // Parse current JSON for validation + "already set" tracking
-  const { currentKeys, envKeys, unknownKeys, typeMismatches, parseError } = useMemo(() => {
+  const { currentKeys, unknownKeys, typeMismatches, parseError } = useMemo(() => {
     try {
       const obj = JSON.parse(text) as Record<string, unknown>;
-      const envObj = obj.env;
       return {
         currentKeys: new Set(Object.keys(obj)),
-        envKeys: (envObj && typeof envObj === "object" && !Array.isArray(envObj))
-          ? new Set(Object.keys(envObj as Record<string, unknown>))
-          : new Set<string>(),
         unknownKeys: getUnknownKeys(obj, schema),
         typeMismatches: getTypeMismatches(obj, schema),
         parseError: null as string | null,
@@ -251,7 +245,6 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
     } catch (e) {
       return {
         currentKeys: new Set<string>(),
-        envKeys: new Set<string>(),
         unknownKeys: [] as string[],
         typeMismatches: [] as { key: string; expected: string; actual: string }[],
         parseError: e instanceof Error ? e.message : String(e),
@@ -304,38 +297,16 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
     setText((prev) => insertIntoJson(prev, key, value));
   }, []);
 
-  const handleInsertEnv = useCallback((name: string, value: string) => {
-    setText((prev) => {
-      const result = insertIntoEnv(prev, name, value);
-      if (result === null) {
-        onStatus({ text: "Cannot insert: env key exists but is not an object", type: "error" });
-        return prev;
-      }
-      return result;
-    });
-  }, [onStatus]);
-
   // Report current keys to parent
   useEffect(() => {
     onKeysChange?.(currentKeys);
   }, [currentKeys, onKeysChange]);
-
-  // Report current env var keys to parent
-  useEffect(() => {
-    onEnvKeysChange?.(envKeys);
-  }, [envKeys, onEnvKeysChange]);
 
   // Expose handleInsert via ref
   useEffect(() => {
     if (insertRef) insertRef.current = handleInsert;
     return () => { if (insertRef) insertRef.current = null; };
   }, [handleInsert, insertRef]);
-
-  // Expose handleInsertEnv via ref
-  useEffect(() => {
-    if (insertEnvRef) insertEnvRef.current = handleInsertEnv;
-    return () => { if (insertEnvRef) insertEnvRef.current = null; };
-  }, [handleInsertEnv, insertEnvRef]);
 
   const syncScroll = () => {
     if (textareaRef.current && preRef.current) {

@@ -4,6 +4,7 @@ import { useSettingsStore } from "../../store/settings";
 import { ModalOverlay } from "../ModalOverlay/ModalOverlay";
 import { ThreePaneEditor } from "./ThreePaneEditor";
 import { SettingsTab } from "./SettingsTab";
+import { EnvVarsTab } from "./EnvVarsTab";
 import { MarkdownPane } from "./MarkdownPane";
 import { HooksPane } from "./HooksPane";
 import { PluginsTab } from "./PluginsPane";
@@ -11,15 +12,16 @@ import { AgentEditor } from "./AgentEditor";
 import { PromptsTab } from "./PromptsTab";
 import { SkillsEditor } from "./SkillsEditor";
 import { ProvidersPane } from "./ProvidersPane";
-import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconLightning, IconClose } from "../Icons/Icons";
+import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconLightning, IconBraces, IconClose } from "../Icons/Icons";
 import { parseWorktreePath } from "../../lib/paths";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import "./ConfigManager.css";
 
-type Tab = "settings" | "claudemd" | "hooks" | "plugins" | "agents" | "prompts" | "skills" | "providers";
+type Tab = "settings" | "envvars" | "claudemd" | "hooks" | "plugins" | "agents" | "prompts" | "skills" | "providers";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "settings", label: "Settings", icon: <IconGear size={11} /> },
+  { id: "envvars", label: "Env Vars", icon: <IconBraces size={11} /> },
   { id: "claudemd", label: "Claude", icon: <IconDocument size={11} /> },
   { id: "hooks", label: "Hooks", icon: <IconHook size={11} /> },
   { id: "plugins", label: "Plugins", icon: <IconPuzzle size={11} /> },
@@ -114,6 +116,9 @@ export function ConfigManager() {
       <div className="config-content">
         {tab === "settings" && (
           <SettingsTab projectDir={projectDir} onStatus={setStatusMsg} />
+        )}
+        {tab === "envvars" && (
+          <EnvVarsTab projectDir={projectDir} onStatus={setStatusMsg} />
         )}
         {tab === "claudemd" && (
           <ThreePaneEditor component={MarkdownPane} projectDir={projectDir} onStatus={setStatusMsg} tabId="claudemd" />

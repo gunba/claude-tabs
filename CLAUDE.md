@@ -97,14 +97,15 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   │   ├── StatusBar/StatusBar.tsx           # Model, subscription, region, duration, hooks, subprocess
   │   ├── CommandPalette/CommandPalette.tsx # Ctrl+K search
   │   ├── SubagentInspector/SubagentInspector.tsx  # Markdown-rendered subagent conversation viewer
-  │   ├── ConfigManager/ConfigManager.tsx  # 8-tab config workspace (Ctrl+,): Settings, Claude, Hooks, Plugins, Agents, Prompts, Skills, Providers
+  │   ├── ConfigManager/ConfigManager.tsx  # 9-tab config workspace (Ctrl+,): Settings, Env Vars, Claude, Hooks, Plugins, Agents, Prompts, Skills, Providers
   │   ├── ConfigManager/ThreePaneEditor.tsx # 3-column User/Project/Local scope layout (color-coded)
   │   ├── ConfigManager/SettingsPane.tsx   # Per-scope JSON editor with syntax highlighting overlay
   │   ├── ConfigManager/MarkdownPane.tsx   # Per-scope CLAUDE.md editor with preview toggle
   │   ├── ConfigManager/HooksPane.tsx      # Per-scope hooks CRUD (absorbed from HooksManager)
   │   ├── ConfigManager/PluginsPane.tsx    # CLI-driven plugin manager (single-pane, install/enable/disable + MCP servers)
   │   ├── ConfigManager/AgentEditor.tsx    # Per-scope agent file list + markdown editor
-  │   ├── ConfigManager/SettingsTab.tsx    # Unified per-scope settings layout with schema-driven fields + env vars column
+  │   ├── ConfigManager/SettingsTab.tsx    # Unified per-scope settings layout with schema-driven fields + reference panel
+  │   ├── ConfigManager/EnvVarsTab.tsx     # 3-pane env section editor (env key of settings.json) + EnvVarsReference catalog
   │   ├── ConfigManager/EnvVarsReference.tsx  # Categorized searchable env var reference panel (grouped, collapsible)
   │   ├── ConfigManager/PromptsTab.tsx     # Split sidebar: My Prompts (editable) + Observed (auto-captured, read-only)
   │   ├── ConfigManager/SkillsEditor.tsx   # Per-scope skills file list + markdown editor
