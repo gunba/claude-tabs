@@ -153,20 +153,6 @@ impl OutputFilter {
                             self.output.push(0x1B);
                             self.output.push(b'[');
                             self.output.extend_from_slice(&csi_buf);
-
-                            // Outside sync blocks, when Ink positions the cursor
-                            // to a row (CUP = CSI row;col H), erase the entire
-                            // line. This clears stale content both before AND after
-                            // the cursor — needed when fresh content is indented
-                            // (e.g., col 3) and stale content occupies cols 1-2.
-                            // CSI 2K erases the full line without moving the cursor.
-                            if !self.in_sync_block
-                                && csi_buf.last() == Some(&b'H')
-                                && csi_buf.len() > 1  // not bare ESC[H (cursor home)
-                                && csi_buf.iter().any(|&b| b == b';')  // has row;col
-                            {
-                                self.output.extend_from_slice(b"\x1b[2K");
-                            }
                         }
                     }
                     // Still accumulating parameter/intermediate bytes
@@ -472,8 +458,8 @@ mod tests {
     #[test]
     fn test_cursor_movement_passes_through() {
         let mut f = OutputFilter::new();
-        // CUP outside sync block gets CSI 2K appended (erases entire line)
-        assert_eq!(f.filter(b"\x1b[10;20H"), b"\x1b[10;20H\x1b[2K");
+        // CUP passes through unchanged
+        assert_eq!(f.filter(b"\x1b[10;20H"), b"\x1b[10;20H");
         // CUU, CUD, CUF, CUB pass through unchanged
         assert_eq!(f.filter(b"\x1b[5A"), b"\x1b[5A");
         assert_eq!(f.filter(b"\x1b[3B"), b"\x1b[3B");

@@ -236,22 +236,42 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
 
         // If resize set the drain flag, discard ConPTY's broken reflow output
         // and wait for the application's proper redraw after SIGWINCH.
+        // BSU (DEC 2026 sync start) signals the application's redraw — stop
+        // draining immediately so the sync block reaches xterm.js intact.
+        const BSU: &[u8] = b"\x1b[?2026h";
         let data = if session.drain_after_resize.load(Ordering::Acquire) {
-            // Drain all reflow chunks. ConPTY reflow arrives in rapid
-            // succession; a 5ms gap indicates reflow is complete.
-            loop {
-                match output_rx.recv_timeout(Duration::from_millis(5)) {
-                    Ok(_) => continue,
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        session.drain_after_resize.store(false, Ordering::Release);
-                        return Err("EOF".to_string());
+            // If the first chunk IS the application's sync block (not reflow),
+            // return it directly — no draining needed.
+            if first.len() >= BSU.len() && first.starts_with(BSU) {
+                session.drain_after_resize.store(false, Ordering::Release);
+                first
+            } else {
+                // Drain reflow chunks until 5ms gap or BSU detected.
+                let mut app_data: Option<Vec<u8>> = None;
+                loop {
+                    match output_rx.recv_timeout(Duration::from_millis(5)) {
+                        Ok(chunk) => {
+                            if chunk.len() >= BSU.len() && chunk.starts_with(BSU) {
+                                // Application's sync block — stop draining
+                                app_data = Some(chunk);
+                                break;
+                            }
+                            // ConPTY reflow — discard and keep draining
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            session.drain_after_resize.store(false, Ordering::Release);
+                            return Err("EOF".to_string());
+                        }
                     }
                 }
+                session.drain_after_resize.store(false, Ordering::Release);
+                match app_data {
+                    Some(d) => d,
+                    // No BSU seen — wait for the application's redraw
+                    None => output_rx.recv().map_err(|_| "EOF".to_string())?,
+                }
             }
-            session.drain_after_resize.store(false, Ordering::Release);
-            // Wait for the application's proper redraw after SIGWINCH.
-            output_rx.recv().map_err(|_| "EOF".to_string())?
         } else {
             first
         };
@@ -268,24 +288,7 @@ async fn read(pid: PtyHandler, state: tauri::State<'_, PluginState>) -> Result<V
         if let Some(rec) = recorder.as_mut() { rec.flush(); }
         drop(recorder);
 
-        // Detect Ink's cursor-park pattern at the end of a render: CUF matching
-        // terminal width (CSI <cols> C). Ink parks the cursor here after drawing.
-        // When content contracts (e.g., user deletes text), Ink skips rows between
-        // the old and new layout, leaving stale content. Appending ESC[J (clear
-        // from cursor to end of screen) after the park clears those stale rows.
-        let cols = session.cols.load(Ordering::Relaxed);
-        let mut result = filtered.to_vec();
-        if cols > 0 {
-            let suffix = format!("\x1b[{}C", cols);
-            let suffix_bytes = suffix.as_bytes();
-            if result.len() >= suffix_bytes.len()
-                && result[result.len() - suffix_bytes.len()..] == *suffix_bytes
-            {
-                result.extend_from_slice(b"\x1b[J");
-            }
-        }
-
-        Ok(result)
+        Ok(filtered.to_vec())
     })
     .await
     .map_err(|e| e.to_string())?
