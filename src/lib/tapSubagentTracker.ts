@@ -1,6 +1,7 @@
 import type { TapEvent } from "../types/tapEvents";
 import type { Subagent, SubagentMessage, SessionState } from "../types/session";
 import { isSubagentActive } from "../types/session";
+import { dlog } from "./debugLog";
 
 export interface SubagentAction {
   type: "add" | "update" | "clearIdle";
@@ -44,6 +45,7 @@ export class TapSubagentTracker {
     for (const agentId of this.knownIds) {
       const currentState = this.agentStates.get(agentId);
       if (currentState && isSubagentActive(currentState)) {
+        dlog("inspector", this.parentSessionId, `subagent ${agentId} ${currentState} → ${targetState}`, "DEBUG");
         this.agentStates.set(agentId, targetState);
         actions.push({ type: "update", subagentId: agentId, updates: { state: targetState } });
       }
@@ -59,6 +61,7 @@ export class TapSubagentTracker {
       case "SubagentSpawn":
         // Agent tool input with description + prompt → queue description
         this.pendingDescs.push(event.description);
+        dlog("inspector", this.parentSessionId, `subagent spawn queued desc="${event.description.slice(0, 60)}"`, "DEBUG");
         break;
 
       case "ConversationMessage": {
@@ -69,7 +72,10 @@ export class TapSubagentTracker {
         // Don't re-activate agents already marked idle/dead by SubagentNotification,
         // SubagentLifecycle, or UserInterruption. Late sidechain messages arriving after
         // completion should not flip hasActiveAgents() back to true.
-        if (this.knownIds.has(agentId) && !isSubagentActive(this.agentStates.get(agentId) ?? "dead")) break;
+        if (this.knownIds.has(agentId) && !isSubagentActive(this.agentStates.get(agentId) ?? "dead")) {
+          dlog("inspector", this.parentSessionId, `subagent ${agentId} late msg dropped (state=${this.agentStates.get(agentId)})`, "DEBUG");
+          break;
+        }
 
         // First message from a new subagent → create it
         if (!this.knownIds.has(agentId)) {
@@ -94,6 +100,7 @@ export class TapSubagentTracker {
               createdAt: event.ts,
             },
           });
+          dlog("inspector", this.parentSessionId, `subagent ${agentId} created desc="${desc}" (${this.pendingDescs.length} pending descs remain)`, "DEBUG");
         }
 
         // Route messages
@@ -135,6 +142,7 @@ export class TapSubagentTracker {
         }
 
         this.lastActiveAgent = agentId;
+        dlog("inspector", this.parentSessionId, `subagent ${agentId} → ${state} (msgType=${event.messageType} stop=${event.stopReason})`, "DEBUG");
 
         // Accumulate messages
         const existing = this.subagentMsgs.get(agentId) || [];
@@ -171,6 +179,7 @@ export class TapSubagentTracker {
         break;
 
       case "SubagentNotification":
+        dlog("inspector", this.parentSessionId, `SubagentNotification(${event.status}) → marking all active dead`, "DEBUG");
         actions.push(...this.markAllActive("dead"));
         break;
 
@@ -185,6 +194,7 @@ export class TapSubagentTracker {
 
         if (event.variant === "start") {
           if (!targetId || !this.knownIds.has(targetId)) break;
+          dlog("inspector", this.parentSessionId, `subagent lifecycle start target=${targetId} type=${event.agentType} async=${event.isAsync}`, "DEBUG");
           actions.push({
             type: "update",
             subagentId: targetId,
@@ -195,6 +205,7 @@ export class TapSubagentTracker {
             },
           });
         } else if (event.variant === "end") {
+          dlog("inspector", this.parentSessionId, `subagent lifecycle end target=${targetId} tools=${event.totalToolUses} dur=${event.durationMs}ms`, "DEBUG");
           // Enrich lastActiveAgent with metadata if available
           if (targetId && this.knownIds.has(targetId)) {
             const metaUpdates: Partial<Subagent> = {};
@@ -208,6 +219,7 @@ export class TapSubagentTracker {
           // Targeting all active handles parallel agents where lastActiveAgent may be wrong.
           actions.push(...this.markAllActive("dead"));
         } else if (event.variant === "killed") {
+          dlog("inspector", this.parentSessionId, `subagent lifecycle killed → marking all active dead`, "DEBUG");
           actions.push(...this.markAllActive("dead"));
         }
         break;

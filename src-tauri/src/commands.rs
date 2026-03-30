@@ -598,7 +598,7 @@ pub async fn get_cli_help() -> Result<String, String> {
 
 /// Get the claude-tabs data directory (%LOCALAPPDATA%/claude-tabs/).
 /// Creates it if it doesn't exist.
-fn get_data_dir() -> Result<std::path::PathBuf, String> {
+pub(crate) fn get_data_dir() -> Result<std::path::PathBuf, String> {
     let data_dir = dirs::data_local_dir()
         .ok_or("Could not determine local data directory")?
         .join("claude-tabs");
@@ -2145,6 +2145,16 @@ fn get_taps_dir() -> Result<std::path::PathBuf, String> {
     if !dir.exists() {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create taps dir: {}", e))?;
+    }
+    Ok(dir)
+}
+
+/// Get the traffic subdirectory inside the data dir, creating if needed.
+pub(crate) fn get_traffic_dir() -> Result<std::path::PathBuf, String> {
+    let dir = get_data_dir()?.join("traffic");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create traffic dir: {}", e))?;
     }
     Ok(dir)
 }

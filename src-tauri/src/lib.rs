@@ -206,14 +206,24 @@ pub fn run() {
             proxy::update_provider_config,
             proxy::get_proxy_port,
             proxy::update_system_prompt_rules,
+            proxy::start_traffic_log,
+            proxy::stop_traffic_log,
+            proxy::get_traffic_log_path,
+            proxy::cleanup_traffic_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Claude Tabs")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                // Stop API proxy
+                // Flush traffic logs and stop API proxy (single lock acquisition)
                 let proxy_state = app_handle.state::<ProxyState>();
                 if let Ok(mut s) = proxy_state.0.lock() {
+                    for writer in s.traffic_log_files.values_mut() {
+                        use std::io::Write;
+                        let _ = writer.flush();
+                    }
+                    s.traffic_log_files.clear();
+                    s.traffic_log_paths.clear();
                     if let Some(tx) = s.shutdown_tx.take() {
                         let _ = tx.send(());
                     }

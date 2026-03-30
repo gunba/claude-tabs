@@ -59,11 +59,79 @@ function mockSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
+// ── Init filter for empty dead sessions ────────────────────────────
+
+/** Mirrors the init() filter in sessions.ts */
+function initFilter(sessions: Session[]): Session[] {
+  return sessions.filter(
+    (s) => s.state !== "dead"
+      || !!s.config.resumeSession
+      || !!s.metadata.nodeSummary
+      || s.metadata.assistantMessageCount > 0
+  );
+}
+
+describe("init filter for empty dead sessions", () => {
+  it("removes dead sessions with no conversation content", () => {
+    const empty = mockSession({
+      state: "dead",
+      config: { ...DEFAULT_CONFIG, sessionId: "some-id" },
+    });
+    const live = mockSession({ state: "idle" });
+    expect(initFilter([empty, live])).toHaveLength(1);
+    expect(initFilter([empty, live])[0].id).toBe(live.id);
+  });
+
+  it("keeps dead sessions with assistantMessageCount > 0", () => {
+    const withConvo = mockSession({
+      state: "dead",
+      config: { ...DEFAULT_CONFIG, sessionId: "conv-id" },
+      metadata: { ...DEFAULT_METADATA, assistantMessageCount: 3 },
+    });
+    expect(initFilter([withConvo])).toHaveLength(1);
+  });
+
+  it("keeps dead sessions with nodeSummary", () => {
+    const withSummary = mockSession({
+      state: "dead",
+      config: { ...DEFAULT_CONFIG, sessionId: "sum-id" },
+      metadata: { ...DEFAULT_METADATA, nodeSummary: "Fix the bug" },
+    });
+    expect(initFilter([withSummary])).toHaveLength(1);
+  });
+
+  it("keeps dead sessions with resumeSession set", () => {
+    const resumed = mockSession({
+      state: "dead",
+      config: { ...DEFAULT_CONFIG, resumeSession: "original-id" },
+    });
+    expect(initFilter([resumed])).toHaveLength(1);
+  });
+
+  it("keeps live sessions regardless of conversation content", () => {
+    const starting = mockSession({ state: "starting" });
+    const idle = mockSession({ state: "idle" });
+    expect(initFilter([starting, idle])).toHaveLength(2);
+  });
+
+  it("removes dead session with sessionId but no messages", () => {
+    const empty = mockSession({
+      state: "dead",
+      config: { ...DEFAULT_CONFIG, sessionId: "cli-session-abc" },
+      metadata: { ...DEFAULT_METADATA, assistantMessageCount: 0, nodeSummary: null },
+    });
+    expect(initFilter([empty])).toHaveLength(0);
+  });
+});
+
 // ── Dead session tab visibility ─────────────────────────────────────
 
 describe("dead session tab visibility", () => {
-  it("dead sessions appear in regular sessions list", () => {
-    const dead = mockSession({ state: "dead" });
+  it("dead sessions with conversation appear in regular sessions list", () => {
+    const dead = mockSession({
+      state: "dead",
+      metadata: { ...DEFAULT_METADATA, assistantMessageCount: 1 },
+    });
     const live = mockSession({ state: "idle" });
     const sessions = [dead, live];
 

@@ -160,6 +160,8 @@
   line-height: 1.6;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) transparent;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .debug-panel-body::-webkit-scrollbar { width: 5px; }

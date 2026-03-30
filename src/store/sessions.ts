@@ -30,8 +30,10 @@ interface SessionsState {
   inspectorOffSessions: Set<string>;
   tapCategories: Map<string, Set<string>>; // sessionId -> enabled tap category names
   ptyRecording: Map<string, string>; // sessionId -> file path
+  trafficRecording: Map<string, string>; // sessionId -> file path
   processHealth: Map<string, { rss: number; heapUsed: number; uptime: number }>;
   autoRecordOnStart: Set<string>; // session IDs pending auto-start PTY recording
+  autoTrafficLogOnStart: Set<string>; // session IDs pending auto-start traffic logging
 
   // Actions
   init: () => Promise<void>;
@@ -54,8 +56,12 @@ interface SessionsState {
   stopAllTaps: (id: string) => void;
   startPtyRecording: (id: string, path: string) => void;
   stopPtyRecording: (id: string) => void;
+  startTrafficLog: (id: string, path: string) => void;
+  stopTrafficLog: (id: string) => void;
   setAutoRecordOnStart: (id: string) => void;
   clearAutoRecordOnStart: (id: string) => void;
+  setAutoTrafficLogOnStart: (id: string) => void;
+  clearAutoTrafficLogOnStart: (id: string) => void;
   addSubagent: (sessionId: string, subagent: Subagent) => void;
   updateSubagent: (sessionId: string, subagentId: string, updates: Partial<Subagent>) => void;
   clearIdleSubagents: (sessionId: string) => void;
@@ -79,8 +85,10 @@ export const useSessionStore = create<SessionsState>((set) => ({
   inspectorOffSessions: new Set(),
   tapCategories: new Map(),
   ptyRecording: new Map(),
+  trafficRecording: new Map(),
   processHealth: new Map(),
   autoRecordOnStart: new Set(),
+  autoTrafficLogOnStart: new Set(),
 
   init: async () => {
     trace("init: start");
@@ -88,6 +96,13 @@ export const useSessionStore = create<SessionsState>((set) => ({
     try {
       sessions = await traceAsync("init: load_persisted_sessions", () =>
         invoke<Session[]>("load_persisted_sessions")
+      );
+      // Filter out empty dead sessions (no conversation to resume)
+      sessions = sessions.filter(
+        (s) => s.state !== "dead"
+          || !!s.config.resumeSession
+          || !!s.metadata.nodeSummary
+          || s.metadata.assistantMessageCount > 0
       );
       // Assign colors sequentially to restored sessions
       const allIds = sessions.map((s) => s.id);
@@ -199,11 +214,18 @@ export const useSessionStore = create<SessionsState>((set) => ({
       tapCategories.delete(id);
       const ptyRecording = new Map(s.ptyRecording);
       ptyRecording.delete(id);
+      const trafficRecording = new Map(s.trafficRecording);
+      if (trafficRecording.has(id)) {
+        trafficRecording.delete(id);
+        invoke("stop_traffic_log", { sessionId: id }).catch(() => {});
+      }
       const processHealth = new Map(s.processHealth);
       processHealth.delete(id);
       const autoRecordOnStart = new Set(s.autoRecordOnStart);
       autoRecordOnStart.delete(id);
-      return { sessions, activeTabId, subagents, skillInvocations, commandHistory, inspectorOffSessions, tapCategories, ptyRecording, processHealth, autoRecordOnStart };
+      const autoTrafficLogOnStart = new Set(s.autoTrafficLogOnStart);
+      autoTrafficLogOnStart.delete(id);
+      return { sessions, activeTabId, subagents, skillInvocations, commandHistory, inspectorOffSessions, tapCategories, ptyRecording, trafficRecording, processHealth, autoRecordOnStart, autoTrafficLogOnStart };
     });
     // Persist immediately so the removal is captured even if the app closes
     useSessionStore.getState().persist();
@@ -348,6 +370,22 @@ export const useSessionStore = create<SessionsState>((set) => ({
     });
   },
 
+  startTrafficLog: (id, path) => {
+    set((s) => {
+      const next = new Map(s.trafficRecording);
+      next.set(id, path);
+      return { trafficRecording: next };
+    });
+  },
+
+  stopTrafficLog: (id) => {
+    set((s) => {
+      const next = new Map(s.trafficRecording);
+      next.delete(id);
+      return { trafficRecording: next };
+    });
+  },
+
   setAutoRecordOnStart: (id) => {
     set((s) => {
       const next = new Set(s.autoRecordOnStart);
@@ -361,6 +399,22 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const next = new Set(s.autoRecordOnStart);
       next.delete(id);
       return { autoRecordOnStart: next };
+    });
+  },
+
+  setAutoTrafficLogOnStart: (id) => {
+    set((s) => {
+      const next = new Set(s.autoTrafficLogOnStart);
+      next.add(id);
+      return { autoTrafficLogOnStart: next };
+    });
+  },
+
+  clearAutoTrafficLogOnStart: (id) => {
+    set((s) => {
+      const next = new Set(s.autoTrafficLogOnStart);
+      next.delete(id);
+      return { autoTrafficLogOnStart: next };
     });
   },
 

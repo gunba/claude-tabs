@@ -18,6 +18,8 @@ pub struct ProxyInner {
     pub shutdown_tx: Option<oneshot::Sender<()>>,
     pub clients: HashMap<String, reqwest::Client>,
     pub default_client: reqwest::Client,
+    pub traffic_log_files: HashMap<String, std::io::BufWriter<std::fs::File>>,
+    pub traffic_log_paths: HashMap<String, std::path::PathBuf>,
 }
 
 pub struct ProxyState(pub Arc<Mutex<ProxyInner>>);
@@ -31,6 +33,8 @@ impl ProxyState {
             shutdown_tx: None,
             clients: HashMap::new(),
             default_client: build_plain_client(),
+            traffic_log_files: HashMap::new(),
+            traffic_log_paths: HashMap::new(),
         })))
     }
 }
@@ -108,8 +112,9 @@ pub async fn start_api_proxy(
                                 Err(_) => continue,
                             };
                             let a = app.clone();
+                            let st = state.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_connection(stream, config, clients, default_client, rules, a).await {
+                                if let Err(e) = handle_connection(stream, config, clients, default_client, rules, a, st).await {
                                     log::debug!("proxy connection error: {e}");
                                 }
                             });
@@ -182,6 +187,65 @@ pub fn update_system_prompt_rules(
     Ok(())
 }
 
+// ── Traffic logging commands ─────────────────────────────────────────
+
+#[tauri::command]
+pub fn start_traffic_log(session_id: String, proxy_state: State<'_, ProxyState>) -> Result<String, String> {
+    let dir = crate::commands::get_traffic_dir()?;
+    let path = dir.join(format!("{}.jsonl", session_id));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("Failed to create traffic log: {}", e))?;
+    let writer = std::io::BufWriter::new(file);
+    let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    s.traffic_log_files.insert(session_id.clone(), writer);
+    s.traffic_log_paths.insert(session_id, path.clone());
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn stop_traffic_log(session_id: String, proxy_state: State<'_, ProxyState>) -> Result<(), String> {
+    let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(ref mut writer) = s.traffic_log_files.get_mut(&session_id) {
+        use std::io::Write;
+        let _ = writer.flush();
+    }
+    s.traffic_log_files.remove(&session_id);
+    s.traffic_log_paths.remove(&session_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_traffic_log_path(session_id: String, proxy_state: State<'_, ProxyState>) -> Result<Option<String>, String> {
+    let s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    Ok(s.traffic_log_paths.get(&session_id).map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub fn cleanup_traffic_logs(max_age_hours: u64) -> Result<u32, String> {
+    let dir = crate::commands::get_traffic_dir()?;
+    let mut removed = 0u32;
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(max_age_hours * 3600);
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if let Ok(meta) = path.metadata() {
+                if meta.modified().unwrap_or(std::time::UNIX_EPOCH) < cutoff {
+                    let _ = std::fs::remove_file(&path);
+                    removed += 1;
+                }
+            }
+        }
+    }
+    Ok(removed)
+}
+
 // ── Connection handler ───────────────────────────────────────────────
 
 async fn handle_connection(
@@ -191,6 +255,7 @@ async fn handle_connection(
     default_client: reqwest::Client,
     rules: Vec<SystemPromptRule>,
     app: tauri::AppHandle,
+    proxy_state: Arc<Mutex<ProxyInner>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Read full request
     let mut buf: Vec<u8> = Vec::new();
@@ -224,13 +289,21 @@ async fn handle_connection(
         }
     }
 
-    let (method, path, headers, body) = match parse_request(&buf) {
+    let (method, raw_path, headers, body) = match parse_request(&buf) {
         Some(r) => r,
         None => {
             send_error(&mut stream, 400, "Bad request").await;
             return Ok(());
         }
     };
+
+    // Extract session ID from /s/{id}/... path prefix and strip it
+    let (session_id, path) = extract_session_id(&raw_path);
+
+    // Determine if traffic logging is active for this session
+    let should_log = session_id.as_ref().map_or(false, |id| {
+        proxy_state.lock().ok().map_or(false, |s| s.traffic_log_files.contains_key(id))
+    });
 
     // Route: extract model, find matching route + provider, rewrite if needed
     let model = extract_model(&body);
@@ -277,12 +350,34 @@ async fn handle_connection(
     if let Some(ref key) = provider.api_key {
         req = req.header("x-api-key", key);
     }
+
+    // Capture request body for traffic logging before it's consumed
+    let final_body_for_log = if should_log { Some(final_body.clone()) } else { None };
+    let req_start = std::time::Instant::now();
+    let req_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    let log_model = model.clone();
+    let log_provider = provider.name.clone();
+    let log_rewrite = rewrite.map(|s| s.to_string());
+    let log_method = method.clone();
+    let log_path = path.clone();
+    let log_session_id = session_id.clone();
+
     req = req.body(final_body);
 
     // Send upstream request
     let mut resp = match req.send().await {
         Ok(r) => r,
         Err(e) => {
+            if should_log {
+                write_traffic_entry(
+                    &proxy_state, &log_session_id, req_ts, req_start,
+                    &log_method, &log_path, &log_model, &log_provider, &log_rewrite,
+                    &final_body_for_log, 502, b"",
+                );
+            }
             send_error(&mut stream, 502, &format!("Upstream error: {e}")).await;
             return Ok(());
         }
@@ -305,12 +400,73 @@ async fn handle_connection(
     stream.write_all(resp_hdrs.as_bytes()).await?;
 
     // Stream response body — flush each chunk immediately for SSE
+    let mut resp_buf: Option<Vec<u8>> = if should_log { Some(Vec::with_capacity(8192)) } else { None };
     while let Some(chunk) = resp.chunk().await? {
         stream.write_all(&chunk).await?;
         stream.flush().await?;
+        if let Some(ref mut buf) = resp_buf {
+            buf.extend_from_slice(&chunk);
+        }
+    }
+
+    // Write traffic log entry after response completes
+    if let Some(resp_bytes) = resp_buf {
+        write_traffic_entry(
+            &proxy_state, &log_session_id, req_ts, req_start,
+            &log_method, &log_path, &log_model, &log_provider, &log_rewrite,
+            &final_body_for_log, status_code, &resp_bytes,
+        );
     }
 
     Ok(())
+}
+
+fn write_traffic_entry(
+    proxy_state: &Arc<Mutex<ProxyInner>>,
+    session_id: &Option<String>,
+    req_ts: f64,
+    req_start: std::time::Instant,
+    method: &str,
+    path: &str,
+    model: &Option<String>,
+    provider: &str,
+    rewrite: &Option<String>,
+    req_body: &Option<Vec<u8>>,
+    status: u16,
+    resp_bytes: &[u8],
+) {
+    let sid = match session_id {
+        Some(id) => id,
+        None => return,
+    };
+    let dur_ms = req_start.elapsed().as_millis() as u64;
+    let req_str = req_body.as_ref().map(|b| String::from_utf8_lossy(b).into_owned()).unwrap_or_default();
+    let resp_str = String::from_utf8_lossy(resp_bytes);
+    let req_len = req_body.as_ref().map(|b| b.len()).unwrap_or(0);
+
+    let line = serde_json::json!({
+        "ts": req_ts,
+        "dur_ms": dur_ms,
+        "session_id": sid,
+        "method": method,
+        "path": path,
+        "model": model.as_deref().unwrap_or("(none)"),
+        "provider": provider,
+        "rewrite": rewrite,
+        "req_len": req_len,
+        "req": req_str,
+        "status": status,
+        "resp_len": resp_bytes.len(),
+        "resp": resp_str,
+    });
+
+    if let Ok(mut s) = proxy_state.lock() {
+        if let Some(ref mut writer) = s.traffic_log_files.get_mut(sid) {
+            use std::io::Write;
+            let _ = writeln!(writer, "{}", line);
+            let _ = writer.flush();
+        }
+    }
 }
 
 // ── Routing ─────────────────────────────────────────────────────────
@@ -424,6 +580,19 @@ fn apply_rules_to_text(text: &str, rules: &[&SystemPromptRule]) -> String {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/// Extract session ID from `/s/{id}/...` path prefix.
+/// Returns `(Some(id), stripped_path)` or `(None, original_path)`.
+fn extract_session_id(path: &str) -> (Option<String>, String) {
+    if let Some(rest) = path.strip_prefix("/s/") {
+        if let Some(slash_pos) = rest.find('/') {
+            let id = &rest[..slash_pos];
+            let remaining = &rest[slash_pos..];
+            return (Some(id.to_string()), remaining.to_string());
+        }
+    }
+    (None, path.to_string())
+}
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
     for i in 0..buf.len().saturating_sub(3) {

@@ -1,8 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../store/settings";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import type { ModelProvider, ModelRoute, ProviderConfig } from "../../types/session";
+import { parseSocks5Url, buildSocks5Url } from "../../lib/socks5Url";
+import type { Socks5Parts } from "../../lib/socks5Url";
 import "./ProvidersPane.css";
 
 interface ProvidersPaneProps {
@@ -205,15 +207,46 @@ function ProviderCard({ provider, isDefault, isOnly, onUpdate, onRemove, onSetDe
             placeholder={provider.apiKey ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : "Passthrough (uses CLI key)"}
           />
         </label>
-        <label className="providers-field">
-          <span>SOCKS5</span>
-          <input
-            type="text"
-            value={provider.socks5Proxy ?? ""}
-            onChange={(e) => onUpdate({ socks5Proxy: e.target.value || null })}
-            placeholder="socks5h://user:pass@host:port"
-          />
-        </label>
+        <Socks5Fieldset url={provider.socks5Proxy} onCommit={(url) => onUpdate({ socks5Proxy: url })} />
+      </div>
+    </div>
+  );
+}
+
+// ── SOCKS5 Fieldset ─────────────────────────────────────────────────────
+
+function Socks5Fieldset({ url, onCommit }: { url: string | null | undefined; onCommit: (url: string | null) => void }) {
+  const [fields, setFields] = useState<Socks5Parts>(() => parseSocks5Url(url));
+
+  // Sync from external prop changes (e.g., another tab updates the provider)
+  useEffect(() => {
+    setFields(parseSocks5Url(url));
+  }, [url]);
+
+  const update = (patch: Partial<Socks5Parts>) => setFields((f) => ({ ...f, ...patch }));
+
+  const commit = () => {
+    const assembled = buildSocks5Url(fields);
+    // Only propagate if the value actually changed
+    if (assembled !== (url ?? null)) onCommit(assembled);
+  };
+
+  return (
+    <div className="socks5-fieldset">
+      <div className="socks5-row">
+        <span className="socks5-label">SOCKS5</span>
+        <select value={fields.protocol} onChange={(e) => { update({ protocol: e.target.value as Socks5Parts["protocol"] }); }} onBlur={commit}>
+          <option value="socks5h">socks5h://</option>
+          <option value="socks5">socks5://</option>
+        </select>
+        <input type="text" value={fields.host} onChange={(e) => update({ host: e.target.value })} onBlur={commit} placeholder="host" />
+        <span className="socks5-colon">:</span>
+        <input type="text" className="socks5-port" value={fields.port} onChange={(e) => update({ port: e.target.value })} onBlur={commit} placeholder="port" inputMode="numeric" />
+      </div>
+      <div className="socks5-row">
+        <span className="socks5-label" />
+        <input type="text" value={fields.username} onChange={(e) => update({ username: e.target.value })} onBlur={commit} placeholder="username" />
+        <input type="password" value={fields.password} onChange={(e) => update({ password: e.target.value })} onBlur={commit} placeholder="password" />
       </div>
     </div>
   );

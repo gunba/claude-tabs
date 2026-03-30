@@ -12,6 +12,33 @@ import { dlog } from "../lib/debugLog";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
 
+/** Return discriminating fields for key event types (for debug logs). */
+function eventDetail(event: TapEvent): string {
+  switch (event.kind) {
+    case "ConversationMessage":
+      return ` type=${event.messageType} sidechain=${event.isSidechain} stop=${event.stopReason} agent=${event.agentId}`;
+    case "TurnEnd":
+      return ` stop=${event.stopReason}`;
+    case "ToolCallStart":
+      return ` tool=${event.toolName}`;
+    case "PermissionPromptShown":
+    case "PermissionApproved":
+      return ` tool=${event.toolName}`;
+    case "SubagentSpawn":
+      return ` desc="${event.description.slice(0, 50)}"`;
+    case "SubagentNotification":
+      return ` status=${event.status}`;
+    case "SubagentLifecycle":
+      return ` variant=${event.variant} type=${event.agentType}`;
+    case "UserInput":
+      return ` "${event.display.slice(0, 30)}"`;
+    case "SlashCommand":
+      return ` ${event.command}`;
+    default:
+      return "";
+  }
+}
+
 /**
  * React hook bridging tapEventBus to the Zustand store.
  * Subscribes to tap events for a session, runs reducers, updates store.
@@ -68,6 +95,8 @@ export function useTapEventProcessor(
       const sid = sessionIdRef.current;
       if (!sid) return;
 
+      dlog("tap", sid, `event ${event.kind}${eventDetail(event)}`, "DEBUG");
+
       // No UUID dedup — CLI re-serializes conversation messages for JSONL persistence
       // and hook dispatch (2-3 stringify calls per message), but the state reducer is
       // idempotent and metadata accumulator overwrites. The only effect of duplicates
@@ -92,14 +121,17 @@ export function useTapEventProcessor(
         if (!isReliable && subTracker.hasActiveAgents()) {
           dlog("inspector", sid, `suppressed ${prevState} → ${newState} (subagents active, event=${event.kind})`, "DEBUG");
         } else {
-          dlog("inspector", sid, `state ${prevState} → ${newState}`);
+          dlog("inspector", sid, `state ${prevState} → ${newState} (${event.kind})`);
           stateRef.current = newState;
           updateState(sid, newState);
         }
+      } else {
+        dlog("inspector", sid, `state ${prevState} unchanged by ${event.kind}`, "DEBUG");
       }
 
       // Completion signals for queued input dispatch (only when state actually applied, not suppressed)
       if (stateRef.current === "idle" && prevState !== "idle" && isCompletionEvent(event)) {
+        dlog("inspector", sid, `completion signal (${event.kind})`, "DEBUG");
         setCompletionCount((c) => c + 1);
       }
 

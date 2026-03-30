@@ -145,6 +145,69 @@
   border-color: var(--accent-secondary);
 }
 
+/* ── SOCKS5 Fieldset ───────────────────────────────────────────── */
+
+.socks5-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.socks5-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.socks5-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.socks5-row select {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 4px 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  outline: none;
+  flex: none;
+}
+
+.socks5-row select:focus {
+  border-color: var(--accent-secondary);
+}
+
+.socks5-row input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+  min-width: 0;
+}
+
+.socks5-row input:focus {
+  border-color: var(--accent-secondary);
+}
+
+.socks5-port {
+  width: 60px;
+  flex: none !important;
+}
+
+.socks5-colon {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex: none;
+}
+
 /* ── Model Routes ──────────────────────────────────────────────── */
 
 .providers-route-header {

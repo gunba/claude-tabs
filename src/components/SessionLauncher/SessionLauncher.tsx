@@ -86,6 +86,7 @@ export function SessionLauncher() {
   const [promptMode, setPromptMode] = useState<"replace" | "append">("replace");
   const [autoTap, setAutoTap] = useState(false);
   const [autoRecord, setAutoRecord] = useState(false);
+  const [autoTraffic, setAutoTraffic] = useState(false);
 
   // Unified command line: editable string that starts from config selections.
   // User can edit freely; reset button regenerates from current dropdowns.
@@ -238,6 +239,7 @@ export function SessionLauncher() {
       // Auto-start recording flags (consumed by TerminalPanel on spawn/connect)
       if (autoTap) useSessionStore.getState().startAllTaps(session.id);
       if (autoRecord) useSessionStore.getState().setAutoRecordOnStart(session.id);
+      if (autoTraffic) useSessionStore.getState().setAutoTrafficLogOnStart(session.id);
       setShowLauncher(false);
     } catch (err) {
       dlog("launcher", null, `create session failed: ${err}`, "ERR");
@@ -516,6 +518,16 @@ export function SessionLauncher() {
                 disabled={isNonSessionCommand}
               >
                 REC
+              </button>
+              <button
+                className={`launcher-toggle-pill${autoTraffic ? " launcher-toggle-pill-on launcher-toggle-tfc" : ""}`}
+                onClick={() => setAutoTraffic((v) => !v)}
+                aria-pressed={autoTraffic}
+                title="Auto-start API traffic logging from first request"
+                type="button"
+                disabled={isNonSessionCommand}
+              >
+                TFC
               </button>
             </div>
             <button
