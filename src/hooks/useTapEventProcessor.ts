@@ -39,6 +39,9 @@ function eventDetail(event: TapEvent): string {
   }
 }
 
+// [SI-13] Event priority: runs reduceTapEvent which enforces sticky actionNeeded guard
+// [SI-20] Worktree cwd detection: ConversationMessage/SessionRegistration/WorktreeState -> updateConfig
+// [SI-23] Plan detection: ToolCallStart(ExitPlanMode) handled by reducer, processor dispatches
 /**
  * React hook bridging tapEventBus to the Zustand store.
  * Subscribes to tap events for a session, runs reducers, updates store.
@@ -235,7 +238,7 @@ export function useTapEventProcessor(
         }
       }
 
-      // Worktree cwd detection
+      // [SI-20] Worktree cwd detection
       if (event.kind === "ConversationMessage" && event.cwd) {
         updateCwdIfChanged(event.cwd);
       }

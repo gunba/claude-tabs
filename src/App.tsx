@@ -90,7 +90,7 @@ export default function App() {
       const effState = getEffectiveState(s.state, subagents.get(s.id) || []);
       const prevState = prev.get(s.id);
       if (prevState && !isSessionIdle(prevState as SessionState) && prevState !== "dead" && prevState !== "starting" && isSessionIdle(effState)) {
-        // Active → idle: start 2s debounce before flashing
+        // [SI-24] Active -> idle: start 2s debounce before flashing
         const existingPending = pending.get(s.id);
         if (existingPending) clearTimeout(existingPending);
         const sid = s.id;

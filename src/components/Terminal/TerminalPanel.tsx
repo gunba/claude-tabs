@@ -29,6 +29,7 @@ interface TerminalPanelProps {
 
 const ACTIVE_STATES = new Set<SessionState>(["thinking", "toolUse", "actionNeeded", "waitingPermission", "error"]);
 
+// [SI-22] Duration timer: client-side 1s setInterval, accumulates active-state time
 function useDurationTimer(sessionId: string, state: SessionState, respawnCounter: number): void {
   const updateMetadata = useSessionStore((s) => s.updateMetadata);
   const accumulatedRef = useRef(0);

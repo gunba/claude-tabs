@@ -333,8 +333,7 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
 
   // ConversationMessage: has type in (user, assistant, result) + message or specific structure
   if (parsed.type === "user" || parsed.type === "assistant" || parsed.type === "result") {
-    // SkillInvocation: user message with toolUseResult (skill execution result)
-    // Must come before UserInterruption/PermissionRejected content-scanning checks
+    // [IN-17] SkillInvocation: early-return before UserInterruption/PermissionRejected checks
     if (parsed.type === "user" && parsed.toolUseResult?.commandName) {
       return {
         kind: "SkillInvocation", ts,
@@ -443,7 +442,7 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
-  // AccountInfo: has accountUuid + billingType (subscriptionType may be absent in newer CLI)
+  // [IN-15] AccountInfo classifier: guard relaxed to require only billingType (not subscriptionType)
   if (parsed.accountUuid && parsed.billingType) {
     return {
       kind: "AccountInfo", ts,
@@ -584,6 +583,7 @@ function classifySpawn(ts: number, entry: TapEntry): TapEvent {
   };
 }
 
+// [SI-25] Status line data capture: classifies status-line category entries into StatusLineUpdate
 function classifyStatusLine(ts: number, entry: TapEntry): TapEvent {
   return {
     kind: "StatusLineUpdate", ts,
@@ -616,6 +616,7 @@ function classifyStatusLine(ts: number, entry: TapEntry): TapEvent {
   };
 }
 
+// [IN-10] Tap event pipeline: classifies ~47 typed events from raw TapEntry
 /**
  * Classify a raw TapEntry into a typed TapEvent.
  * Returns null for noise, deltas, and unrecognized entries.

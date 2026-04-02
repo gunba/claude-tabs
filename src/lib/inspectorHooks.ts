@@ -1,3 +1,5 @@
+// [SI-01] Sole source: BUN_INSPECT WebSocket inspector via JSON.stringify interception
+// [SI-14] Push-based architecture: INSTALL_TAPS via TCP; INSTALL_HOOK/POLL_STATE retained for tests
 /**
  * JavaScript expressions evaluated via Runtime.evaluate on the BUN_INSPECT
  * WebSocket connection. These intercept JSON.stringify to capture Claude Code's
@@ -51,7 +53,7 @@ export const INSTALL_HOOK = `(function() {
     pendingDescs: [],
     subs: [],
     slashCmd: null,
-    _sealed: false
+    _sealed: false // [SI-11] Sealed flag prevents post-completion clobbering of state.stop
   };
   globalThis.__inspectorState = state;
 
@@ -75,7 +77,7 @@ export const INSTALL_HOOK = `(function() {
         if (obj) {
           // Notification and hook events — check on any object regardless of type
           if (obj.notification_type === 'permission_prompt') state.permPending = true;
-          if (obj.notification_type === 'idle_prompt') state.idleDetected = true;
+          if (obj.notification_type === 'idle_prompt') state.idleDetected = true; // [SI-12] Sticky idleDetected for POLL_STATE compat
           if (obj.hook_event_name === 'UserPromptSubmit') {
             var hp = obj.prompt || '';
             if (typeof hp === 'string' && hp) {
@@ -275,7 +277,7 @@ export const INSTALL_HOOK = `(function() {
         state.inputBuf = state.inputBuf.slice(0, -1);
       } else if (ch === '\\x03' || ch === '\\x1b') {
         state.inputBuf = '';
-        // Interrupt signal: synthetic result event so poll derives idle.
+        // [SI-17] Interrupt signal: synthetic result event so poll derives idle.
         // If Claude continues processing, real events override on next cycle.
         state.events.push({ t: 'result' });
         if (state.events.length > 50) state.events.shift();
@@ -299,7 +301,7 @@ export const INSTALL_HOOK = `(function() {
     globalThis.__inspectorStdinHandler = stdinHandler;
   } catch(e) {}
 
-  // Bypass WebFetch domain blocklist (checkDomainBlocklist → axios → https.request)
+  // [SI-16] Bypass WebFetch domain blocklist (checkDomainBlocklist -> axios -> https.request)
   //
   // Why https.request and not globalThis.fetch:
   // Axios adapter selection (cli.js:33271) is ["xhr", "http", "fetch"].
@@ -352,9 +354,9 @@ export const INSTALL_HOOK = `(function() {
     };
   } catch(e) {}
 
-  // Timeout for non-streaming Anthropic API calls (WebFetch summarization path)
+  // [SI-18] Timeout for non-streaming Anthropic API calls (WebFetch summarization path)
   //
-  // Call path: summarizeContent() → callSmallModel() → Anthropic SDK → globalThis.fetch
+  // Call path: summarizeContent() -> callSmallModel() -> Anthropic SDK -> globalThis.fetch
   // Non-streaming calls lack "stream":true in body. Main conversation is streaming
   // and passes through untouched. Non-Anthropic URLs also pass through.
   try {
@@ -395,6 +397,8 @@ export const INSTALL_HOOK = `(function() {
   return 'ok';
 })()`;
 
+// [SI-21] INSTALL_TAPS: 15 tap categories, TCP push via Bun.connect to TAP_PORT
+// [IN-02] Status-line detection, WebFetch bypass, HTTPS/fetch timeout patches, wrapAfter helper
 /**
  * Runtime.evaluate expression that installs tap hooks for deep inspection
  * of Claude Code internals. Push-based delivery via console.debug with
@@ -1140,6 +1144,7 @@ export function tapToggleAllExpr(enabled: boolean): string {
   return `(function(){var f=globalThis.__tapFlags;if(f){f.console=${enabled};f.fs=${enabled};f.spawn=${enabled};f.fetch=${enabled};f.exit=${enabled};f.timer=${enabled};f.stdout=${enabled};f.stderr=${enabled};f.require=${enabled};f.bun=${enabled};f.websocket=${enabled};f.net=${enabled};f.stream=${enabled}}return 'ok'})()`;
 }
 
+// [SI-15] POLL_STATE fields: retained for tests/legacy, not consumed by running app
 /**
  * Runtime.evaluate expression that reads and drains the inspector state buffer.
  * Returns a compact object with current state + event buffer, then clears

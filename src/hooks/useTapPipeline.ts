@@ -20,6 +20,8 @@ interface TapPipelineOptions {
   categories: Set<string>; // empty = recording disabled (but core parse+stringify still run for state)
 }
 
+// [IN-10] Tap event pipeline: TCP -> classify -> dispatch -> disk
+// [SI-14] Push-based: events arrive via Tauri events from Rust TCP tap server
 /**
  * Manages the tap pipeline: install hooks via inspector WebSocket,
  * receive events via dedicated TCP channel (Tauri events),

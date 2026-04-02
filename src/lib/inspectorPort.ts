@@ -1,3 +1,5 @@
+// [IN-01] Inspector port allocation and registry
+// [IN-07] Port allocator verifies each candidate via check_port_available IPC (Rust TcpListener::bind)
 /**
  * Port allocator for BUN_INSPECT WebSocket connections.
  * Each session gets a unique port verified free at the OS level.

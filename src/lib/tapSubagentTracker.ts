@@ -10,6 +10,10 @@ export interface SubagentAction {
   updates?: Partial<Subagent>;
 }
 
+// [SI-09] Subagent data captured via inspector tap events (no JSONL watcher)
+// [IN-03] Subagent tracking: Agent tool_use -> queue desc -> first sidechain msg creates entry
+// [IN-05] Stale subagent detection removed -- push-based lifecycle via real-time events
+// [IN-06] Dead subagent purge removed -- idle subs remain visible until session ends
 /**
  * Tracks subagent lifecycles from tap events.
  * One instance per session. Emits SubagentActions for the store.
@@ -65,6 +69,7 @@ export class TapSubagentTracker {
         break;
 
       case "ConversationMessage": {
+        // [IN-04] Subagent messages: isSidechain + agentId routing, late msg gating
         if (!event.isSidechain || !event.agentId) break;
 
         const agentId = event.agentId;
@@ -164,6 +169,7 @@ export class TapSubagentTracker {
       }
 
       case "ApiTelemetry":
+        // [IN-16] Subagent costUsd tracking: accumulate costUSD from queryDepth>0 events
         if (event.queryDepth > 0 && this.lastActiveAgent) {
           const agentId = this.lastActiveAgent;
           const prev = this.subagentTokens.get(agentId) || 0;

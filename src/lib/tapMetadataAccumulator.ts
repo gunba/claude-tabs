@@ -13,6 +13,8 @@ function inferContextWindowSize(model: string | null): number {
   return 200_000;
 }
 
+// [SI-07] Tool actions, user prompts, assistant text captured inline via event processing
+// [IN-11] StatusBar enrichment: model, subscription, region, latency, rate limits, lines changed
 /**
  * Stateful accumulator: processes tap events and produces metadata diffs.
  * One instance per session. Fingerprint-based diffing — only returns changes.
@@ -84,6 +86,7 @@ export class TapMetadataAccumulator {
         const telKey = `${event.costUSD}:${event.inputTokens}:${event.outputTokens}:${event.cachedInputTokens}`;
         if (telKey === this.lastTelemetryKey) break;
         this.lastTelemetryKey = telKey;
+        // [IN-14] Model bleed fix: only update runtimeModel when queryDepth===0
         // Only accumulate main-agent tokens/cost (subagent tokens tracked by TapSubagentTracker)
         if (event.queryDepth === 0) {
           this.costUsd += event.costUSD;
@@ -114,6 +117,8 @@ export class TapMetadataAccumulator {
 
       case "ToolCallStart":
         this.currentToolName = event.toolName;
+        // [SI-06] choiceHint: AskUserQuestion sets choiceHint, cleared on UserInput/TurnEnd/PermissionApproved
+        // [IN-09] choiceHint detection via ToolCallStart with toolName=AskUserQuestion
         if (event.toolName === "AskUserQuestion") this.choiceHint = true;
         break;
 
@@ -321,6 +326,7 @@ export class TapMetadataAccumulator {
         break;
 
       case "StatusLineUpdate":
+        // [SI-25] Status line data capture: stored as grouped nullable statusLine object
         this.statusLine = {
           cliVersion: event.cliVersion,
           outputStyle: event.outputStyle,

@@ -2,12 +2,15 @@ import type { TapEvent } from "../types/tapEvents";
 import type { SessionState } from "../types/session";
 import { isSessionIdle } from "../types/session";
 
+// [SI-03] Pure state reducer: (SessionState, TapEvent) -> SessionState, event-driven only
+// [SI-08] State is NEVER inferred from timers or arbitrary delays -- only from real signals
+// [SI-19] No terminal buffer prompt fallback -- idle detection via TurnEnd/ConversationMessage events
 /**
  * Pure state reducer: (state, event) → state.
  * No polling, no terminal buffer fallback — event-driven only.
  */
 export function reduceTapEvent(state: SessionState, event: TapEvent): SessionState {
-  // Sticky guard: actionNeeded persists until cleared by user events.
+  // [SI-13] Sticky guard: actionNeeded persists until cleared by user events.
   // Bug 001: ToolCallStart(AskUserQuestion) sets actionNeeded, then ~4s later
   // ConversationMessage(assistant, tool_use) from the async stringify hook clobbers
   // it to toolUse. Tab shows "working" while actually waiting for user input.
@@ -32,7 +35,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
       case "UserInterruption":
         return "interrupted";
       case "PermissionPromptShown":
-        return "waitingPermission";
+        return "waitingPermission"; // [SI-04] Permission detection via PermissionPromptShown tap event
       case "ConversationMessage":
         if (event.messageType === "user" && !event.isSidechain) return "thinking";
         return "actionNeeded";
@@ -51,6 +54,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
       return "thinking";
 
     case "ToolCallStart":
+      // [SI-23] Plan detection: ToolCallStart(ExitPlanMode) -> actionNeeded
       if (event.toolName === "ExitPlanMode" || event.toolName === "AskUserQuestion") return "actionNeeded";
       return "thinking";
 
@@ -76,7 +80,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
       return "thinking";
 
     case "UserInterruption":
-      return "interrupted";
+      return "interrupted"; // [IN-13] UserInterruption -> interrupted (not idle)
 
     case "ConversationMessage":
       if (event.messageType === "user" && !event.isSidechain) return "thinking";

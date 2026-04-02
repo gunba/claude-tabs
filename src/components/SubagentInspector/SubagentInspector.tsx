@@ -15,6 +15,7 @@ function getToolPreview(text: string): string {
   return trimmed.length > 120 ? trimmed.slice(0, 120) + "\u2026" : trimmed;
 }
 
+// [IN-08] Tool block collapse: React.memo prevents re-render; getToolPreview extracts first line (120 char cap)
 // defaultExpanded only matters on mount (useState ignores it after); compare msg only
 const MessageBlock = memo(function MessageBlock({ msg, defaultExpanded }: { msg: SubagentMessage; defaultExpanded: boolean }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);

@@ -8,6 +8,8 @@ const MAX_INITIAL_RETRIES = 30;
 /** Backoff delays for reconnection after an established connection drops. */
 const RECONNECT_DELAYS = [2000, 4000, 8000];
 
+// [SI-02] Inspector connects immediately; retries 30x at 100ms, then backoff [2s, 4s, 8s]
+// [IN-12] WebSocket lifecycle only: connect, Runtime.evaluate, retry, disconnect. No state derivation.
 /**
  * Manages the BUN_INSPECT WebSocket connection lifecycle.
  * Used only for Runtime.evaluate (hook injection + category toggling).
