@@ -2,7 +2,7 @@
   "file": ".claude/rules\\inspector-hooks.md",
   "all_tags": [
     "IN-02",
-    "IN-03",
+    "IN-20",
     "SI-01",
     "SI-11",
     "SI-12",
@@ -15,7 +15,7 @@
   ],
   "unchecked": [
     "IN-02",
-    "IN-03",
+    "IN-20",
     "SI-01",
     "SI-11",
     "SI-12",
@@ -28,7 +28,7 @@
       "down": 0,
       "seen": 4
     },
-    "IN-03": {
+    "IN-20": {
       "up": 0,
       "down": 0,
       "seen": 4

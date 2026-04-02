@@ -36,5 +36,5 @@ paths:
 
 - [IN-02] INSTALL_TAPS JS expression in inspectorHooks.ts; wraps 15 function categories. TCP push-based delivery via Bun.connect to TAP_PORT. Status-line detection: stringify wrapper checks hook_event_name==='Status' and pushes flattened fields to dedicated 'status-line' category (bypasses 2000-char snap truncation). Also contains WebFetch domain bypass, HTTPS/fetch timeout patches, and wrapAfter() helper for post-call hooks.
   - Files: src/lib/inspectorHooks.ts
-- [IN-03] Active HTTP ping loop: after first Anthropic POST, INSTALL_TAPS captures auth headers (x-api-key/Authorization) and starts a dedicated GET /v1/models ping every 30s using prevFetch (unwrapped, avoids generating ApiFetch tap events). Authenticated requests bypass Cloudflare cache (cf-cache-status: DYNAMIC), so latency reflects true round-trip to Anthropic origin. Emits cat=ping entries to tap server.
+- [IN-20] Active HTTP ping loop: after first Anthropic POST, INSTALL_TAPS captures auth headers (x-api-key/Authorization) and starts a dedicated GET /v1/models ping every 30s using prevFetch (unwrapped, avoids generating ApiFetch tap events). Authenticated requests bypass Cloudflare cache (cf-cache-status: DYNAMIC), so latency reflects true round-trip to Anthropic origin. Emits cat=ping entries to tap server.
   - Files: src/lib/inspectorHooks.ts
