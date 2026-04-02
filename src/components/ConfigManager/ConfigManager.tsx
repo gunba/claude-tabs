@@ -31,6 +31,10 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "providers", label: "Providers", icon: <IconLightning size={11} /> },
 ];
 
+// [CM-11] 9-tab config modal (84vw, max 1500px, 78vh), store-controlled active tab
+// [CM-05] Tab routing: ThreePaneEditor (2 or 3 col), dedicated single-pane, or keep-alive
+// [CM-18] Inline SVG icons per tab — monochrome, cross-platform
+// [CM-20] Tab label "Claude" (not "CLAUDE.md")
 export function ConfigManager() {
   const sessions = useSessionStore((s) => s.sessions);
   const activeTabId = useSessionStore((s) => s.activeTabId);
@@ -78,6 +82,7 @@ export function ConfigManager() {
 
   return (
     <ModalOverlay onClose={onClose} className="config-modal">
+      {/* [CM-04] [CM-09] keystroke isolation + Escape/overlay close */}
       {/* Header with tabs */}
       <div className="config-header">
         <span className="config-title">Config</span>

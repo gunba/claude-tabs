@@ -244,7 +244,7 @@ pub fn run() {
                 if let Ok(mut s) = tap_state.lock() {
                     s.stop_all();
                 }
-                // Kill all active PTY process trees to prevent orphaned CLI processes
+                // [RC-11] Kill all active PTY process trees to prevent orphaned CLI processes
                 let active = app_handle.state::<ActivePids>();
                 let pids: Vec<u32> = active.0.lock().unwrap().drain().collect();
                 for pid in pids {

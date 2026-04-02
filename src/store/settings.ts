@@ -58,7 +58,7 @@ interface SettingsState {
   cliVersion: string | null;
   previousCliVersion: string | null;
   cliCapabilities: CliCapabilities;
-  binarySettingsSchema: BinarySettingField[];
+  binarySettingsSchema: BinarySettingField[]; // [CM-10] Cached in localStorage to avoid re-scanning on startup
   settingsJsonSchema: JsonSchema | null;
   knownEnvVars: EnvVarEntry[];
   slashCommands: SlashCommand[];

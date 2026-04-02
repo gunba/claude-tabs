@@ -214,7 +214,7 @@ function keyToLabel(key: string): string {
 }
 
 /**
- * Build settings schema from four sources (in priority order):
+ * [CM-03] Build settings schema from four sources (in priority order):
  * 1. JSON Schema from schemastore (most complete — all keys, types, descriptions)
  * 2. CLI --help options (reliable for flag-settable keys)
  * 3. Binary Zod schema scan (discovers settings-only keys)
@@ -347,7 +347,7 @@ export function getSchemaSourceInfo(
   };
 }
 
-/** Truncate a list to `max` items, appending "+N more" if needed */
+// [CM-25] Truncate a list to `max` items, appending "+N more" if needed
 export function summarizeList(items: string[], max = 3): string {
   const shown = items.slice(0, max);
   const rest = items.length - shown.length;

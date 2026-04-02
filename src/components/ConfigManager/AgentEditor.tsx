@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 
+// [CM-07] Agent editor: pills + editor, auto-select first, duplicate name validation, Ctrl+S save/create
 export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps) {
   const [agents, setAgents] = useState<AgentFile[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);

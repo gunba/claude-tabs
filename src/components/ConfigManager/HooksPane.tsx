@@ -57,6 +57,7 @@ const EMPTY_FORM: FormState = {
   statusMessage: "",
 };
 
+// [CM-15] Per-scope hooks CRUD. Scope is a prop, not a dropdown. Calls bumpHookChange() after save.
 export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
   const [hooksData, setHooksData] = useState<Record<string, Record<string, MatcherGroup[]>>>({});
   const [editing, setEditing] = useState<FlatHook | null>(null);

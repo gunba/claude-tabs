@@ -6,6 +6,7 @@ use crate::session::types::{Session, SessionConfig, SessionState};
 use crate::session::SessionManager;
 use crate::ActivePids;
 
+// [RC-01] Session CRUD — close_session does not persist; frontend owns persistence
 #[tauri::command]
 pub fn create_session(
     name: String,
@@ -87,6 +88,7 @@ pub fn persist_sessions(manager: State<'_, SessionManager>) -> Result<(), String
     persistence::save_sessions(&snapshots)
 }
 
+// [RC-08] Save/restore sessions — persist_sessions_json accepts frontend JSON directly
 /// Save session data directly from the frontend (includes live metadata).
 /// The Rust session manager doesn't receive metadata updates from the frontend,
 /// so this command lets the frontend persist its own authoritative data.
@@ -103,6 +105,7 @@ pub fn load_persisted_sessions(manager: State<'_, SessionManager>) -> Result<Vec
     Ok(manager.list_sessions())
 }
 
+// [RC-05] CLI discovery: detect_claude_cli / check_cli_version / get_cli_help
 #[tauri::command]
 pub async fn detect_claude_cli() -> Result<String, String> {
     // Run on a background thread so the WebView event loop isn't blocked
@@ -166,6 +169,7 @@ fn detect_claude_cli_sync() -> Result<String, String> {
     Err("Claude CLI not found. Please install it: npm install -g @anthropic-ai/claude-code".into())
 }
 
+// [RC-06] Scan ~/.claude/projects/ for resumable sessions (head+tail pass, chain detection)
 /// Scan ~/.claude/projects/ for past Claude conversation files.
 /// Returns a list of { id, path, directory, lastModified, sizeBytes } entries.
 /// Async to avoid blocking the WebView event loop on large project directories.
@@ -414,6 +418,7 @@ fn extract_message_text(parsed: &serde_json::Value) -> Option<String> {
     None
 }
 
+// [RC-17] Search session content: walks ~/.claude/projects/, skips >20MB, 50-result cap
 /// Search conversation content across all past sessions.
 /// Returns up to 50 matches with a snippet centered on the match.
 #[tauri::command]
@@ -632,6 +637,7 @@ pub fn write_ui_config(config_json: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to write ui-config.json: {}", e))
 }
 
+// [RC-16] 5-step binary resolution: .cmd shim -> direct -> sibling node_modules -> legacy versions -> npm root -g
 /// Read the Claude Code binary content for pattern scanning.
 /// Resolution chain: direct CLI path → .cmd shim → sibling node_modules → legacy versions dir → npm root -g.
 fn read_claude_binary(cli_path: Option<&str>) -> Result<String, String> {
@@ -748,6 +754,7 @@ fn read_claude_binary(cli_path: Option<&str>) -> Result<String, String> {
     Err("Could not locate Claude Code binary".into())
 }
 
+// [RC-09] Slash command discovery: builtin from binary scan, plugin from command directories
 /// Scan the Claude Code binary for built-in slash commands.
 /// Extracts from the command registration pattern: name:"cmd",description:"..."
 #[tauri::command]
@@ -992,6 +999,7 @@ fn discover_env_vars_sync(cli_path: Option<&str>) -> Result<Vec<DiscoveredEnvVar
     Ok(result)
 }
 
+// [CM-03] Fetch settings schema from schemastore.org (server-side to avoid CORS)
 /// Fetch the Claude Code JSON Schema from schemastore.org.
 /// Done server-side to avoid CORS restrictions in the WebView.
 #[tauri::command]
@@ -1111,6 +1119,7 @@ pub fn discover_plugin_commands(extra_dirs: Vec<String>) -> Result<Vec<serde_jso
     Ok(commands)
 }
 
+// [RC-07] Read first user message from session JSONL
 /// Read the first user message from a session's JSONL file.
 #[tauri::command]
 pub fn get_first_user_message(session_id: String, working_dir: String) -> Result<String, String> {
@@ -1153,6 +1162,7 @@ pub fn get_first_user_message(session_id: String, working_dir: String) -> Result
     Err("No user message found".into())
 }
 
+// [RC-02] SessionConfig -> CLI args (--resume, --session-id, --project-dir, etc.)
 #[tauri::command]
 pub fn build_claude_args(config: SessionConfig) -> Result<Vec<String>, String> {
     let mut args: Vec<String> = Vec::new();
@@ -1299,6 +1309,7 @@ pub fn build_claude_args(config: SessionConfig) -> Result<Vec<String>, String> {
 /// 1. Project .claude/settings.local.json
 /// 2. Project .claude/settings.json
 /// 3. User ~/.claude/settings.json
+// [RC-10] Hook configuration: discover_hooks / save_hooks (merges into existing settings)
 #[tauri::command]
 pub fn discover_hooks(working_dirs: Vec<String>) -> Result<serde_json::Value, String> {
     let home = dirs::home_dir().ok_or("No home dir")?;
@@ -1435,6 +1446,7 @@ fn scan_command_usage_sync() -> Result<std::collections::HashMap<String, u64>, S
 
 // ── Active PID registry (for cleanup on app close) ────────────────
 
+// [RC-11] PID registry: frontend registers PTY child PIDs; lib.rs kills on exit
 #[tauri::command]
 pub fn register_active_pid(pid: u32, pids: State<'_, ActivePids>) -> Result<(), String> {
     pids.0.lock().unwrap().insert(pid);
@@ -1698,6 +1710,7 @@ fn is_descendant_of(pid: u32, ancestor: u32, tree: &[(u32, u32)]) -> bool {
 
 // ── Kill orphan sessions (startup cleanup) ─────────────────────────
 
+// [RC-13] Kill orphans: ancestry check skips processes managed by other instances
 /// Kill orphaned processes holding any of the given session IDs.
 /// Checks for other running claude-tabs instances first — processes that
 /// are descendants of another instance are skipped (they're managed, not
@@ -1965,6 +1978,8 @@ fn resolve_config_path(scope: &str, working_dir: &str, file_type: &str) -> Resul
     }
 }
 
+// [RC-12] Config files read/write: settings JSON, CLAUDE.md (3 scopes), agent/skill files
+// [CM-08] JSON validated before write, parent dirs auto-created
 /// Read a config file. Returns content or empty string if not found.
 #[tauri::command]
 pub fn read_config_file(scope: String, working_dir: String, file_type: String) -> Result<String, String> {
@@ -2059,6 +2074,7 @@ pub fn list_skills(scope: String, working_dir: String) -> Result<Vec<serde_json:
     Ok(list_md_in_dir(&dir))
 }
 
+// [RC-14] WinRT toast with on_activated callback emitting notification-clicked event
 #[tauri::command]
 pub async fn send_notification(
     app: tauri::AppHandle,
@@ -2116,6 +2132,7 @@ pub fn shell_open(path: String) -> Result<(), String> {
 
 // ── API host resolution ──────────────────────────────────────────
 
+// [RC-20] Hardcoded DNS resolution of api.anthropic.com, 5s timeout, no user input
 /// Resolve api.anthropic.com to its IP address (Cloudflare edge).
 /// Hardcoded hostname — no user-supplied input. 5s timeout.
 #[tauri::command]
@@ -2211,6 +2228,7 @@ pub fn cleanup_tap_logs(max_age_hours: u64) -> Result<u32, String> {
     Ok(removed)
 }
 
+// [RC-19] git worktree remove --force (always forced — dialog is the confirmation)
 /// Remove a git worktree directory.
 #[tauri::command]
 pub async fn prune_worktree(worktree_path: String, project_root: String) -> Result<(), String> {
@@ -2233,7 +2251,7 @@ pub async fn prune_worktree(worktree_path: String, project_root: String) -> Resu
     }).await.map_err(|e| e.to_string())?
 }
 
-// ── Plugin management commands ───────────────────────────────────────────
+// [RC-18] Plugin management IPC: list/install/uninstall/enable/disable via run_claude_cli
 
 /// Run `claude plugin list --available --json` and return raw JSON output.
 #[tauri::command]

@@ -27,6 +27,8 @@ interface SettingsTabProps {
   onStatus: (msg: StatusMessage | null) => void;
 }
 
+// [CM-24] Unified Settings Reference: full-width panel, categorized grid, type badges, click-to-insert
+// [CM-06] Per-scope JSON settings editors with dirty tracking and Save per pane
 export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
   const [activeScope, setActiveScope] = useState<Scope>("user");
   const [scopeKeys, setScopeKeys] = useState<Record<Scope, Set<string>>>({

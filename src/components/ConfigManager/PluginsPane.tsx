@@ -99,7 +99,7 @@ function sortPlugins<T extends { pluginId?: string; name?: string; id?: string; 
   return sorted;
 }
 
-// ── Component ────────────────────────────────────────────────────────────
+// [CM-16] CLI-driven plugin manager: single-pane, installed cards with toggle, marketplace grid
 
 export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: PluginsTabProps) {
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);

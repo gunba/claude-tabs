@@ -13,6 +13,7 @@ import {
 } from "../../lib/settingsSchema";
 import type { SettingField } from "../../lib/settingsSchema";
 
+// [CM-13] JSON textarea with syntax highlighting overlay (pre behind transparent textarea)
 /** Tokenize JSON text and wrap tokens in colored spans. */
 export function highlightJson(text: string): string {
   // Escape HTML first
@@ -319,7 +320,7 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
 
   if (loading) return <div className="pane-hint">Loading...</div>;
 
-  // Validation segments for footer (rendered as separate spans for per-segment tooltips)
+  // [CM-25] Validation segments for footer (rendered as separate spans for per-segment tooltips)
   const hasErrors = !!parseError || typeMismatches.length > 0;
 
   const unknownLabel = unknownKeys.length > 0

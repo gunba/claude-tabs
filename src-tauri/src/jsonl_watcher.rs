@@ -78,6 +78,7 @@ pub fn session_has_conversation(session_id: String, working_dir: String) -> bool
     path.exists() && path.metadata().map(|m| m.len() > 100).unwrap_or(false)
 }
 
+// [RC-04] Detect plan-mode forks via sessionId in first events of other JSONL files
 /// Find a continuation JSONL file for a given session ID.
 /// When Claude enters plan mode or forks a conversation, the new JSONL file
 /// references the old sessionId in its first few events. This command scans
@@ -129,6 +130,7 @@ pub fn find_continuation_session(session_id: String, working_dir: String) -> Res
     Ok(None)
 }
 
+// [RC-03] Tail JSONL files, emit events (fast scan for resumed sessions)
 #[tauri::command]
 pub fn start_jsonl_watcher(
     app: AppHandle,

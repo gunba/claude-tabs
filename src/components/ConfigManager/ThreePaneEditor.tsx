@@ -46,6 +46,8 @@ export const SCOPES: { value: PaneComponentProps["scope"]; label: string; colorV
   { value: "project-local", label: "LOCAL", colorVar: "var(--accent-tertiary)", icon: <IconTerminal size={12} /> },
 ];
 
+// [CM-12] Optional scopes prop: 3 col (User/Project/Local) or 2 col (User/Project). Color coded: clay/blue/purple.
+// [CM-22] Scope headers show actual file paths via formatScopePath()
 export function ThreePaneEditor({ component: PaneComponent, projectDir, onStatus, tabId, scopes }: ThreePaneEditorProps) {
   const visibleScopes = scopes ? SCOPES.filter((s) => scopes.includes(s.value)) : SCOPES;
   return (

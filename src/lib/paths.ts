@@ -120,6 +120,7 @@ export function swapWithinGroup(
  * Format a scope path for display in the ConfigManager header.
  * Normalizes backslashes to forward slashes and abbreviates project paths.
  */
+// [CM-02] Normalize backslashes, abbreviate project-scope paths; user-scope (~/) unchanged
 export function formatScopePath(fullPath: string): string {
   const normalized = fullPath.replace(/\\/g, "/");
   // User-scope paths (~/...) pass through as-is

@@ -329,7 +329,7 @@ export function StatusBar() {
         >
           Debug
         </button>
-        <button
+        <button // [CM-17] Hooks button opens config manager directly to Hooks tab
           className="status-item status-hooks status-hooks-btn"
           onClick={() => setShowConfigManager("hooks")}
           title={hookCount > 0 ? `${hookCount} hooks active — click to manage` : "Hooks — click to manage"}
