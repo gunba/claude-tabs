@@ -29,10 +29,8 @@ interface SessionsState {
   hookChangeCounter: number;
   inspectorOffSessions: Set<string>;
   tapCategories: Map<string, Set<string>>; // sessionId -> enabled tap category names
-  ptyRecording: Map<string, string>; // sessionId -> file path
   trafficRecording: Map<string, string>; // sessionId -> file path
   processHealth: Map<string, { rss: number; heapUsed: number; uptime: number }>;
-  autoRecordOnStart: Set<string>; // session IDs pending auto-start PTY recording
   autoTrafficLogOnStart: Set<string>; // session IDs pending auto-start traffic logging
 
   // Actions
@@ -54,12 +52,8 @@ interface SessionsState {
   setInspectorOff: (id: string, off: boolean) => void;
   startAllTaps: (id: string) => void;
   stopAllTaps: (id: string) => void;
-  startPtyRecording: (id: string, path: string) => void;
-  stopPtyRecording: (id: string) => void;
   startTrafficLog: (id: string, path: string) => void;
   stopTrafficLog: (id: string) => void;
-  setAutoRecordOnStart: (id: string) => void;
-  clearAutoRecordOnStart: (id: string) => void;
   setAutoTrafficLogOnStart: (id: string) => void;
   clearAutoTrafficLogOnStart: (id: string) => void;
   addSubagent: (sessionId: string, subagent: Subagent) => void;
@@ -84,10 +78,8 @@ export const useSessionStore = create<SessionsState>((set) => ({
   hookChangeCounter: 0,
   inspectorOffSessions: new Set(),
   tapCategories: new Map(),
-  ptyRecording: new Map(),
   trafficRecording: new Map(),
   processHealth: new Map(),
-  autoRecordOnStart: new Set(),
   autoTrafficLogOnStart: new Set(),
 
   init: async () => {
@@ -212,8 +204,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
       inspectorOffSessions.delete(id);
       const tapCategories = new Map(s.tapCategories);
       tapCategories.delete(id);
-      const ptyRecording = new Map(s.ptyRecording);
-      ptyRecording.delete(id);
       const trafficRecording = new Map(s.trafficRecording);
       if (trafficRecording.has(id)) {
         trafficRecording.delete(id);
@@ -221,11 +211,9 @@ export const useSessionStore = create<SessionsState>((set) => ({
       }
       const processHealth = new Map(s.processHealth);
       processHealth.delete(id);
-      const autoRecordOnStart = new Set(s.autoRecordOnStart);
-      autoRecordOnStart.delete(id);
       const autoTrafficLogOnStart = new Set(s.autoTrafficLogOnStart);
       autoTrafficLogOnStart.delete(id);
-      return { sessions, activeTabId, subagents, skillInvocations, commandHistory, inspectorOffSessions, tapCategories, ptyRecording, trafficRecording, processHealth, autoRecordOnStart, autoTrafficLogOnStart };
+      return { sessions, activeTabId, subagents, skillInvocations, commandHistory, inspectorOffSessions, tapCategories, trafficRecording, processHealth, autoTrafficLogOnStart };
     });
     // Persist immediately so the removal is captured even if the app closes
     useSessionStore.getState().persist();
@@ -354,22 +342,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
     });
   },
 
-  startPtyRecording: (id, path) => {
-    set((s) => {
-      const next = new Map(s.ptyRecording);
-      next.set(id, path);
-      return { ptyRecording: next };
-    });
-  },
-
-  stopPtyRecording: (id) => {
-    set((s) => {
-      const next = new Map(s.ptyRecording);
-      next.delete(id);
-      return { ptyRecording: next };
-    });
-  },
-
   startTrafficLog: (id, path) => {
     set((s) => {
       const next = new Map(s.trafficRecording);
@@ -383,22 +355,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const next = new Map(s.trafficRecording);
       next.delete(id);
       return { trafficRecording: next };
-    });
-  },
-
-  setAutoRecordOnStart: (id) => {
-    set((s) => {
-      const next = new Set(s.autoRecordOnStart);
-      next.add(id);
-      return { autoRecordOnStart: next };
-    });
-  },
-
-  clearAutoRecordOnStart: (id) => {
-    set((s) => {
-      const next = new Set(s.autoRecordOnStart);
-      next.delete(id);
-      return { autoRecordOnStart: next };
     });
   },
 

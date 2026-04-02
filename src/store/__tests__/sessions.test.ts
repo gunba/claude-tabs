@@ -54,6 +54,7 @@ function makeSession(id: string, name = "test"): Session {
     metadata: {
       costUsd: 0,
       contextPercent: 0,
+      contextDebug: null,
       durationSecs: 0,
       currentAction: null,
       nodeSummary: null,

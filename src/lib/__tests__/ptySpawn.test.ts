@@ -50,11 +50,11 @@ function createInvokeRouter() {
       return Promise.resolve(undefined) as ReturnType<typeof invoke>;
     }
     // spawn returns a pid
-    if (cmd === "plugin:pty|spawn") {
+    if (cmd === "pty_spawn") {
       return Promise.resolve(42) as ReturnType<typeof invoke>;
     }
     // get_child_pid returns an OS pid
-    if (cmd === "plugin:pty|get_child_pid") {
+    if (cmd === "pty_get_child_pid") {
       return Promise.resolve(1000) as ReturnType<typeof invoke>;
     }
 
@@ -79,13 +79,13 @@ describe("spawnPty — parallel exit waiter", () => {
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);
 
-    // At this point, the read loop has called invoke("plugin:pty|read") — it's pending.
-    // The parallel waiter has called invoke("plugin:pty|exitstatus") — also pending.
+    // At this point, the read loop has called invoke("pty_read") — it's pending.
+    // The parallel waiter has called invoke("pty_exitstatus") — also pending.
     // There are 2 exitstatus calls: one from readLoop's post-loop cleanup path, and one
     // from the parallel waiter. But the readLoop one only fires after the loop breaks.
 
     // Resolve the parallel exitstatus waiter first (it was queued first in deferreds)
-    const exitDeferreds = router.deferreds.get("plugin:pty|exitstatus");
+    const exitDeferreds = router.deferreds.get("pty_exitstatus");
     expect(exitDeferreds).toBeDefined();
     expect(exitDeferreds!.length).toBeGreaterThanOrEqual(1);
     exitDeferreds![0].resolve(0);
@@ -97,14 +97,14 @@ describe("spawnPty — parallel exit waiter", () => {
     expect(exitSpy).toHaveBeenCalledWith({ exitCode: 0 });
 
     // Now let the read loop error out (simulating EOF after the parallel waiter fired)
-    const readDeferreds = router.deferreds.get("plugin:pty|read");
+    const readDeferreds = router.deferreds.get("pty_read");
     expect(readDeferreds).toBeDefined();
     readDeferreds![0].reject(new Error("EOF"));
 
     // Flush microtasks — the read loop's post-exit path should NOT fire again
     await vi.waitFor(() => {
       // Resolve the readLoop's exitstatus call if it appears
-      const allExitDeferreds = router.deferreds.get("plugin:pty|exitstatus");
+      const allExitDeferreds = router.deferreds.get("pty_exitstatus");
       if (allExitDeferreds && allExitDeferreds.length > 1) {
         allExitDeferreds[1].resolve(0);
       }
@@ -122,19 +122,19 @@ describe("spawnPty — parallel exit waiter", () => {
     pty.onExit(exitSpy);
 
     // Break the read loop first by rejecting the read
-    const readDeferreds = router.deferreds.get("plugin:pty|read");
+    const readDeferreds = router.deferreds.get("pty_read");
     expect(readDeferreds).toBeDefined();
     readDeferreds![0].reject(new Error("EOF"));
 
     // The read loop will now call exitstatus. Wait for it to appear in deferreds.
     await vi.waitFor(() => {
-      const exitDeferreds = router.deferreds.get("plugin:pty|exitstatus");
+      const exitDeferreds = router.deferreds.get("pty_exitstatus");
       // We need at least 2: one from parallel waiter, one from readLoop post-break
       expect(exitDeferreds).toBeDefined();
       expect(exitDeferreds!.length).toBeGreaterThanOrEqual(2);
     });
 
-    const exitDeferreds = router.deferreds.get("plugin:pty|exitstatus")!;
+    const exitDeferreds = router.deferreds.get("pty_exitstatus")!;
 
     // Resolve the readLoop's exitstatus call (the second one queued)
     exitDeferreds[1].resolve(130);
@@ -162,7 +162,7 @@ describe("spawnPty — parallel exit waiter", () => {
     pty.onData(dataSpy);
 
     // Resolve the parallel exitstatus waiter
-    const exitDeferreds = router.deferreds.get("plugin:pty|exitstatus");
+    const exitDeferreds = router.deferreds.get("pty_exitstatus");
     expect(exitDeferreds).toBeDefined();
     exitDeferreds![0].resolve(0);
 
@@ -171,7 +171,7 @@ describe("spawnPty — parallel exit waiter", () => {
 
     // Now resolve the pending read — even though it returns data,
     // the read loop should NOT process it because aborted is true
-    const readDeferreds = router.deferreds.get("plugin:pty|read");
+    const readDeferreds = router.deferreds.get("pty_read");
     expect(readDeferreds).toBeDefined();
     readDeferreds![0].resolve([72, 105]); // "Hi"
 
@@ -189,7 +189,7 @@ describe("spawnPty — parallel exit waiter", () => {
     pty.onExit(exitSpy);
 
     // Reject the parallel exitstatus waiter (simulates already-cleaned-up process)
-    const exitDeferreds = router.deferreds.get("plugin:pty|exitstatus");
+    const exitDeferreds = router.deferreds.get("pty_exitstatus");
     expect(exitDeferreds).toBeDefined();
     exitDeferreds![0].reject(new Error("process already cleaned up"));
 
@@ -200,15 +200,15 @@ describe("spawnPty — parallel exit waiter", () => {
     expect(exitSpy).not.toHaveBeenCalled();
 
     // Now let the read loop handle exit normally
-    const readDeferreds = router.deferreds.get("plugin:pty|read");
+    const readDeferreds = router.deferreds.get("pty_read");
     readDeferreds![0].reject(new Error("EOF"));
 
     await vi.waitFor(() => {
-      const allExitDeferreds = router.deferreds.get("plugin:pty|exitstatus");
+      const allExitDeferreds = router.deferreds.get("pty_exitstatus");
       expect(allExitDeferreds!.length).toBeGreaterThanOrEqual(2);
     });
 
-    router.deferreds.get("plugin:pty|exitstatus")![1].resolve(1);
+    router.deferreds.get("pty_exitstatus")![1].resolve(1);
 
     await vi.waitFor(() => {
       expect(exitSpy).toHaveBeenCalledTimes(1);

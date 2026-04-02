@@ -309,6 +309,7 @@ function makeSession(overrides: {
     metadata: {
       costUsd: 0,
       contextPercent: 0,
+      contextDebug: null,
       durationSecs: 0,
       currentAction: null,
       nodeSummary: null,

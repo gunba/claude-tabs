@@ -4,26 +4,26 @@ import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
 import { dlog } from "../../lib/debugLog";
 import type { CliOption, CliCommand } from "../../store/settings";
-import { dirToTabName, computeHeatLevel, heatClassName } from "../../lib/claude";
+import { dirToTabName, computeHeatLevel, heatClassName, MODEL_FAMILIES, extractModelFamily, isModel1m, resolveModelId } from "../../lib/claude";
 import {
   type SessionConfig,
   type PermissionMode,
   DEFAULT_SESSION_CONFIG,
 } from "../../types/session";
-import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning } from "../Icons/Icons";
+import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, IconSkull, IconBulldozer, IconAntenna, IconTraffic } from "../Icons/Icons";
+import { PillGroup } from "../PillGroup/PillGroup";
 import "./SessionLauncher.css";
 
 // ── Option definitions ──────────────────────────────────────────────
 
-const MODEL_OPTIONS: { value: string | null; label: string }[] = [
-  { value: null, label: "Default" },
-  { value: "opus", label: "Opus" },
-  { value: "sonnet", label: "Sonnet" },
-  { value: "haiku", label: "Haiku" },
-];
+const MODEL_PILLS = MODEL_FAMILIES.map(f => ({ value: f.keyword, label: f.label }));
 
-const PERM_OPTIONS: { value: PermissionMode; label: string }[] = [
-  { value: "default", label: "Default" },
+const MODEL_COLOR_MAP: Record<string, string> = Object.fromEntries(
+  MODEL_FAMILIES.map(f => [f.keyword, f.color])
+);
+const modelColorFn = (value: string) => MODEL_COLOR_MAP[value] ?? "var(--accent)";
+
+const PERM_PILLS: Array<{ value: PermissionMode; label: string }> = [
   { value: "auto", label: "Auto" },
   { value: "acceptEdits", label: "Accept" },
   { value: "planMode", label: "Plan" },
@@ -31,12 +31,16 @@ const PERM_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: "dontAsk", label: "Don't Ask" },
 ];
 
-const EFFORT_OPTIONS: { value: string | null; label: string }[] = [
-  { value: null, label: "Default" },
+const EFFORT_PILLS: Array<{ value: string; label: string }> = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Med" },
   { value: "high", label: "High" },
   { value: "max", label: "Max" },
+];
+
+const CONTEXT_PILLS: Array<{ value: "200k" | "1m"; label: string }> = [
+  { value: "200k", label: "200k" },
+  { value: "1m", label: "1M" },
 ];
 
 // Flags with dedicated UI controls — exclude from the options grid
@@ -66,6 +70,8 @@ export function SessionLauncher() {
   const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
+  const modelRegistry = useSettingsStore((s) => s.modelRegistry);
+  const registryEntries = useMemo(() => Object.values(modelRegistry), [modelRegistry]);
 
   // When resuming, use session-specific settings from lastConfig (set by handleConfigure);
   // otherwise savedDefaults (explicit "Save defaults") takes priority over lastConfig
@@ -85,8 +91,23 @@ export function SessionLauncher() {
   const [selectedPromptId, setSelectedPromptId] = useState<string>("");
   const [promptMode, setPromptMode] = useState<"replace" | "append">("replace");
   const [autoTap, setAutoTap] = useState(false);
-  const [autoRecord, setAutoRecord] = useState(false);
   const [autoTraffic, setAutoTraffic] = useState(false);
+
+  // Derive model family + context variant from config.model for the pill UI.
+  // e.g. "claude-opus-4-6[1m]" → family="opus", variant="1m"
+  // e.g. "sonnet" → family="sonnet", variant="200k"
+  // e.g. null → family=null, variant="200k"
+  const selectedModelFamily = extractModelFamily(config.model);
+  const selectedContextVariant: "200k" | "1m" = isModel1m(config.model) ? "1m" : "200k";
+
+  // Which families have confirmed 1M entries in the registry?
+  const families1mAvailable = useMemo(() => {
+    const set = new Set<string>();
+    for (const entry of registryEntries) {
+      if (entry.modelId.includes("[1m]")) set.add(entry.family);
+    }
+    return set;
+  }, [registryEntries]);
 
   // Unified command line: editable string that starts from config selections.
   // User can edit freely; reset button regenerates from current dropdowns.
@@ -133,6 +154,33 @@ export function SessionLauncher() {
     },
     []
   );
+
+  const handleModelFamilyChange = useCallback((family: string | null) => {
+    if (!family) {
+      updateConfig("model", null);
+    } else {
+      // When switching family, apply current context variant preference
+      const currentVariant = isModel1m(config.model) ? "1m" : "200k";
+      const entries = Object.values(useSettingsStore.getState().modelRegistry);
+      updateConfig("model", resolveModelId(family, currentVariant, entries));
+    }
+  }, [config.model, updateConfig]);
+
+  const handleContextVariantChange = useCallback((variant: "200k" | "1m" | null) => {
+    const family = extractModelFamily(config.model);
+    if (!family) return;
+    const v = variant ?? "200k";
+    const entries = Object.values(useSettingsStore.getState().modelRegistry);
+    updateConfig("model", resolveModelId(family, v, entries));
+  }, [config.model, updateConfig]);
+
+  const handlePermChange = useCallback((value: PermissionMode | null) => {
+    updateConfig("permissionMode", value ?? "default");
+  }, [updateConfig]);
+
+  const handleEffortChange = useCallback((value: string | null) => {
+    updateConfig("effort", value);
+  }, [updateConfig]);
 
   const filteredCliOptions = useMemo((): CliOption[] => {
     return (cliCapabilities.options || [])
@@ -238,13 +286,12 @@ export function SessionLauncher() {
       const session = await createSession(name, finalConfig);
       // Auto-start recording flags (consumed by TerminalPanel on spawn/connect)
       if (autoTap) useSessionStore.getState().startAllTaps(session.id);
-      if (autoRecord) useSessionStore.getState().setAutoRecordOnStart(session.id);
       if (autoTraffic) useSessionStore.getState().setAutoTrafficLogOnStart(session.id);
       setShowLauncher(false);
     } catch (err) {
       dlog("launcher", null, `create session failed: ${err}`, "ERR");
     }
-  }, [launchConfig, isNonSessionCommand, commandTokens, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig, autoTap, autoRecord]);
+  }, [launchConfig, isNonSessionCommand, commandTokens, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig, autoTap]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -389,58 +436,59 @@ export function SessionLauncher() {
           </div>
         )}
 
-        {/* Compact selects row: Model, Permissions, Effort, toggle pills */}
-        <div className={`launcher-selects${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
-          <label className="launcher-select-group">
-            <span className="launcher-select-icon" title="Model"><IconModelDiamond size={13} /></span>
-            <select
-              className="launcher-select"
-              value={config.model ?? ""}
-              onChange={(e) => updateConfig("model", e.target.value || null)}
+        {/* Pill selectors — inline, wrapping */}
+        <div className={`launcher-pills-section${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
+          <span className="launcher-pill-icon" title="Model"><IconModelDiamond size={13} /></span>
+          <PillGroup
+            options={MODEL_PILLS}
+            selected={selectedModelFamily}
+            onChange={handleModelFamilyChange}
+            colorFn={modelColorFn}
+            disabled={isNonSessionCommand}
+          />
+          {selectedModelFamily && families1mAvailable.has(selectedModelFamily) && (
+            <PillGroup
+              options={CONTEXT_PILLS}
+              selected={selectedContextVariant}
+              onChange={handleContextVariantChange}
+              className="launcher-context-pills"
               disabled={isNonSessionCommand}
-            >
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={String(opt.value)} value={opt.value ?? ""}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="launcher-select-group">
-            <span className="launcher-select-icon" title="Permissions"><IconLock size={13} /></span>
-            <select
-              className="launcher-select"
-              value={config.permissionMode}
-              onChange={(e) => updateConfig("permissionMode", e.target.value as PermissionMode)}
-              disabled={isNonSessionCommand}
-            >
-              {PERM_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="launcher-select-group">
-            <span className="launcher-select-icon" title="Effort"><IconLightning size={13} /></span>
-            <select
-              className="launcher-select"
-              value={config.effort ?? ""}
-              onChange={(e) => updateConfig("effort", e.target.value || null)}
-              disabled={isNonSessionCommand}
-            >
-              {EFFORT_OPTIONS.map((opt) => (
-                <option key={String(opt.value)} value={opt.value ?? ""}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
+            />
+          )}
+          <span className="launcher-pill-icon" title="Permissions"><IconLock size={13} /></span>
+          <PillGroup
+            options={PERM_PILLS}
+            selected={config.permissionMode === "default" ? null : config.permissionMode}
+            onChange={handlePermChange}
+            disabled={isNonSessionCommand}
+          />
+          <span className="launcher-pill-icon" title="Effort"><IconLightning size={13} /></span>
+          <PillGroup
+            options={EFFORT_PILLS}
+            selected={config.effort}
+            onChange={handleEffortChange}
+            disabled={isNonSessionCommand}
+          />
+          <button
+            className={`launcher-toggle-pill${config.dangerouslySkipPermissions ? " launcher-toggle-pill-on launcher-toggle-skip" : ""}`}
+            onClick={() => updateConfig("dangerouslySkipPermissions", !config.dangerouslySkipPermissions)}
+            aria-pressed={config.dangerouslySkipPermissions}
+            title="Skip all permission prompts (--dangerously-skip-permissions)"
+            type="button"
+          >
+            <IconSkull size={12} /> Skip
+          </button>
+          <button
+            className={`launcher-toggle-pill${config.projectDir ? " launcher-toggle-pill-on launcher-toggle-sandbox" : ""}`}
+            onClick={() => updateConfig("projectDir", !config.projectDir)}
+            aria-pressed={config.projectDir}
+            title="Restrict Claude to the working directory (--project-dir)"
+            type="button"
+          >
+            <IconBulldozer size={12} /> Sandbox
+          </button>
           {savedPrompts.length > 0 && (
-            <span className="launcher-prompt-group">
+            <>
               <select
                 className="launcher-select launcher-prompt-select"
                 value={selectedPromptId}
@@ -463,12 +511,11 @@ export function SessionLauncher() {
                   {promptMode === "replace" ? "Replace" : "Append"}
                 </button>
               )}
-            </span>
+            </>
           )}
-
         </div>
 
-        {/* CLI Options header (always shown) with toggle pills and save defaults */}
+        {/* CLI Options header (always shown) with TAP/TFC and save defaults */}
         <div className="launcher-section">
           <div className="launcher-cli-header">
             <div className="launcher-cli-header-left">
@@ -481,24 +528,8 @@ export function SessionLauncher() {
                   {showCliOptions ? "\u25BE" : "\u25B8"} CLI Options
                 </button>
               ) : <span />}
-              <button
-                className={`launcher-toggle-pill${config.projectDir ? " launcher-toggle-pill-on launcher-toggle-sandbox" : ""}`}
-                onClick={() => updateConfig("projectDir", !config.projectDir)}
-                aria-pressed={config.projectDir}
-                title="Restrict Claude to the working directory (--project-dir)"
-                type="button"
-              >
-                Sandbox
-              </button>
-              <button
-                className={`launcher-toggle-pill${config.dangerouslySkipPermissions ? " launcher-toggle-pill-on launcher-toggle-skip" : ""}`}
-                onClick={() => updateConfig("dangerouslySkipPermissions", !config.dangerouslySkipPermissions)}
-                aria-pressed={config.dangerouslySkipPermissions}
-                title="Skip all permission prompts (--dangerously-skip-permissions)"
-                type="button"
-              >
-                Skip
-              </button>
+            </div>
+            <div className="launcher-cli-header-right">
               <button
                 className={`launcher-toggle-pill${autoTap ? " launcher-toggle-pill-on launcher-toggle-tap" : ""}`}
                 onClick={() => setAutoTap((v) => !v)}
@@ -507,17 +538,7 @@ export function SessionLauncher() {
                 type="button"
                 disabled={isNonSessionCommand}
               >
-                TAP
-              </button>
-              <button
-                className={`launcher-toggle-pill${autoRecord ? " launcher-toggle-pill-on launcher-toggle-rec" : ""}`}
-                onClick={() => setAutoRecord((v) => !v)}
-                aria-pressed={autoRecord}
-                title="Auto-start terminal recording from first byte"
-                type="button"
-                disabled={isNonSessionCommand}
-              >
-                REC
+                <IconAntenna size={12} /> TAP
               </button>
               <button
                 className={`launcher-toggle-pill${autoTraffic ? " launcher-toggle-pill-on launcher-toggle-tfc" : ""}`}
@@ -527,17 +548,17 @@ export function SessionLauncher() {
                 type="button"
                 disabled={isNonSessionCommand}
               >
-                TFC
+                <IconTraffic size={12} /> TFC
+              </button>
+              <button
+                className={`launcher-save-defaults${defaultsSaved ? " launcher-save-defaults-saved" : ""}`}
+                onClick={() => { setSavedDefaults(launchConfig); setDefaultsSaved(true); setTimeout(() => setDefaultsSaved(false), 2000); }}
+                disabled={isNonSessionCommand}
+                type="button"
+              >
+                {defaultsSaved ? "Saved" : "Save defaults"}
               </button>
             </div>
-            <button
-              className={`launcher-save-defaults${defaultsSaved ? " launcher-save-defaults-saved" : ""}`}
-              onClick={() => { setSavedDefaults(launchConfig); setDefaultsSaved(true); setTimeout(() => setDefaultsSaved(false), 2000); }}
-              disabled={isNonSessionCommand}
-              type="button"
-            >
-              {defaultsSaved ? "Saved" : "Save defaults"}
-            </button>
           </div>
           {showCliOptions && !isNonSessionCommand && filteredCliOptions.length > 0 && (
             <div className="launcher-cli-grid">

@@ -6,6 +6,7 @@ import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG } from "../types/sessio
 import { normalizePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
 import type { EnvVarEntry } from "../lib/envVars";
+import type { ModelRegistryEntry } from "../lib/claude";
 import { useSessionStore } from "./sessions";
 
 function syncRulesToProxy() {
@@ -78,6 +79,7 @@ interface SettingsState {
   proxyPort: number | null;
   apiIp: string | null;
   systemPromptRules: SystemPromptRule[];
+  modelRegistry: Record<string, ModelRegistryEntry>;
 
   // Actions
   addRecentDir: (dir: string) => void;
@@ -115,6 +117,7 @@ interface SettingsState {
   updateSystemPromptRule: (id: string, updates: Partial<Omit<SystemPromptRule, "id">>) => void;
   removeSystemPromptRule: (id: string) => void;
   reorderSystemPromptRules: (id: string, direction: -1 | 1) => void;
+  updateModelRegistry: (entry: ModelRegistryEntry) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -151,6 +154,7 @@ export const useSettingsStore = create<SettingsState>()(
       proxyPort: null,
       apiIp: null,
       systemPromptRules: [],
+      modelRegistry: {},
 
       addRecentDir: (dir) =>
         set((s) => {
@@ -400,10 +404,24 @@ export const useSettingsStore = create<SettingsState>()(
         });
         syncRulesToProxy();
       },
+      updateModelRegistry: (entry) => set((s) => {
+        const MAX_ENTRIES = 50;
+        const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const updated = { ...s.modelRegistry, [entry.modelId]: { ...entry, lastSeenAt: now } };
+        // Prune entries older than 90 days, cap at 50
+        const entries = Object.values(updated)
+          .filter(e => now - e.lastSeenAt < NINETY_DAYS)
+          .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+          .slice(0, MAX_ENTRIES);
+        const pruned: Record<string, ModelRegistryEntry> = {};
+        for (const e of entries) pruned[e.modelId] = e;
+        return { modelRegistry: pruned };
+      }),
     }),
     {
       name: "claude-tabs-settings",
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -428,6 +446,10 @@ export const useSettingsStore = create<SettingsState>()(
             pc.routes = routes;
           }
         }
+        if (version < 2) {
+          // Add model registry
+          if (!state.modelRegistry) state.modelRegistry = {};
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -450,6 +472,7 @@ export const useSettingsStore = create<SettingsState>()(
         savedPrompts: state.savedPrompts,
         providerConfig: state.providerConfig,
         systemPromptRules: state.systemPromptRules,
+        modelRegistry: state.modelRegistry,
       }),
     }
   )

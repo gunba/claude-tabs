@@ -4,6 +4,8 @@
 
 Tauri v2 desktop app managing multiple Claude Code CLI sessions in tabs. Rust backend + React/TypeScript frontend. No API key — uses the Claude Code CLI directly.
 
+The Claude Code source itself (4/1/2026) is available here [C:\Users\jorda\PycharmProjects\claude_tabs] if you need to determine the internal behaviour of the embedded application.
+
 # Workflow
 
 The user launches with `claude -w` for isolated worktrees. A SessionStart hook automatically sets up shared build dependencies. Do NOT call EnterWorktree — the user has already done this.
@@ -79,7 +81,7 @@ Do NOT use TaskOutput to poll. Wait for task-notifications.
   ├── store/sessions.ts                    # Zustand: sessions, active tab, subagents, command history, autoRecordOnStart
   ├── store/settings.ts                    # Zustand: preferences, CLI info (persisted to localStorage)
   ├── hooks/
-  │   ├── useTerminal.ts                   # xterm.js lifecycle, direct writes (DEC 2026 sync output), fixed 1M scrollback, font selection
+  │   ├── useTerminal.ts                   # xterm.js lifecycle, direct writes (DEC 2026 sync output), fixed 1M scrollback
   │   ├── usePty.ts                        # PTY spawn wrapper (uses lib/ptyProcess)
   │   ├── useInspectorConnection.ts        # BUN_INSPECT WebSocket lifecycle (connect, retry, disconnect)
   │   ├── useTapPipeline.ts                # Tap event receiver: TCP tap-entry events → classify → dispatch → disk

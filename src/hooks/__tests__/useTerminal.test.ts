@@ -17,7 +17,7 @@ vi.mock("../sessions", () => ({
 
 // Mock theme (used by useTerminal)
 vi.mock("../../lib/theme", () => ({
-  getXtermTheme: () => ({}),
+  getTerminalTheme: () => ({}),
 }));
 
 // Mock debugLog
@@ -28,7 +28,7 @@ vi.mock("../../lib/debugLog", () => ({
 import { TERMINAL_FONT_FAMILY } from "../useTerminal";
 
 describe("TERMINAL_FONT_FAMILY", () => {
-  it("is Pragmasevka", () => {
-    expect(TERMINAL_FONT_FAMILY).toBe("'Pragmasevka', monospace");
+  it("is the default monospace stack", () => {
+    expect(TERMINAL_FONT_FAMILY).toBe("'Pragmasevka', 'Roboto Mono', monospace");
   });
 });

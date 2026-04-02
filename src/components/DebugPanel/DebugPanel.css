@@ -160,6 +160,7 @@
   line-height: 1.6;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) transparent;
+  cursor: text;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -175,6 +176,8 @@
   color: var(--text-secondary);
   border-left: 3px solid transparent;
   padding-left: 6px;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .debug-line-warn {
@@ -191,6 +194,12 @@
 }
 
 /* Inline timestamp and module tag */
+.debug-ts,
+.debug-mod {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .debug-ts {
   color: var(--text-muted);
   margin-right: 4px;

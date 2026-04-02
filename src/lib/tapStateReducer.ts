@@ -4,59 +4,59 @@ import { isSessionIdle } from "../types/session";
 
 /**
  * Pure state reducer: (state, event) → state.
- * Replaces deriveStateFromPoll() in useInspectorState.ts.
  * No polling, no terminal buffer fallback — event-driven only.
  */
 export function reduceTapEvent(state: SessionState, event: TapEvent): SessionState {
-  // actionNeeded is sticky — only explicit user actions can clear it.
-  // Reachable via ToolCallStart(ExitPlanMode) or ToolCallStart(AskUserQuestion).
+  // Sticky guard: actionNeeded persists until cleared by user events.
+  // Bug 001: ToolCallStart(AskUserQuestion) sets actionNeeded, then ~4s later
+  // ConversationMessage(assistant, tool_use) from the async stringify hook clobbers
+  // it to toolUse. Tab shows "working" while actually waiting for user input.
+  // See sequence replay test "001: AskUserQuestion actionNeeded survives async ConversationMessage".
   if (state === "actionNeeded") {
     switch (event.kind) {
       case "UserInput":
       case "SlashCommand":
-        return "thinking";          // user approved/interacted
+        return "thinking";
+      case "ToolResult":
+        // Bug 003 primary: ToolResult(AskUserQuestion/ExitPlanMode) fires when
+        // the user answers. Subagents cannot call these tools, so no collision risk.
+        if (event.toolName === "AskUserQuestion" || event.toolName === "ExitPlanMode")
+          return "thinking";
+        return "actionNeeded";
+      case "TurnStart":
+        // Bug 003 fallback: no ConversationMessage(user) or ToolResult fires for
+        // AskUserQuestion answers in some CLI versions. TurnStart is the only
+        // guaranteed event when the agent continues. Risk: background subagent
+        // TurnStart (no agentId field) prematurely clears — cosmetic, not functional.
+        return "thinking";
       case "UserInterruption":
-        return "interrupted";       // user hit escape
+        return "interrupted";
       case "PermissionPromptShown":
-        return "waitingPermission"; // edge case: plan triggers permission
-      case "IdlePrompt":
-        return "idle";              // task completed without explicit user message
+        return "waitingPermission";
       case "ConversationMessage":
-        // Plan approval injects a tool_result ConversationMessage(user) — no UserInput fires.
         if (event.messageType === "user" && !event.isSidechain) return "thinking";
         return "actionNeeded";
+      case "IdlePrompt":
+        return "idle";
       default:
-        return "actionNeeded";      // all other events preserve it
+        return "actionNeeded";
     }
   }
 
   switch (event.kind) {
+    // New turn or streaming content = Claude is actively working
     case "TurnStart":
-      return "thinking";
-
     case "ThinkingStart":
-      return "thinking";
-
     case "TextStart":
-      return "thinking"; // still streaming
+      return "thinking";
 
     case "ToolCallStart":
-      // Still streaming tool input — stay in thinking until turn ends
       if (event.toolName === "ExitPlanMode" || event.toolName === "AskUserQuestion") return "actionNeeded";
       return "thinking";
 
     case "TurnEnd":
-      if (event.stopReason === "tool_use") {
-        return "toolUse";
-      }
-      // Don't transition to idle from SSE TurnEnd — SSE events have no agentId,
-      // so subagent TurnEnd(end_turn) leaks through and causes false idle flashes.
-      // Idle detection now comes from ConversationMessage(assistant, end_turn, !isSidechain)
-      // which has isSidechain info and correctly filters subagent events.
-      return state;
-
-    case "MessageStop":
-      // Confirms message is done; state already set by TurnEnd
+      if (event.stopReason === "tool_use") return "toolUse";
+      if (event.stopReason === "end_turn") return "idle";
       return state;
 
     case "PermissionPromptShown":
@@ -71,66 +71,22 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "IdlePrompt":
       return "idle";
 
+    case "UserInput":
+    case "SlashCommand":
+      return "thinking";
+
     case "UserInterruption":
       return "interrupted";
 
-    case "UserInput":
-    case "SlashCommand":
-      return "thinking"; // submission detected, API call imminent
-
     case "ConversationMessage":
-      if (event.messageType === "user" && !event.isSidechain) {
-        return "thinking";
-      }
+      if (event.messageType === "user" && !event.isSidechain) return "thinking";
       if (event.messageType === "assistant" && !event.isSidechain) {
-        // Plan detection is handled solely by ToolCallStart(ExitPlanMode), which fires
-        // during the SSE stream before UserInput can arrive. ConversationMessage fires
-        // from the stringify hook (async, after JSONL/hook dispatch) and can arrive
-        // after UserInput has already cleared actionNeeded — re-setting it here would
-        // trap the state until the next user input.
         if (event.stopReason === "tool_use") return "toolUse";
         if (event.stopReason === "end_turn") return "idle";
       }
       return state;
 
-    case "SubagentNotification":
-      // Subagent completion/kill doesn't change parent state
-      return state;
-
-    // Informational events — no state change
-    case "BlockStop":
-    case "ApiTelemetry":
-    case "SubagentSpawn":
-    case "ModeChange":
-    case "SessionRegistration":
-    case "CustomTitle":
-    case "ProcessHealth":
-    case "RateLimit":
-    case "HookProgress":
-    case "ToolInput":
-    case "SessionResume":
-    case "ApiFetch":
-    case "SubprocessSpawn":
-    case "ApiRequestInfo":
-    case "AccountInfo":
-    case "FileHistorySnapshot":
-    case "TurnDuration":
-    case "ApiStreamError":
-    case "ToolResult":
-    case "ApiError":
-    case "ApiRetry":
-    case "StreamStall":
-    case "LinesChanged":
-    case "ContextBudget":
-    case "SubagentLifecycle":
-    case "PlanModeEvent":
-    case "WorktreeState":
-    case "WorktreeCleared":
-    case "HookTelemetry":
-    case "SystemPromptCapture":
-    case "EffortLevel":
-    case "StatusLineUpdate":
-    case "SkillInvocation":
+    default:
       return state;
   }
 }
@@ -157,7 +113,6 @@ export function reduceTapBatch(state: SessionState, events: TapEvent[]): Session
 /**
  * Check if an event represents a genuine completion (transition to idle).
  * Used by useTapEventProcessor for queued input dispatch signaling.
- * Matches ConversationMessage(assistant, end_turn, !isSidechain) — the sole idle signal.
  */
 export function isCompletionEvent(event: TapEvent): boolean {
   return (event.kind === "ConversationMessage"

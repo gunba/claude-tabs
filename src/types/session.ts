@@ -55,6 +55,17 @@ export interface SessionConfig {
 export interface SessionMetadata {
   costUsd: number;
   contextPercent: number;
+  /** Raw token counts used to compute contextPercent (for debugging) */
+  contextDebug?: {
+    inputTokens: number;
+    cacheRead: number;
+    cacheCreation: number;
+    totalContextTokens: number;
+    windowSize: number;
+    windowSource: string;
+    model: string | null;
+    source: "statusLine" | "turnStart";
+  } | null;
   durationSecs: number;
   currentAction: string | null;
   nodeSummary: string | null;

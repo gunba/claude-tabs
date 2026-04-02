@@ -155,3 +155,10 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+.status-branch {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

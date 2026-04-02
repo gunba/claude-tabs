@@ -1,6 +1,5 @@
 /**
- * Direct PTY wrapper — replaces `tauri-pty` npm package.
- * Calls `invoke('plugin:pty|...')` directly, with proper cleanup lifecycle.
+ * Direct PTY wrapper — calls Tauri IPC commands for PTY lifecycle.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { dlog } from "./debugLog";
@@ -43,16 +42,6 @@ interface SpawnOptions {
   env?: Record<string, string>;
 }
 
-// ── PTY Recording ────────────────────────────────────────────────
-
-export async function startPtyRecording(pid: number, path: string): Promise<void> {
-  await invoke("plugin:pty|start_pty_recording", { pid, path });
-}
-
-export async function stopPtyRecording(pid: number): Promise<void> {
-  await invoke("plugin:pty|stop_pty_recording", { pid });
-}
-
 // ── PTY Spawn ────────────────────────────────────────────────────
 
 export async function spawnPty(
@@ -60,7 +49,7 @@ export async function spawnPty(
   args: string[],
   options: SpawnOptions = {}
 ): Promise<PtyProcess> {
-  const pid: number = await invoke("plugin:pty|spawn", {
+  const pid: number = await invoke("pty_spawn", {
     file,
     args,
     cols: options.cols ?? 80,
@@ -74,7 +63,7 @@ export async function spawnPty(
   // Get OS PID immediately and register for cleanup on app close
   let osPid: number | null = null;
   try {
-    osPid = await invoke("plugin:pty|get_child_pid", { pid });
+    osPid = await invoke("pty_get_child_pid", { pid });
     if (osPid) registerActivePid(osPid);
   } catch {
     // Process may have exited instantly
@@ -98,10 +87,10 @@ export async function spawnPty(
   const readLoop = async () => {
     while (!aborted) {
       try {
-        const raw: number[] = await invoke("plugin:pty|read", { pid });
+        const raw: ArrayBuffer = await invoke("pty_read", { pid });
         if (aborted) break;
-        // Tauri IPC serializes Vec<u8> as JSON number[] — convert to Uint8Array
-        const bytes = Uint8Array.from(raw);
+        // Tauri ipc::Response returns raw binary as ArrayBuffer — zero-copy
+        const bytes = new Uint8Array(raw);
         dataCallback?.(bytes);
       } catch {
         // EOF or error — session ended
@@ -111,7 +100,7 @@ export async function spawnPty(
     dlog("pty", null, `read loop exited pid=${pid} aborted=${aborted}`);
     let exitCode = -1;
     try {
-      exitCode = await invoke("plugin:pty|exitstatus", { pid });
+      exitCode = await invoke("pty_exitstatus", { pid });
     } catch {
       // Process already cleaned up — use default -1
     }
@@ -122,7 +111,7 @@ export async function spawnPty(
   // Parallel exit waiter — catches Ctrl+C exits where ConPTY pipe stays open.
   // exitstatus calls child.wait() on the Rust side (WaitForSingleObject), which
   // reliably returns when the child exits regardless of ConPTY pipe state.
-  void invoke<number>("plugin:pty|exitstatus", { pid })
+  void invoke<number>("pty_exitstatus", { pid })
     .then((code) => fireExit(code))
     .catch(() => { /* process already cleaned up */ });
 
@@ -131,13 +120,13 @@ export async function spawnPty(
 
     write(data: string) {
       if (!aborted) {
-        invoke("plugin:pty|write", { pid, data }).catch(() => {});
+        invoke("pty_write", { pid, data }).catch(() => {});
       }
     },
 
     resize(cols: number, rows: number) {
       if (!aborted) {
-        invoke("plugin:pty|resize", { pid, cols, rows }).catch(() => {});
+        invoke("pty_resize", { pid, cols, rows }).catch(() => {});
       }
     },
 
@@ -152,7 +141,7 @@ export async function spawnPty(
       // 1. Get OS PID if we don't have it yet
       if (!osPid) {
         try {
-          osPid = await invoke("plugin:pty|get_child_pid", { pid });
+          osPid = await invoke("pty_get_child_pid", { pid });
         } catch {
           // Process may already be dead
         }
@@ -160,14 +149,14 @@ export async function spawnPty(
 
       // 2. Kill the child process
       try {
-        await invoke("plugin:pty|kill", { pid });
+        await invoke("pty_kill", { pid });
       } catch {
         // Already dead
       }
 
       // 3. Wait briefly for exit
       const exited = await Promise.race([
-        invoke("plugin:pty|exitstatus", { pid }).then(() => true).catch(() => true),
+        invoke("pty_exitstatus", { pid }).then(() => true).catch(() => true),
         new Promise<boolean>((r) => setTimeout(() => r(false), 5000)),
       ]);
 
@@ -182,14 +171,14 @@ export async function spawnPty(
 
       // 5. Drain remaining output from the channel
       try {
-        await invoke("plugin:pty|drain_output", { pid });
+        await invoke("pty_drain_output", { pid });
       } catch {
         // Best effort
       }
 
       // 6. Destroy session — remove from BTreeMap, trigger Drop chain
       try {
-        await invoke("plugin:pty|destroy", { pid });
+        await invoke("pty_destroy", { pid });
       } catch {
         // Best effort
       }

@@ -2211,19 +2211,6 @@ pub fn cleanup_tap_logs(max_age_hours: u64) -> Result<u32, String> {
     Ok(removed)
 }
 
-// ── Recordings (auto-started terminal recordings) ────────────────────
-
-/// Get the recordings subdirectory inside the data dir, creating if needed.
-#[tauri::command]
-pub fn get_recordings_dir() -> Result<String, String> {
-    let dir = get_data_dir()?.join("recordings");
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create recordings dir: {}", e))?;
-    }
-    Ok(dir.to_string_lossy().to_string())
-}
-
 /// Remove a git worktree directory.
 #[tauri::command]
 pub async fn prune_worktree(worktree_path: String, project_root: String) -> Result<(), String> {
@@ -2800,11 +2787,52 @@ mod tests {
 
 // ── Terminal recording replay ──────────────────────────────────────────
 
-/// Read a terminal recording NDJSON file for replay.
+// ── Anthropic Usage API ───────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageData {
+    pub five_hour_percent: Option<f64>,
+    pub seven_day_percent: Option<f64>,
+}
+
+/// Fetch 5-hour and 7-day rate-limit utilization from the Anthropic Usage API.
+/// Reads OAuth credentials from ~/.claude/.credentials.json.
+/// Returns empty (None) fields rather than an error if credentials are absent
+/// (e.g. API-key users who don't have an OAuth token).
 #[tauri::command]
-pub async fn read_recording_file(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path, e))
+pub async fn fetch_usage() -> Result<UsageData, String> {
+    tokio::task::spawn_blocking(|| -> Result<UsageData, String> {
+        let creds_path = dirs::home_dir()
+            .ok_or("no home dir")?
+            .join(".claude")
+            .join(".credentials.json");
+        let Ok(content) = std::fs::read_to_string(&creds_path) else {
+            return Ok(UsageData::default());
+        };
+        let creds: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        let Some(token) = creds["claudeAiOauth"]["accessToken"].as_str() else {
+            return Ok(UsageData::default());
+        };
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| format!("HTTP client error: {}", e))?;
+        let text = client
+            .get("https://api.anthropic.com/api/oauth/usage")
+            .header("Authorization", format!("Bearer {}", token))
+            .header("anthropic-beta", "oauth-2025-04-20")
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.text())
+            .map_err(|e| format!("Usage API error: {}", e))?;
+        let resp: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("Usage parse error: {}", e))?;
+        Ok(UsageData {
+            five_hour_percent: resp["five_hour"]["utilization"].as_f64(),
+            seven_day_percent: resp["seven_day"]["utilization"].as_f64(),
+        })
     })
     .await
     .map_err(|e| e.to_string())?

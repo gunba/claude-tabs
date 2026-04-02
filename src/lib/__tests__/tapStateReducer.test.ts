@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { reduceTapEvent, reduceTapBatch, isCompletionEvent } from "../tapStateReducer";
 import type { TapEvent } from "../../types/tapEvents";
+import type { SessionState } from "../../types/session";
 
 /** Helper to build a ConversationMessage event with defaults. */
 function convMsg(overrides: Partial<Extract<TapEvent, { kind: "ConversationMessage" }>>): TapEvent {
@@ -52,9 +53,9 @@ describe("reduceTapEvent", () => {
     expect(reduceTapEvent("actionNeeded", { kind: "TurnEnd", ts: 0, stopReason: "tool_use", outputTokens: 100 })).toBe("actionNeeded");
   });
 
-  it("TurnEnd end_turn does NOT transition to idle (SSE has no agentId)", () => {
-    expect(reduceTapEvent("thinking", { kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 100 })).toBe("thinking");
-    expect(reduceTapEvent("toolUse", { kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 100 })).toBe("toolUse");
+  it("TurnEnd end_turn → idle", () => {
+    expect(reduceTapEvent("thinking", { kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 100 })).toBe("idle");
+    expect(reduceTapEvent("toolUse", { kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 100 })).toBe("idle");
   });
 
   it("PermissionPromptShown → waitingPermission", () => {
@@ -149,8 +150,11 @@ describe("reduceTapEvent", () => {
     expect(reduceTapEvent("actionNeeded", { kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 100 })).toBe("actionNeeded");
   });
 
-  it("TurnStart when actionNeeded → actionNeeded (sticky guard)", () => {
-    expect(reduceTapEvent("actionNeeded", { kind: "TurnStart", ts: 0, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 })).toBe("actionNeeded");
+  it("TurnStart when actionNeeded → thinking (bug 003 fallback: agent continued after user answered)", () => {
+    // Bug 003: AskUserQuestion answers don't fire ConversationMessage(user) or UserInput.
+    // TurnStart is the fallback clearing event. Risk: background subagent TurnStart
+    // (no agentId field) may prematurely clear — cosmetic, not functional.
+    expect(reduceTapEvent("actionNeeded", { kind: "TurnStart", ts: 0, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 })).toBe("thinking");
   });
 
   it("ThinkingStart when actionNeeded → actionNeeded (sticky guard)", () => {
@@ -199,6 +203,19 @@ describe("reduceTapEvent", () => {
 
   it("PermissionPromptShown when actionNeeded → waitingPermission (edge case)", () => {
     expect(reduceTapEvent("actionNeeded", { kind: "PermissionPromptShown", ts: 0, toolName: "Bash" })).toBe("waitingPermission");
+  });
+
+  // Bug 003: ToolResult clears actionNeeded for interactive tools only
+  it("ToolResult(AskUserQuestion) when actionNeeded → thinking (bug 003 primary)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "ToolResult", ts: 0, toolName: "AskUserQuestion", durationMs: 5000, toolResultSizeBytes: 50, error: null })).toBe("thinking");
+  });
+
+  it("ToolResult(ExitPlanMode) when actionNeeded → thinking (bug 003 primary)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "ToolResult", ts: 0, toolName: "ExitPlanMode", durationMs: 1000, toolResultSizeBytes: 20, error: null })).toBe("thinking");
+  });
+
+  it("ToolResult(Bash) when actionNeeded → actionNeeded (non-interactive tool, no clear)", () => {
+    expect(reduceTapEvent("actionNeeded", { kind: "ToolResult", ts: 0, toolName: "Bash", durationMs: 100, toolResultSizeBytes: 500, error: null })).toBe("actionNeeded");
   });
 
   it("informational events preserve actionNeeded (default branch)", () => {
@@ -317,6 +334,137 @@ describe("reduceTapBatch", () => {
       convMsg({ messageType: "user" }),
     ];
     expect(reduceTapBatch("actionNeeded", events)).toBe("thinking");
+  });
+});
+
+// ── Event sequence replays ──
+// Full event sequences from real bugs, replayed step-by-step through reduceTapEvent.
+// Each sequence documents what state should be at every step.
+
+describe("sequence replays", () => {
+  it("001: AskUserQuestion actionNeeded survives async ConversationMessage", () => {
+    // Agent calls AskUserQuestion during plan mode. The stringify hook fires a
+    // ConversationMessage(assistant, tool_use) ~4s after ToolCallStart already
+    // set actionNeeded. Without the sticky guard, this clobbers actionNeeded → toolUse
+    // and the tab appears active while actually waiting for user input.
+    const steps: Array<{ event: TapEvent; expected: string }> = [
+      // Agent is doing tool work, turn ends with tool_use
+      { event: { kind: "TurnStart", ts: 1, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      // Agent calls AskUserQuestion → actionNeeded
+      { event: { kind: "ToolCallStart", ts: 2, index: 0, toolName: "AskUserQuestion", toolId: "t1" }, expected: "actionNeeded" },
+      // SSE turn ends with tool_use — sticky guard preserves
+      { event: { kind: "TurnEnd", ts: 3, stopReason: "tool_use", outputTokens: 50 }, expected: "actionNeeded" },
+      // Async stringify hook fires ConversationMessage — was the bug: clobbered to toolUse
+      { event: convMsg({ stopReason: "tool_use", toolNames: ["AskUserQuestion"], toolAction: "AskUserQuestion" }), expected: "actionNeeded" },
+      // Informational events while waiting — must not disturb
+      { event: { kind: "ProcessHealth", ts: 5, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0 } as TapEvent, expected: "actionNeeded" },
+      // User answers the question → thinking
+      { event: convMsg({ messageType: "user" }), expected: "thinking" },
+      // New turn starts, agent proceeds
+      { event: { kind: "TurnStart", ts: 7, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      // Agent now calls ExitPlanMode → actionNeeded again
+      { event: { kind: "ToolCallStart", ts: 8, index: 0, toolName: "ExitPlanMode", toolId: "t2" }, expected: "actionNeeded" },
+      // Async ConversationMessage again — must not clobber
+      { event: convMsg({ stopReason: "tool_use", toolNames: ["ExitPlanMode"] }), expected: "actionNeeded" },
+      // User approves plan → thinking
+      { event: convMsg({ messageType: "user" }), expected: "thinking" },
+    ];
+
+    let state: SessionState = "toolUse";
+    for (const { event, expected } of steps) {
+      state = reduceTapEvent(state, event);
+      expect(state, `after ${event.kind}${("toolName" in event) ? `(${event.toolName})` : ""}`).toBe(expected);
+    }
+  });
+
+  it("002: TurnEnd(end_turn) reaches idle even without ConversationMessage", () => {
+    // Agent completes its final turn. The CLI does not always serialize the final
+    // assistant message, so ConversationMessage(assistant, end_turn) never arrives.
+    // TurnEnd(end_turn) from the SSE stream is the only completion signal.
+    //
+    // Previously TurnEnd(end_turn) was a no-op (returned state) to avoid subagent
+    // false idles. This left the state stuck at "thinking" permanently.
+    // Fix: TurnEnd(end_turn) → idle. Subagent false idles are transient — the main
+    // agent's next TurnStart immediately corrects them, and tab flash debounce (2s)
+    // suppresses the UI notification.
+    const steps: Array<{ event: TapEvent; expected: string }> = [
+      // Previous turn ended with tool_use
+      { event: { kind: "TurnEnd", ts: 1, stopReason: "tool_use", outputTokens: 100 }, expected: "toolUse" },
+      // Async ConvMsg(assistant, tool_use) from stringify hook
+      { event: convMsg({ stopReason: "tool_use", toolNames: ["Bash"], toolAction: "Bash: ls" }), expected: "toolUse" },
+      // Tool result injected as user message → agent will continue
+      { event: convMsg({ messageType: "user" }), expected: "thinking" },
+      // Agent starts final turn
+      { event: { kind: "ApiFetch", ts: 4, url: "", method: "POST", status: null } as TapEvent, expected: "thinking" },
+      { event: { kind: "TurnStart", ts: 5, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      { event: { kind: "TextStart", ts: 6, index: 0 }, expected: "thinking" },
+      // Text completes
+      { event: { kind: "BlockStop", ts: 7, index: 0 } as TapEvent, expected: "thinking" },
+      // TurnEnd(end_turn) → idle (no ConversationMessage follows, this is the only signal)
+      { event: { kind: "TurnEnd", ts: 8, stopReason: "end_turn", outputTokens: 200 }, expected: "idle" },
+      // Informational events don't disturb idle
+      { event: { kind: "ProcessHealth", ts: 9, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0 } as TapEvent, expected: "idle" },
+    ];
+
+    let state: SessionState = "thinking";
+    for (const { event, expected } of steps) {
+      state = reduceTapEvent(state, event);
+      expect(state, `after ${event.kind}`).toBe(expected);
+    }
+  });
+
+  it("003: AskUserQuestion actionNeeded clears on ToolResult (no ConversationMessage(user) fires)", () => {
+    // Agent calls AskUserQuestion. The user answers, but no ConversationMessage(user)
+    // or UserInput fires — the tool result goes directly to the API without being
+    // serialized as a standalone conversation message. ToolResult(AskUserQuestion)
+    // is the primary clearing event; TurnStart is the fallback.
+    const steps: Array<{ event: TapEvent; expected: string }> = [
+      // Agent starts turn
+      { event: { kind: "TurnStart", ts: 1, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      // Agent calls AskUserQuestion → actionNeeded
+      { event: { kind: "ToolCallStart", ts: 2, index: 0, toolName: "AskUserQuestion", toolId: "t1" }, expected: "actionNeeded" },
+      // SSE turn ends with tool_use — sticky guard preserves
+      { event: { kind: "TurnEnd", ts: 3, stopReason: "tool_use", outputTokens: 50 }, expected: "actionNeeded" },
+      // Async stringify fires ConversationMessage(assistant, tool_use) — preserved
+      { event: convMsg({ stopReason: "tool_use", toolNames: ["AskUserQuestion"], toolAction: "AskUserQuestion" }), expected: "actionNeeded" },
+      // Informational events while waiting
+      { event: { kind: "ProcessHealth", ts: 5, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0 } as TapEvent, expected: "actionNeeded" },
+      { event: { kind: "ApiTelemetry", ts: 6, model: "opus", costUSD: 0.01, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, uncachedInputTokens: 0, durationMs: 100, ttftMs: 50, queryChainId: null, queryDepth: 0, stopReason: null } as TapEvent, expected: "actionNeeded" },
+      // User answers — ToolResult fires (primary clearing event)
+      { event: { kind: "ToolResult", ts: 7, toolName: "AskUserQuestion", durationMs: 5000, toolResultSizeBytes: 50, error: null } as TapEvent, expected: "thinking" },
+      // New turn starts — already thinking, no regression
+      { event: { kind: "TurnStart", ts: 8, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      // Agent completes
+      { event: { kind: "TurnEnd", ts: 9, stopReason: "end_turn", outputTokens: 200 }, expected: "idle" },
+    ];
+
+    let state: SessionState = "toolUse";
+    for (const { event, expected } of steps) {
+      state = reduceTapEvent(state, event);
+      expect(state, `after ${event.kind}${("toolName" in event) ? `(${event.toolName})` : ""}`).toBe(expected);
+    }
+  });
+
+  it("003b: AskUserQuestion actionNeeded clears on TurnStart fallback (no ToolResult fires)", () => {
+    // Same scenario as 003, but ToolResult does NOT fire for AskUserQuestion.
+    // TurnStart is the fallback clearing event.
+    const steps: Array<{ event: TapEvent; expected: string }> = [
+      { event: { kind: "TurnStart", ts: 1, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      { event: { kind: "ToolCallStart", ts: 2, index: 0, toolName: "AskUserQuestion", toolId: "t1" }, expected: "actionNeeded" },
+      { event: { kind: "TurnEnd", ts: 3, stopReason: "tool_use", outputTokens: 50 }, expected: "actionNeeded" },
+      { event: convMsg({ stopReason: "tool_use", toolNames: ["AskUserQuestion"] }), expected: "actionNeeded" },
+      { event: { kind: "ProcessHealth", ts: 5, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0 } as TapEvent, expected: "actionNeeded" },
+      // No ToolResult — user answered but CLI didn't emit rh-telemetry for AskUserQuestion
+      // TurnStart is the fallback (agent's next turn started)
+      { event: { kind: "TurnStart", ts: 7, model: "opus", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0 }, expected: "thinking" },
+      { event: { kind: "TurnEnd", ts: 8, stopReason: "end_turn", outputTokens: 200 }, expected: "idle" },
+    ];
+
+    let state: SessionState = "toolUse";
+    for (const { event, expected } of steps) {
+      state = reduceTapEvent(state, event);
+      expect(state, `after ${event.kind}`).toBe(expected);
+    }
   });
 });
 

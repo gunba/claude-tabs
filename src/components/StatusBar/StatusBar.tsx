@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
@@ -12,8 +12,10 @@ import {
 } from "../Icons/Icons";
 import { useGitStatus } from "../../hooks/useGitStatus";
 import type { Session, PermissionMode } from "../../types/session";
+import type { GitStatusData } from "../../types/git";
 import { isSessionIdle } from "../../types/session";
 import { getEffectiveState } from "../../lib/claude";
+import { dlog } from "../../lib/debugLog";
 import "./StatusBar.css";
 
 function formatDuration(secs: number): string {
@@ -40,11 +42,10 @@ function permissionIcon(mode: PermissionMode): { icon: React.ReactNode; tip: str
   }
 }
 
-function SessionStatus({ session }: { session: Session }) {
+function SessionStatus({ session, gitStatus }: { session: Session; gitStatus: GitStatusData | null }) {
   const perm = permissionIcon(session.config.permissionMode);
   const inspectorOff = useSessionStore((s) => s.inspectorOffSessions.has(session.id));
   const tapEnabled = useSessionStore((s) => (s.tapCategories.get(session.id)?.size ?? 0) > 0);
-  const isRecording = useSessionStore((s) => s.ptyRecording.has(session.id));
   const health = useSessionStore((s) => s.processHealth.get(session.id));
   const apiIp = useSettingsStore((s) => s.apiIp);
   const model = effectiveModel(session);
@@ -61,11 +62,6 @@ function SessionStatus({ session }: { session: Session }) {
       {tapEnabled && (
         <span className="status-item" title="Tap recording active — right-click tab to stop" style={{ color: "var(--accent)" }}>
           <IconCircleFilled size={10} /> TAP
-        </span>
-      )}
-      {isRecording && (
-        <span className="status-item" title="Terminal recording active — right-click tab to stop" style={{ color: "var(--error)" }}>
-          <IconCircleFilled size={10} /> REC
         </span>
       )}
       <span className="status-item status-model" title={
@@ -97,6 +93,17 @@ function SessionStatus({ session }: { session: Session }) {
           {worktreeAcronym(wt.worktreeName)}
         </span>
       )}
+      {gitStatus?.branch && (
+        <span className="status-item status-branch" title={`Branch: ${gitStatus.branch}`}>
+          <IconGitBranch size={12} /> {gitStatus.branch}
+        </span>
+      )}
+      {((gitStatus?.totalInsertions ?? 0) > 0 || (gitStatus?.totalDeletions ?? 0) > 0) && (
+        <span className="status-item status-lines" title="Git changes (staged + unstaged)">
+          <span style={{ color: "var(--success)" }}>+{gitStatus!.totalInsertions}</span>
+          <span style={{ color: "var(--error)" }}>-{gitStatus!.totalDeletions}</span>
+        </span>
+      )}
       {perm && (
         <span className="status-item status-perm" title={perm.tip}>
           {perm.icon}
@@ -109,12 +116,6 @@ function SessionStatus({ session }: { session: Session }) {
         <span className="status-icon"><IconClock size={12} /></span>
         {formatDuration(session.metadata.durationSecs)}
       </span>
-      {(session.metadata.linesAdded > 0 || session.metadata.linesRemoved > 0) && (
-        <span className="status-item status-lines" title="Lines changed this session">
-          <span style={{ color: "var(--success)" }}>+{session.metadata.linesAdded}</span>
-          <span style={{ color: "var(--error)" }}>-{session.metadata.linesRemoved}</span>
-        </span>
-      )}
       {session.metadata.lastToolDurationMs != null && session.state === "toolUse" && (
         <span className="status-item" style={{ color: "var(--text-muted)", fontSize: "0.85em" }} title={
           `Tool: ${session.metadata.lastToolDurationMs}ms` +
@@ -149,15 +150,30 @@ function SessionStatus({ session }: { session: Session }) {
           <IconWarning size={12} />
         </span>
       )}
-      {session.metadata.statusLine?.contextUsedPercent != null && (
-        <span
-          className="status-item"
-          title={`Context: ${session.metadata.statusLine.contextUsedPercent}% of ${session.metadata.statusLine.contextWindowSize?.toLocaleString() ?? "?"} tokens`}
-          style={{ color: session.metadata.statusLine.contextUsedPercent > 80 ? "var(--error)" : session.metadata.statusLine.contextUsedPercent > 50 ? "var(--warning)" : "var(--text-secondary)" }}
-        >
-          {session.metadata.statusLine.contextUsedPercent}% ctx
-        </span>
-      )}
+      {(() => {
+        const ctxPct = session.metadata.contextPercent ?? 0;
+        const dbg = session.metadata.contextDebug;
+        if (ctxPct <= 0 && !dbg) return null;
+        const titleParts = [`Context: ${ctxPct}%`];
+        if (dbg) {
+          titleParts.push(`[${dbg.source}]`);
+          titleParts.push(`model=${dbg.model ?? "unknown"}`);
+          titleParts.push(`input=${dbg.inputTokens.toLocaleString()}`);
+          titleParts.push(`cacheRead=${dbg.cacheRead.toLocaleString()}`);
+          titleParts.push(`cacheCreation=${dbg.cacheCreation.toLocaleString()}`);
+          titleParts.push(`total=${dbg.totalContextTokens.toLocaleString()} / ${dbg.windowSize.toLocaleString()}`);
+          titleParts.push(`windowSource=${dbg.windowSource}`);
+        }
+        return (
+          <span
+            className="status-item"
+            title={titleParts.join("\n")}
+            style={{ color: ctxPct > 80 ? "var(--error)" : ctxPct > 50 ? "var(--warning)" : "var(--text-secondary)" }}
+          >
+            {ctxPct}% ctx
+          </span>
+        );
+      })()}
       {((session.metadata.statusLine?.currentInputTokens ?? 0) + (session.metadata.statusLine?.currentOutputTokens ?? 0)) > 0 && (
         <span className="status-item" title="Session tokens (input + output)">
           {formatTokenCount((session.metadata.statusLine!.currentInputTokens ?? 0) + (session.metadata.statusLine!.currentOutputTokens ?? 0))}
@@ -214,6 +230,8 @@ export function StatusBar() {
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const activeSession = sessions.find((s) => s.id === activeTabId);
   const [hookCount, setHookCount] = useState(0);
+  const [usageData, setUsageData] = useState<{ fiveHourPercent: number | null; sevenDayPercent: number | null } | null>(null);
+  const [usageError, setUsageError] = useState<string | null>(null);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
   const sidePanel = useSettingsStore((s) => s.sidePanel);
   const setSidePanel = useSettingsStore((s) => s.setSidePanel);
@@ -240,17 +258,61 @@ export function StatusBar() {
 
   const subagentMap = useSessionStore((s) => s.subagents);
   const aliveSessions = sessions.filter((s) => s.state !== "dead");
+  const aliveCountRef = useRef(0);
+  aliveCountRef.current = aliveSessions.length;
+  // Poll Anthropic Usage API for 5h/7d rate-limit utilization.
+  // Timer-based poll is justified: there is no push source for this data.
+  // Ref check avoids re-triggering the effect (and an immediate poll) on every session change.
+  useEffect(() => {
+    const poll = () => {
+      if (aliveCountRef.current === 0) return;
+      invoke<{ fiveHourPercent: number | null; sevenDayPercent: number | null }>("fetch_usage")
+        .then((d) => { setUsageData(d); setUsageError(null); })
+        .catch((e: unknown) => {
+          const msg = String(e);
+          dlog("session", null, `fetch_usage failed: ${msg}`, "WARN");
+          setUsageError(msg);
+        });
+    };
+    poll();
+    const t = setInterval(poll, 120_000);
+    return () => clearInterval(t);
+  }, []);
+
   const activeSessions = aliveSessions.filter((s) =>
     !isSessionIdle(getEffectiveState(s.state, subagentMap.get(s.id) || []))
   ).length;
   return (
     <div className="status-bar">
       {activeSession ? (
-        <SessionStatus session={activeSession} />
+        <SessionStatus session={activeSession} gitStatus={gitStatus} />
       ) : (
         <span className="status-empty">No active session</span>
       )}
       <div className="status-right">
+        {activeSession?.metadata.statusLine == null && usageError && (
+          <span className="status-item" title={`Usage fetch failed: ${usageError}`} style={{ color: "var(--text-muted)" }}>
+            5h/7d: ?
+          </span>
+        )}
+        {activeSession?.metadata.statusLine == null && !usageError && usageData?.fiveHourPercent != null && (
+          <span
+            className="status-item"
+            title="5-hour rate limit usage"
+            style={{ color: usageData.fiveHourPercent > 80 ? "var(--error)" : "var(--text-muted)" }}
+          >
+            5h: {Math.round(usageData.fiveHourPercent)}%
+          </span>
+        )}
+        {activeSession?.metadata.statusLine == null && !usageError && usageData?.sevenDayPercent != null && (
+          <span
+            className="status-item"
+            title="7-day rate limit usage"
+            style={{ color: usageData.sevenDayPercent > 80 ? "var(--error)" : "var(--text-muted)" }}
+          >
+            7d: {Math.round(usageData.sevenDayPercent)}%
+          </span>
+        )}
         {isGitRepo && hasChanges && (
           <button
             className={`status-item status-hooks-btn${sidePanel === "diff" ? " status-active-btn" : ""}`}

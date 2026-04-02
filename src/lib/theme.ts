@@ -144,8 +144,8 @@ export function applyTheme(theme: Theme): void {
   root.style.setProperty("--rarity-legendary", "#ff8000");
 }
 
-/** Get xterm.js theme object from CSS custom properties */
-export function getXtermTheme(): Record<string, string> {
+/** Get terminal theme object from CSS custom properties */
+export function getTerminalTheme(): Record<string, string> {
   const s = getComputedStyle(document.documentElement);
   const get = (v: string) => s.getPropertyValue(v).trim();
 

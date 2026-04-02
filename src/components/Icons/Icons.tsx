@@ -323,3 +323,55 @@ export function IconReset(props: IconProps) {
     </Icon>
   );
 }
+
+/** Skull — dangerously skip permissions */
+export function IconSkull(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 9V6.5a4 4 0 018 0V9" />
+      <path d="M4 9a1 1 0 001 1h1l.5 2.5h3L10 10h1a1 1 0 001-1" />
+      <circle cx="6.5" cy="6.5" r="1.2" />
+      <circle cx="9.5" cy="6.5" r="1.2" />
+      <path d="M7 12.5v1M9 12.5v1" />
+    </Icon>
+  );
+}
+
+/** Simplified bulldozer — sandbox / project-dir restriction */
+export function IconBulldozer(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2 8.5h3V6h-1l-2 2.5z" />
+      <rect x="5" y="5.5" width="7" height="4" rx="1" />
+      <path d="M9 4h2.5a1 1 0 011 1v.5" />
+      <path d="M3.5 12h10" />
+      <circle cx="5.5" cy="12" r="1.5" />
+      <circle cx="11.5" cy="12" r="1.5" />
+    </Icon>
+  );
+}
+
+/** Radio antenna with signal arcs — TAP recording */
+export function IconAntenna(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 7v7" />
+      <path d="M6 14h4" />
+      <path d="M5.5 5.5a3.5 3.5 0 015 0" />
+      <path d="M3.5 3.5a6.5 6.5 0 019 0" />
+      <circle cx="8" cy="7" r="1" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** Traffic light — API traffic logging */
+export function IconTraffic(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="5" y="1.5" width="6" height="13" rx="1.5" />
+      <circle cx="8" cy="4.5" r="1.2" />
+      <circle cx="8" cy="8" r="1.2" />
+      <circle cx="8" cy="11.5" r="1.2" />
+    </Icon>
+  );
+}

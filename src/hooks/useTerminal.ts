@@ -1,20 +1,24 @@
 import { useEffect, useRef, useCallback } from "react";
-import { Terminal, type IBuffer } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { SearchAddon } from "@xterm/addon-search";
-import { getXtermTheme } from "../lib/theme";
+import "@xterm/xterm/css/xterm.css";
+import { getTerminalTheme } from "../lib/theme";
 import { dlog } from "../lib/debugLog";
 
-export const TERMINAL_FONT_FAMILY = "'Pragmasevka', monospace";
+export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', monospace";
 
 const PROMPT_MARKER_NEW = ">\u00A0"; // > + NBSP — current Claude Code prompt
 const PROMPT_MARKER_OLD = "\u276F"; // ❯ — legacy Claude Code prompt
 const BOTTOM_TOLERANCE = 2; // Lines of slack for "at bottom" detection
 
+// Minimal buffer type for findPromptLine (structural typing)
+interface BufferLike {
+  getLine(y: number): { translateToString(trimRight?: boolean): string } | undefined;
+}
+
 /** Scan buffer backward from `fromLine` for a Claude Code prompt line. */
-function findPromptLine(buf: IBuffer, fromLine: number): number {
+function findPromptLine(buf: BufferLike, fromLine: number): number {
   const stop = Math.max(0, fromLine - 50_000);
   for (let i = fromLine; i >= stop; i--) {
     const line = buf.getLine(i);
@@ -35,94 +39,171 @@ interface UseTerminalOptions {
 export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const webglRef = useRef<WebglAddon | null>(null);
-  const searchAddonRef = useRef<SearchAddon | null>(null);
-  const webglRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const attachedRef = useRef(false);
+  const pendingElRef = useRef<HTMLDivElement | null>(null);
 
   // Write batching — accumulate PTY chunks and flush via debounce.
   // ConPTY fragments Ink's redraws into many small chunks; batching
   // coalesces them so DEC 2026 sync blocks (BSU+content+ESU) arrive
-  // in a single term.write() call. Without this, ConPTY splits BSU and
-  // content into separate pipe reads, breaking synchronized rendering.
+  // in a single term.write() call.
   const writeBatchRef = useRef<Uint8Array[]>([]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceStartRef = useRef(0);
+  const webglRef = useRef<WebglAddon | null>(null);
 
-  // baseY accumulation safety valve — tracks consecutive +1 baseY
-  // increases without a reset. When the Rust filter's ESC[2J replacement
-  // fires, ESC[3J resets baseY (decrease). But if ConPTY doesn't send
-  // ESC[2J (partial updates), baseY can accumulate from sync block
-  // overflow. After 3 consecutive +1 increases, clear scrollback.
-  const baseYDriftRef = useRef(0);
+  // Helper: open terminal in a DOM element (called once fonts + element are both ready)
+  const openTerminal = useCallback((term: Terminal, fit: FitAddon, el: HTMLDivElement) => {
+    if (attachedRef.current) return;
 
-  // Create terminal instance once on hook mount
+    term.open(el);
+    attachedRef.current = true;
+
+    // WebGL addon for GPU-accelerated rendering (DF-06)
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        webgl.dispose();
+        webglRef.current = null;
+        // Retry once after 1s — if it fails again, stay on canvas
+        setTimeout(() => {
+          try {
+            const retry = new WebglAddon();
+            retry.onContextLoss(() => { retry.dispose(); webglRef.current = null; });
+            term.loadAddon(retry);
+            webglRef.current = retry;
+          } catch {}
+        }, 1000);
+      });
+      term.loadAddon(webgl);
+      webglRef.current = webgl;
+    } catch {
+      // WebGL not available — canvas fallback is automatic
+    }
+
+    // Block xterm.js native paste handler — our custom Ctrl+V handler
+    // in attachCustomKeyEventHandler handles paste via navigator.clipboard.
+    // Without this, Tauri's permission dialog triggers a synthetic paste
+    // event that xterm.js also handles, causing double-paste.
+    el.addEventListener('paste', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, true); // Capture phase — intercept before xterm.js
+
+    try {
+      const dims = fit.proposeDimensions();
+      if (dims && dims.rows > 1) fit.fit();
+    } catch {}
+
+    // Observe container size changes
+    const observer = new ResizeObserver(() => {
+      try {
+        const dims = fit.proposeDimensions();
+        if (!dims || dims.rows <= 1) return;
+        fit.fit();
+      } catch {}
+    });
+    observer.observe(el);
+    observerRef.current = observer;
+  }, []);
+
+  // Create terminal instance once fonts are ready
   useEffect(() => {
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: TERMINAL_FONT_FAMILY,
-      theme: getXtermTheme(),
-      allowProposedApi: true,
-      scrollback: 1_000_000,
-    });
+    let cancelled = false;
+    let term: Terminal | null = null;
 
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
-    const search = new SearchAddon();
-    term.loadAddon(search);
-    searchAddonRef.current = search;
+    (async () => {
+      // Wait for fonts so xterm.js measures correct cell dimensions at open()
+      await document.fonts.ready;
+      if (cancelled) return;
 
-    // Custom key handlers: Ctrl+C copy, Ctrl+V paste
-    term.attachCustomKeyEventHandler((ev) => {
-      // Block all input when a modal overlay is open
-      if (document.querySelector('.launcher-overlay, .resume-picker-overlay, .modal-overlay, .palette-overlay, .inspector-overlay')) {
-        return false;
-      }
-      if (ev.ctrlKey && ev.key === "c" && ev.type === "keydown") {
-        if (term.hasSelection()) {
-          navigator.clipboard.writeText(term.getSelection());
-          term.clearSelection();
-          return false; // Don't send to PTY
+      term = new Terminal({
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: TERMINAL_FONT_FAMILY,
+        theme: getTerminalTheme(),
+        scrollback: 1_000_000,
+      });
+
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+
+      // Custom key handlers: Ctrl+C copy, Ctrl+V paste
+      // xterm.js convention: return false = "I handled this, suppress default"
+      // return true = "let xterm.js handle normally"
+      term.attachCustomKeyEventHandler((ev) => {
+        // Block all input when a modal overlay is open
+        if (document.querySelector('.launcher-overlay, .resume-picker-overlay, .modal-overlay, .palette-overlay, .inspector-overlay')) {
+          return false; // Suppress — modal is open
         }
-      }
-      // Handle Ctrl+V paste — read clipboard and insert into terminal
-      if (ev.ctrlKey && ev.key === "v" && ev.type === "keydown") {
-        navigator.clipboard.readText().then((text) => {
-          if (text) term.paste(text);
-        }).catch(() => {});
-        return false; // Prevent default handling
-      }
-      // Ctrl+Home: scroll to top
-      if (ev.ctrlKey && ev.key === "Home" && ev.type === "keydown") {
-        term.scrollToTop();
-        return false;
-      }
-      // Ctrl+End: scroll to bottom
-      if (ev.ctrlKey && ev.key === "End" && ev.type === "keydown") {
-        term.scrollToBottom();
-        return false;
-      }
-      // Alt+digit: block from PTY — handled by App.tsx global tab-switch handler
-      if (ev.altKey && ev.key >= "0" && ev.key <= "9" && ev.type === "keydown") {
-        return false;
-      }
-      return true; // Let it through
-    });
+        if (ev.ctrlKey && ev.key === "c" && ev.type === "keydown") {
+          if (term!.hasSelection()) {
+            navigator.clipboard.writeText(term!.getSelection());
+            term!.clearSelection();
+            return false; // We handled it — don't send to PTY
+          }
+        }
+        // Handle Ctrl+V paste — read clipboard and insert into terminal
+        if (ev.ctrlKey && ev.key === "v" && ev.type === "keydown") {
+          navigator.clipboard.readText().then((text) => {
+            if (text) term!.paste(text);
+          }).catch(() => {});
+          return false; // We handled it
+        }
+        // Ctrl+Home: scroll to top
+        if (ev.ctrlKey && ev.key === "Home" && ev.type === "keydown") {
+          term!.scrollToTop();
+          return false; // We handled it
+        }
+        // Ctrl+End: scroll to bottom
+        if (ev.ctrlKey && ev.key === "End" && ev.type === "keydown") {
+          term!.scrollToBottom();
+          return false; // We handled it
+        }
+        // Alt+digit: block from PTY — handled by App.tsx global tab-switch handler
+        if (ev.altKey && ev.key >= "0" && ev.key <= "9" && ev.type === "keydown") {
+          return false; // We handled it (App.tsx will process)
+        }
+        // App-level shortcuts: return false to prevent xterm.js from processing
+        // (its key encoder calls stopPropagation, killing event bubbling to App.tsx).
+        if (ev.type === "keydown") {
+          if (ev.ctrlKey && !ev.shiftKey && !ev.altKey &&
+              (ev.key === "t" || ev.key === "w" || ev.key === "k" || ev.key === ",")) {
+            return false;
+          }
+          if (ev.ctrlKey && ev.shiftKey && ev.key === "T" && !ev.altKey) {
+            return false;
+          }
+          if (ev.ctrlKey && ev.key === "Tab") {
+            return false;
+          }
+          if (ev.ctrlKey && ev.shiftKey && !ev.altKey &&
+              (ev.key === "D" || ev.key === "F" || ev.key === "G" || ev.key === "R")) {
+            return false;
+          }
+          if (ev.key === "Escape") {
+            return false;
+          }
+        }
+        return true; // Let xterm.js handle normally
+      });
 
-    termRef.current = term;
-    fitRef.current = fit;
+      termRef.current = term;
+      fitRef.current = fit;
+
+      // If attach was called before WASM was ready, open now
+      if (pendingElRef.current) {
+        openTerminal(term, fit, pendingElRef.current);
+      }
+    })();
 
     return () => {
+      cancelled = true;
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      if (webglRetryTimerRef.current) clearTimeout(webglRetryTimerRef.current);
       observerRef.current?.disconnect();
       webglRef.current?.dispose();
       webglRef.current = null;
-      searchAddonRef.current = null;
-      term.dispose();
+      term?.dispose();
       termRef.current = null;
       fitRef.current = null;
       attachedRef.current = false;
@@ -150,73 +231,26 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
 
   // Ref callback to attach terminal to a DOM element
   const attach = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    pendingElRef.current = el;
+
     const term = termRef.current;
     const fit = fitRef.current;
-    if (!el || !term || !fit) return;
-
-    if (attachedRef.current) return; // Already attached — skip fit/observer setup
-
-    term.open(el);
-    attachedRef.current = true;
-
-    // Block xterm.js 6.0's native paste handler — our custom Ctrl+V handler
-    // in attachCustomKeyEventHandler handles paste via navigator.clipboard.
-    // Without this, the Tauri permission dialog triggers a synthetic paste
-    // event that xterm.js also handles, causing double-paste.
-    el.addEventListener('paste', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    }, true); // Capture phase — intercept before xterm.js
-
-    // Load WebGL renderer with context loss recovery.
-    // On context loss: dispose, wait 1s, retry once. If retry fails,
-    // xterm.js automatically falls back to the DOM canvas renderer.
-    const loadWebgl = (canRetry = true) => {
-      try {
-        const addon = new WebglAddon();
-        addon.onContextLoss(() => {
-          dlog("terminal", null, "WebGL context lost — disposing addon", "WARN");
-          try { addon.dispose(); } catch {}
-          webglRef.current = null;
-          if (canRetry) {
-            webglRetryTimerRef.current = setTimeout(() => loadWebgl(false), 1000);
-          }
-        });
-        term.loadAddon(addon);
-        webglRef.current = addon;
-      } catch {
-        webglRef.current = null;
-        if (!canRetry) {
-          dlog("terminal", null, "WebGL retry failed — using canvas renderer", "WARN");
-        }
-      }
-    };
-    loadWebgl();
-
-    try {
-      const dims = fit.proposeDimensions();
-      if (dims && dims.rows > 1) fit.fit();
-    } catch {}
-
-    // Observe container size changes
-    const observer = new ResizeObserver(() => {
-      try {
-        const dims = fit.proposeDimensions();
-        if (!dims || dims.rows <= 1) return;
-        fit.fit();
-      } catch {}
-    });
-    observer.observe(el);
-    observerRef.current = observer;
-  }, []);
+    if (term && fit && !attachedRef.current) {
+      openTerminal(term, fit, el);
+    }
+    // If term isn't ready yet, openTerminal will be called from the useEffect above
+  }, [openTerminal]);
 
   const write = useCallback((data: string) => {
-    termRef.current?.write(data);
+    const term = termRef.current;
+    if (!term) return;
+    try { term.write(data); } catch {}
   }, []);
 
-  // Flush all accumulated write chunks to xterm.js as a single write.
+  // Flush all accumulated write chunks as a single write.
   // Coalescing ensures DEC 2026 sync blocks (BSU+content+ESU) that arrive
-  // in separate ConPTY pipe reads are written atomically to xterm.js.
+  // in separate ConPTY pipe reads are written atomically.
   const flushWrites = useCallback(() => {
     const term = termRef.current;
     if (!term) return;
@@ -245,31 +279,24 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       }
     }
 
+    // xterm.js preserves scroll position across writes natively.
     const buf = term.buffer.active;
     const baseYBefore = buf.baseY;
 
-    term.write(merged);
+    try {
+      term.write(merged);
+    } catch (err) {
+      dlog("terminal", null, `term.write error: ${err}`, "ERR");
+    }
 
-    const baseYAfter = buf.baseY;
-
-    if (baseYAfter < baseYBefore) {
-      // ESC[3J from filter's ED 2 replacement cleared scrollback — reset drift counter
-      baseYDriftRef.current = 0;
-    } else if (baseYAfter > baseYBefore) {
-      baseYDriftRef.current += baseYAfter - baseYBefore;
-      // Safety valve: if baseY has drifted 3+ lines without a reset from the
-      // filter's ESC[3J, ConPTY is sending partial updates that overflow the
-      // viewport. Clear accumulated scrollback to prevent distortion.
-      if (baseYDriftRef.current >= 3) {
-        term.write("\x1b[3J");
-        baseYDriftRef.current = 0;
-      }
+    if (buf.baseY < baseYBefore) {
+      term.scrollToBottom();
     }
   }, []);
 
   // Debounced write: accumulates ConPTY chunks and flushes after 4ms of
   // quiet or 50ms max latency. Coalesces BSU+content+ESU into single writes
-  // so xterm.js 6's native DEC 2026 sync rendering works correctly.
+  // so DEC 2026 sync rendering works correctly.
   const writeBytes = useCallback((data: Uint8Array) => {
     const term = termRef.current;
     if (!term) return;
@@ -313,10 +340,12 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     const term = termRef.current;
     if (!term) return;
     const buf = term.buffer.active;
-    const atBottom = buf.viewportY >= buf.baseY - BOTTOM_TOLERANCE;
+
+    // xterm.js: viewportY is absolute position, baseY is scrollback lines
+    const atBottom = buf.baseY - buf.viewportY <= BOTTOM_TOLERANCE;
 
     if (atBottom) {
-      const line = findPromptLine(buf, buf.baseY + term.rows - 1);
+      const line = findPromptLine(buf, buf.length - 1);
       if (line >= 0) {
         term.scrollToLine(Math.max(0, line - 1));
       } else {
@@ -324,7 +353,9 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       }
     } else {
       // Step back: find prompt above current viewport top
-      const line = findPromptLine(buf, buf.viewportY - 1);
+      // xterm.js: viewportY IS the absolute line index of viewport top
+      const viewportTopAbs = buf.viewportY;
+      const line = findPromptLine(buf, viewportTopAbs - 1);
       if (line >= 0) {
         term.scrollToLine(Math.max(0, line - 1));
       } else {
@@ -336,14 +367,16 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const isAtBottom = useCallback(() => {
     const term = termRef.current;
     if (!term) return true;
-    // 2-line tolerance for near-bottom snap
-    return term.buffer.active.viewportY >= term.buffer.active.baseY - BOTTOM_TOLERANCE;
+    // xterm.js: viewportY is absolute position, baseY is scrollback lines
+    const buf = term.buffer.active;
+    return buf.baseY - buf.viewportY <= BOTTOM_TOLERANCE;
   }, []);
 
   const isAtTop = useCallback(() => {
     const term = termRef.current;
     if (!term) return true;
-    return term.buffer.active.viewportY === 0;
+    // At top when viewport is at buffer start
+    return term.buffer.active.viewportY <= 0;
   }, []);
 
   const fit = useCallback(() => {
@@ -394,14 +427,14 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     return lines.join("\n");
   }, []);
 
-  // Read current input from xterm.js buffer — authoritative, immediate,
+  // Read current input from terminal buffer — authoritative, immediate,
   // independent of PTY input tracking. Strips the prompt prefix.
-  // Supports both current (> + NBSP) and legacy (❯) Claude Code prompts.
   const getCurrentInput = useCallback((): string => {
     const term = termRef.current;
     if (!term) return "";
     const buf = term.buffer.active;
-    const y = buf.cursorY + buf.baseY;
+    // xterm.js: baseY is scrollback lines above viewport, cursorY is viewport-relative
+    const y = buf.baseY + buf.cursorY;
     const line = buf.getLine(y);
     if (!line) return "";
     const text = line.translateToString(true);
@@ -428,6 +461,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     }
   }, []);
 
+
   return {
     attach,
     write,
@@ -447,6 +481,6 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     getBufferTail,
     getCurrentInput,
     termRef,
-    searchAddonRef,
+    webglRef,
   };
 }

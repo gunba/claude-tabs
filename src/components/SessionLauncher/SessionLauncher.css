@@ -135,26 +135,28 @@
   background: var(--bg-surface-hover);
 }
 
-/* ── Select row (Model, Permissions, Effort, Skip, Save) ── */
+/* ── Pill selectors (inline, wrapping) ──────────────────── */
 
-.launcher-selects {
+.launcher-pills-section {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
   margin-top: 10px;
-  flex-wrap: wrap;
 }
 
-.launcher-select-group {
+.launcher-pill-icon {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  color: var(--text-muted);
 }
 
-.launcher-select-icon {
-  font-size: 12px;
-  flex-shrink: 0;
+.launcher-context-pills {
+  margin-left: -2px;
 }
+
+/* ── Prompt dropdown (kept as select for variable options) ── */
 
 .launcher-select {
   background: var(--bg-primary);
@@ -178,7 +180,12 @@
   color: var(--text-primary);
 }
 
+/* ── Toggle pills (Skip, Sandbox, TAP, TFC) ────────────── */
+
 .launcher-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 4px 10px;
   font-size: 10px;
   font-weight: 500;
@@ -266,6 +273,12 @@
 }
 
 .launcher-cli-header-left {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.launcher-cli-header-right {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -529,15 +542,7 @@
 
 .btn-secondary:hover { background: var(--border); }
 
-/* System prompt dropdown group */
-.launcher-prompt-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
-  border-left: 1px solid var(--border-subtle);
-  padding-left: 8px;
-}
+/* System prompt dropdown — uses .launcher-pill-row for layout */
 
 .launcher-prompt-select {
   max-width: 130px;

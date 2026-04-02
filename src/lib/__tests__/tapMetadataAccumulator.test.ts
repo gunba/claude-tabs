@@ -175,28 +175,58 @@ describe("TapMetadataAccumulator", () => {
     expect(diff?.apiLatencyMs).toBe(50);
   });
 
-  it("uses contextBudget.totalContextSize as denominator when available", () => {
+  it("ignores contextBudget (system prompt size) and uses model-inferred window instead", () => {
     const acc = new TapMetadataAccumulator();
-    // Set contextBudget with totalContextSize = 100000
+    // contextBudget.totalContextSize is the system prompt budget, NOT the context window
     acc.process({
       kind: "ContextBudget", ts: 0,
-      claudeMdSize: 2000, totalContextSize: 100000,
+      claudeMdSize: 2000, totalContextSize: 16000,
       mcpToolsCount: 5, mcpToolsTokens: 3000,
       nonMcpToolsCount: 20, nonMcpToolsTokens: 15000,
       projectFileCount: 10,
     });
-    // TurnStart with cacheRead = 50000 → should be 50% of 100000, not 25% of 200000
+    // TurnStart with 50k tokens on a default 200k model → 25%, not 50000/16000=312%
     acc.process({
       kind: "TurnStart", ts: 1, model: "opus",
       inputTokens: 0, outputTokens: 0, cacheRead: 50000, cacheCreation: 0,
     });
-    // Need an ApiTelemetry to trigger diff with the right context%
     const diff = acc.process({
       kind: "ApiTelemetry", ts: 2, model: "opus", costUSD: 0.01,
       inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, uncachedInputTokens: 100,
       durationMs: 500, ttftMs: 200, queryChainId: null, queryDepth: 0, stopReason: null,
     });
-    expect(diff?.contextPercent).toBe(50); // 50000/100000*100, not 50000/200000*100=25
+    expect(diff?.contextPercent).toBe(25); // 50000/200000*100, ignoring contextBudget
+  });
+
+  it("infers 1M context window from model name", () => {
+    const acc = new TapMetadataAccumulator();
+    // TurnStart with [1m] model — 100k tokens should be 10% of 1M, not 50% of 200k
+    acc.process({
+      kind: "TurnStart", ts: 0, model: "claude-opus-4-6[1m]",
+      inputTokens: 10000, outputTokens: 0, cacheRead: 80000, cacheCreation: 10000,
+    });
+    const diff = acc.process({
+      kind: "ApiTelemetry", ts: 1, model: "claude-opus-4-6[1m]", costUSD: 0.01,
+      inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, uncachedInputTokens: 100,
+      durationMs: 500, ttftMs: 200, queryChainId: null, queryDepth: 0, stopReason: null,
+    });
+    // contextTokens = 10000 + 80000 + 10000 = 100000; windowSize = 1M
+    expect(diff?.contextPercent).toBe(10);
+  });
+
+  it("uses all TurnStart token components for context percentage", () => {
+    const acc = new TapMetadataAccumulator();
+    acc.process({
+      kind: "TurnStart", ts: 0, model: "opus",
+      inputTokens: 20000, outputTokens: 0, cacheRead: 50000, cacheCreation: 30000,
+    });
+    const diff = acc.process({
+      kind: "ApiTelemetry", ts: 1, model: "opus", costUSD: 0.01,
+      inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, uncachedInputTokens: 100,
+      durationMs: 500, ttftMs: 200, queryChainId: null, queryDepth: 0, stopReason: null,
+    });
+    // contextTokens = 20000 + 50000 + 30000 = 100000; windowSize = 200000 (default)
+    expect(diff?.contextPercent).toBe(50);
   });
 
   it("accumulates statusLine from StatusLineUpdate event", () => {

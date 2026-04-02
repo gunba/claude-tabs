@@ -1,0 +1,48 @@
+.pill-group {
+  display: inline-flex;
+}
+
+.pill-option {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: -1px;
+  position: relative;
+}
+
+.pill-option:first-child {
+  border-radius: 12px 0 0 12px;
+  margin-left: 0;
+}
+
+.pill-option:last-child {
+  border-radius: 0 12px 12px 0;
+}
+
+.pill-option:only-child {
+  border-radius: 12px;
+}
+
+.pill-option:hover:not(:disabled) {
+  color: var(--text-secondary);
+  border-color: var(--text-muted);
+  z-index: 1;
+}
+
+/* Default selected state (when no colorFn provides inline styles) */
+.pill-option-selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  z-index: 1;
+}
+
+.pill-group-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}

@@ -1,7 +1,9 @@
 mod commands;
 mod jsonl_watcher;
+mod output_filter;
 mod path_utils;
 mod proxy;
+mod pty;
 mod session;
 mod tap_server;
 
@@ -99,7 +101,6 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::new().build())
-        .plugin(tauri_plugin_pty::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
@@ -133,6 +134,7 @@ pub fn run() {
         .manage(ActivePids(Mutex::new(HashSet::new())))
         .manage(Arc::new(Mutex::new(WatcherState::new())))
         .manage(Arc::new(Mutex::new(TapServerState::new())))
+        .manage(pty::PtyState::default())
         .manage(ProxyState::new())
         .invoke_handler(tauri::generate_handler![
             commands::create_session,
@@ -187,7 +189,6 @@ pub fn run() {
             commands::append_tap_data,
             commands::open_tap_log,
             commands::cleanup_tap_logs,
-            commands::get_recordings_dir,
             commands::prune_worktree,
             commands::plugin_list,
             commands::plugin_install,
@@ -195,10 +196,10 @@ pub fn run() {
             commands::plugin_enable,
             commands::plugin_disable,
             commands::resolve_api_host,
+            commands::fetch_usage,
             commands::git_repo_check,
             commands::git_status,
             commands::git_diff_file,
-            commands::read_recording_file,
             tap_server::start_tap_server,
             tap_server::stop_tap_server,
             proxy::start_api_proxy,
@@ -210,6 +211,15 @@ pub fn run() {
             proxy::stop_traffic_log,
             proxy::get_traffic_log_path,
             proxy::cleanup_traffic_logs,
+            pty::pty_spawn,
+            pty::pty_read,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill,
+            pty::pty_exitstatus,
+            pty::pty_destroy,
+            pty::pty_get_child_pid,
+            pty::pty_drain_output,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Claude Tabs")

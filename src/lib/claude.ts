@@ -54,15 +54,48 @@ export function getEffectiveState(state: SessionState, subagents: Subagent[]): S
 }
 
 /** Known model families: keyword → display label + CSS color. */
-const MODEL_FAMILIES: Array<{ keyword: string; label: string; color: string }> = [
+export const MODEL_FAMILIES: Array<{ keyword: string; label: string; color: string }> = [
   { keyword: "opus", label: "Opus", color: "#ff8000" },     // Legendary
   { keyword: "sonnet", label: "Sonnet", color: "#a335ee" },  // Epic
   { keyword: "haiku", label: "Haiku", color: "#4e9bff" },    // Rare
 ];
 
-function resolveModelFamily(model: string | null): (typeof MODEL_FAMILIES)[number] | null {
+export function resolveModelFamily(model: string | null): (typeof MODEL_FAMILIES)[number] | null {
   if (!model) return null;
   return MODEL_FAMILIES.find((f) => model.includes(f.keyword)) ?? null;
+}
+
+/** Entry in the runtime model registry, populated from tap events. */
+export interface ModelRegistryEntry {
+  modelId: string;           // e.g. "claude-opus-4-6[1m]"
+  family: string;            // e.g. "opus"
+  contextWindowSize: number; // e.g. 1000000
+  lastSeenAt: number;        // Date.now()
+}
+
+/** Resolve a model family + context variant to a CLI-compatible model string.
+ *  For "200k": returns the short alias (CLI resolves to latest version).
+ *  For "1m": looks up the registry for a confirmed full model ID with [1m] suffix.
+ *  Falls back to the short alias if no registry entry exists (user gets 200k). */
+export function resolveModelId(
+  family: string,
+  variant: "200k" | "1m",
+  registry: ModelRegistryEntry[],
+): string {
+  if (variant === "200k") return family;
+  const entry = registry.find(e => e.family === family && e.modelId.includes("[1m]"));
+  if (entry) return entry.modelId;
+  return family;
+}
+
+/** Extract the model family keyword from a full or short model string. */
+export function extractModelFamily(model: string | null): string | null {
+  return resolveModelFamily(model)?.keyword ?? null;
+}
+
+/** Whether a model string represents the 1M context variant. */
+export function isModel1m(model: string | null): boolean {
+  return !!model && model.includes("[1m]");
 }
 
 /** Model display label */

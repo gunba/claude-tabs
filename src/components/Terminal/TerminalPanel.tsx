@@ -10,14 +10,12 @@ import { useInspectorConnection } from "../../hooks/useInspectorConnection";
 import { useTapPipeline } from "../../hooks/useTapPipeline";
 import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
 import { registerPtyWriter, unregisterPtyWriter, registerPtyKill, unregisterPtyKill, registerPtyHandleId, unregisterPtyHandleId, writeToPty } from "../../lib/ptyRegistry";
-import { registerBufferReader, unregisterBufferReader, registerTailReader, unregisterTailReader, registerSearchAddon, unregisterSearchAddon, registerScrollToLine, unregisterScrollToLine } from "../../lib/terminalRegistry";
+import { registerBufferReader, unregisterBufferReader, registerTailReader, unregisterTailReader, registerTerminal, unregisterTerminal, registerScrollToLine, unregisterScrollToLine } from "../../lib/terminalRegistry";
 import { useSettingsStore } from "../../store/settings";
-import { startPtyRecording } from "../../lib/ptyProcess";
 import { IconSearch } from "../Icons/Icons";
 import { normalizePath } from "../../lib/paths";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
 import { isSessionIdle } from "../../types/session";
-import "@xterm/xterm/css/xterm.css";
 import "./TerminalPanel.css";
 
 const EMPTY_TAP_SET = new Set<string>();
@@ -119,9 +117,10 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const [queuedInput, setQueuedInput] = useState<string | null>(null);
   const lastHookChangeRef = useRef(hookChangeCounter);
 
-  // Hide loading spinner when inspector connects (session is running and responsive)
+  // Hide loading spinner when inspector connects — but only for non-resume sessions.
+  // Resume sessions keep the spinner until the session reaches idle (buffer flush there).
   useEffect(() => {
-    if (loading && inspector.connected) setLoading(false);
+    if (loading && inspector.connected && !resumeLoadingRef.current) setLoading(false);
   }, [loading, inspector.connected]);
 
   // Sync Claude's internal session ID into config for persistence (plan-mode forks, compaction)
@@ -148,12 +147,32 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     }
   }, [tapProcessor.claudeSessionId, session.id, session.config.sessionId, updateConfig]);
 
-  // Clear resume loading suppression when session reaches idle (resume is complete).
+  // Resume complete: flush buffered content atomically and dismiss spinner.
   // After this, context-clear detection works normally for /clear, compaction, etc.
   useEffect(() => {
-    if (resumeLoadingRef.current && isSessionIdle(session.state)) {
-      resumeLoadingRef.current = false;
+    if (!resumeLoadingRef.current) return;
+    if (!isSessionIdle(session.state) && session.state !== "dead" && session.state !== "error") return;
+
+    resumeLoadingRef.current = false;
+
+    // Flush all PTY data buffered during resume as a single write
+    const chunks = bgBufferRef.current;
+    if (chunks.length > 0) {
+      bgBufferRef.current = [];
+      let totalLen = 0;
+      for (const c of chunks) totalLen += c.length;
+      const merged = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const c of chunks) { merged.set(c, offset); offset += c.length; }
+
+      const term = terminal.termRef.current;
+      if (term) {
+        try { term.write(merged); } catch {}
+        term.scrollToBottom();
+      }
     }
+    setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.state]);
 
   // Cache session config when inspector connects (for resume picker fallback)
@@ -170,7 +189,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // handlePtyData needs terminal, terminal needs handleTermData, which needs pty,
   // and pty needs handlePtyData. We use terminalRef to avoid forward-referencing.
   const terminalRef = useRef<ReturnType<typeof useTerminal> | null>(null);
-  // Buffer PTY data for background tabs — skip xterm.js writes when not visible,
+  // Buffer PTY data for background tabs — skip terminal writes when not visible,
   // flush in one write when the tab becomes visible. Saves O(N) rendering cost.
   const visibleRef = useRef(visible);
   const bgBufferRef = useRef<Uint8Array[]>([]);
@@ -210,14 +229,16 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           filtered = new TextEncoder().encode(cleaned);
         }
       }
-      // Only write to xterm.js if the tab is visible; buffer otherwise
-      if (visibleRef.current) {
+      // Write to terminal if visible and not buffering for resume; buffer otherwise.
+      // During resume loading, PTY data is buffered and flushed atomically when the
+      // session reaches idle — prevents content from "flooding in" during replay.
+      if (visibleRef.current && !resumeLoadingRef.current) {
         terminalRef.current?.writeBytes(filtered);
       } else {
         bgBufferRef.current.push(filtered);
       }
     },
-    []
+    [session.id]
   );
 
   // External process holding the session — shown when user must confirm kill
@@ -349,7 +370,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       lastPtyDimsRef.current = { cols, rows };
       // Defer the PTY resize when: (a) tab is hidden — resize would trigger a
       // ConPTY repaint with no visible terminal to render into, or (b) bgBuffer
-      // has pending data — xterm.js hasn't caught up yet and the repaint would
+      // has pending data — terminal hasn't caught up yet and the repaint would
       // duplicate content into scrollback.
       if (!visibleRef.current || bgBufferRef.current.length > 0) {
         deferredResizeRef.current = { cols, rows };
@@ -423,21 +444,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         dlog("terminal", session.id, `spawned pid=${handle.pid} port=${inspPort} tapPort=${tapPort} cols=${cols} rows=${rows}`);
         updateState(session.id, "idle");
 
-        // Auto-start PTY recording if flagged by launcher
-        const store = useSessionStore.getState();
-        if (store.autoRecordOnStart.has(session.id)) {
-          store.clearAutoRecordOnStart(session.id);
-          try {
-            const recDir = await invoke<string>("get_recordings_dir");
-            const recPath = recDir + "/" + session.id + ".ndjson";
-            await startPtyRecording(handle.pid, recPath);
-            store.startPtyRecording(session.id, recPath);
-            dlog("terminal", session.id, `auto-recording started: ${recPath}`);
-          } catch (e) {
-            dlog("terminal", session.id, `auto-recording failed: ${e}`, "ERR");
-          }
-        }
-
         // Post-spawn dimension verification
         // or WebGL renderer weren't ready during the initial fit.
         requestAnimationFrame(() => {
@@ -479,8 +485,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     registerBufferReader(session.id, terminal.getBufferText);
     registerTailReader(session.id, terminal.getBufferTail);
     registerScrollToLine(session.id, terminal.scrollToLine);
-    if (terminal.searchAddonRef.current) {
-      registerSearchAddon(session.id, terminal.searchAddonRef.current);
+    if (terminal.termRef.current) {
+      registerTerminal(session.id, terminal.termRef.current);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, terminal.getBufferText, terminal.getBufferTail, terminal.scrollToLine]);
@@ -496,7 +502,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       unregisterPtyHandleId(id);
       unregisterBufferReader(id);
       unregisterTailReader(id);
-      unregisterSearchAddon(id);
+      unregisterTerminal(id);
       unregisterScrollToLine(id);
       unregisterInspectorPort(id);
       unregisterInspectorCallbacks(id);
@@ -524,8 +530,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   }, [killRequest, session.id, session.state, clearKillRequest, pty]);
 
   // Re-fit and focus when becoming visible. useLayoutEffect fires before browser
-  // paint. Reveal is deferred to xterm.js onRender — the event-driven signal that
-  // the renderer has painted the updated content (no timer).
+  // paint. Reveal is deferred to a write callback / rAF — signal that the
+  // renderer has painted the updated content (no timer).
   // terminal is NOT in deps because useTerminal returns a new object on every render.
   useLayoutEffect(() => {
     // Dispose any pending reveal from a prior transition
@@ -553,19 +559,17 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       for (const c of chunks) { merged.set(c, offset); offset += c.length; }
       dlog("terminal", session.id, `flush bg buffer ${totalLen}B`, "DEBUG");
 
-      term?.write(merged, () => {
-        term.scrollToBottom();
-        // Reveal after renderer paints the new content at the correct scroll position
+      try {
+        term!.write(merged);
+        term!.scrollToBottom();
         if (container) {
-          revealDisposableRef.current?.dispose();
-          const d = term.onRender(() => {
-            d.dispose();
-            revealDisposableRef.current = null;
-            container.style.opacity = '';
+          requestAnimationFrame(() => {
+            if (containerRef.current) containerRef.current.style.opacity = '';
           });
-          revealDisposableRef.current = d;
         }
-      });
+      } catch {
+        if (container) container.style.opacity = '1';
+      }
     }
 
     terminal.fit();
@@ -580,15 +584,17 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
     if (!hasBuffer && term) {
       term.scrollToBottom();
-      // Force render to guarantee onRender fires (fit may not change dimensions)
-      term.refresh(0, term.rows - 1);
+      // Trigger render cycle and reveal after paint
       if (container) {
-        const d = term.onRender(() => {
-          d.dispose();
-          revealDisposableRef.current = null;
-          container.style.opacity = '';
-        });
-        revealDisposableRef.current = d;
+        try {
+          term.write('', () => {
+            requestAnimationFrame(() => {
+              if (containerRef.current) containerRef.current.style.opacity = '';
+            });
+          });
+        } catch {
+          if (containerRef.current) containerRef.current.style.opacity = '';
+        }
       }
     }
 
@@ -603,16 +609,13 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 
-  // Fix GPU texture corruption after OS sleep / display power-off.
-  // clearTextureAtlas() rebuilds the glyph atlas (xterm.js docs recommend
-  // this for Chromium/Nvidia sleep bugs), refresh() forces a full redraw.
+  // Re-fit terminal on OS wake / display power-off recovery.
+  // Re-fit terminal on OS wake / display power-off recovery.
+  // Clear WebGL texture atlas to fix GPU corruption after sleep (DF-07).
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible" || !visible) return;
-      const term = terminal.termRef.current;
-      if (!term) return;
-      term.clearTextureAtlas();
-      term.refresh(0, term.rows - 1);
+      terminalRef.current?.webglRef.current?.clearTextureAtlas();
       terminal.fit();
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -622,7 +625,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Queue input handler: read from xterm.js buffer (authoritative), or cancel if already queued
+  // Queue input handler: read from terminal buffer (authoritative), or cancel if already queued
   const handleQueueInput = useCallback(() => {
     if (queuedInput) {
       setQueuedInput(null);
@@ -704,7 +707,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const showDeadOverlay = session.state === "dead" && visible;
   const showButtonBar = visible && session.state !== "dead";
 
-  // Ctrl+mouse shortcuts (capture phase — fires before xterm.js ScrollableElement's stopPropagation)
+  // Ctrl+mouse shortcuts (capture phase — fires before xterm.js stopPropagation)
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !visible) return;

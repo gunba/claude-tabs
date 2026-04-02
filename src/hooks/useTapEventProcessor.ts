@@ -6,7 +6,7 @@ import { reduceTapEvent, isCompletionEvent } from "../lib/tapStateReducer";
 import { TapMetadataAccumulator } from "../lib/tapMetadataAccumulator";
 import { TapSubagentTracker } from "../lib/tapSubagentTracker";
 import { normalizePath } from "../lib/paths";
-import { getResumeId } from "../lib/claude";
+import { getResumeId, resolveModelFamily } from "../lib/claude";
 import { useSettingsStore } from "../store/settings";
 import { dlog } from "../lib/debugLog";
 import type { TapEvent } from "../types/tapEvents";
@@ -66,6 +66,7 @@ export function useTapEventProcessor(
   const metaAccRef = useRef<TapMetadataAccumulator | null>(null);
   const subTrackerRef = useRef<TapSubagentTracker | null>(null);
   const healthCountRef = useRef(0);
+  const lastHighMemWarnRef = useRef(0);
   const apiIpResolvedRef = useRef(false);
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
@@ -135,6 +136,19 @@ export function useTapEventProcessor(
         updateMetadata(sid, metaDiff);
       }
 
+      // 2b. Model registry — capture observed model IDs + context window sizes
+      if (event.kind === "StatusLineUpdate" && event.modelId && event.contextWindowSize > 0) {
+        const family = resolveModelFamily(event.modelId);
+        if (family) {
+          useSettingsStore.getState().updateModelRegistry({
+            modelId: event.modelId,
+            family: family.keyword,
+            contextWindowSize: event.contextWindowSize,
+            lastSeenAt: Date.now(),
+          });
+        }
+      }
+
       // 3. Subagent tracker
       const subActions = subTracker.process(event);
       for (const action of subActions) {
@@ -194,7 +208,11 @@ export function useTapEventProcessor(
           updateProcessHealth(sid, { rss: event.rss, heapUsed: event.heapUsed, uptime: event.uptime });
         }
         if (event.rss > 1_000_000_000) {
-          dlog("inspector", sid, `High memory: ${Math.round(event.rss / 1_000_000)}MB RSS`, "WARN");
+          const now = Date.now();
+          if (now - lastHighMemWarnRef.current >= 600_000) {
+            lastHighMemWarnRef.current = now;
+            dlog("inspector", sid, `High memory: ${Math.round(event.rss / 1_000_000)}MB RSS`, "WARN");
+          }
         }
       }
 

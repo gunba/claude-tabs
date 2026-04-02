@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../store/settings";
 import { trace, traceAsync } from "../lib/perfTrace";
+import { dlog } from "../lib/debugLog";
 import type { CliCapabilities, CliOption, CliCommand } from "../store/settings";
 
 /**
@@ -60,7 +61,7 @@ export function useCliWatcher(): void {
 
           // Log version change
           if (cached) {
-            console.info(`[cliWatcher] Claude CLI updated: ${cached} → ${version}`);
+            dlog("config", null, `Claude CLI updated: ${cached} → ${version}`);
           }
         }
       } catch {
@@ -139,6 +140,15 @@ export function parseHelpText(help: string): CliCapabilities {
   for (const m of modelPatterns) {
     if (help.toLowerCase().includes(m)) {
       models.push(m);
+    }
+  }
+  // Also extract full model IDs (e.g. claude-opus-4-6, claude-opus-4-6[1m])
+  // from the --model flag description or anywhere in help text.
+  const fullIdRegex = /claude-[\w]+-[\d]+-[\d]+(?:\[\d+m\])?/g;
+  const fullIds = help.match(fullIdRegex);
+  if (fullIds) {
+    for (const id of new Set(fullIds)) {
+      if (!models.includes(id)) models.push(id);
     }
   }
 

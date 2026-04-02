@@ -1,13 +1,13 @@
 /**
  * Global registry mapping session IDs to terminal buffer extraction functions,
- * search addons, and scroll callbacks.
+ * highlight functions, and scroll callbacks.
  */
 
-import type { SearchAddon } from "@xterm/addon-search";
+import type { Terminal } from "@xterm/xterm";
 
 const bufferReaders = new Map<string, () => string>();
 const tailReaders = new Map<string, (lines: number) => string>();
-const searchAddons = new Map<string, SearchAddon>();
+const terminals = new Map<string, Terminal>();
 const scrollFns = new Map<string, (line: number) => void>();
 
 export function registerBufferReader(sessionId: string, getBufferText: () => string): void {
@@ -36,16 +36,24 @@ export function getSessionBufferTail(sessionId: string, lines: number): string |
   return reader ? reader(lines) : null;
 }
 
-export function registerSearchAddon(sessionId: string, addon: SearchAddon): void {
-  searchAddons.set(sessionId, addon);
+export function registerTerminal(sessionId: string, term: Terminal): void {
+  terminals.set(sessionId, term);
 }
 
-export function unregisterSearchAddon(sessionId: string): void {
-  searchAddons.delete(sessionId);
+export function unregisterTerminal(sessionId: string): void {
+  terminals.delete(sessionId);
 }
 
-export function getSearchAddon(sessionId: string): SearchAddon | null {
-  return searchAddons.get(sessionId) ?? null;
+/** Highlight a match in a session's terminal via selection API. */
+export function highlightMatch(sessionId: string, lineIndex: number, col: number, length: number): void {
+  const term = terminals.get(sessionId);
+  if (term) term.select(col, lineIndex, length);
+}
+
+/** Clear highlight (selection) in a session's terminal. */
+export function clearHighlight(sessionId: string): void {
+  const term = terminals.get(sessionId);
+  if (term) term.clearSelection();
 }
 
 export function registerScrollToLine(sessionId: string, fn: (line: number) => void): void {

@@ -43,23 +43,10 @@
   background: var(--term-bg, var(--bg-primary));
 }
 
-.terminal-container .xterm {
-  height: 100%;
-  overflow: hidden;
-}
-
-/* xterm.js 6.0: hide the horizontal scrollbar from the VS Code scrollable element */
-.terminal-container .xterm .xterm-scrollable-element > .scrollbar.horizontal {
-  display: none !important;
-}
-
-/* Allow scroll tracking while hiding scrollbar visually.
-   overflow-y: scroll keeps viewport synced with xterm.js internal scroll state
-   (prevents desync on fast scroll-up). scrollbar-width: none hides it. */
+/* Hide xterm.js native scrollbar — scroll handled via button bar (PT-08) */
 .terminal-container .xterm-viewport {
   overflow-y: scroll !important;
   scrollbar-width: none;
-  background-color: transparent !important;
 }
 .terminal-container .xterm-viewport::-webkit-scrollbar {
   display: none;

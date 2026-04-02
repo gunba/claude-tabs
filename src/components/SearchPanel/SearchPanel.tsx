@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionStore } from "../../store/sessions";
 import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
-import { getSessionTranscript, getSearchAddon, scrollSessionToLine } from "../../lib/terminalRegistry";
+import { getSessionTranscript, highlightMatch, clearHighlight, scrollSessionToLine } from "../../lib/terminalRegistry";
 import { searchBuffers, validateRegex, type SearchMatch } from "../../lib/searchBuffers";
 import { IconClose } from "../Icons/Icons";
 import { dlog } from "../../lib/debugLog";
@@ -117,14 +117,9 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
 
   // Navigate to a specific result
   const navigateToResult = useCallback((match: SearchMatch) => {
-    // Clear previous highlights
+    // Clear previous highlight
     if (prevHighlightSession.current && prevHighlightSession.current !== match.sessionId) {
-      const prevAddon = getSearchAddon(prevHighlightSession.current);
-      if (prevAddon) {
-        try { prevAddon.clearDecorations(); } catch (e) {
-          dlog("search", match.sessionId, `Failed to clear previous decorations: ${e}`, "WARN");
-        }
-      }
+      clearHighlight(prevHighlightSession.current);
     }
 
     // Switch tab
@@ -135,26 +130,11 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       scrollSessionToLine(match.sessionId, Math.max(0, match.lineIndex - 2));
 
-      const addon = getSearchAddon(match.sessionId);
-      if (addon && query) {
-        try {
-          const style = getComputedStyle(document.documentElement);
-          const matchBg = style.getPropertyValue("--accent-bg").trim() || "#3a2a22";
-          const activeBg = style.getPropertyValue("--accent").trim() || "#d97757";
-          const decorations = {
-            matchBackground: matchBg,
-            activeMatchBackground: activeBg,
-            matchOverviewRuler: matchBg,
-            activeMatchColorOverviewRuler: activeBg,
-          };
-
-          addon.findNext(query, { regex: useRegex, caseSensitive, decorations });
-        } catch (e) {
-          dlog("search", match.sessionId, `SearchAddon.findNext failed: ${e}`, "WARN");
-        }
+      if (query) {
+        highlightMatch(match.sessionId, match.lineIndex, match.matchStart, match.matchLength);
       }
     }));
-  }, [query, caseSensitive, useRegex, setActiveTab]);
+  }, [query, setActiveTab]);
 
   // Navigate to active result when activeIndex changes
   useEffect(() => {
@@ -211,12 +191,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   useEffect(() => {
     return () => {
       if (prevHighlightSession.current) {
-        const addon = getSearchAddon(prevHighlightSession.current);
-        if (addon) {
-          try { addon.clearDecorations(); } catch (e) {
-            dlog("search", null, `Failed to clear decorations on unmount: ${e}`, "WARN");
-          }
-        }
+        clearHighlight(prevHighlightSession.current);
       }
     };
   }, []);
