@@ -59,7 +59,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     term.open(el);
     attachedRef.current = true;
 
-    // WebGL addon for GPU-accelerated rendering (DF-06)
+    // [DF-06] WebGL renderer for performance, with context loss recovery (retry once, fallback to canvas)
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
@@ -117,6 +117,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       await document.fonts.ready;
       if (cancelled) return;
 
+      // [DF-05] xterm.js 6.0 with DEC 2026 synchronized output, fixed 1M scrollback
       term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
@@ -160,7 +161,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
           term!.scrollToBottom();
           return false; // We handled it
         }
-        // Alt+digit: block from PTY — handled by App.tsx global tab-switch handler
+        // [KB-10] Alt+1-9 blocked from PTY — handled by App.tsx global tab-switch handler
         if (ev.altKey && ev.key >= "0" && ev.key <= "9" && ev.type === "keydown") {
           return false; // We handled it (App.tsx will process)
         }
@@ -294,9 +295,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     }
   }, []);
 
-  // Debounced write: accumulates ConPTY chunks and flushes after 4ms of
-  // quiet or 50ms max latency. Coalesces BSU+content+ESU into single writes
-  // so DEC 2026 sync rendering works correctly.
+  // [DF-03] writeBytes: debounce-batched (4ms/50ms) PTY data handler
   const writeBytes = useCallback((data: Uint8Array) => {
     const term = termRef.current;
     if (!term) return;
