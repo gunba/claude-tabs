@@ -15,3 +15,6 @@ test-state.json
 test-commands.json
 node_modules
 CLAUDE.md
+.proofs
+bash.exe.stackdump
+*.stackdump
