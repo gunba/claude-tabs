@@ -4,10 +4,20 @@ set -euo pipefail
 if [ -n "$LOCALAPPDATA" ]; then PYTHON=$(command -v python 2>/dev/null || command -v py 2>/dev/null); else PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null); fi
 export PYTHONUTF8=1
 $PYTHON - << 'PYEOF'
-import json, os, re, sys, fnmatch
+import json, os, re, sys, fnmatch, glob as _glob
 root = os.popen('git rev-parse --show-toplevel 2>/dev/null').read().strip() or '.'
 proofs_dir = os.path.join(root, '.proofs')
-rules_dir = os.path.join(root, '.claude', 'rules')
+config_path = os.path.join(proofs_dir, 'config.json')
+try:
+    with open(config_path) as f:
+        _config = json.load(f)
+except:
+    _config = {}
+rule_files = []
+for _rd in _config.get('rule_dirs', ['.claude/rules']):
+    _dir = os.path.join(root, _rd)
+    rule_files.extend(sorted(_glob.glob(os.path.join(_dir, '*.md'))))
+rule_files.extend(os.path.join(root, d) for d in _config.get('docs', []))
 tracked = set(os.popen('git ls-files 2>/dev/null').read().strip().split('\n'))
 for d in ['src', 'src-tauri/src']:
     dp = os.path.join(root, d)
@@ -17,9 +27,10 @@ for d in ['src', 'src-tauri/src']:
                 tracked.add(os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, '/'))
 warnings = []
 rule_data = {}
-for fname in sorted(os.listdir(rules_dir)):
+for filepath in rule_files:
+    fname = os.path.basename(filepath)
     if not fname.endswith('.md'): continue
-    with open(os.path.join(rules_dir, fname), 'r', encoding='utf-8') as f: content = f.read()
+    with open(filepath, 'r', encoding='utf-8') as f: content = f.read()
     tags = re.findall(r'^\- \[([A-Z]{2}-\d{2,3})\]', content, re.M)
     paths = []
     if content.startswith('---'):

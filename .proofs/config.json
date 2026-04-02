@@ -1,4 +1,11 @@
 {
+  "rule_dirs": [
+    ".claude/rules"
+  ],
+  "docs": [],
+  "plan_agents": [
+    { "name": "plan-critic", "subagent_type": "plan-critic" }
+  ],
   "review_agents": [
     { "name": "reviewer", "prompt_suffix": "Review these changes." }
   ],

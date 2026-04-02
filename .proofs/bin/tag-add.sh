@@ -41,7 +41,7 @@ while i < len(args):
         sys.exit(1)
 
 errors = []
-if not doc_file: errors.append('--doc is required (e.g. DOCS/FEATURES.md)')
+if not doc_file: errors.append('--doc is required (e.g. .claude/rules/some-rule.md)')
 if not section: errors.append('--section is required (e.g. "Tab Bar")')
 if not text: errors.append('--text is required')
 if not files_raw: errors.append('--files is required (e.g. "src/App.tsx")')

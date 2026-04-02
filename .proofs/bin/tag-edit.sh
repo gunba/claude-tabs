@@ -17,15 +17,23 @@ $PYTHON - "$@" << 'PYEOF'
 import json, sys, os, re
 from datetime import datetime, timezone
 
+import glob as _glob
+
 proofs_dir = os.environ['PROOFS_DIR']
-# Read doc files from config
+_root = os.path.dirname(proofs_dir)
+# Read doc files from config (rule_dirs first, then docs)
 _config_path = os.path.join(proofs_dir, 'config.json')
 try:
     with open(_config_path) as _cf:
         _config = json.load(_cf)
-    DOC_FILES = _config.get('docs', ['CLAUDE.md'])
 except:
-    DOC_FILES = ['CLAUDE.md']
+    _config = {}
+
+DOC_FILES = []
+for _rd in _config.get('rule_dirs', ['.claude/rules']):
+    _dir = os.path.join(_root, _rd)
+    DOC_FILES.extend(sorted(_glob.glob(os.path.join(_dir, '*.md'))))
+DOC_FILES.extend(_config.get('docs', []))
 
 args = sys.argv[1:]
 tag = None
