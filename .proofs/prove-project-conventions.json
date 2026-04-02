@@ -1,0 +1,125 @@
+{
+  "file": ".claude/rules\\project-conventions.md",
+  "all_tags": [
+    "AR-01",
+    "BV-01",
+    "BV-02",
+    "BV-03",
+    "CD-01",
+    "DC-01",
+    "DC-02",
+    "LO-01"
+  ],
+  "unchecked": [
+    "BV-01",
+    "BV-03",
+    "LO-01"
+  ],
+  "citations": {
+    "AR-01": {
+      "up": 2,
+      "down": 0,
+      "seen": 4
+    },
+    "BV-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "BV-02": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "BV-03": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "CD-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "DC-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "DC-02": {
+      "up": 1,
+      "down": 0,
+      "seen": 4
+    },
+    "LO-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    }
+  },
+  "metadata": {
+    "AR-01": {
+      "files": [
+        "src/App.tsx",
+        "src-tauri/src/commands.rs"
+      ],
+      "verified": "2026-04-02",
+      "notes": [
+        {
+          "date": "2026-04-02",
+          "text": "Architectural description - no code anchor expected; IPC usage confirmed in App.tsx and commands.rs"
+        }
+      ]
+    },
+    "BV-02": {
+      "files": [
+        "package.json"
+      ],
+      "verified": "2026-04-02",
+      "notes": [
+        {
+          "date": "2026-04-02",
+          "text": "Convention/tooling rule - no code anchor needed"
+        }
+      ]
+    },
+    "CD-01": {
+      "files": [
+        "CLAUDE.md"
+      ],
+      "verified": "2026-04-02",
+      "notes": [
+        {
+          "date": "2026-04-02",
+          "text": "Convention rule about slash commands - no code anchor in source expected"
+        }
+      ]
+    },
+    "DC-01": {
+      "files": [
+        "CLAUDE.md"
+      ],
+      "verified": "2026-04-02",
+      "notes": [
+        {
+          "date": "2026-04-02",
+          "text": "Convention about rule files - no code anchor expected; .claude/rules/ directory confirmed"
+        }
+      ]
+    },
+    "DC-02": {
+      "files": [
+        ".proofs/prove.sh"
+      ],
+      "verified": "2026-04-02",
+      "notes": [
+        {
+          "date": "2026-04-02",
+          "text": "Convention about prove.sh; script confirmed in .proofs/bin/"
+        }
+      ]
+    }
+  },
+  "cycle": 1,
+  "last_run": "2026-04-02T13:29:26.665346+00:00"
+}

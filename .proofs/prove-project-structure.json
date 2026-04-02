@@ -1,0 +1,19 @@
+{
+  "file": ".claude/rules\\project-structure.md",
+  "all_tags": [
+    "FS-01"
+  ],
+  "unchecked": [
+    "FS-01"
+  ],
+  "citations": {
+    "FS-01": {
+      "up": 1,
+      "down": 0,
+      "seen": 4
+    }
+  },
+  "metadata": {},
+  "cycle": 1,
+  "last_run": "2026-04-02T09:05:56.257681+00:00"
+}

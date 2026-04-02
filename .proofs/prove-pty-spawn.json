@@ -1,0 +1,61 @@
+{
+  "file": ".claude/rules\\pty-spawn.md",
+  "all_tags": [
+    "PT-01",
+    "PT-03",
+    "PT-04",
+    "PT-07",
+    "PT-10",
+    "PT-18",
+    "TR-15"
+  ],
+  "unchecked": [
+    "PT-01",
+    "PT-03",
+    "PT-04",
+    "PT-07",
+    "PT-10",
+    "PT-18",
+    "TR-15"
+  ],
+  "citations": {
+    "PT-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-03": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-04": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-07": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-10": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-18": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "TR-15": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    }
+  },
+  "metadata": {},
+  "cycle": 1,
+  "last_run": "2026-04-02T09:04:59.662332+00:00"
+}

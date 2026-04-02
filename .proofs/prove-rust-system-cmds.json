@@ -1,0 +1,75 @@
+{
+  "file": ".claude/rules\\rust-system-cmds.md",
+  "all_tags": [
+    "RC-10",
+    "RC-11",
+    "RC-12",
+    "RC-13",
+    "RC-14",
+    "RC-17",
+    "RC-18",
+    "RC-19",
+    "RC-20"
+  ],
+  "unchecked": [
+    "RC-10",
+    "RC-11",
+    "RC-12",
+    "RC-13",
+    "RC-14",
+    "RC-17",
+    "RC-18",
+    "RC-19",
+    "RC-20"
+  ],
+  "citations": {
+    "RC-10": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-11": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-12": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-13": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-14": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-17": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-18": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-19": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "RC-20": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    }
+  },
+  "metadata": {},
+  "cycle": 1,
+  "last_run": "2026-04-02T09:04:59.662332+00:00"
+}

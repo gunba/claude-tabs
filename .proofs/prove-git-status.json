@@ -1,0 +1,19 @@
+{
+  "file": ".claude/rules\\git-status.md",
+  "all_tags": [
+    "GS-01"
+  ],
+  "unchecked": [
+    "GS-01"
+  ],
+  "citations": {
+    "GS-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    }
+  },
+  "metadata": {},
+  "cycle": 1,
+  "last_run": "2026-04-02T09:04:59.662332+00:00"
+}

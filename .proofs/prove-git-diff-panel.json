@@ -1,0 +1,87 @@
+{
+  "file": ".claude/rules\\git-diff-panel.md",
+  "all_tags": [
+    "GD-01",
+    "GD-02",
+    "GD-03",
+    "GD-04",
+    "GD-05"
+  ],
+  "unchecked": [],
+  "citations": {
+    "GD-01": {
+      "up": 0,
+      "down": 0,
+      "seen": 42
+    },
+    "GD-02": {
+      "up": 0,
+      "down": 0,
+      "seen": 42
+    },
+    "GD-03": {
+      "up": 0,
+      "down": 0,
+      "seen": 42
+    },
+    "GD-04": {
+      "up": 1,
+      "down": 0,
+      "seen": 42
+    },
+    "GD-05": {
+      "up": 0,
+      "down": 0,
+      "seen": 42
+    }
+  },
+  "cycle": 6,
+  "last_run": "2026-03-28T17:04:40.369055+00:00",
+  "metadata": {
+    "GD-01": {
+      "files": [
+        "src/components/DiffPanel/DiffPanel.tsx:1",
+        "src/components/DiffPanel/DiffPanel.css:1"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
+    },
+    "GD-02": {
+      "files": [
+        "src/components/DiffPanel/DiffModal.tsx:1"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
+    },
+    "GD-03": {
+      "files": [
+        "src/components/DiffPanel/DiffModal.tsx:36"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
+    },
+    "GD-04": {
+      "files": [
+        "src/components/DiffPanel/DiffModal.tsx"
+      ],
+      "verified": "2026-03-28",
+      "notes": [
+        {
+          "date": "2026-03-26",
+          "text": "Added during change documentation"
+        },
+        {
+          "date": "2026-03-28",
+          "text": "Confirmed: prev/next buttons in header, Alt+Left/Right keyboard shortcuts, Escape stopPropagation prevents sidebar teardown"
+        }
+      ]
+    },
+    "GD-05": {
+      "files": [
+        "src/components/DiffPanel/DiffPanel.tsx:100"
+      ],
+      "verified": "2026-03-26",
+      "notes": "Added during change documentation"
+    }
+  }
+}

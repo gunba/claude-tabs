@@ -1,0 +1,86 @@
+{
+  "file": ".claude/rules\\hooks-manager.md",
+  "all_tags": [
+    "HM-01",
+    "HM-02",
+    "HM-03",
+    "HM-04",
+    "HM-05",
+    "HM-06",
+    "HM-07",
+    "HM-09",
+    "HM-10"
+  ],
+  "unchecked": [],
+  "citations": {
+    "HM-01": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-02": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-03": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-04": {
+      "up": 1,
+      "seen": 53
+    },
+    "HM-05": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-06": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-07": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-09": {
+      "up": 0,
+      "seen": 53
+    },
+    "HM-10": {
+      "up": 3,
+      "seen": 53
+    }
+  },
+  "cycle": 6,
+  "last_run": "2026-03-28T16:07:16.755642+00:00",
+  "metadata": {
+    "HM-10": {
+      "files": [
+        "src/components/StatusBar/StatusBar.tsx",
+        "src/components/Icons/Icons.tsx"
+      ],
+      "verified": "2026-03-28",
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "Edited via tag-edit.sh"
+        },
+        {
+          "date": "2026-03-28",
+          "text": "StatusBar.tsx imports all icon components from Icons.tsx: IconPencil, IconLightning, IconUnlock, IconClipboard, IconClock, IconBudget, IconWarning, IconHook, IconCircleFilled, IconCircleOutline, IconGitBranch. Icons.tsx defines SVG components using <svg> with currentColor. No emoji found in StatusBar.tsx. Confirmed."
+        }
+      ]
+    },
+    "HM-04": {
+      "files": [
+        "src/components/ConfigManager/HooksPane.tsx"
+      ],
+      "verified": "2026-03-28",
+      "notes": [
+        {
+          "date": "2026-03-28",
+          "text": "HooksPane.tsx line 120: const newHook = { ...(editing?.hook ?? {}), type: form.type, command: form.command.trim() }. Spreads original entry before applying form values, preserving unknown fields from future CLI versions. Confirmed."
+        }
+      ]
+    }
+  }
+}

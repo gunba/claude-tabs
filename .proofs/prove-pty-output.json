@@ -1,0 +1,82 @@
+{
+  "file": ".claude/rules\\pty-output.md",
+  "all_tags": [
+    "PT-06",
+    "PT-08",
+    "PT-09",
+    "PT-11",
+    "PT-12",
+    "PT-13",
+    "PT-15",
+    "PT-16",
+    "PT-17",
+    "PT-20"
+  ],
+  "unchecked": [
+    "PT-06",
+    "PT-08",
+    "PT-09",
+    "PT-11",
+    "PT-12",
+    "PT-13",
+    "PT-15",
+    "PT-16",
+    "PT-17",
+    "PT-20"
+  ],
+  "citations": {
+    "PT-06": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-08": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-09": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-11": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-12": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-13": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-15": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-16": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-17": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    },
+    "PT-20": {
+      "up": 0,
+      "down": 0,
+      "seen": 4
+    }
+  },
+  "metadata": {},
+  "cycle": 1,
+  "last_run": "2026-04-02T09:05:56.257681+00:00"
+}
