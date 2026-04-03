@@ -31,6 +31,14 @@ Per repo, `proofd` stores:
 
 The code repo only receives generated `.claude/rules/*.md`.
 
+For cross-machine use:
+
+- share or git-sync the KB root
+- keep `state.db` local to each machine
+- let each machine regenerate `.claude/rules/` locally
+
+`repo_id` now defaults to a stable digest of the normalized `remote.origin.url`, so the same repo can resolve to the same KB identity on Windows and Linux. If a repo has no stable origin remote, use `--repo-key <stable-id>` or `PROOFD_REPO_KEY=<stable-id>`.
+
 ## CLI
 
 Initialize and inspect:
@@ -39,6 +47,8 @@ Initialize and inspect:
 python tools/proofd.py init
 python tools/proofd.py status
 ```
+
+`proofd` will automatically migrate older path-hash repo IDs in the KB or local state DB to the new stable identity when it can do so safely.
 
 Import the old rules/proofs once:
 

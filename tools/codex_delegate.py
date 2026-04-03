@@ -20,6 +20,35 @@ import subprocess
 import sys
 from datetime import datetime
 
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+def child_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
+def emit_text(content: str, stream: object = sys.stdout) -> None:
+    try:
+        stream.write(content)
+    except UnicodeEncodeError:
+        buffer = getattr(stream, "buffer", None)
+        if buffer is not None:
+            buffer.write(content.encode("utf-8", errors="replace"))
+        else:
+            stream.write(content.encode("ascii", errors="replace").decode("ascii"))
+    try:
+        stream.flush()
+    except Exception:
+        pass
+
 
 def repo_root_from(path: pathlib.Path) -> pathlib.Path:
     result = subprocess.run(
@@ -29,6 +58,7 @@ def repo_root_from(path: pathlib.Path) -> pathlib.Path:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env(),
         check=False,
     )
     if result.returncode == 0 and result.stdout.strip():
@@ -44,6 +74,7 @@ def git_value(repo_root: pathlib.Path, args: list[str]) -> str:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env(),
         check=False,
     )
     if result.returncode != 0:
@@ -59,6 +90,7 @@ def proofd_status(repo_root: pathlib.Path) -> dict:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env(),
         check=False,
     )
     if result.returncode != 0:
@@ -83,6 +115,7 @@ def build_prompt(repo_root: pathlib.Path, workflow: str, workflow_args: list[str
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env(),
         check=False,
     )
     if result.returncode != 0:
@@ -228,15 +261,37 @@ def main() -> int:
     print("")
 
     try:
-        completed = subprocess.run(
-            command,
-            cwd=str(repo_root),
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        if os.name == "nt":
+            completed = subprocess.run(
+                command,
+                cwd=str(repo_root),
+                input=prompt,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                env=child_env(),
+                check=False,
+            )
+            if completed.stdout:
+                emit_text(completed.stdout)
+                if not completed.stdout.endswith("\n"):
+                    emit_text("\n")
+            if completed.stderr:
+                emit_text(completed.stderr, stream=sys.stderr)
+                if not completed.stderr.endswith("\n"):
+                    emit_text("\n", stream=sys.stderr)
+        else:
+            completed = subprocess.run(
+                command,
+                cwd=str(repo_root),
+                input=prompt,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=child_env(),
+                check=False,
+            )
     except FileNotFoundError as exc:
         raise RuntimeError(f"Failed to launch Codex CLI at {codex_executable}: {exc}") from exc
     print("")

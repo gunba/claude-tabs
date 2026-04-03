@@ -28,6 +28,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 
 SCHEMA_VERSION = 1
@@ -150,17 +151,84 @@ def default_branch(repo_root: pathlib.Path) -> str:
     return "main"
 
 
-def repo_identifier(repo_root: pathlib.Path) -> tuple[str, str]:
-    remote = git_output(["config", "--get", "remote.origin.url"], repo_root) or ""
-    if remote:
-        base = remote.rstrip("/").rsplit("/", 1)[-1]
-        if base.endswith(".git"):
-            base = base[:-4]
-    else:
-        base = repo_root.name
-    base = slugify(base)
-    digest = hashlib.sha1(str(git_common_dir(repo_root)).encode("utf-8")).hexdigest()[:8]
-    return f"{base}-{digest}", base.replace("-", " ").title()
+def remote_basename(value: str) -> str:
+    candidate = value.rstrip("/").rsplit("/", 1)[-1]
+    return candidate[:-4] if candidate.endswith(".git") else candidate
+
+
+def normalize_repo_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if "://" in raw:
+        parsed = urlparse(raw)
+        if parsed.scheme == "file":
+            normalized = normalize_path(parsed.path).rstrip("/")
+            return normalized or None
+        host = (parsed.hostname or "").lower()
+        path = parsed.path.lstrip("/").rstrip("/")
+        if not host or not path:
+            return None
+        if path.endswith(".git"):
+            path = path[:-4]
+        return f"{host}/{path}".lower()
+    scp_match = re.match(r"^(?:(?P<user>[^@]+)@)?(?P<host>[^:/\\]+):(?P<path>.+)$", raw)
+    if scp_match and "/" in scp_match.group("path"):
+        host = scp_match.group("host").lower()
+        path = scp_match.group("path").lstrip("/").rstrip("/")
+        if path.endswith(".git"):
+            path = path[:-4]
+        return f"{host}/{path}".lower()
+    normalized = normalize_path(raw).rstrip("/")
+    return normalized or None
+
+
+def configured_repo_key(repo_root: pathlib.Path, explicit_repo_key: str | None = None) -> tuple[str | None, str, str | None]:
+    if explicit_repo_key:
+        repo_key = normalize_repo_key(explicit_repo_key)
+        if repo_key:
+            return repo_key, "cli", None
+
+    env_key = normalize_repo_key(os.environ.get("PROOFD_REPO_KEY"))
+    if env_key:
+        return env_key, "env", None
+
+    for config_name in ("proofd.repo-key", "proofd.repoKey"):
+        config_value = git_output(["config", "--get", config_name], repo_root)
+        repo_key = normalize_repo_key(config_value)
+        if repo_key:
+            return repo_key, "git-config", None
+
+    origin_remote = git_output(["config", "--get", "remote.origin.url"], repo_root) or None
+    repo_key = normalize_repo_key(origin_remote)
+    if repo_key:
+        return repo_key, "origin", origin_remote
+    return None, "path", origin_remote
+
+
+def repo_identity(repo_root: pathlib.Path, explicit_repo_key: str | None = None) -> dict[str, Any]:
+    repo_key, identity_source, origin_remote = configured_repo_key(repo_root, explicit_repo_key=explicit_repo_key)
+    base = slugify(remote_basename(repo_key or origin_remote or repo_root.name))
+    digest_source = repo_key or str(git_common_dir(repo_root))
+    digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:8]
+    return {
+        "repo_id": f"{base}-{digest}",
+        "display_name": base.replace("-", " ").title(),
+        "slug": base,
+        "repo_key": repo_key,
+        "identity_source": identity_source,
+        "origin_remote": origin_remote,
+    }
+
+
+def legacy_repo_identifiers(repo_root: pathlib.Path, slug: str) -> list[str]:
+    candidates: set[str] = {str(git_common_dir(repo_root)), str(repo_root.resolve())}
+    main_root = git_main_worktree_root(repo_root)
+    if main_root is not None:
+        candidates.add(str(main_root))
+    return sorted(f"{slug}-{hashlib.sha1(candidate.encode('utf-8')).hexdigest()[:8]}" for candidate in candidates)
 
 
 def split_csv(value: str | None) -> list[str]:
@@ -356,10 +424,17 @@ def entry_index(rule: dict[str, Any], tag_id: str) -> dict[str, Any] | None:
 
 
 class ProofStore:
-    def __init__(self, repo_root: pathlib.Path, state_root: pathlib.Path | None = None, kb_root: pathlib.Path | None = None) -> None:
+    def __init__(
+        self,
+        repo_root: pathlib.Path,
+        state_root: pathlib.Path | None = None,
+        kb_root: pathlib.Path | None = None,
+        repo_key: str | None = None,
+    ) -> None:
         self.repo_root = repo_root_from(repo_root)
         self.state_root = ensure_dir((state_root or default_state_root()).resolve())
         self.kb_root = ensure_dir((kb_root or default_kb_root()).resolve())
+        self.identity = repo_identity(self.repo_root, explicit_repo_key=repo_key)
         self.db_path = self.state_root / "state.db"
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
@@ -444,29 +519,14 @@ class ProofStore:
         self.conn.commit()
 
     def _ensure_repo_profile(self) -> dict[str, Any]:
-        repo_id, display_name = repo_identifier(self.repo_root)
+        repo_id = self.identity["repo_id"]
+        display_name = self.identity["display_name"]
         now = now_iso()
+        self.ensure_kb_repo()
+        self._migrate_kb_repo_dirs()
+        self._migrate_db_repo_state(now)
+        self._migrate_overlay_state()
         row = self.conn.execute("SELECT * FROM repos WHERE repo_id = ?", (repo_id,)).fetchone()
-        if row is None:
-            legacy_ids = []
-            legacy_ids.append(hashlib.sha1(str(self.repo_root.resolve()).encode("utf-8")).hexdigest()[:8])
-            main_root = git_main_worktree_root(self.repo_root)
-            if main_root is not None:
-                legacy_ids.append(hashlib.sha1(str(main_root).encode("utf-8")).hexdigest()[:8])
-            base_slug = slugify(display_name)
-            for digest in legacy_ids:
-                legacy_repo_id = f"{base_slug}-{digest}"
-                legacy_row = self.conn.execute("SELECT * FROM repos WHERE repo_id = ?", (legacy_repo_id,)).fetchone()
-                if legacy_row is not None:
-                    for table_name in ("prefix_registry", "tag_counters", "tag_stats", "verifications", "runs", "selections"):
-                        self.conn.execute(f"UPDATE {table_name} SET repo_id = ? WHERE repo_id = ?", (repo_id, legacy_repo_id))
-                    self.conn.execute(
-                        "UPDATE repos SET repo_id = ?, root_path = ?, display_name = ?, updated_at = ? WHERE repo_id = ?",
-                        (repo_id, str(self.repo_root), display_name, now, legacy_repo_id),
-                    )
-                    self.conn.commit()
-                    row = self.conn.execute("SELECT * FROM repos WHERE repo_id = ?", (repo_id,)).fetchone()
-                    break
 
         if row is None:
             self.conn.execute(
@@ -484,11 +544,12 @@ class ProofStore:
         self.conn.commit()
         row = self.conn.execute("SELECT * FROM repos WHERE repo_id = ?", (repo_id,)).fetchone()
         profile = dict(row)
+        self.profile = profile
         ensure_dir(self.canonical_repo_dir(profile))
         ensure_dir(self.canonical_rules_dir(profile))
         ensure_dir(self.overlay_root_dir(profile))
-        self.ensure_kb_repo()
         self.ensure_repo_metadata(profile)
+        self._reseed_repo_indexes()
         return profile
 
     def ensure_kb_repo(self) -> None:
@@ -502,28 +563,273 @@ class ProofStore:
                 encoding="utf-8",
             )
 
+    def _legacy_repo_ids(self) -> list[str]:
+        return legacy_repo_identifiers(self.repo_root, self.identity["slug"])
+
+    def _matching_legacy_repo_dir_ids(self) -> list[str]:
+        repos_dir = ensure_dir(self.kb_root / "repos")
+        legacy_ids = set(self._legacy_repo_ids())
+        exact_matches: list[str] = []
+        fallback_matches: list[tuple[int, str]] = []
+        for path in sorted(repos_dir.iterdir(), key=lambda item: item.name):
+            if not path.is_dir() or path.name == self.identity["repo_id"]:
+                continue
+            metadata: dict[str, Any] = {}
+            metadata_path = path / "repo.json"
+            if metadata_path.exists():
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    metadata = {}
+            candidate_key = normalize_repo_key((metadata.get("identity") or {}).get("repo_key"))
+            rule_count = len(list((path / "rules").glob("*.json"))) if (path / "rules").exists() else 0
+            if self.identity["repo_key"] and candidate_key == self.identity["repo_key"]:
+                exact_matches.append(path.name)
+                continue
+            if path.name in legacy_ids:
+                exact_matches.append(path.name)
+                continue
+            if metadata.get("display_name") == self.identity["display_name"] and path.name.startswith(self.identity["slug"] + "-"):
+                fallback_matches.append((rule_count, path.name))
+        if exact_matches:
+            return sorted(dict.fromkeys(exact_matches))
+        non_empty = [repo_id for rule_count, repo_id in fallback_matches if rule_count > 0]
+        return non_empty if len(non_empty) == 1 else []
+
+    def _merge_repo_dir(self, source_repo_id: str, target_repo_id: str) -> None:
+        source_dir = self.kb_root / "repos" / source_repo_id
+        target_dir = self.kb_root / "repos" / target_repo_id
+        if not source_dir.exists() or source_dir.resolve() == target_dir.resolve():
+            return
+        ensure_dir(target_dir)
+        ensure_dir(target_dir / "rules")
+
+        source_metadata = source_dir / "repo.json"
+        target_metadata = target_dir / "repo.json"
+        if source_metadata.exists() and not target_metadata.exists():
+            shutil.copy2(source_metadata, target_metadata)
+
+        source_rules_dir = source_dir / "rules"
+        if source_rules_dir.exists():
+            for path in sorted(source_rules_dir.glob("*.json")):
+                destination = target_dir / "rules" / path.name
+                if destination.exists():
+                    if destination.read_text(encoding="utf-8") != path.read_text(encoding="utf-8"):
+                        raise RuntimeError(
+                            f"Conflicting canonical rule while migrating proofd repo identity: {source_repo_id}/{path.name}"
+                        )
+                else:
+                    shutil.copy2(path, destination)
+        shutil.rmtree(source_dir, ignore_errors=True)
+
+    def _migrate_kb_repo_dirs(self) -> None:
+        for legacy_repo_id in self._matching_legacy_repo_dir_ids():
+            self._merge_repo_dir(legacy_repo_id, self.identity["repo_id"])
+
+    def _ensure_target_repo_row(self, repo_id: str, display_name: str, now: str, seed_row: sqlite3.Row | None = None) -> None:
+        existing = self.conn.execute("SELECT 1 FROM repos WHERE repo_id = ?", (repo_id,)).fetchone()
+        if existing is not None:
+            return
+        created_at = seed_row["created_at"] if seed_row is not None else now
+        output_dir = seed_row["output_dir"] if seed_row is not None else ".claude/rules"
+        self.conn.execute(
+            """
+            INSERT INTO repos (repo_id, root_path, display_name, output_dir, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (repo_id, str(self.repo_root), display_name, output_dir, created_at, now),
+        )
+
+    def _merge_prefix_registry(self, target_repo_id: str, legacy_repo_id: str) -> None:
+        rows = self.conn.execute(
+            "SELECT prefix, rule_id, title, created_at FROM prefix_registry WHERE repo_id = ?",
+            (legacy_repo_id,),
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                """
+                INSERT INTO prefix_registry (repo_id, prefix, rule_id, title, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(repo_id, prefix) DO NOTHING
+                """,
+                (target_repo_id, row["prefix"], row["rule_id"], row["title"], row["created_at"]),
+            )
+        self.conn.execute("DELETE FROM prefix_registry WHERE repo_id = ?", (legacy_repo_id,))
+
+    def _merge_tag_counters(self, target_repo_id: str, legacy_repo_id: str) -> None:
+        rows = self.conn.execute(
+            "SELECT prefix, next_number FROM tag_counters WHERE repo_id = ?",
+            (legacy_repo_id,),
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                """
+                INSERT INTO tag_counters (repo_id, prefix, next_number)
+                VALUES (?, ?, ?)
+                ON CONFLICT(repo_id, prefix) DO UPDATE SET
+                    next_number = CASE
+                        WHEN tag_counters.next_number < excluded.next_number THEN excluded.next_number
+                        ELSE tag_counters.next_number
+                    END
+                """,
+                (target_repo_id, row["prefix"], row["next_number"]),
+            )
+        self.conn.execute("DELETE FROM tag_counters WHERE repo_id = ?", (legacy_repo_id,))
+
+    def _merge_tag_stats(self, target_repo_id: str, legacy_repo_id: str) -> None:
+        rows = self.conn.execute(
+            """
+            SELECT tag_id, seen_count, up_count, down_count, last_seen_at, last_verified_at
+            FROM tag_stats
+            WHERE repo_id = ?
+            """,
+            (legacy_repo_id,),
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                """
+                INSERT INTO tag_stats (repo_id, tag_id, seen_count, up_count, down_count, last_seen_at, last_verified_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(repo_id, tag_id) DO UPDATE SET
+                    seen_count = tag_stats.seen_count + excluded.seen_count,
+                    up_count = tag_stats.up_count + excluded.up_count,
+                    down_count = tag_stats.down_count + excluded.down_count,
+                    last_seen_at = CASE
+                        WHEN COALESCE(tag_stats.last_seen_at, '') >= COALESCE(excluded.last_seen_at, '') THEN tag_stats.last_seen_at
+                        ELSE excluded.last_seen_at
+                    END,
+                    last_verified_at = CASE
+                        WHEN COALESCE(tag_stats.last_verified_at, '') >= COALESCE(excluded.last_verified_at, '') THEN tag_stats.last_verified_at
+                        ELSE excluded.last_verified_at
+                    END
+                """,
+                (
+                    target_repo_id,
+                    row["tag_id"],
+                    row["seen_count"],
+                    row["up_count"],
+                    row["down_count"],
+                    row["last_seen_at"],
+                    row["last_verified_at"],
+                ),
+            )
+        self.conn.execute("DELETE FROM tag_stats WHERE repo_id = ?", (legacy_repo_id,))
+
+    def _merge_selections(self, target_repo_id: str, legacy_repo_id: str) -> None:
+        rows = self.conn.execute(
+            "SELECT tag_id, last_selected_at, selection_count FROM selections WHERE repo_id = ?",
+            (legacy_repo_id,),
+        ).fetchall()
+        for row in rows:
+            self.conn.execute(
+                """
+                INSERT INTO selections (repo_id, tag_id, last_selected_at, selection_count)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(repo_id, tag_id) DO UPDATE SET
+                    selection_count = selections.selection_count + excluded.selection_count,
+                    last_selected_at = CASE
+                        WHEN COALESCE(selections.last_selected_at, '') >= COALESCE(excluded.last_selected_at, '') THEN selections.last_selected_at
+                        ELSE excluded.last_selected_at
+                    END
+                """,
+                (target_repo_id, row["tag_id"], row["last_selected_at"], row["selection_count"]),
+            )
+        self.conn.execute("DELETE FROM selections WHERE repo_id = ?", (legacy_repo_id,))
+
+    def _merge_overlay_dirs(self, target_repo_id: str, legacy_repo_id: str) -> None:
+        source_dir = self.state_root / "overlays" / legacy_repo_id
+        if not source_dir.exists():
+            return
+        target_dir = self.state_root / "overlays" / target_repo_id
+        for path in sorted(source_dir.glob("*")):
+            if path.is_dir():
+                destination = target_dir / path.name
+                ensure_dir(destination)
+                for rule_path in sorted(path.glob("rules/*.json")):
+                    rule_destination = destination / "rules" / rule_path.name
+                    ensure_dir(rule_destination.parent)
+                    if rule_destination.exists():
+                        if rule_destination.read_text(encoding="utf-8") != rule_path.read_text(encoding="utf-8"):
+                            raise RuntimeError(
+                                f"Conflicting overlay rule while migrating proofd repo identity: {legacy_repo_id}/{path.name}/{rule_path.name}"
+                            )
+                    else:
+                        shutil.copy2(rule_path, rule_destination)
+        shutil.rmtree(source_dir, ignore_errors=True)
+
+    def _migrate_db_repo_state(self, now: str) -> None:
+        target_repo_id = self.identity["repo_id"]
+        legacy_repo_ids = [
+            repo_id
+            for repo_id in self._legacy_repo_ids()
+            if repo_id != target_repo_id and self.conn.execute("SELECT * FROM repos WHERE repo_id = ?", (repo_id,)).fetchone() is not None
+        ]
+        if not legacy_repo_ids:
+            return
+
+        seed_row = self.conn.execute("SELECT * FROM repos WHERE repo_id = ?", (legacy_repo_ids[0],)).fetchone()
+        self._ensure_target_repo_row(target_repo_id, self.identity["display_name"], now, seed_row=seed_row)
+        for legacy_repo_id in legacy_repo_ids:
+            self._merge_prefix_registry(target_repo_id, legacy_repo_id)
+            self._merge_tag_counters(target_repo_id, legacy_repo_id)
+            self._merge_tag_stats(target_repo_id, legacy_repo_id)
+            self.conn.execute("UPDATE verifications SET repo_id = ? WHERE repo_id = ?", (target_repo_id, legacy_repo_id))
+            self.conn.execute("UPDATE runs SET repo_id = ? WHERE repo_id = ?", (target_repo_id, legacy_repo_id))
+            self._merge_selections(target_repo_id, legacy_repo_id)
+            self.conn.execute("DELETE FROM repos WHERE repo_id = ?", (legacy_repo_id,))
+            self._merge_overlay_dirs(target_repo_id, legacy_repo_id)
+        self.conn.execute(
+            "UPDATE repos SET root_path = ?, display_name = ?, updated_at = ? WHERE repo_id = ?",
+            (str(self.repo_root), self.identity["display_name"], now, target_repo_id),
+        )
+        self.conn.commit()
+
+    def _migrate_overlay_state(self) -> None:
+        target_repo_id = self.identity["repo_id"]
+        for legacy_repo_id in self._legacy_repo_ids():
+            if legacy_repo_id != target_repo_id:
+                self._merge_overlay_dirs(target_repo_id, legacy_repo_id)
+
     def ensure_repo_metadata(self, profile: dict[str, Any]) -> dict[str, Any]:
         metadata_path = self.repo_metadata_path(profile)
-        if metadata_path.exists():
-            return json.loads(metadata_path.read_text(encoding="utf-8"))
-        metadata = {
-            "schema_version": SCHEMA_VERSION,
-            "repo_id": profile["repo_id"],
-            "display_name": profile["display_name"],
-            "default_output_dir": profile["output_dir"],
-            "default_batch_size": DEFAULT_BATCH_SIZE,
-            "source_dirs": DEFAULT_SOURCE_DIRS,
-            "lint": {
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+        metadata["schema_version"] = SCHEMA_VERSION
+        metadata["repo_id"] = profile["repo_id"]
+        metadata["display_name"] = profile["display_name"]
+        metadata["default_output_dir"] = profile["output_dir"]
+        metadata.setdefault("default_batch_size", DEFAULT_BATCH_SIZE)
+        metadata.setdefault("source_dirs", DEFAULT_SOURCE_DIRS)
+        metadata.setdefault(
+            "lint",
+            {
                 "split_suggest_threshold": 16,
                 "heavy_context_threshold": 48,
                 "global_rule_threshold": 16,
             },
+        )
+        identity = metadata.get("identity", {})
+        aliases = {alias for alias in identity.get("aliases", []) if alias}
+        if self.identity["repo_key"]:
+            aliases.add(self.identity["repo_key"])
+        metadata["identity"] = {
+            "repo_key": self.identity["repo_key"],
+            "origin_remote": self.identity["origin_remote"],
+            "source": self.identity["identity_source"],
+            "slug": self.identity["slug"],
+            "aliases": sorted(aliases),
         }
         metadata_path.write_text(stable_json(metadata), encoding="utf-8")
         return metadata
 
     def repo_metadata(self) -> dict[str, Any]:
         return self.ensure_repo_metadata(self.profile)
+
+    def _reseed_repo_indexes(self) -> None:
+        branch = current_branch(self.repo_root)
+        for rule in self.load_rules(branch).values():
+            self._register_prefixes(rule)
+            self._seed_counters_from_rule(rule)
+        self.conn.commit()
 
     def canonical_repo_dir(self, profile: dict[str, Any] | None = None) -> pathlib.Path:
         profile = profile or self.profile
@@ -1004,6 +1310,8 @@ class ProofStore:
         overlay_count = len(list(overlay_dir.glob("*.json"))) if overlay_dir.exists() else 0
         return {
             "repo_id": self.profile["repo_id"],
+            "repo_key": self.identity["repo_key"],
+            "identity_source": self.identity["identity_source"],
             "repo_root": str(self.repo_root),
             "kb_root": str(self.kb_root),
             "state_db": str(self.db_path),
@@ -1428,6 +1736,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", default=".", help="Repo root or any path inside the repo")
     parser.add_argument("--state-root", default=None, help="Override proofd state root")
     parser.add_argument("--kb-root", default=None, help="Override proofd knowledge-base root")
+    parser.add_argument("--repo-key", default=None, help="Stable repo identity override; defaults to normalized remote.origin.url")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("status")
@@ -1543,7 +1852,7 @@ def run_cli(args: argparse.Namespace) -> int:
     repo_root = pathlib.Path(args.repo_root).resolve()
     state_root = pathlib.Path(args.state_root).resolve() if args.state_root else None
     kb_root = pathlib.Path(args.kb_root).resolve() if args.kb_root else None
-    store = ProofStore(repo_root, state_root=state_root, kb_root=kb_root)
+    store = ProofStore(repo_root, state_root=state_root, kb_root=kb_root, repo_key=args.repo_key)
     try:
         command = args.command
         if command == "status":
@@ -1552,6 +1861,8 @@ def run_cli(args: argparse.Namespace) -> int:
         if command == "init":
             payload = {
                 "repo_id": store.profile["repo_id"],
+                "repo_key": store.identity["repo_key"],
+                "identity_source": store.identity["identity_source"],
                 "repo_root": str(store.repo_root),
                 "state_db": str(store.db_path),
                 "kb_root": str(store.kb_root),
@@ -1561,6 +1872,8 @@ def run_cli(args: argparse.Namespace) -> int:
                 print_json(payload)
             else:
                 print(f"Initialized proofd for {payload['repo_id']}")
+                if payload["repo_key"]:
+                    print(f"Repo key: {payload['repo_key']} ({payload['identity_source']})")
                 print(f"KB root: {payload['kb_root']}")
                 print(f"State DB: {payload['state_db']}")
                 print(f"Output dir: {payload['output_dir']}")

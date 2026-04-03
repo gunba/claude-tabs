@@ -10,9 +10,47 @@ used manually when needed.
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
+import re
 import subprocess
+import sys
 from datetime import datetime
+
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+def child_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
+PROOFD_CONTEXT_MAX_FILES = 24
+PATH_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_.-]+[\\/])+[A-Za-z0-9_.-]+")
+BARE_FILE_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,8}(?![A-Za-z0-9_.-])")
+SKIP_CONTEXT_SUFFIXES = {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".dll", ".exe"}
+
+
+def emit_text(content: str, stream: object = sys.stdout) -> None:
+    try:
+        stream.write(content)
+    except UnicodeEncodeError:
+        buffer = getattr(stream, "buffer", None)
+        if buffer is not None:
+            buffer.write(content.encode("utf-8", errors="replace"))
+        else:
+            stream.write(content.encode("ascii", errors="replace").decode("ascii"))
+    try:
+        stream.flush()
+    except Exception:
+        pass
 
 
 def run_git(repo_root: pathlib.Path, args: list[str]) -> str:
@@ -23,6 +61,7 @@ def run_git(repo_root: pathlib.Path, args: list[str]) -> str:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env(),
         check=False,
     )
     if result.returncode != 0:
@@ -38,6 +77,7 @@ def repo_root_from(path: pathlib.Path) -> pathlib.Path:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env(),
         check=False,
     )
     if result.returncode == 0 and result.stdout.strip():
@@ -74,10 +114,52 @@ def rule_context_paths(repo_root: pathlib.Path, paths: list[str]) -> list[str]:
             continue
         if normalized.startswith(".proofs/") or normalized.startswith(".claude/rules/"):
             continue
+        if "/__pycache__/" in f"/{normalized}" or pathlib.Path(normalized).suffix.lower() in SKIP_CONTEXT_SUFFIXES:
+            continue
         if not (repo_root / normalized).exists():
             continue
         filtered.append(normalized)
     return filtered
+
+
+def limited_paths(paths: list[str], limit: int = PROOFD_CONTEXT_MAX_FILES) -> list[str]:
+    deduped: list[str] = []
+    seen = set()
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            deduped.append(path)
+    return deduped[:limit]
+
+
+def proofd_context(repo_root: pathlib.Path, paths: list[str]) -> str:
+    selected = limited_paths(rule_context_paths(repo_root, paths))
+    if not selected:
+        return ""
+    result = subprocess.run(
+        [sys.executable, "tools/proofd.py", "--repo-root", str(repo_root), "context", *selected],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=child_env(),
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+def plan_context_paths(repo_root: pathlib.Path, plan_text: str) -> list[str]:
+    candidates = ["CLAUDE.md"]
+    for pattern in (PATH_TOKEN_RE, BARE_FILE_TOKEN_RE):
+        for match in pattern.findall(plan_text):
+            token = match.strip("`'\"()[]{}<>,.;:")
+            normalized = token.replace("\\", "/").lstrip("./")
+            if normalized:
+                candidates.append(normalized)
+    return rule_context_paths(repo_root, candidates)
 
 
 def write_output(output_path: pathlib.Path | None, content: str) -> pathlib.Path | None:
@@ -118,22 +200,59 @@ def header(repo_root: pathlib.Path, workflow: str, mode: str) -> list[str]:
     ]
 
 
-def rule_context_lines(paths: list[str]) -> list[str]:
+def rule_context_lines(repo_root: pathlib.Path, paths: list[str], read_only: bool = False) -> list[str]:
+    selected = limited_paths(rule_context_paths(repo_root, paths))
+    preloaded = proofd_context(repo_root, selected)
     lines = [
         "## Rule Context",
         "Codex does not auto-load `.claude/rules` by touched file path the way Claude does.",
-        "Before acting on a file, request rule context explicitly with either:",
-        "- `python tools/proofd.py context <paths...>`",
-        "- the `proofd_context` MCP tool if `proofd` is already configured in this Codex environment",
     ]
-    if paths:
+    if selected:
         lines.extend(
             [
                 "",
-                "Suggested initial files:",
+                "Claude preloaded proofd context for these files:",
                 "```text",
-                "\n".join(paths),
+                "\n".join(selected),
                 "```",
+            ]
+        )
+        omitted = len(rule_context_paths(repo_root, paths)) - len(selected)
+        if omitted > 0:
+            lines.extend(["", f"{omitted} additional file(s) were omitted from the preload to keep the prompt bounded."])
+    if preloaded:
+        if read_only:
+            lines.extend(
+                [
+                    "",
+                    "Use the preloaded proofd context below as your primary rules input. In this read-only sandbox, do not rely on launching `proofd` CLI commands from inside Codex.",
+                    "",
+                    preloaded,
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "Start with the preloaded proofd context below. If you need more, you may use the CLI or `proofd_context` MCP tool.",
+                    "",
+                    preloaded,
+                ]
+            )
+    elif read_only:
+        lines.extend(
+            [
+                "",
+                "No preloaded proofd context was available. In this read-only sandbox, prefer `CLAUDE.md` and relevant `.claude/rules/*.md` files over ad hoc CLI lookups.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "If you need more rule context, request it explicitly with either:",
+                "- `python tools/proofd.py context <paths...>`",
+                "- the `proofd_context` MCP tool if `proofd` is already configured in this Codex environment",
             ]
         )
     lines.append("")
@@ -162,9 +281,9 @@ def review_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
     lines.extend(
         [
             "",
-            *rule_context_lines(context_files),
+            *rule_context_lines(repo_root, context_files, read_only=True),
             "## Instructions",
-            "1. Read `CLAUDE.md` and then request proofd rule context for the changed files that still exist in the worktree.",
+            "1. Read `CLAUDE.md` and start with the preloaded proofd context for the changed files that still exist in the worktree.",
             "2. Inspect the diff and relevant files directly.",
             "3. Do not edit files, stage changes, or apply fixes. This is a read-only review pass.",
             "4. Run relevant validation commands only when they can complete without mutating the workspace. If a useful command needs write access, report that gap instead of changing the tree.",
@@ -212,7 +331,7 @@ def janitor_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
             "\n".join(files) if files else "(no changed files found for this scope)",
             "```",
             "",
-            *rule_context_lines(context_files),
+            *rule_context_lines(repo_root, context_files),
             "## Instructions",
             "1. Determine the actual changed file list for the requested scope.",
             "2. Request proofd rule context for those files before proving them.",
@@ -246,7 +365,7 @@ def build_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
             status,
             "```",
             "",
-            *rule_context_lines([]),
+            *rule_context_lines(repo_root, []),
             "## Instructions",
             "1. Read `CLAUDE.md` for build commands and `DOCS/RELEASE.md` for release/version workflow.",
             "2. Request proofd context for any files you inspect or modify during the build flow. If `proofd` MCP is already configured in this Codex environment you may use it; otherwise use the CLI.",
@@ -286,7 +405,7 @@ def review_janitor_handoff(repo_root: pathlib.Path, args: argparse.Namespace) ->
             "\n".join(files) if files else "(no changed files found for this scope)",
             "```",
             "",
-            *rule_context_lines(context_files),
+            *rule_context_lines(repo_root, context_files),
             "## Instructions",
             "1. Run the review pass first and keep it read-only.",
             "2. Then run the janitor or proof pass against the requested scope.",
@@ -305,16 +424,17 @@ def review_janitor_handoff(repo_root: pathlib.Path, args: argparse.Namespace) ->
 def plan_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
     plan_path = pathlib.Path(args.plan_file).resolve()
     plan_text = plan_path.read_text(encoding="utf-8")
+    context_files = plan_context_paths(repo_root, plan_text)
     lines = header(repo_root, "plan", args.mode)
     lines.extend(
         [
             "## Objective",
             "Critique the attached implementation plan before it is presented to the user.",
             "",
-            *rule_context_lines([]),
+            *rule_context_lines(repo_root, context_files, read_only=True),
             "## Instructions",
             "1. Read `CLAUDE.md` and inspect the codebase as needed.",
-            "2. Request proofd context for any files or areas you inspect. If `proofd` MCP is already configured in this Codex environment you may use it; otherwise use the CLI.",
+            "2. Use the preloaded proofd context for the files or areas mentioned in the draft plan. If you still need more rule detail, prefer direct reads of `CLAUDE.md` and relevant `.claude/rules/*.md` files; only use MCP if it is already configured.",
             "3. Do not edit files or implement the plan. This is a critique-only pass.",
             "4. Critique the plan for abstraction, reuse, and risk.",
             "5. Point out missing steps, risky assumptions, and existing code or tooling the plan should reuse.",
@@ -394,7 +514,7 @@ def main() -> int:
     if saved:
         print(f"Saved: {saved}")
         print("")
-    print(content)
+    emit_text(content)
     return 0
 
 

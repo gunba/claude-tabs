@@ -14,7 +14,7 @@ The user will run `/r`, `/j`, `/b` when ready. Do not run these automatically.
 
 When in plan mode, after you have drafted your plan but before presenting it to the user: ask whether plan critique should run via the Claude `plan-critic` agent, a Codex subprocess, or both.
 
-If Codex is selected, save the draft plan to `plans/` and run `python tools/codex_delegate.py plan --plan-file <path>`. Codex does not auto-load `.claude/rules/` by file path, so it must request rule context through `python tools/proofd.py context ...` or a configured `proofd` MCP tool.
+If Codex is selected, save the draft plan to `plans/` and run `python tools/codex_delegate.py plan --plan-file <path>`. The Codex handoff preloads proofd rule context for plan and review workflows. If more rule detail is needed in a read-only subprocess, prefer direct reads of `CLAUDE.md` and relevant `.claude/rules/*.md` files or use `proofd` MCP only when it is already configured.
 
 If Claude is selected, spawn the `plan-critic` agent, passing the draft plan. Incorporate the feedback into the final plan, then present to the user.
 
