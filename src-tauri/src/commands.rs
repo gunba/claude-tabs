@@ -2814,44 +2814,12 @@ pub struct UsageData {
 }
 
 /// Fetch 5-hour and 7-day rate-limit utilization from the Anthropic Usage API.
-/// Reads OAuth credentials from ~/.claude/.credentials.json.
-/// Returns empty (None) fields rather than an error if credentials are absent
-/// (e.g. API-key users who don't have an OAuth token).
+/// DISABLED: direct OAuth requests from this wrapper look like a separate client
+/// and can trigger bans. Returns empty data until replaced with passive observation.
 #[tauri::command]
 pub async fn fetch_usage() -> Result<UsageData, String> {
-    tokio::task::spawn_blocking(|| -> Result<UsageData, String> {
-        let creds_path = dirs::home_dir()
-            .ok_or("no home dir")?
-            .join(".claude")
-            .join(".credentials.json");
-        let Ok(content) = std::fs::read_to_string(&creds_path) else {
-            return Ok(UsageData::default());
-        };
-        let creds: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        let Some(token) = creds["claudeAiOauth"]["accessToken"].as_str() else {
-            return Ok(UsageData::default());
-        };
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| format!("HTTP client error: {}", e))?;
-        let text = client
-            .get("https://api.anthropic.com/api/oauth/usage")
-            .header("Authorization", format!("Bearer {}", token))
-            .header("anthropic-beta", "oauth-2025-04-20")
-            .send()
-            .and_then(|r| r.error_for_status())
-            .and_then(|r| r.text())
-            .map_err(|e| format!("Usage API error: {}", e))?;
-        let resp: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| format!("Usage parse error: {}", e))?;
-        Ok(UsageData {
-            five_hour_percent: resp["five_hour"]["utilization"].as_f64(),
-            seven_day_percent: resp["seven_day"]["utilization"].as_f64(),
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    // TODO: Re-enable via passive observation of Claude CLI's own usage responses
+    // rather than making direct OAuth-authenticated requests.
+    Ok(UsageData::default())
 }
 

@@ -793,26 +793,9 @@ export const INSTALL_TAPS = `(function() {
                 push('fetch', flags.fetch
                   ? { url: url.slice(0, 300), method: method, status: resp.status, bodyLen: bodyLen, dur: Date.now() - t0, hdrs: hdrs }
                   : { url: '', method: method, status: resp.status, dur: Date.now() - t0, hdrs: hdrs });
-                // Capture Anthropic auth from first successful POST to start dedicated ping loop
-                if (!savedAnthropicPingHeaders && url.indexOf('api.anthropic.com') >= 0 && method === 'POST' && resp.status >= 200 && resp.status < 300) {
-                  try {
-                    var ph = {};
-                    var h = (init && init.headers) || (input && typeof input === 'object' && input.headers);
-                    if (h) {
-                      var ak = h.get ? h.get('x-api-key') : (h['x-api-key'] || '');
-                      var av = h.get ? h.get('anthropic-version') : (h['anthropic-version'] || '');
-                      var ab = h.get ? h.get('authorization') : (h['Authorization'] || h['authorization'] || '');
-                      if (ak) ph['x-api-key'] = ak;
-                      ph['anthropic-version'] = av || '2023-06-01';
-                      if (ab) ph['Authorization'] = ab;
-                      if (ak || ab) {
-                        savedAnthropicPingHeaders = ph;
-                        doPing();
-                        setInterval(doPing, 30000);
-                      }
-                    }
-                  } catch(e3) {}
-                }
+                // DISABLED: capturing auth headers and making separate API requests
+                // from this wrapper looks like a rogue client and can trigger bans.
+                // Ping latency should be derived passively from Claude CLI's own traffic.
               } catch(e) {}
               return resp;
             }, function(err) {
