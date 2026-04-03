@@ -11,22 +11,22 @@
     "CI-01": {
       "up": 3,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "CI-02": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "CI-03": {
       "up": 0,
       "down": 0,
-      "seen": 45
+      "seen": 48
     },
     "CI-04": {
       "up": 2,
       "down": 0,
-      "seen": 22
+      "seen": 25
     }
   },
   "cycle": 5,

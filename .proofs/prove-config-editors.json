@@ -11,55 +11,52 @@
     "CM-25",
     "CM-26"
   ],
-  "unchecked": [
-    "CM-07",
-    "CM-14"
-  ],
+  "unchecked": [],
   "citations": {
     "CM-06": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-07": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-13": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-14": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-15": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-16": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-23": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-25": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "CM-26": {
       "up": 0,
       "down": 0,
-      "seen": 2
+      "seen": 5
     }
   },
   "metadata": {
@@ -160,5 +157,5 @@
     }
   },
   "cycle": 1,
-  "last_run": "2026-04-02T13:28:42.572823+00:00"
+  "last_run": "2026-04-03T03:53:10.596560+00:00"
 }

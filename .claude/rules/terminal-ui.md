@@ -22,8 +22,8 @@ paths:
 - [TR-16] Cross-session terminal search panel (Ctrl+Shift+F): SearchPanel searches all active session terminal buffers with debounced queries (250ms). Case-sensitive and regex modes. Results grouped by session; clicking a result switches tab and scrolls to match via SearchAddon. Capped at 500 results. searchBuffers.ts provides pure search logic; terminalRegistry.ts manages SearchAddon + scrollToLine registration.
   - Files: src/components/SearchPanel/SearchPanel.tsx, src/components/SearchPanel/SearchPanel.css, src/lib/searchBuffers.ts, src/lib/terminalRegistry.ts
 
-- [TA-01] Tab activity display: getActivityText() passes through currentToolName for real-time tool activity. TOOL_COLORS map and toolCategoryColor() provide category-based coloring (search=#4ec9b0, file ops=#569cd6, execution=#ce9178, agent=#c586c0). Color applied via inline style; unknown/MCP tools fall back to --text-muted. App.tsx renders .tab-activity span replacing the old .tab-summary.
-  - Files: src/lib/claude.ts, src/App.tsx, src/App.css
+- [TA-01] Tab activity display: getActivityText() prioritizes currentEventKind (raw TAP event identifiers like ToolCallStart, ThinkingStart) over currentToolName. EVENT_KIND_COLORS map and eventKindColor() provide phase-based coloring (tool lifecycle=purple, thinking=purple, text=yellow, turn=green, permissions=peach/green/pink, errors=red). TOOL_COLORS + toolCategoryColor() used as fallback. tapMetadataAccumulator uses minimal block list (ApiTelemetry, ProcessHealth, ApiFetch excluded). App.tsx renders .tab-activity span with eventKindColor; unknown events fall back to --text-muted.
+  - Files: src/lib/claude.ts, src/App.tsx, src/App.css, src/lib/tapMetadataAccumulator.ts
 
 - [TA-02] Global tool name tracking: seenToolNames Set in sessions store collects unique tool names across all sessions via addSeenToolName() action. Fed by ToolCallStart events in useTapEventProcessor. Immutable Set pattern for reactivity (early return when name already present).
   - Files: src/store/sessions.ts, src/hooks/useTapEventProcessor.ts

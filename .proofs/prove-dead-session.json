@@ -13,61 +13,58 @@
     "DS-11",
     "DS-12"
   ],
-  "unchecked": [
-    "DS-10",
-    "DS-11"
-  ],
+  "unchecked": [],
   "citations": {
     "DS-01": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "DS-02": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "DS-03": {
       "up": 2,
-      "seen": 53
+      "seen": 56
     },
     "DS-05": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "DS-06": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "DS-07": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "DS-08": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "DS-09": {
       "up": 0,
-      "seen": 45
+      "seen": 48
     },
     "DS-12": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "DS-11": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "DS-10": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     }
   },
   "cycle": 7,
-  "last_run": "2026-04-03T03:26:34.287085+00:00",
+  "last_run": "2026-04-03T03:57:54.397637+00:00",
   "metadata": {
     "DS-03": {
       "files": [
@@ -94,6 +91,31 @@
         {
           "date": "2026-04-02",
           "text": "Anchor confirmed in both listed files"
+        }
+      ]
+    },
+    "DS-11": {
+      "files": [
+        "src/App.tsx"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at App.tsx:200. handleTabActivate checks state===dead && canResumeSession then calls requestRespawn. Guard logic matches doc."
+        }
+      ]
+    },
+    "DS-10": {
+      "files": [
+        "src/App.tsx",
+        "src/components/Terminal/TerminalPanel.tsx"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at App.tsx:305. Ctrl+Tab filters to non-dead pool, falls back to full pool. Auto-resume via visibility change confirmed at TerminalPanel.tsx:474 [DS-09]."
         }
       ]
     }

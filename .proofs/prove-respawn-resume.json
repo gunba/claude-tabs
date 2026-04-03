@@ -14,53 +14,53 @@
   "unchecked": [],
   "citations": {
     "RS-01": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "RS-02": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "RS-03": {
       "up": 2,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "RS-04": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "RS-05": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "RS-06": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "RS-07": {
       "up": 0,
       "down": 0,
-      "seen": 45
+      "seen": 48
     },
     "RS-08": {
       "up": 0,
       "down": 0,
-      "seen": 45
+      "seen": 48
     },
     "RS-09": {
       "up": 0,
       "down": 0,
-      "seen": 45
+      "seen": 48
     }
   },
   "cycle": 5,
-  "last_run": "2026-04-03T03:26:34.287085+00:00",
+  "last_run": "2026-04-03T03:57:54.397637+00:00",
   "metadata": {
     "RS-03": {
       "files": [
@@ -90,6 +90,30 @@
       ],
       "verified": "2026-03-23",
       "notes": "Edited via tag-edit.sh"
+    },
+    "RS-01": {
+      "files": [
+        "src/components/Terminal/TerminalPanel.tsx"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at TerminalPanel.tsx:303. triggerRespawnRef cleans up PTY/watchers/inspector, resets state, increments respawnCounter."
+        }
+      ]
+    },
+    "RS-04": {
+      "files": [
+        "src/App.tsx"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at App.tsx:161. quickLaunch sets resumeSession=null, continueSession=false, sessionId=null before creating session. lastConfig saved with clean values."
+        }
+      ]
     }
   }
 }

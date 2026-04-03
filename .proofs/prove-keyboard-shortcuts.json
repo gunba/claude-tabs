@@ -16,45 +16,45 @@
   "citations": {
     "KB-01": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "KB-02": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "KB-03": {
       "up": 1,
-      "seen": 68
+      "seen": 71
     },
     "KB-04": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "KB-05": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "KB-06": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "KB-07": {
       "up": 0,
-      "seen": 58
+      "seen": 61
     },
     "KB-09": {
       "up": 3,
       "down": 0,
-      "seen": 42
+      "seen": 45
     },
     "KB-10": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "KB-11": {
       "up": 2,
       "down": 0,
-      "seen": 8
+      "seen": 11
     }
   },
   "cycle": 6,

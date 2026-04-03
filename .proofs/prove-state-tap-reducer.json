@@ -11,56 +11,52 @@
     "SI-23",
     "SI-24"
   ],
-  "unchecked": [
-    "SI-04",
-    "SI-08",
-    "SI-19"
-  ],
+  "unchecked": [],
   "citations": {
     "IN-13": {
       "up": 1,
       "down": 0,
-      "seen": 5
+      "seen": 8
     },
     "SI-03": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "SI-04": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "SI-08": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "SI-13": {
       "up": 1,
       "down": 0,
-      "seen": 5
+      "seen": 8
     },
     "SI-19": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "SI-20": {
       "up": 1,
       "down": 0,
-      "seen": 5
+      "seen": 8
     },
     "SI-23": {
       "up": 1,
       "down": 0,
-      "seen": 5
+      "seen": 8
     },
     "SI-24": {
       "up": 1,
       "down": 0,
-      "seen": 5
+      "seen": 8
     }
   },
   "metadata": {
@@ -75,8 +71,45 @@
           "text": "Anchor confirmed at line 5"
         }
       ]
+    },
+    "SI-08": {
+      "files": [
+        "src/lib/tapStateReducer.ts"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at line 6. Pure reducer using TapEvent discriminated union. No timers, no delays. Only event-driven state transitions."
+        }
+      ]
+    },
+    "SI-04": {
+      "files": [
+        "src/lib/tapStateReducer.ts"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at line 38. PermissionPromptShown transitions to waitingPermission in both actionNeeded guard and main switch."
+        }
+      ]
+    },
+    "SI-19": {
+      "files": [
+        "src/lib/tapStateReducer.ts",
+        "src/lib/inspectorHooks.ts"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at line 7. Reducer uses TurnEnd/ConversationMessage for idle detection. promptDetected field in POLL_STATE retained in inspectorHooks.ts:1232 for backward compat. Files in doc should include inspectorHooks.ts."
+        }
+      ]
     }
   },
   "cycle": 2,
-  "last_run": "2026-04-03T03:26:34.287085+00:00"
+  "last_run": "2026-04-03T03:53:26.525649+00:00"
 }

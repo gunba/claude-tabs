@@ -10,51 +10,47 @@
     "DR-07",
     "DR-08"
   ],
-  "unchecked": [
-    "DR-01",
-    "DR-02",
-    "DR-07"
-  ],
+  "unchecked": [],
   "citations": {
     "DR-01": {
-      "up": 0,
-      "down": 0,
-      "seen": 4
-    },
-    "DR-02": {
       "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
+    },
+    "DR-02": {
+      "up": 3,
+      "down": 0,
+      "seen": 7
     },
     "DR-03": {
       "up": 2,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "DR-04": {
       "up": 2,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "DR-05": {
       "up": 2,
       "down": 0,
-      "seen": 5
+      "seen": 8
     },
     "DR-06": {
       "up": 0,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "DR-07": {
-      "up": 0,
+      "up": 2,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "DR-08": {
       "up": 2,
       "down": 0,
-      "seen": 5
+      "seen": 8
     }
   },
   "metadata": {
@@ -96,8 +92,59 @@
           "text": "Convention rule; no code anchor; component structure confirmed (ContextViewer added following same pattern)"
         }
       ]
+    },
+    "DR-02": {
+      "files": [
+        "src/types/session.ts",
+        "src/types/tapEvents.ts",
+        "src/types/ipc.ts",
+        "src/types/git.ts",
+        "src-tauri/src/session/types.rs"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "camelCase serde rename_all confirmed in Rust types; TS types match"
+        },
+        {
+          "date": "2026-04-03",
+          "text": "No code anchor. TS types in src/types/ mirror Rust types. camelCase naming confirmed. 4 TS type files exist matching doc."
+        }
+      ]
+    },
+    "DR-07": {
+      "files": [
+        "src-tauri/src/commands.rs"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "11 instances of creation_flags(0x08000000) in commands.rs; conpty.rs has intentional exception documented inline"
+        },
+        {
+          "date": "2026-04-03",
+          "text": "No code anchor. 11 instances of creation_flags(0x08000000) in commands.rs. conpty.rs has documented intentional exception."
+        }
+      ]
+    },
+    "DR-01": {
+      "files": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/commands.rs",
+        "src-tauri/src/jsonl_watcher.rs",
+        "src-tauri/src/proxy.rs"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "No code anchor. generate_handler! in lib.rs:138 registers commands from commands.rs, jsonl_watcher.rs, proxy.rs, tap_server.rs, and pty.rs. Doc omits tap_server and pty modules -- incomplete but not wrong."
+        }
+      ]
     }
   },
   "cycle": 1,
-  "last_run": "2026-04-03T03:26:34.287085+00:00"
+  "last_run": "2026-04-03T03:57:54.397637+00:00"
 }

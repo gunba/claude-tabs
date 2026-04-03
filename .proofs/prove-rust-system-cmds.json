@@ -12,64 +12,57 @@
     "RC-20"
   ],
   "unchecked": [
-    "RC-10",
-    "RC-11",
     "RC-12",
-    "RC-13",
-    "RC-14",
-    "RC-17",
-    "RC-18",
-    "RC-19",
-    "RC-20"
+    "RC-13"
   ],
   "citations": {
     "RC-10": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-11": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-12": {
       "up": 0,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-13": {
       "up": 0,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-14": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-17": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-18": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-19": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "RC-20": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     }
   },
   "metadata": {},
   "cycle": 1,
-  "last_run": "2026-04-03T03:27:18.363929+00:00"
+  "last_run": "2026-04-03T03:46:27.279667+00:00"
 }

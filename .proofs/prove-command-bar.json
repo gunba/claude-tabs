@@ -19,51 +19,51 @@
   "citations": {
     "CB-01": {
       "up": 1,
-      "seen": 53
+      "seen": 56
     },
     "CB-02": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "CB-03": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "CB-04": {
       "up": 0,
-      "seen": 53
+      "seen": 56
     },
     "CB-05": {
       "up": 1,
-      "seen": 53
+      "seen": 56
     },
     "CB-07": {
       "up": 2,
-      "seen": 53
+      "seen": 56
     },
     "CB-09": {
       "up": 1,
-      "seen": 53
+      "seen": 56
     },
     "CB-10": {
       "up": 2,
       "down": 0,
-      "seen": 12
+      "seen": 15
     },
     "CB-11": {
       "up": 2,
       "down": 0,
-      "seen": 8
+      "seen": 11
     },
     "CB-12": {
       "up": 2,
       "down": 0,
-      "seen": 8
+      "seen": 11
     },
     "CB-13": {
       "up": 0,
       "down": 0,
-      "seen": 4
+      "seen": 7
     }
   },
   "cycle": 6,

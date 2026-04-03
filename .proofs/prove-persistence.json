@@ -13,36 +13,36 @@
     "PS-01": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "PS-02": {
       "up": 2,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "PS-03": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "PS-04": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "PS-05": {
       "up": 3,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "PS-06": {
       "up": 2,
       "down": 0,
-      "seen": 22
+      "seen": 25
     }
   },
   "cycle": 4,
-  "last_run": "2026-03-28T12:24:42.864264+00:00",
+  "last_run": "2026-04-03T03:53:32.347049+00:00",
   "metadata": {
     "PS-02": {
       "files": [
@@ -81,6 +81,18 @@
       ],
       "verified": "2026-03-29",
       "notes": "Added during change documentation"
+    },
+    "PS-01": {
+      "files": [
+        "src/store/sessions.ts"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "Anchor at sessions.ts:272. persist_sessions_json serializes from frontend store. Rust session manager does not own persistence. Sessions persisted as dead."
+        }
+      ]
     }
   }
 }

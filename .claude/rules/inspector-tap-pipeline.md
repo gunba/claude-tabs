@@ -28,8 +28,7 @@ paths:
 - [IN-08] SubagentInspector tool block collapse: MessageBlock wrapped in React.memo to prevent re-rendering unchanged messages (ReactMarkdown is expensive). Uses local useState for collapsed state; getToolPreview extracts first non-empty line (120 char cap). Parent computes lastToolIndex via reduce; only the last tool message auto-expands when subagent is active (not dead/idle). React key={i} ensures stable mounting.
   - Files: src/components/SubagentInspector/SubagentInspector.tsx
 
-- [IN-10] Tap event pipeline: raw entries arrive via TCP socket (TAP_PORT) -> tapClassifier.ts classifies ~47 typed events -> tapEventBus.ts dispatches per-session -> tapStateReducer.ts (state), tapMetadataAccumulator.ts (metadata), tapSubagentTracker.ts (subagents) -> store actions.
-  - Files: src/lib/tapClassifier.ts, src/hooks/useTapPipeline.ts, src/types/tapEvents.ts, src/hooks/useTapEventProcessor.ts
+- [IN-10] Tap event pipeline: raw entries arrive via TCP socket (TAP_PORT) -> tapClassifier.ts classifies ~49 typed events -> tapEventBus.ts dispatches per-session -> tapStateReducer.ts (state), tapMetadataAccumulator.ts (metadata), tapSubagentTracker.ts (subagents) -> store actions.
 
 - [IN-15] AccountInfo classifier fix: guard relaxed from requiring subscriptionType to requiring only billingType (newer CLI omits subscriptionType). subscriptionType extracted with fallback to null.
   - Files: src/lib/tapClassifier.ts

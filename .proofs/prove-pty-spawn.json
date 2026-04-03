@@ -10,52 +10,109 @@
     "TR-15"
   ],
   "unchecked": [
-    "PT-01",
-    "PT-03",
-    "PT-04",
-    "PT-07",
     "PT-10",
-    "PT-18",
-    "TR-15"
+    "PT-18"
   ],
   "citations": {
     "PT-01": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "PT-03": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "PT-04": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "PT-07": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "PT-10": {
       "up": 0,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "PT-18": {
       "up": 0,
       "down": 0,
-      "seen": 4
+      "seen": 7
     },
     "TR-15": {
-      "up": 0,
+      "up": 1,
       "down": 0,
-      "seen": 4
+      "seen": 7
     }
   },
-  "metadata": {},
+  "metadata": {
+    "PT-01": {
+      "files": [
+        "src/lib/ptyProcess.ts"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "spawnPty calls invoke pty_spawn/pty_read/pty_write/pty_resize/pty_kill/pty_exitstatus/pty_destroy"
+        }
+      ]
+    },
+    "PT-03": {
+      "files": [
+        "src-tauri/src/lib.rs"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "std::env::remove_var(CLAUDECODE) at line 93-95 in lib.rs run()"
+        }
+      ]
+    },
+    "PT-04": {
+      "files": [
+        "src/lib/ptyProcess.ts"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "exitFired guard at line 73-83 ensures exactly one exitCallback"
+        }
+      ]
+    },
+    "PT-07": {
+      "files": [
+        "src/lib/ptyProcess.ts",
+        "src-tauri/src/lib.rs"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "registerActivePid in ptyProcess.ts; ActivePids in lib.rs; killed on RunEvent::Exit"
+        }
+      ]
+    },
+    "TR-15": {
+      "files": [
+        "src/components/Terminal/TerminalPanel.tsx"
+      ],
+      "verified": "2026-04-03",
+      "notes": [
+        {
+          "date": "2026-04-03",
+          "text": "proxyPort check at line 439-442 sets ANTHROPIC_BASE_URL in env"
+        }
+      ]
+    }
+  },
   "cycle": 1,
-  "last_run": "2026-04-03T03:27:18.363929+00:00"
+  "last_run": "2026-04-03T03:46:22.828472+00:00"
 }

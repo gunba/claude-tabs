@@ -10,17 +10,17 @@
     "BF-01": {
       "up": 2,
       "down": 0,
-      "seen": 26
+      "seen": 29
     },
     "BF-02": {
       "up": 0,
       "down": 0,
-      "seen": 53
+      "seen": 56
     },
     "BF-03": {
       "up": 1,
       "down": 0,
-      "seen": 26
+      "seen": 29
     }
   },
   "cycle": 5,
