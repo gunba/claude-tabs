@@ -5,6 +5,7 @@ src-tauri/pty-patch/target/
 *.log
 *.local
 *.stackdump
+__pycache__/
 
 # Test artifacts
 test-state.json
