@@ -25,7 +25,7 @@ import { useCommandDiscovery } from "./hooks/useCommandDiscovery";
 import { useCtrlKey } from "./hooks/useCtrlKey";
 import { useUiConfigStore } from "./lib/uiConfig";
 import { killAllActivePtys } from "./lib/ptyProcess";
-import { killPty } from "./lib/ptyRegistry";
+import { killPty, writeToPty } from "./lib/ptyRegistry";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { dlog } from "./lib/debugLog";
 import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
@@ -300,7 +300,11 @@ export default function App() {
         if (showLauncher) { setShowLauncher(false); return; }
         if (inspectedSubagent) { e.preventDefault(); setInspectedSubagent(null); return; }
         const el = document.activeElement as HTMLElement;
-        if (el && !el.closest('.xterm')) el.blur();
+        if (el && !el.closest('.xterm')) {
+          el.blur();
+        } else if (activeTabId) {
+          writeToPty(activeTabId, '\x1b');
+        }
       }
 
       // [KB-04] Ctrl+Tab/Ctrl+Shift+Tab: cycle tabs
