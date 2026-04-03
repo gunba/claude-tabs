@@ -52,6 +52,7 @@ export interface IpcCommands {
   list_agents: (args: { scope: string; workingDir: string }) => Promise<Array<{ name: string; path: string }>>;
   list_skills: (args: { scope: string; workingDir: string }) => Promise<Array<{ name: string; path: string }>>;
   resolve_api_host: () => Promise<string>;
+  save_event_kinds: (args: { projectRoot: string; kinds: string[] }) => Promise<void>;
   discover_env_vars: (args: { cliPath: string | null }) => Promise<Array<{ name: string; description: string; category: string; documented: boolean }>>;
   start_traffic_log: (args: { sessionId: string }) => Promise<string>;
   stop_traffic_log: (args: { sessionId: string }) => Promise<void>;

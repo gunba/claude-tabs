@@ -1,6 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../store/settings";
+import { useSessionStore } from "../../store/sessions";
+import seedEventKinds from "../../types/eventKinds.json";
 import type { StatusMessage } from "../../lib/settingsSchema";
 
 interface RecordingPaneProps {
@@ -67,10 +69,67 @@ const CATEGORY_GROUPS: CategoryGroup[] = [
   },
 ];
 
+const seedSet = new Set(seedEventKinds as string[]);
+
 export function RecordingPane({ onStatus }: RecordingPaneProps) {
   const recordingConfig = useSettingsStore((s) => s.recordingConfig);
   const setRecordingConfig = useSettingsStore((s) => s.setRecordingConfig);
+  const toggleNoisyEventKind = useSettingsStore((s) => s.toggleNoisyEventKind);
+  const seenEventKinds = useSessionStore((s) => s.seenEventKinds);
   const [cleaning, setCleaning] = useState(false);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevSeenCountRef = useRef(0);
+
+  const noisySet = useMemo(
+    () => new Set(recordingConfig.noisyEventKinds),
+    [recordingConfig.noisyEventKinds],
+  );
+
+  // All known event kinds: seed file + runtime-discovered, sorted
+  const allKinds = useMemo(() => {
+    const combined = new Set(seedEventKinds as string[]);
+    for (const k of seenEventKinds) combined.add(k);
+    return [...combined].sort();
+  }, [seenEventKinds]);
+
+  // Debounced flush of newly discovered event kinds to disk
+  useEffect(() => {
+    if (seenEventKinds.size <= prevSeenCountRef.current) return;
+    prevSeenCountRef.current = seenEventKinds.size;
+
+    // Check if there are any kinds not in the seed file
+    let hasNew = false;
+    for (const k of seenEventKinds) {
+      if (!seedSet.has(k)) { hasNew = true; break; }
+    }
+    if (!hasNew) return;
+
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      const merged = [...new Set([...seedEventKinds as string[], ...seenEventKinds])].sort();
+      invoke("save_event_kinds", {
+        projectRoot: window.location.href.includes("localhost")
+          ? import.meta.env.DEV ? "." : "."
+          : ".",
+        kinds: merged,
+      }).catch(() => {});
+      flushTimerRef.current = null;
+    }, 5000);
+
+    return () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    };
+  }, [seenEventKinds]);
+
+  const handleExport = useCallback(async () => {
+    try {
+      const merged = [...new Set([...seedEventKinds as string[], ...seenEventKinds])].sort();
+      await invoke("save_event_kinds", { projectRoot: ".", kinds: merged });
+      onStatus({ type: "success", text: `Exported ${merged.length} event kinds` });
+    } catch (e) {
+      onStatus({ type: "error", text: `Export failed: ${e}` });
+    }
+  }, [seenEventKinds, onStatus]);
 
   const toggleTapEnabled = useCallback(() => {
     setRecordingConfig({
@@ -124,6 +183,8 @@ export function RecordingPane({ onStatus }: RecordingPaneProps) {
     }
   }, [onStatus]);
 
+  const discoveredCount = allKinds.filter((k) => !seedSet.has(k)).length;
+
   return (
     <div className="recording-pane">
       {/* TAP Recording */}
@@ -158,6 +219,39 @@ export function RecordingPane({ onStatus }: RecordingPaneProps) {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Event Filtering */}
+      <div className="recording-section">
+        <div className="recording-section-title">Event Filtering</div>
+        <span className="recording-hint">
+          Hide noisy events from debug panel and tab activity.
+          Click to toggle. Struck-through events are filtered.
+        </span>
+        <div className="event-filter-pills">
+          {allKinds.map((kind) => {
+            const isNoisy = noisySet.has(kind);
+            const isDiscovered = !seedSet.has(kind);
+            return (
+              <button
+                key={kind}
+                className={`event-filter-pill${isNoisy ? " active" : ""}${isDiscovered ? " discovered" : ""}`}
+                onClick={() => toggleNoisyEventKind(kind)}
+                title={isDiscovered ? `${kind} (discovered at runtime)` : kind}
+              >
+                {kind}
+              </button>
+            );
+          })}
+        </div>
+        {discoveredCount > 0 && (
+          <div className="event-filter-export-row">
+            <button className="recording-btn" onClick={handleExport}>
+              Export {discoveredCount} new kind{discoveredCount !== 1 ? "s" : ""}
+            </button>
+            <span className="recording-hint">Save to eventKinds.json</span>
+          </div>
+        )}
       </div>
 
       {/* Traffic Logging */}

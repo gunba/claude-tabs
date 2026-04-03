@@ -9,11 +9,10 @@ import { normalizePath } from "../lib/paths";
 import { getResumeId, resolveModelFamily } from "../lib/claude";
 import { useSettingsStore } from "../store/settings";
 import { dlog } from "../lib/debugLog";
+import { getNoisyEventKinds } from "../lib/noisyEventKinds";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
 
-/** Event kinds too noisy for the debug log buffer (still dispatched to state/metadata). */
-const DLOG_SUPPRESSED_KINDS: ReadonlySet<string> = new Set(["EnvAccess", "ProcessHealth"]);
 
 /** Return discriminating fields for key event types (for debug logs). */
 function eventDetail(event: TapEvent): string {
@@ -102,8 +101,10 @@ export function useTapEventProcessor(
       const sid = sessionIdRef.current;
       if (!sid) return;
 
-      if (!DLOG_SUPPRESSED_KINDS.has(event.kind)) {
-        dlog("tap", sid, `event ${event.kind}${eventDetail(event)}`, "DEBUG");
+      useSessionStore.getState().addSeenEventKind(event.kind);
+
+      if (!getNoisyEventKinds().has(event.kind)) {
+        dlog("tap", sid, `[${event.cat || "?"}] ${event.kind}${eventDetail(event)}`, "DEBUG");
       }
 
       // No UUID dedup — CLI re-serializes conversation messages for JSONL persistence
@@ -121,7 +122,7 @@ export function useTapEventProcessor(
         dlog("inspector", sid, `state ${prevState} → ${newState} (${event.kind})`);
         stateRef.current = newState;
         updateState(sid, newState);
-      } else {
+      } else if (!getNoisyEventKinds().has(event.kind)) {
         dlog("inspector", sid, `state ${prevState} unchanged by ${event.kind}`, "DEBUG");
       }
 

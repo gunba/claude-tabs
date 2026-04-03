@@ -67,9 +67,13 @@ describe("TapMetadataAccumulator", () => {
 
   it("returns null when nothing changed", () => {
     const acc = new TapMetadataAccumulator();
-    // ProcessHealth doesn't trigger metadata changes
-    const diff = acc.process({
+    // ProcessHealth doesn't trigger metadata changes — first call establishes fingerprint
+    acc.process({
       kind: "ProcessHealth", ts: 0, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0,
+    });
+    // Second call with same state returns null
+    const diff = acc.process({
+      kind: "ProcessHealth", ts: 1, rss: 100, heapUsed: 50, heapTotal: 60, uptime: 10, cpuPercent: 0,
     });
     expect(diff).toBeNull();
   });
@@ -103,11 +107,12 @@ describe("TapMetadataAccumulator", () => {
     expect(diff?.capturedSystemPrompt).toBe("You are a helpful assistant");
   });
 
-  it("TurnDuration returns null (duration managed by client-side timer)", () => {
+  it("TurnDuration returns no new changes (duration managed by client-side timer)", () => {
     const acc = new TapMetadataAccumulator();
-    const diff = acc.process({
-      kind: "TurnDuration", ts: 0, durationMs: 5000, messageCount: 3,
-    });
+    // First call establishes fingerprint
+    acc.process({ kind: "TurnDuration", ts: 0, durationMs: 5000, messageCount: 3 });
+    // Second call with same kind returns null (no metadata changed)
+    const diff = acc.process({ kind: "TurnDuration", ts: 1, durationMs: 6000, messageCount: 4 });
     expect(diff).toBeNull();
   });
 

@@ -1,3 +1,4 @@
+import { getNoisyEventKinds } from "./noisyEventKinds";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionMetadata, SystemPromptBlock, CapturedMessage } from "../types/session";
 
@@ -75,7 +76,7 @@ export class TapMetadataAccumulator {
 
   /** Process an event and return a metadata diff, or null if unchanged. */
   process(event: TapEvent): Partial<SessionMetadata> | null {
-    if (event.kind !== "ApiTelemetry" && event.kind !== "ProcessHealth" && event.kind !== "ApiFetch") {
+    if (!getNoisyEventKinds().has(event.kind)) {
       this.currentEventKind = event.kind;
     }
     switch (event.kind) {
@@ -383,7 +384,7 @@ export class TapMetadataAccumulator {
         break;
 
       default:
-        return null;
+        break;
     }
 
     return this.diff();

@@ -16,7 +16,12 @@ export interface RecordingConfig {
   };
   traffic: { enabled: boolean };
   maxAgeHours: number;
+  noisyEventKinds: string[];
 }
+
+export const DEFAULT_NOISY_EVENT_KINDS: string[] = [
+  "ApiTelemetry", "ProcessHealth", "EnvAccess", "TextDecoderChunk",
+];
 
 export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
   taps: {
@@ -31,6 +36,7 @@ export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
   },
   traffic: { enabled: true },
   maxAgeHours: 72,
+  noisyEventKinds: DEFAULT_NOISY_EVENT_KINDS,
 };
 
 function syncRulesToProxy() {
@@ -144,6 +150,7 @@ interface SettingsState {
   reorderSystemPromptRules: (id: string, direction: -1 | 1) => void;
   updateModelRegistry: (entry: ModelRegistryEntry) => void;
   setRecordingConfig: (config: Partial<RecordingConfig>) => void;
+  toggleNoisyEventKind: (kind: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -450,10 +457,18 @@ export const useSettingsStore = create<SettingsState>()(
       setRecordingConfig: (config) => set((s) => ({
         recordingConfig: { ...s.recordingConfig, ...config },
       })),
+
+      toggleNoisyEventKind: (kind) => set((s) => {
+        const current = s.recordingConfig.noisyEventKinds;
+        const next = current.includes(kind)
+          ? current.filter((k) => k !== kind)
+          : [...current, kind].sort();
+        return { recordingConfig: { ...s.recordingConfig, noisyEventKinds: next } };
+      }),
     }),
     {
       name: "claude-tabs-settings",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Migration: v0 drops tierOverrides + converts modelPatterns to routes; v1->v2 adds modelRegistry
       migrate: (persisted: unknown, version: number) => {
@@ -491,6 +506,12 @@ export const useSettingsStore = create<SettingsState>()(
           const recordingConfig = state.recordingConfig as Record<string, unknown> | undefined;
           if (recordingConfig && "globalHooks" in recordingConfig) {
             delete recordingConfig.globalHooks;
+          }
+        }
+        if (version < 5) {
+          const recordingConfig = state.recordingConfig as Record<string, unknown> | undefined;
+          if (recordingConfig && !Array.isArray(recordingConfig.noisyEventKinds)) {
+            recordingConfig.noisyEventKinds = DEFAULT_NOISY_EVENT_KINDS;
           }
         }
         return state;

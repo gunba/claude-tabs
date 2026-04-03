@@ -690,6 +690,12 @@ function classifyStatusLine(ts: number, entry: TapEntry): TapEvent {
  * Pure function, no state.
  */
 export function classifyTapEntry(entry: TapEntry): TapEvent | null {
+  const result = classifyTapEntryInner(entry);
+  if (result) result.cat = entry.cat;
+  return result;
+}
+
+function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
   try {
     const { ts, cat } = entry;
 

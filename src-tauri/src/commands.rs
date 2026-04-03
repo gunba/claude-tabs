@@ -2084,6 +2084,38 @@ pub fn write_config_file(scope: String, working_dir: String, file_type: String, 
     std::fs::write(&path, &content).map_err(|e| format!("Failed to write {}: {}", path.display(), e))
 }
 
+/// Merge, dedupe, sort, and write event kind strings to src/types/eventKinds.json.
+/// Resolves the repo root from CARGO_MANIFEST_DIR (compile-time), falling back to `project_root` arg.
+#[tauri::command]
+pub fn save_event_kinds(project_root: String, kinds: Vec<String>) -> Result<(), String> {
+    // In dev builds, CARGO_MANIFEST_DIR points to src-tauri/; parent is the repo root.
+    // In release builds, fall back to the provided project_root.
+    let root = option_env!("CARGO_MANIFEST_DIR")
+        .map(|d| std::path::Path::new(d).parent().unwrap_or(std::path::Path::new(d)).to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from(&project_root));
+    let path = root.join("src").join("types").join("eventKinds.json");
+
+    // Merge with existing file content
+    let mut all: Vec<String> = kinds;
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        if let Ok(existing) = serde_json::from_str::<Vec<String>>(&content) {
+            all.extend(existing);
+        }
+    }
+
+    // Dedupe + sort
+    all.sort();
+    all.dedup();
+
+    let json = serde_json::to_string_pretty(&all)
+        .map_err(|e| format!("Failed to serialize: {}", e))?;
+
+    std::fs::write(&path, json + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+}
+
 /// List .md files in a directory, returning sorted [{name, path}].
 fn list_md_in_dir(dir: &std::path::Path) -> Vec<serde_json::Value> {
     if !dir.exists() {

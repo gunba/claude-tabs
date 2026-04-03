@@ -31,6 +31,7 @@ interface SessionsState {
   trafficRecording: Map<string, string>; // sessionId -> file path
   processHealth: Map<string, { rss: number; heapUsed: number; uptime: number }>;
   seenToolNames: Set<string>; // [TA-02] all unique tool names observed across sessions
+  seenEventKinds: Set<string>; // all unique tap event kinds observed across sessions
 
   // Actions
   init: () => Promise<void>;
@@ -59,6 +60,7 @@ interface SessionsState {
   addCommandHistory: (sessionId: string, command: string, ts: number) => void;
   updateProcessHealth: (id: string, data: { rss: number; heapUsed: number; uptime: number }) => void;
   addSeenToolName: (name: string) => void;
+  addSeenEventKind: (kind: string) => void;
 }
 
 export const useSessionStore = create<SessionsState>((set) => ({
@@ -76,6 +78,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
   trafficRecording: new Map(),
   processHealth: new Map(),
   seenToolNames: new Set(),
+  seenEventKinds: new Set(),
 
   init: async () => {
     trace("init: start");
@@ -323,6 +326,15 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const next = new Set(s.seenToolNames);
       next.add(name);
       return { seenToolNames: next };
+    });
+  },
+
+  addSeenEventKind: (kind) => {
+    set((s) => {
+      if (s.seenEventKinds.has(kind)) return s;
+      const next = new Set(s.seenEventKinds);
+      next.add(kind);
+      return { seenEventKinds: next };
     });
   },
 

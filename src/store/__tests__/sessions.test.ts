@@ -503,3 +503,36 @@ describe("addSeenToolName", () => {
     expect(useSessionStore.getState()).toBe(stateBefore);
   });
 });
+
+describe("addSeenEventKind", () => {
+  beforeEach(() => {
+    resetStore();
+    useSessionStore.setState({ seenEventKinds: new Set() });
+  });
+
+  it("adds a new event kind", () => {
+    useSessionStore.getState().addSeenEventKind("TurnStart");
+    expect(useSessionStore.getState().seenEventKinds.has("TurnStart")).toBe(true);
+  });
+
+  it("deduplicates — same kind does not increase size", () => {
+    useSessionStore.getState().addSeenEventKind("TurnStart");
+    useSessionStore.getState().addSeenEventKind("TurnStart");
+    expect(useSessionStore.getState().seenEventKinds.size).toBe(1);
+  });
+
+  it("tracks multiple distinct event kinds", () => {
+    useSessionStore.getState().addSeenEventKind("TurnStart");
+    useSessionStore.getState().addSeenEventKind("EnvAccess");
+    expect(useSessionStore.getState().seenEventKinds.size).toBe(2);
+    expect(useSessionStore.getState().seenEventKinds.has("TurnStart")).toBe(true);
+    expect(useSessionStore.getState().seenEventKinds.has("EnvAccess")).toBe(true);
+  });
+
+  it("returns same state reference for duplicate (no re-render)", () => {
+    useSessionStore.getState().addSeenEventKind("TurnStart");
+    const stateBefore = useSessionStore.getState();
+    useSessionStore.getState().addSeenEventKind("TurnStart");
+    expect(useSessionStore.getState()).toBe(stateBefore);
+  });
+});

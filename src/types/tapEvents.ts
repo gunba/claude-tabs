@@ -16,6 +16,8 @@ export interface TapEntry {
 interface TapEventBase {
   ts: number;
   kind: string;
+  /** Source hook category (e.g. "parse", "stringify", "envproxy"). */
+  cat?: string;
 }
 
 // ── Parse (SSE) events ──

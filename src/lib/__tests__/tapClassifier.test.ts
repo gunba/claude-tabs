@@ -9,7 +9,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "message_start", message: { model: "claude-opus-4-6", usage: { input_tokens: 100, output_tokens: 0, cache_read_input_tokens: 5000, cache_creation_input_tokens: 200 } } }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "TurnStart", ts: 1000, model: "claude-opus-4-6", inputTokens: 100, outputTokens: 0, cacheRead: 5000, cacheCreation: 200 });
+    expect(event).toMatchObject({ kind: "TurnStart", ts: 1000, model: "claude-opus-4-6", inputTokens: 100, outputTokens: 0, cacheRead: 5000, cacheCreation: 200 });
   });
 
   it("classifies content_block_start thinking → ThinkingStart", () => {
@@ -18,7 +18,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking" } }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "ThinkingStart", ts: 1001, index: 0 });
+    expect(event).toMatchObject({ kind: "ThinkingStart", ts: 1001, index: 0 });
   });
 
   it("classifies content_block_start text → TextStart", () => {
@@ -27,7 +27,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "text", text: "" } }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "TextStart", ts: 1002, index: 1 });
+    expect(event).toMatchObject({ kind: "TextStart", ts: 1002, index: 1 });
   });
 
   it("classifies content_block_start tool_use → ToolCallStart", () => {
@@ -36,7 +36,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "tool_use", name: "Agent", id: "toolu_abc" } }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "ToolCallStart", ts: 1003, index: 1, toolName: "Agent", toolId: "toolu_abc" });
+    expect(event).toMatchObject({ kind: "ToolCallStart", ts: 1003, index: 1, toolName: "Agent", toolId: "toolu_abc" });
   });
 
   it("classifies content_block_stop → BlockStop", () => {
@@ -45,7 +45,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "content_block_stop", index: 0 }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "BlockStop", ts: 1004, index: 0 });
+    expect(event).toMatchObject({ kind: "BlockStop", ts: 1004, index: 0 });
   });
 
   it("classifies message_delta → TurnEnd", () => {
@@ -54,7 +54,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 180 } }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "TurnEnd", ts: 1005, stopReason: "tool_use", outputTokens: 180 });
+    expect(event).toMatchObject({ kind: "TurnEnd", ts: 1005, stopReason: "tool_use", outputTokens: 180 });
   });
 
   it("classifies message_stop → MessageStop", () => {
@@ -63,7 +63,7 @@ describe("classifyTapEntry — parse (SSE)", () => {
       snap: JSON.stringify({ type: "message_stop" }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "MessageStop", ts: 1006 });
+    expect(event).toMatchObject({ kind: "MessageStop", ts: 1006 });
   });
 
   it("returns null for content_block_delta (high frequency noise)", () => {
@@ -283,7 +283,7 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
       snap: JSON.stringify({ notification_type: "idle_prompt" }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "IdlePrompt", ts: 2020 });
+    expect(event).toMatchObject({ kind: "IdlePrompt", ts: 2020 });
   });
 
   it("returns null for other notification_type values", () => {
@@ -346,7 +346,7 @@ describe("classifyTapEntry — effort level", () => {
       }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "EffortLevel", ts: 5000, level: "high" });
+    expect(event).toMatchObject({ kind: "EffortLevel", ts: 5000, level: "high" });
   });
 
   it("classifies medium effort level", () => {
@@ -358,7 +358,7 @@ describe("classifyTapEntry — effort level", () => {
       }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "EffortLevel", ts: 5001, level: "medium" });
+    expect(event).toMatchObject({ kind: "EffortLevel", ts: 5001, level: "medium" });
   });
 });
 
@@ -378,7 +378,7 @@ describe("classifyTapEntry — worktree events", () => {
       }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "WorktreeState", ts: 4500,
       originalCwd: "C:\\Users\\test\\project",
       worktreePath: "C:\\Users\\test\\project\\.claude\\worktrees\\my-wt",
@@ -397,7 +397,7 @@ describe("classifyTapEntry — worktree events", () => {
       }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "WorktreeCleared", ts: 4600 });
+    expect(event).toMatchObject({ kind: "WorktreeCleared", ts: 4600 });
   });
 });
 
@@ -408,7 +408,7 @@ describe("classifyTapEntry — permission events", () => {
       snap: JSON.stringify([{ type: "setMode", acceptEdits: true, destination: "tool_use" }]),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "PermissionPromptShown", ts: 4700, toolName: null });
+    expect(event).toMatchObject({ kind: "PermissionPromptShown", ts: 4700, toolName: null });
   });
 
   it("classifies telemetry shape → PermissionPromptShown with toolName", () => {
@@ -417,7 +417,7 @@ describe("classifyTapEntry — permission events", () => {
       snap: JSON.stringify({ toolName: "Bash", decisionReasonType: "user_prompt", sandboxEnabled: false }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "PermissionPromptShown", ts: 4701, toolName: "Bash" });
+    expect(event).toMatchObject({ kind: "PermissionPromptShown", ts: 4701, toolName: "Bash" });
   });
 
   it("classifies accept telemetry → PermissionApproved", () => {
@@ -426,7 +426,7 @@ describe("classifyTapEntry — permission events", () => {
       snap: JSON.stringify({ toolName: "Edit", has_instructions: false, entered_feedback_mode: false }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "PermissionApproved", ts: 4702, toolName: "Edit" });
+    expect(event).toMatchObject({ kind: "PermissionApproved", ts: 4702, toolName: "Edit" });
   });
 
   it("classifies user message with toolUseResult → SkillInvocation", () => {
@@ -440,7 +440,7 @@ describe("classifyTapEntry — permission events", () => {
       }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "SkillInvocation", ts: 4800,
       skill: "keybindings-help",
       success: true,
@@ -459,7 +459,7 @@ describe("classifyTapEntry — permission events", () => {
       }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "SkillInvocation", ts: 4801,
       skill: "commit",
       success: false,
@@ -492,7 +492,7 @@ describe("classifyTapEntry — system-prompt", () => {
       msgCount: 3,
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "SystemPromptCapture", ts: 4800,
       text: "You are Claude, an AI assistant...",
       model: "claude-opus-4-6",
@@ -513,7 +513,7 @@ describe("classifyTapEntry — system-prompt", () => {
       ],
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "SystemPromptCapture", ts: 4801,
       text: "Block 1Block 2",
       model: "claude-opus-4-6",
@@ -533,7 +533,7 @@ describe("classifyTapEntry — parse errors", () => {
       snap: JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" }, status: 529 }),
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "ApiStreamError", ts: 4900,
       type: "overloaded_error",
       message: "Overloaded",
@@ -591,7 +591,7 @@ describe("classifyTapEntry — status-line", () => {
       vimMode: "NORMAL",
     };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "StatusLineUpdate", ts: 6000,
       sessionId: "abc123",
       cwd: "/current/working/directory",
@@ -625,7 +625,7 @@ describe("classifyTapEntry — status-line", () => {
   it("handles missing fields with defaults", () => {
     const entry: TapEntry = { ts: 6001, cat: "status-line" };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({
+    expect(event).toMatchObject({
       kind: "StatusLineUpdate", ts: 6001,
       sessionId: "", cwd: "", modelId: "", modelDisplayName: "",
       cliVersion: "", outputStyle: "",
@@ -660,12 +660,12 @@ describe("classifyTapEntry — ping", () => {
   it("classifies cat=ping as HttpPing", () => {
     const entry: TapEntry = { ts: 1000, cat: "ping", dur: 87, status: 200 };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "HttpPing", ts: 1000, durationMs: 87, status: 200 });
+    expect(event).toMatchObject({ kind: "HttpPing", ts: 1000, durationMs: 87, status: 200 });
   });
 
   it("handles missing dur/status gracefully", () => {
     const entry: TapEntry = { ts: 1000, cat: "ping" };
     const event = classifyTapEntry(entry);
-    expect(event).toEqual({ kind: "HttpPing", ts: 1000, durationMs: 0, status: null });
+    expect(event).toMatchObject({ kind: "HttpPing", ts: 1000, durationMs: 0, status: null });
   });
 });

@@ -167,6 +167,7 @@ pub fn run() {
             commands::scan_command_usage,
             commands::read_config_file,
             commands::write_config_file,
+            commands::save_event_kinds,
             commands::list_agents,
             commands::list_skills,
             commands::register_active_pid,
