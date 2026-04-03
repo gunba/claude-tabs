@@ -23,6 +23,7 @@ const HOOK_TYPES = ["command", "prompt", "agent"] as const; // [HM-09] Three hoo
 interface HookEntry {
   type: string;
   command: string;
+  "if"?: string;
   timeout?: number;
   statusMessage?: string;
 }
@@ -45,6 +46,7 @@ interface FormState {
   matcher: string;
   type: string;
   command: string;
+  ifCondition: string;
   timeout: number;
   statusMessage: string;
 }
@@ -54,6 +56,7 @@ const EMPTY_FORM: FormState = {
   matcher: "",
   type: "command",
   command: "",
+  ifCondition: "",
   timeout: 60,
   statusMessage: "",
 };
@@ -126,6 +129,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
       type: form.type,
       command: form.command.trim(),
     };
+    newHook["if"] = form.ifCondition.trim() || undefined;
     newHook.timeout = form.timeout !== 60 ? form.timeout : undefined;
     newHook.statusMessage = form.statusMessage.trim() || undefined;
 
@@ -178,6 +182,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
       matcher: flat.matcher,
       type: flat.hook.type || "command",
       command: flat.hook.command || "",
+      ifCondition: flat.hook["if"] ?? "",
       timeout: flat.hook.timeout ?? 60,
       statusMessage: flat.hook.statusMessage ?? "",
     });
@@ -213,6 +218,12 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
                 <div className="hook-detail">
                   <span className="hook-detail-label">Match:</span>
                   <span className="hook-detail-value">{flat.matcher}</span>
+                </div>
+              )}
+              {flat.hook["if"] && (
+                <div className="hook-detail">
+                  <span className="hook-detail-label">If:</span>
+                  <span className="hook-detail-value">{flat.hook["if"]}</span>
                 </div>
               )}
               <div className="hook-detail">
@@ -267,6 +278,18 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
               />
             </div>
           )}
+
+          {/* [HM-12] Optional 'if' field: permission-rule syntax filter, outside eventHasMatcher block */}
+          <div className="hooks-pane-form-row">
+            <span className="hooks-pane-form-label">If</span>
+            <input
+              className="hooks-pane-form-input"
+              value={form.ifCondition}
+              onChange={(e) => setForm((f) => ({ ...f, ifCondition: e.target.value }))}
+              placeholder="Bash(git *)"
+            />
+            <span className="hooks-pane-form-hint">permission-rule filter</span>
+          </div>
 
           <div className="hooks-pane-form-row">
             <span className="hooks-pane-form-label">Type</span>
