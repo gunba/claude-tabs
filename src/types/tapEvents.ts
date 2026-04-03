@@ -446,7 +446,7 @@ export interface EnvAccess extends TapEventBase {
   hasValue: boolean;
 }
 
-// ── Hook events (captured via global no-op hooks triggering JSON.stringify) ──
+// ── Hook events (captured only when Claude Code emits hook payloads) ──
 
 export interface SessionEndEvent extends TapEventBase {
   kind: "SessionEndEvent";
@@ -595,7 +595,7 @@ export type TapEvent =
   | TextDecoderChunk
   | EmitterEvent
   | EnvAccess
-  // Hook events (global no-op hooks)
+  // Hook events
   | SessionEndEvent
   | StopEvent
   | PreCompactEvent

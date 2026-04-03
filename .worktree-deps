@@ -1,6 +1,7 @@
 # Shared dependencies for git worktrees
 # Generic format: works for any project stack
-# setup-worktree.sh reads this on WorktreeCreate hook
+# This is a declarative manifest only; it is not currently wired to a
+# Claude Code WorktreeCreate hook.
 
 symlinks:
   # Node dependencies — shared across all worktrees

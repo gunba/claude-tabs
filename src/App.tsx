@@ -145,13 +145,9 @@ export default function App() {
     useUiConfigStore.getState().loadConfig();
     useSettingsStore.getState().loadPastSessions();
     invoke("migrate_legacy_data").catch(() => {});
+    // [HM-11] Startup intentionally does not install or mutate Claude hook
+    // settings; hook changes are user-managed via the Hooks UI only.
     invoke("cleanup_session_data", { maxAgeHours: 72 }).catch(() => {});
-    // Auto-install global recording hooks if enabled
-    if (useSettingsStore.getState().recordingConfig.globalHooks.enabled) {
-      import("./lib/globalHooks").then(({ installGlobalHooks }) =>
-        installGlobalHooks().catch(() => {})
-      );
-    }
   }, [init]);
 
   // [SL-02] Quick launch: Ctrl+Click "+" or Ctrl+Shift+T, uses saved defaults or last config

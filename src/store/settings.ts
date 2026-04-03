@@ -15,7 +15,6 @@ export interface RecordingConfig {
     categories: Record<string, boolean>;
   };
   traffic: { enabled: boolean };
-  globalHooks: { enabled: boolean };
   maxAgeHours: number;
 }
 
@@ -31,7 +30,6 @@ export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
     },
   },
   traffic: { enabled: true },
-  globalHooks: { enabled: true },
   maxAgeHours: 72,
 };
 
@@ -455,7 +453,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Migration: v0 drops tierOverrides + converts modelPatterns to routes; v1->v2 adds modelRegistry
       migrate: (persisted: unknown, version: number) => {
@@ -488,6 +486,12 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 3) {
           // Add recording config
           if (!state.recordingConfig) state.recordingConfig = DEFAULT_RECORDING_CONFIG;
+        }
+        if (version < 4) {
+          const recordingConfig = state.recordingConfig as Record<string, unknown> | undefined;
+          if (recordingConfig && "globalHooks" in recordingConfig) {
+            delete recordingConfig.globalHooks;
+          }
         }
         return state;
       },

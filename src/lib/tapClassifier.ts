@@ -552,7 +552,7 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     }
   }
 
-  // ── Hook events (serialized when global no-op hooks are registered) ──
+  // ── Hook events (present only when Claude Code emits hook payloads) ──
 
   // Hook event data uses `hook_event_name` field (consistent with UserPromptSubmit/Status)
   if (typeof parsed.hook_event_name === "string") {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionStore } from "../../store/sessions";
 import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
-import { getDebugLog, clearDebugLog, type DebugLogEntry } from "../../lib/debugLog";
+import { getDebugLog, getDebugLogGeneration, clearDebugLog, type DebugLogEntry } from "../../lib/debugLog";
 import { IconClose } from "../Icons/Icons";
 import "./DebugPanel.css";
 
@@ -36,17 +36,24 @@ export function DebugPanel({ onClose }: DebugPanelProps) {
   const [showDebug, setShowDebug] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const prevGenRef = useRef(0);
   const prevLenRef = useRef(0);
 
   const sessions = useSessionStore((s) => s.sessions);
   const activeTabId = useSessionStore((s) => s.activeTabId);
 
-  // [DP-05] Poll getDebugLog() every 500ms
+  // [DP-05] Poll getDebugLog() every 500ms — use generation counter to detect ring-buffer changes.
+  // Skip update while user has active text selection in the panel to preserve highlight.
   useEffect(() => {
     const interval = setInterval(() => {
-      const buf = getDebugLog();
-      if (buf.length !== prevLenRef.current) {
-        setLogs([...buf]);
+      const gen = getDebugLogGeneration();
+      if (gen !== prevGenRef.current) {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed && scrollRef.current?.contains(sel.anchorNode)) {
+          return; // defer — user is selecting text
+        }
+        prevGenRef.current = gen;
+        setLogs([...getDebugLog()]);
       }
     }, 500);
     return () => clearInterval(interval);

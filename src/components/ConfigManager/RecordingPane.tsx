@@ -1,7 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../store/settings";
-import { RECORDING_HOOK_EVENTS, auditGlobalHooks, installGlobalHooks } from "../../lib/globalHooks";
 import type { StatusMessage } from "../../lib/settingsSchema";
 
 interface RecordingPaneProps {
@@ -68,24 +67,10 @@ const CATEGORY_GROUPS: CategoryGroup[] = [
   },
 ];
 
-type HooksMap = Record<string, Array<{ matcher?: string; hooks: Array<{ type: string; command: string }> }>>;
-
 export function RecordingPane({ onStatus }: RecordingPaneProps) {
   const recordingConfig = useSettingsStore((s) => s.recordingConfig);
   const setRecordingConfig = useSettingsStore((s) => s.setRecordingConfig);
   const [cleaning, setCleaning] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [missingHooks, setMissingHooks] = useState<string[]>([]);
-
-  // Check which hooks are installed
-  useEffect(() => {
-    invoke<Record<string, unknown>>("discover_hooks", { workingDirs: [] })
-      .then((result) => {
-        const userHooks = (result["user"] as HooksMap) ?? {};
-        setMissingHooks(auditGlobalHooks(userHooks));
-      })
-      .catch(() => setMissingHooks([...RECORDING_HOOK_EVENTS]));
-  }, [installing]);
 
   const toggleTapEnabled = useCallback(() => {
     setRecordingConfig({
@@ -111,32 +96,9 @@ export function RecordingPane({ onStatus }: RecordingPaneProps) {
     });
   }, [recordingConfig.traffic, setRecordingConfig]);
 
-  const toggleGlobalHooks = useCallback(() => {
-    setRecordingConfig({
-      globalHooks: { enabled: !recordingConfig.globalHooks.enabled },
-    });
-  }, [recordingConfig.globalHooks, setRecordingConfig]);
-
   const setMaxAge = useCallback((hours: number) => {
     setRecordingConfig({ maxAgeHours: Math.max(1, hours) });
   }, [setRecordingConfig]);
-
-  const handleInstallHooks = useCallback(async () => {
-    setInstalling(true);
-    try {
-      const result = await installGlobalHooks();
-      onStatus({
-        type: "success",
-        text: result.installed > 0
-          ? `Installed ${result.installed} recording hooks`
-          : "All recording hooks already installed",
-      });
-    } catch (e) {
-      onStatus({ type: "error", text: `Hook install failed: ${e}` });
-    } finally {
-      setInstalling(false);
-    }
-  }, [onStatus]);
 
   const handleCleanup = useCallback(async () => {
     setCleaning(true);
@@ -161,8 +123,6 @@ export function RecordingPane({ onStatus }: RecordingPaneProps) {
       onStatus({ type: "error", text: "Could not open data directory" });
     }
   }, [onStatus]);
-
-  const installedCount = RECORDING_HOOK_EVENTS.length - missingHooks.length;
 
   return (
     <div className="recording-pane">
@@ -211,40 +171,6 @@ export function RecordingPane({ onStatus }: RecordingPaneProps) {
           <span className="recording-section-title">Traffic Logging</span>
           <span className="recording-hint">Log API request/response via proxy</span>
         </label>
-      </div>
-
-      {/* Global Hooks */}
-      <div className="recording-section">
-        <label className="recording-master-toggle">
-          <input
-            type="checkbox"
-            checked={recordingConfig.globalHooks.enabled}
-            onChange={toggleGlobalHooks}
-          />
-          <span className="recording-section-title">Global Hooks</span>
-          <span className="recording-hint">Register no-op hooks to capture Claude Code events</span>
-        </label>
-
-        <div className="recording-hooks-status">
-          <span className="recording-hooks-count">
-            {installedCount}/{RECORDING_HOOK_EVENTS.length} hooks installed
-          </span>
-          {missingHooks.length > 0 && (
-            <button
-              className="recording-btn"
-              onClick={handleInstallHooks}
-              disabled={installing}
-            >
-              {installing ? "Installing..." : `Install ${missingHooks.length} Missing`}
-            </button>
-          )}
-        </div>
-
-        {missingHooks.length > 0 && (
-          <div className="recording-hooks-missing">
-            Missing: {missingHooks.join(", ")}
-          </div>
-        )}
       </div>
 
       {/* Data Management */}

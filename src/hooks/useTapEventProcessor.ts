@@ -12,6 +12,9 @@ import { dlog } from "../lib/debugLog";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
 
+/** Event kinds too noisy for the debug log buffer (still dispatched to state/metadata). */
+const DLOG_SUPPRESSED_KINDS: ReadonlySet<string> = new Set(["EnvAccess", "ProcessHealth"]);
+
 /** Return discriminating fields for key event types (for debug logs). */
 function eventDetail(event: TapEvent): string {
   switch (event.kind) {
@@ -99,7 +102,9 @@ export function useTapEventProcessor(
       const sid = sessionIdRef.current;
       if (!sid) return;
 
-      dlog("tap", sid, `event ${event.kind}${eventDetail(event)}`, "DEBUG");
+      if (!DLOG_SUPPRESSED_KINDS.has(event.kind)) {
+        dlog("tap", sid, `event ${event.kind}${eventDetail(event)}`, "DEBUG");
+      }
 
       // No UUID dedup — CLI re-serializes conversation messages for JSONL persistence
       // and hook dispatch (2-3 stringify calls per message), but the state reducer is

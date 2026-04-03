@@ -2179,21 +2179,3 @@
   cursor: default;
 }
 
-.recording-hooks-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.recording-hooks-count {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.recording-hooks-missing {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  word-break: break-word;
-}
