@@ -453,7 +453,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         // [TR-15] Inject proxy URL for multi-provider routing
         const { proxyPort } = useSettingsStore.getState();
         if (proxyPort) {
-          env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}`;
+          env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}/s/${session.id}`;
         }
         const handle = await pty.spawn(claudePath, args, cwd, cols, rows, env);
         registerPtyWriter(session.id, handle.write);
