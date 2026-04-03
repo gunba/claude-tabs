@@ -245,6 +245,7 @@
 }
 
 /* Suppress focus ring on mouse click; preserve for keyboard (Tab) */
+.tab:focus:not(:focus-visible),
 .tab-kill:focus:not(:focus-visible),
 .tab-close:focus:not(:focus-visible),
 .tab-config:focus:not(:focus-visible),
