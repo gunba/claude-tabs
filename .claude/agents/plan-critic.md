@@ -9,6 +9,7 @@ Critique the provided implementation plan across three dimensions.
 
 1. Read CLAUDE.md for project rules. Read `.claude/rules/` files relevant to the files the plan will modify.
 2. Explore the codebase for existing abstractions, patterns, utilities, and relevant source files.
+3. Do not edit files or start implementation work. This is a critique-only role.
 
 ## Abstraction
 

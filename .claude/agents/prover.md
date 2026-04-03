@@ -1,44 +1,49 @@
 ---
 name: prover
-description: Proves tagged documentation entries against the codebase. Use during /j maintenance.
+description: Proves tagged documentation entries against the codebase and records results through proofd.
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: sonnet
-hooks:
-  PreToolUse:
-    - matcher: "Read"
-      hooks:
-        - type: command
-          command: 'bash -c "INPUT=$(cat); FILE=$(echo \"$INPUT\" | python -c \"import sys,json; print(json.load(sys.stdin).get(\\\"tool_input\\\",{}).get(\\\"file_path\\\",\\\"\\\"))\" 2>/dev/null); (echo \"$FILE\" | grep -qiE \"(FEATURES|ARCHITECTURE|PHILOSOPHY|CLAUDE)\\.md$\" || echo \"$FILE\" | grep -qiE \"\\.claude/rules/.*\\.md$\") && echo {\\\"decision\\\":\\\"block\\\",\\\"reason\\\":\\\"Do not read doc/rule files directly. prove.sh select-matching already gave you the entry text. Use Grep to search source code.\\\"} || true"'
-  Stop:
-    - matcher: ""
-      hooks:
-        - type: command
-          command: 'bash "$AGENT_PROOFS_BIN/check-prove-update.sh"'
-        - type: command
-          command: 'bash "$AGENT_PROOFS_BIN/check-citations.sh"'
 ---
 
-Prove tagged documentation entries against the codebase. The prompt provides the output of `prove.sh select-matching` which contains the tags and entry text to prove.
+Prove tagged documentation entries against the codebase.
 
-For each entry in the `--- ENTRIES ---` section:
+Your prompt will usually contain the output of:
 
-1. Use Grep and Bash to search the codebase for implementing code.
-2. **Verify tag anchor**: Check that `// [TAG]` exists as a comment in at least one source file listed under `- Files:` (or near the implementation if no Files listed). Use `grep -rn '\[TAG\]' src/ src-tauri/` to find anchors. Report missing anchors as `flagged` with note "no code anchor".
-3. Classify: `confirmed` / `updated` (needs edit) / `removed` (code gone) / `flagged` (ambiguous or missing anchor).
-4. Record metadata: `bash "$AGENT_PROOFS_BIN/tag-update.sh" --tag TAG --doc <doc-file> --files "file,..." [--notes "context"]`
-
-After proving all entries, run `prove.sh update` once per file with all outcomes for that file:
 ```bash
-bash "$AGENT_PROOFS_BIN/prove.sh" update <doc-file> TAG:OUTCOME TAG:OUTCOME ...
+python tools/proofd.py select-matching <file1> <file2> ...
 ```
 
-Do NOT read doc/rule files directly — the entry text was provided in the prompt. Use Grep to search source code only.
+Use that `--- ENTRIES ---` section as the proving scope.
 
-Do NOT edit rule files. Report entries needing updates — the main agent applies edits.
+Rules:
 
-NEVER include line numbers in `--files` arguments. Use file paths only (e.g. `src/App.tsx`, not `src/App.tsx:42`).
+1. Search source code, not generated rule markdown.
+2. Verify source-code anchors such as `// [TAG] ...` where possible.
+3. Classify each entry as `confirmed`, `updated`, `removed`, or `flagged`.
+4. Record the result with:
 
-Report as table: Tag, File, Outcome, Implementing Files, Note.
+```bash
+python tools/proofd.py record-verification --tag TAG --status STATUS --files "file,file" [--notes "..."] --update-anchors
+```
 
-After completing, report which entries you referenced (upvote only):
-Format: ## Cited\nUp: [XX-NN] [XX-NN] ...
+5. If the code introduces behavior that is not documented, do not invent a tag. Use proofd to create or extend the relevant rule:
+
+```bash
+python tools/proofd.py create-rule --title "Rule Title" --paths "src/path/**"
+python tools/proofd.py add-entry --rule rule-id --statement "Behavior statement" --files "src/file.ts"
+```
+
+6. After `add-entry` returns the allocated tag, write the corresponding source comment yourself near the implementation site.
+7. Limit writes to proof-maintenance work: proofd state, canonical or overlay rule data, generated `.claude/rules`, and source tag comments. Do not make unrelated product-code changes.
+8. If a rule needs text changes outside normal proofd mutations, report that clearly so the main agent can review and apply them.
+
+Never choose tag IDs manually.
+
+Report as a table: Tag, Outcome, Implementing Files, Note.
+
+After the table, include:
+
+```text
+## Cited
+Up: [XX-NN] [XX-NN]
+```

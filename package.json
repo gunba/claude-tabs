@@ -11,7 +11,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:quick": "tauri build --no-bundle",
-    "build:debug": "tauri build --debug --no-bundle"
+    "build:debug": "tauri build --debug --no-bundle",
+    "proofd": "python tools/proofd.py",
+    "proof:sync": "python tools/proofd.py sync",
+    "proof:lint": "python tools/proofd.py lint",
+    "proof:mcp": "python tools/proofd.py mcp",
+    "codex:handoff": "python tools/codex_handoff.py",
+    "codex:delegate": "python tools/codex_delegate.py"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

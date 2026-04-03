@@ -12,13 +12,19 @@ The user will run `/r`, `/j`, `/b` when ready. Do not run these automatically.
 
 # Planning
 
-When in plan mode, after you have drafted your plan but before presenting it to the user: spawn the `plan_agents` from `.proofs/config.json`, passing your draft plan. Incorporate the feedback into the final plan, then present to the user.
+When in plan mode, after you have drafted your plan but before presenting it to the user: ask whether plan critique should run via the Claude `plan-critic` agent, a Codex subprocess, or both.
+
+If Codex is selected, save the draft plan to `plans/` and run `python tools/codex_delegate.py plan --plan-file <path>`. Codex does not auto-load `.claude/rules/` by file path, so it must request rule context through `python tools/proofd.py context ...` or a configured `proofd` MCP tool.
+
+If Claude is selected, spawn the `plan-critic` agent, passing the draft plan. Incorporate the feedback into the final plan, then present to the user.
 
 Do NOT use TaskOutput to poll. Wait for task-notifications.
 
 # Documentation
 
-All tagged documentation lives in `.claude/rules/`. Each rule file has `paths:` YAML frontmatter for auto-loading by Claude Code. Global rules (no `paths:`) load for all conversations.
+All tagged documentation is managed by `proofd`. Canonical rule data lives outside the repo in the proofd knowledge base. `.claude/rules/` is generated output for Claude Code auto-loading.
+
+Do not hand-edit `.claude/rules/*.md`. Use `python tools/proofd.py` subcommands to create rules, add entries, split rules, record verifications, and regenerate the rule output.
 
 Key rule files:
 - `project-conventions.md` — architecture, build commands, slash commands, layout (global)
@@ -27,6 +33,11 @@ Key rule files:
 - `philosophy.md` — documentation system design principles (global)
 - Feature-specific rules are path-scoped and auto-load when relevant files are mentioned
 
-Tags are embedded in source code as `// [TAG] brief description` comments at implementation sites. The prover verifies these anchors during `/j` runs.
+Tags are embedded in source code as `// [TAG] brief description` comments at implementation sites. Tags must be allocated by `proofd`; agents must not invent tag IDs themselves.
 
-The prove pipeline uses `rule_dirs` glob in `.proofs/config.json` for auto-discovery — no need to manually register new rule files.
+Useful commands:
+- `python tools/proofd.py import-legacy --sync` — import the old rules/proofs once and generate current rule markdown
+- `python tools/proofd.py sync` — regenerate `.claude/rules`
+- `python tools/proofd.py lint` — audit rules, anchors, and auto-load coverage
+- `python tools/proofd.py select-matching <paths...>` — select likely relevant entries for proving
+- `python tools/codex_delegate.py <workflow> ...` — run a Codex subprocess for review, janitor, build, combined `/rj`, or plan critique
