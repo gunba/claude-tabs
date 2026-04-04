@@ -55,8 +55,10 @@ function permissionIcon(mode: PermissionMode): { icon: React.ReactNode; tip: str
 
 function SessionStatus({
   session,
+  allSessionsTokens,
 }: {
   session: Session;
+  allSessionsTokens: number;
 }) {
   const perm = permissionIcon(session.config.permissionMode);
   const inspectorOff = useSessionStore((s) => s.inspectorOffSessions.has(session.id));
@@ -163,6 +165,23 @@ function SessionStatus({
             </span>
           );
         })()}
+        {(() => {
+          // [SI-25] Combined token indicator: allSessions (thisSession)
+          const totalIn = session.metadata.statusLine?.totalInputTokens ?? session.metadata.inputTokens;
+          const totalOut = session.metadata.statusLine?.totalOutputTokens ?? session.metadata.outputTokens;
+          const sessionTotal = totalIn + totalOut;
+          if (allSessionsTokens <= 0 && sessionTotal <= 0) return null;
+          const allLabel = formatTokenCount(allSessionsTokens);
+          const sessionLabel = formatTokenCount(sessionTotal);
+          return (
+            <span className="status-item" title={
+              `All sessions: ${allSessionsTokens.toLocaleString()}\n` +
+              `This session: ${totalIn.toLocaleString()} in + ${totalOut.toLocaleString()} out`
+            } style={{ color: "var(--text-muted)" }}>
+              {allLabel} ({sessionLabel})
+            </span>
+          );
+        })()}
         {inspectorOff && (
           <span className="status-item status-inspector-off" title="Inspector disconnected — right-click tab to reconnect">
             <IconCircleOutline size={12} /> Inspector off
@@ -228,19 +247,6 @@ function SessionStatus({
             <IconWarning size={12} />
           </span>
         )}
-        {(() => {
-          // [SI-25] Prefer cumulative totals from the Status hook snapshot;
-          // fall back to session metadata totals when unavailable.
-          const totalIn = session.metadata.statusLine?.totalInputTokens ?? session.metadata.inputTokens;
-          const totalOut = session.metadata.statusLine?.totalOutputTokens ?? session.metadata.outputTokens;
-          const total = totalIn + totalOut;
-          if (total <= 0) return null;
-          return (
-            <span className="status-item" title={`Session total: ${totalIn.toLocaleString()} in + ${totalOut.toLocaleString()} out`}>
-              {formatTokenCount(total)}
-            </span>
-          );
-        })()}
         {session.metadata.hookStatus && (
           <span className="status-item status-dynamic" title="Hook executing">
             {session.metadata.hookStatus}
@@ -329,7 +335,7 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
   return (
     <div className="status-bar">
       {activeSession ? (
-        <SessionStatus session={activeSession} />
+        <SessionStatus session={activeSession} allSessionsTokens={allSessionsTokens} />
       ) : (
         <span className="status-empty">No active session</span>
       )}
@@ -370,11 +376,6 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
         >
           <IconHook size={12} /> {hookCount > 0 ? hookCount : "Hooks"}
         </button>
-        {allSessionsTokens > 0 && (
-          <span className="status-item" title={`Total tokens across all sessions: ${allSessionsTokens.toLocaleString()}`}>
-            All: {formatTokenCount(allSessionsTokens)}
-          </span>
-        )}
         {activeSessions > 0 && (
           <span className="status-item status-active" title={`${activeSessions} active`}>
             <span className="status-active-dot" />
