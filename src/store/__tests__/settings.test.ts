@@ -8,6 +8,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 // Mock paths (normalizePath used by some actions)
 vi.mock("../../lib/paths", () => ({
   normalizePath: (p: string) => p,
+  parseWorktreePath: (dir: string) => {
+    const normalized = dir.replace(/\\/g, "/");
+    const match = normalized.match(/^(.+)\/\.claude\/worktrees\/([^/]+)\/?$/);
+    if (!match) return null;
+    return { projectRoot: match[1], worktreeName: match[2], projectName: match[1].split("/").pop() };
+  },
 }));
 
 // Mock sessions store (settings imports it for bootstrapCommandUsage)
@@ -246,5 +252,120 @@ describe("systemPromptRules CRUD", () => {
     // Move first (and only) rule down (impossible)
     useSettingsStore.getState().reorderSystemPromptRules(id, 1);
     expect(useSettingsStore.getState().systemPromptRules[0].id).toBe(id);
+  });
+});
+
+describe("setSavedDefaults with workspaceDefaults", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ savedDefaults: null, workspaceDefaults: {} });
+  });
+
+  const makeConfig = (overrides: Record<string, unknown> = {}) => ({
+    workingDir: "/projects/myapp",
+    model: "claude-sonnet-4-20250514",
+    permissionMode: "default" as const,
+    dangerouslySkipPermissions: false,
+    systemPrompt: null,
+    appendSystemPrompt: null,
+    allowedTools: [] as string[],
+    disallowedTools: [] as string[],
+    additionalDirs: [] as string[],
+    mcpConfig: null,
+    agent: null,
+    effort: "high",
+    verbose: false,
+    debug: false,
+    maxBudget: null,
+    resumeSession: null,
+    forkSession: false,
+    continueSession: false,
+    projectDir: false,
+    extraFlags: null,
+    sessionId: null,
+    runMode: false,
+    ...overrides,
+  });
+
+  it("populates workspaceDefaults keyed by lowercased workingDir", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig());
+    const ws = useSettingsStore.getState().workspaceDefaults;
+    expect(ws["/projects/myapp"]).toBeDefined();
+    expect(ws["/projects/myapp"].model).toBe("claude-sonnet-4-20250514");
+    expect(ws["/projects/myapp"].effort).toBe("high");
+  });
+
+  it("stores workspace-specific defaults without workingDir or transient fields", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig({
+      resumeSession: "abc",
+      continueSession: true,
+      sessionId: "sid-1",
+      runMode: true,
+      forkSession: true,
+    }));
+    const entry = useSettingsStore.getState().workspaceDefaults["/projects/myapp"];
+    expect(entry).toBeDefined();
+    expect("workingDir" in entry).toBe(false);
+    expect("resumeSession" in entry).toBe(false);
+    expect("continueSession" in entry).toBe(false);
+    expect("sessionId" in entry).toBe(false);
+    expect("runMode" in entry).toBe(false);
+    expect("forkSession" in entry).toBe(false);
+  });
+
+  it("collapses worktree paths to project root for workspace key", () => {
+    const wtConfig = makeConfig({
+      workingDir: "/projects/myapp/.claude/worktrees/sorted-dove",
+      model: "claude-opus-4-20250514",
+    });
+    useSettingsStore.getState().setSavedDefaults(wtConfig);
+    const ws = useSettingsStore.getState().workspaceDefaults;
+    // Key should be the project root, not the worktree path
+    expect(ws["/projects/myapp"]).toBeDefined();
+    expect(ws["/projects/myapp"].model).toBe("claude-opus-4-20250514");
+  });
+
+  it("different worktree paths for same project share the workspace key", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig({
+      workingDir: "/projects/myapp/.claude/worktrees/wt-alpha",
+      model: "claude-opus-4-20250514",
+    }));
+    useSettingsStore.getState().setSavedDefaults(makeConfig({
+      workingDir: "/projects/myapp/.claude/worktrees/wt-beta",
+      model: "claude-sonnet-4-20250514",
+    }));
+    const ws = useSettingsStore.getState().workspaceDefaults;
+    // Only one key, with the latest settings
+    expect(Object.keys(ws)).toHaveLength(1);
+    expect(ws["/projects/myapp"].model).toBe("claude-sonnet-4-20250514");
+  });
+
+  it("preserves workspace defaults for different workspaces", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig({
+      workingDir: "/projects/app-a",
+      model: "claude-opus-4-20250514",
+    }));
+    useSettingsStore.getState().setSavedDefaults(makeConfig({
+      workingDir: "/projects/app-b",
+      model: "claude-sonnet-4-20250514",
+    }));
+    const ws = useSettingsStore.getState().workspaceDefaults;
+    expect(Object.keys(ws)).toHaveLength(2);
+    expect(ws["/projects/app-a"].model).toBe("claude-opus-4-20250514");
+    expect(ws["/projects/app-b"].model).toBe("claude-sonnet-4-20250514");
+  });
+
+  it("skips workspace write when workingDir is empty", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig({ workingDir: "" }));
+    const ws = useSettingsStore.getState().workspaceDefaults;
+    expect(Object.keys(ws)).toHaveLength(0);
+  });
+
+  it("still writes global savedDefaults unchanged", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig());
+    const saved = useSettingsStore.getState().savedDefaults!;
+    expect(saved.workingDir).toBe("/projects/myapp");
+    expect(saved.model).toBe("claude-sonnet-4-20250514");
+    expect(saved.resumeSession).toBeNull();
+    expect(saved.forkSession).toBe(false);
   });
 });

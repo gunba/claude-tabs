@@ -78,14 +78,23 @@ export function SessionLauncher() {
   const registryEntries = useMemo(() => Object.values(modelRegistry), [modelRegistry]);
 
   // When resuming, use session-specific settings from lastConfig (set by handleConfigure);
-  // otherwise savedDefaults (explicit "Save defaults") takes priority over lastConfig
+  // otherwise savedDefaults (explicit "Save defaults") takes priority over lastConfig.
+  // Layer workspace-specific defaults on top when available for the resolved workingDir.
   const defaults = lastConfig.resumeSession ? lastConfig : (savedDefaults ?? lastConfig);
+  const wsInitKey = (() => {
+    const wt = parseWorktreePath(defaults.workingDir);
+    return normalizePath(wt ? wt.projectRoot : defaults.workingDir).toLowerCase();
+  })();
+  const wsInitDefaults = wsInitKey ? useSettingsStore.getState().workspaceDefaults[wsInitKey] : undefined;
   const [config, setConfig] = useState<SessionConfig>({
     ...DEFAULT_SESSION_CONFIG,
     ...defaults,
+    ...(wsInitDefaults ?? {}),
+    workingDir: defaults.workingDir,
     continueSession: false,
     sessionId: null,
     runMode: false,
+    forkSession: false,
   });
   const isUtilityRef = useRef(false);
   const mountedRef = useRef(false);
@@ -126,14 +135,14 @@ export function SessionLauncher() {
     return parts.join(" ");
   }, []);
 
-  const [commandLine, setCommandLine] = useState(() => buildFullCommand(config, defaults.extraFlags || ""));
+  const [commandLine, setCommandLine] = useState(() => buildFullCommand(config, config.extraFlags || ""));
 
   // Regenerate command line when config dropdowns change (skip on mount and in utility mode)
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     if (isUtilityRef.current) return;
-    setCommandLine(buildFullCommand(config));
-  }, [config.model, config.permissionMode, config.effort, config.dangerouslySkipPermissions, config.projectDir, config.resumeSession, buildFullCommand]);
+    setCommandLine(buildFullCommand(config, config.extraFlags || undefined));
+  }, [config.model, config.permissionMode, config.effort, config.dangerouslySkipPermissions, config.projectDir, config.resumeSession, config.extraFlags, buildFullCommand]);
 
   useEffect(() => {
     const el = document.getElementById("launcher-path");
@@ -164,6 +173,43 @@ export function SessionLauncher() {
     },
     []
   );
+
+  // [SL-21] Load workspace-specific defaults when switching workspace via browse or recent chip
+  const applyWorkspaceDefaults = useCallback((dir: string) => {
+    const wt = parseWorktreePath(dir);
+    const wsKey = normalizePath(wt ? wt.projectRoot : dir).toLowerCase();
+    const wsDefaults = wsKey
+      ? useSettingsStore.getState().workspaceDefaults[wsKey]
+      : undefined;
+    if (wsDefaults) {
+      setConfig((prev) => ({
+        ...prev,
+        ...wsDefaults,
+        workingDir: dir,
+        resumeSession: null,
+        continueSession: false,
+        sessionId: null,
+        runMode: false,
+        forkSession: false,
+      }));
+    } else {
+      // No workspace defaults — reset to global baseline so settings from
+      // a previously-selected workspace don't leak into the new one
+      const { savedDefaults: sd, lastConfig: lc } = useSettingsStore.getState();
+      const baseline = sd ?? lc;
+      setConfig({
+        ...DEFAULT_SESSION_CONFIG,
+        ...baseline,
+        workingDir: dir,
+        resumeSession: null,
+        continueSession: false,
+        sessionId: null,
+        runMode: false,
+        forkSession: false,
+      });
+    }
+    setLaunchError("");
+  }, []);
 
   const handleModelFamilyChange = useCallback((family: string | null) => {
     if (!family) {
@@ -316,8 +362,8 @@ export function SessionLauncher() {
       title: "Select project directory",
       defaultPath: config.workingDir || undefined,
     });
-    if (selected) updateConfig("workingDir", selected);
-  }, [config.workingDir, updateConfig]);
+    if (selected) applyWorkspaceDefaults(selected);
+  }, [config.workingDir, applyWorkspaceDefaults]);
 
   // Dismiss launcher: clears replace target and one-shot resume flags
   const dismissLauncher = useCallback(() => {
@@ -441,7 +487,7 @@ export function SessionLauncher() {
                 <button
                   key={dir}
                   className="recent-chip"
-                  onClick={() => updateConfig("workingDir", dir)}
+                  onClick={() => applyWorkspaceDefaults(dir)}
                   onContextMenu={(e) => { e.preventDefault(); removeRecentDir(dir); }}
                   title={`${dir}\nRight-click to remove`}
                   type="button"
