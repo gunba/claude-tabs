@@ -70,6 +70,13 @@ export function normalizeForFilter(s: string): string {
   return s.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
 }
 
+/** Return the parent directory of a file path (everything before the last separator). */
+export function parentDir(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const lastSlash = normalized.lastIndexOf("/");
+  return lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
+}
+
 export interface TabGroup {
   key: string;          // normalizePath(workingDir) — stable identity
   label: string;        // dirToTabName(workingDir)

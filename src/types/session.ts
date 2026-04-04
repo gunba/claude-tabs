@@ -224,6 +224,7 @@ export interface PastSession {
   lastMessage: string;
   parentId: string | null;
   model: string;
+  filePath: string;
 }
 
 export interface ContentSearchMatch {

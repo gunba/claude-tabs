@@ -5,7 +5,7 @@ import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
 import { dlog } from "../../lib/debugLog";
 import { getResumeId, modelLabel, stripWorktreeFlags } from "../../lib/claude";
-import { dirToTabName, abbreviatePath, normalizeForFilter } from "../../lib/paths";
+import { dirToTabName, abbreviatePath, normalizeForFilter, parentDir } from "../../lib/paths";
 import { useCtrlKey } from "../../hooks/useCtrlKey";
 import {
   type PastSession,
@@ -410,6 +410,19 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
     [findDead, sessionConfigs, setLastConfig, onClose, setShowLauncher]
   );
 
+  const handleRevealFile = useCallback(
+    async (chain: MergedChain) => {
+      const fp = chain.resumeSession.filePath;
+      if (!fp) return;
+      try {
+        await invoke("shell_open", { path: parentDir(fp) });
+      } catch (err) {
+        dlog("resume", null, `reveal file failed: ${err}`, "ERR");
+      }
+    },
+    []
+  );
+
   const handleBrowseFilter = useCallback(async () => {
     const selected = await open({
       directory: true,
@@ -430,7 +443,9 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       if (e.key === "Enter" && displayList.length > 0) {
         e.preventDefault();
         const chain = displayList[selectedIndex] ?? displayList[0];
-        if (e.ctrlKey) {
+        if (e.shiftKey) {
+          handleRevealFile(chain);
+        } else if (e.ctrlKey) {
           handleConfigure(chain);
         } else {
           handleResume(chain);
@@ -448,7 +463,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, displayList, selectedIndex, handleResume, handleConfigure]);
+  }, [onClose, displayList, selectedIndex, handleResume, handleConfigure, handleRevealFile]);
 
   return (
     <div className="resume-picker-overlay" onClick={onClose}>
@@ -548,8 +563,18 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
                       dirToTabName(ps.directory)
                     )}
                   </span>
-                  <span className="resume-picker-card-date">
-                    {formatRelativeDate(chain.latestDate)}
+                  <span className="resume-picker-card-actions">
+                    <button
+                      className="resume-picker-reveal-btn"
+                      onClick={(e) => { e.stopPropagation(); handleRevealFile(chain); }}
+                      title="Open file location"
+                      type="button"
+                    >
+                      <IconFolder size={11} />
+                    </button>
+                    <span className="resume-picker-card-date">
+                      {formatRelativeDate(chain.latestDate)}
+                    </span>
                   </span>
                 </div>
                 <div className="resume-picker-card-mid">
@@ -642,7 +667,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
 
         {/* Hint */}
         <div className="resume-picker-hint">
-          <kbd>{"\u21B5"}</kbd> to resume &middot; <kbd>Ctrl+{"\u21B5"}</kbd> to configure
+          <kbd>{"\u21B5"}</kbd> to resume &middot; <kbd>Ctrl+{"\u21B5"}</kbd> to configure &middot; <kbd>Shift+{"\u21B5"}</kbd> to reveal file
         </div>
       </div>
     </div>
