@@ -15,6 +15,7 @@ function mkPastSession(overrides: Partial<PastSession> = {}): PastSession {
     lastMessage: "Done, all tests pass",
     parentId: null,
     model: "claude-sonnet-4-5-20250514",
+    filePath: "C:/Users/jorda/.claude/projects/proj/session-abc123.jsonl",
     ...overrides,
   };
 }

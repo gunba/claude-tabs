@@ -363,6 +363,7 @@ fn list_past_sessions_sync() -> Result<Vec<serde_json::Value>, String> {
                     "lastMessage": last_msg,
                     "parentId": serde_json::Value::Null,
                     "model": model,
+                    "filePath": fpath.to_string_lossy().to_string(),
                 }),
             });
         }

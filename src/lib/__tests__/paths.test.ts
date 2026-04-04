@@ -8,6 +8,7 @@ import {
   parseWorktreePath,
   worktreeAcronym,
   dirToTabName,
+  parentDir,
   IS_WINDOWS,
 } from "../paths";
 // TabGroup type used implicitly via groupSessionsByDir return
@@ -286,6 +287,37 @@ describe("dirToTabName", () => {
 
   it("returns empty string for empty input", () => {
     expect(dirToTabName("")).toBe("");
+  });
+});
+
+// ── parentDir ─────────────────────────────────────────────────
+
+describe("parentDir", () => {
+  it("returns parent of a forward-slash path", () => {
+    expect(parentDir("C:/Users/jorda/.claude/projects/proj/abc.jsonl"))
+      .toBe("C:/Users/jorda/.claude/projects/proj");
+  });
+
+  it("returns parent of a backslash path (preserves native separators)", () => {
+    expect(parentDir("C:\\Users\\jorda\\.claude\\projects\\proj\\abc.jsonl"))
+      .toBe("C:\\Users\\jorda\\.claude\\projects\\proj");
+  });
+
+  it("returns path unchanged when no separator found", () => {
+    expect(parentDir("file.jsonl")).toBe("file.jsonl");
+  });
+
+  it("handles mixed separators", () => {
+    expect(parentDir("C:\\Users/jorda/.claude\\proj\\abc.jsonl"))
+      .toBe("C:\\Users/jorda/.claude\\proj");
+  });
+
+  it("returns path unchanged for root-level file", () => {
+    expect(parentDir("/file.jsonl")).toBe("/file.jsonl");
+  });
+
+  it("returns empty string unchanged", () => {
+    expect(parentDir("")).toBe("");
   });
 });
 

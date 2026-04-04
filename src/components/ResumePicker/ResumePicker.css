@@ -254,7 +254,38 @@
   font-size: 9px;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+.resume-picker-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
   margin-left: 8px;
+}
+
+.resume-picker-reveal-btn {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  line-height: 1;
+}
+
+.resume-picker-card:hover .resume-picker-reveal-btn,
+.resume-picker-card-selected .resume-picker-reveal-btn {
+  opacity: 0.6;
+}
+
+.resume-picker-reveal-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--bg-surface);
 }
 
 .resume-picker-card-mid {
