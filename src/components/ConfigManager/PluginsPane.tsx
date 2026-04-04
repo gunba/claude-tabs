@@ -6,12 +6,6 @@ import "./PluginsPane.css";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-interface McpServer {
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-}
-
 type PluginsMap = Record<string, boolean>;
 
 interface InstalledPlugin {
@@ -22,7 +16,6 @@ interface InstalledPlugin {
   installPath?: string;
   installedAt?: string;
   lastUpdated?: string;
-  mcpServers?: Record<string, unknown>;
 }
 
 interface AvailablePlugin {
@@ -112,10 +105,6 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
   const [scopeFilter, setScopeFilter] = useState<"all" | "user" | "project">("all");
   const [sortBy, setSortBy] = useState<SortBy>("downloads");
 
-  // MCP Servers from settings.json (manual config, not CLI-managed)
-  const [mcpServers, setMcpServers] = useState<Record<string, McpServer>>({});
-  const [mcpDirty, setMcpDirty] = useState(false);
-
   // Lookup map: available plugin data by pluginId (for enriching installed tiles)
   const availableLookup = useMemo(() => {
     const map = new Map<string, AvailablePlugin>();
@@ -141,34 +130,18 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
     setLoading(false);
   }, []);
 
-  const loadMcpServers = useCallback(async () => {
-    try {
-      const result = await invoke<string>("read_config_file", {
-        scope: "user",
-        workingDir: "",
-        fileType: "settings",
-      });
-      const parsed = result ? JSON.parse(result) : {};
-      setMcpServers((parsed.mcpServers as Record<string, McpServer>) || {});
-    } catch {
-      // Fine — no settings file
-    }
-  }, []);
-
   useEffect(() => {
     loadPlugins();
-    loadMcpServers();
-  }, [loadPlugins, loadMcpServers]);
+  }, [loadPlugins]);
 
   // Re-fetch when tab becomes visible (prevents stale data in keep-alive mount)
   const prevVisibleRef = useRef(visible);
   useEffect(() => {
     if (visible && !prevVisibleRef.current) {
       loadPlugins();
-      loadMcpServers();
     }
     prevVisibleRef.current = visible;
-  }, [visible, loadPlugins, loadMcpServers]);
+  }, [visible, loadPlugins]);
 
   const doPluginOp = useCallback(async (
     opName: string,
@@ -203,42 +176,6 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
   const handleDisable = useCallback((name: string) => {
     doPluginOp("Disable", name, () => invoke<string>("plugin_disable", { name }));
   }, [doPluginOp]);
-
-  const removeMcpServer = useCallback(async (name: string) => {
-    const updated = { ...mcpServers };
-    delete updated[name];
-    setMcpServers(updated);
-    setMcpDirty(true);
-  }, [mcpServers]);
-
-  const saveMcpServers = useCallback(async () => {
-    try {
-      const workingDir = "";
-      let current: Record<string, unknown> = {};
-      try {
-        const raw = await invoke<string>("read_config_file", { scope: "user", workingDir, fileType: "settings" });
-        if (raw) current = JSON.parse(raw);
-      } catch { /* empty file */ }
-
-      if (Object.keys(mcpServers).length > 0) {
-        current.mcpServers = mcpServers;
-      } else {
-        delete current.mcpServers;
-      }
-
-      await invoke("write_config_file", {
-        scope: "user",
-        workingDir,
-        fileType: "settings",
-        content: JSON.stringify(current, null, 2),
-      });
-      setMcpDirty(false);
-      onStatus({ text: "MCP servers saved", type: "success" });
-      setTimeout(() => onStatus(null), 2000);
-    } catch (err) {
-      onStatus({ text: `Save failed: ${err}`, type: "error" });
-    }
-  }, [mcpServers, onStatus]);
 
   // Filter by scope, then sort: enabled first, then alphabetical
   const sortedInstalled = useMemo(() => {
@@ -426,38 +363,6 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
           )}
         </div>
       )}
-
-      {/* MCP Servers (manual, from settings.json) */}
-      <div className="plugins-section">
-        <div className="plugins-section-title">MCP Servers</div>
-        {Object.keys(mcpServers).length > 0 ? (
-          Object.entries(mcpServers).map(([name, server]) => (
-            <div key={name} className="mcp-card">
-              <div className="mcp-card-header">
-                <span className="mcp-card-name">{name}</span>
-                <button className="hook-card-btn hook-card-btn-delete" onClick={() => removeMcpServer(name)}>Del</button>
-              </div>
-              <div className="hook-detail">
-                <span className="hook-detail-label">Cmd:</span>
-                <span className="hook-detail-value">{server.command} {server.args?.join(" ") || ""}</span>
-              </div>
-              {server.env && Object.keys(server.env).length > 0 && (
-                <div className="hook-detail">
-                  <span className="hook-detail-label">Env:</span>
-                  <span className="hook-detail-value">{Object.keys(server.env).join(", ")}</span>
-                </div>
-              )}
-            </div>
-          ))
-        ) : (
-          <div className="pane-hint">None configured</div>
-        )}
-        {mcpDirty && (
-          <div className="pane-footer">
-            <button className="pane-save-btn" onClick={saveMcpServers}>Save MCP</button>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

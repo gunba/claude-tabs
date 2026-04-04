@@ -266,28 +266,3 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* ── MCP Cards ───────────────────────────────────────── */
-
-.mcp-card {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 6px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mcp-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.mcp-card-name {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--accent-tertiary);
-  font-family: var(--font-mono);
-}
