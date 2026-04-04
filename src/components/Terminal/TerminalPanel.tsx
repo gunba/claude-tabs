@@ -633,9 +633,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 
-  // Re-fit terminal on OS wake / display power-off recovery.
-  // Re-fit terminal on OS wake / display power-off recovery.
-  // Clear WebGL texture atlas to fix GPU corruption after sleep (DF-07).
+  // [DF-07] Visibility change handler: clears texture atlas and redraws on OS wake / tab restore (fixes GPU corruption after sleep)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible" || !visible) return;

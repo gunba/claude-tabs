@@ -35,6 +35,7 @@ import { isSessionIdle, isSubagentActive } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
 import "./App.css";
 
+// [DF-04] React re-renders from Zustand store: tab state dots, status bar, subagent cards
 export default function App() {
   const init = useSessionStore((s) => s.init);
   const sessions = useSessionStore((s) => s.sessions);
