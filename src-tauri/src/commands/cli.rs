@@ -66,8 +66,12 @@ fn detect_claude_cli_sync() -> Result<String, String> {
 
 /// Run a `claude` CLI subcommand and return trimmed stdout on success.
 /// Shared by check_cli_version, plugin_* commands, etc.
+/// Resolves the full CLI path via `detect_claude_cli_sync()` so commands
+/// work even when PATH doesn't include the install directory (e.g. Linux
+/// AppImage / desktop launches).
 fn run_claude_cli(args: &[&str], label: &str) -> Result<String, String> {
-    let mut cmd = std::process::Command::new("claude");
+    let cli_path = detect_claude_cli_sync()?;
+    let mut cmd = std::process::Command::new(&cli_path);
     cmd.args(args);
     #[cfg(target_os = "windows")]
     {
@@ -95,7 +99,8 @@ pub async fn check_cli_version() -> Result<String, String> {
 #[tauri::command]
 pub async fn get_cli_help() -> Result<String, String> {
     tokio::task::spawn_blocking(|| {
-        let mut cmd = std::process::Command::new("claude");
+        let cli_path = detect_claude_cli_sync()?;
+        let mut cmd = std::process::Command::new(&cli_path);
         cmd.arg("--help");
         #[cfg(target_os = "windows")]
         {
@@ -784,8 +789,10 @@ pub fn build_claude_args(config: SessionConfig) -> Result<Vec<String>, String> {
 
     if config.project_dir {
         args.push("--project-dir".into());
-        // Normalize forward slashes to backslashes for Windows
+        #[cfg(target_os = "windows")]
         args.push(config.working_dir.replace('/', "\\"));
+        #[cfg(not(target_os = "windows"))]
+        args.push(config.working_dir.clone());
     }
 
     if config.continue_session {
@@ -1550,5 +1557,23 @@ mod tests {
             .filter_map(|f| f["key"].as_str())
             .collect();
         assert_eq!(keys, vec!["alphaSetting", "middleSetting", "zebraSetting"], "should be sorted alphabetically");
+    }
+
+    // --- build_claude_args tests ---
+
+    #[test]
+    fn build_args_project_dir_preserves_forward_slashes() {
+        let config = SessionConfig {
+            working_dir: "/home/user/project".into(),
+            project_dir: true,
+            ..Default::default()
+        };
+        let args = build_claude_args(config).unwrap();
+        let idx = args.iter().position(|a| a == "--project-dir").unwrap();
+        let dir_arg = &args[idx + 1];
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(dir_arg, "/home/user/project", "Linux paths must keep forward slashes");
+        #[cfg(target_os = "windows")]
+        assert_eq!(dir_arg, "\\home\\user\\project", "Windows should normalize to backslashes");
     }
 }

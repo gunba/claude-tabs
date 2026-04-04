@@ -7,8 +7,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import { spawnPty } from "../ptyProcess";
+import { IS_WINDOWS } from "../paths";
 
 const mockInvoke = vi.mocked(invoke);
+
+const TEST_SHELL = IS_WINDOWS ? "cmd.exe" : "/bin/sh";
 
 /**
  * Helper: builds a controllable mock for invoke() that routes by command string.
@@ -74,7 +77,7 @@ describe("spawnPty — parallel exit waiter", () => {
 
   it("fires exitCallback when parallel waiter resolves before read loop", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);
@@ -116,7 +119,7 @@ describe("spawnPty — parallel exit waiter", () => {
 
   it("does not double-fire exitCallback when read loop exits first", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);
@@ -156,7 +159,7 @@ describe("spawnPty — parallel exit waiter", () => {
 
   it("parallel waiter sets aborted=true so read loop stops", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const dataSpy = vi.fn();
     pty.onData(dataSpy);
@@ -183,7 +186,7 @@ describe("spawnPty — parallel exit waiter", () => {
 
   it("parallel waiter catches errors without throwing", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);

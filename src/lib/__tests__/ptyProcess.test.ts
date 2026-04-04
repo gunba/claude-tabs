@@ -6,8 +6,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import { spawnPty, killAllActivePtys } from "../ptyProcess";
+import { IS_WINDOWS } from "../paths";
 
 const mockInvoke = vi.mocked(invoke);
+
+const TEST_SHELL = IS_WINDOWS ? "cmd.exe" : "/bin/sh";
 
 /**
  * Controllable invoke mock router — each IPC command gets deferred promises
@@ -73,7 +76,7 @@ const KILL_OVERRIDES = {
 /** Spawn a PTY, start kill(), resolve exitstatus deferreds, and await completion. */
 async function spawnAndKill(overrides = KILL_OVERRIDES) {
   const router = createInvokeRouter(overrides);
-  const pty = await spawnPty("cmd.exe", []);
+  const pty = await spawnPty(TEST_SHELL, []);
   const killPromise = pty.kill();
   await vi.waitFor(() => {
     const d = router.deferreds.get("pty_exitstatus");
@@ -136,13 +139,13 @@ describe("spawnPty — spawn args and returned object", () => {
 
   it("returns a PtyProcess with the correct pid", async () => {
     createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
     expect(pty.pid).toBe(42);
   });
 
   it("registers the OS PID for cleanup immediately after spawn", async () => {
     createInvokeRouter();
-    await spawnPty("cmd.exe", []);
+    await spawnPty(TEST_SHELL, []);
 
     const registerCalls = mockInvoke.mock.calls.filter(
       ([cmd]) => cmd === "register_active_pid"
@@ -157,7 +160,7 @@ describe("spawnPty — write and resize", () => {
 
   it("write() calls pty_write with pid and data", async () => {
     createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     pty.write("hello\r");
 
@@ -178,7 +181,7 @@ describe("spawnPty — write and resize", () => {
 
   it("resize() calls pty_resize with pid, cols, rows", async () => {
     createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     pty.resize(120, 40);
 
@@ -203,7 +206,7 @@ describe("spawnPty — onData callback", () => {
 
   it("delivers read data to the onData callback", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const chunks: Uint8Array[] = [];
     pty.onData((data) => chunks.push(data));
@@ -221,7 +224,7 @@ describe("spawnPty — onData callback", () => {
 
   it("delivers multiple reads in sequence", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const chunks: Uint8Array[] = [];
     pty.onData((data) => chunks.push(data));
@@ -256,7 +259,7 @@ describe("spawnPty — kill sequence", () => {
       pty_destroy: () => { callOrder.push("pty_destroy"); return Promise.resolve(undefined); },
     };
     const router = createInvokeRouter(killOverrides);
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const killPromise = pty.kill();
 
@@ -282,7 +285,7 @@ describe("spawnPty — kill sequence", () => {
       pty_destroy: () => Promise.resolve(undefined),
     };
     const router = createInvokeRouter(killOverrides);
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);
@@ -343,7 +346,7 @@ describe("spawnPty — natural exit via read loop", () => {
 
   it("read loop EOF triggers exitstatus and fires exit callback", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);
@@ -371,7 +374,7 @@ describe("spawnPty — natural exit via read loop", () => {
 
   it("natural exit unregisters the OS PID", async () => {
     const router = createInvokeRouter();
-    await spawnPty("cmd.exe", []);
+    await spawnPty(TEST_SHELL, []);
 
     // Trigger the parallel exit waiter
     const exitDeferreds = router.deferreds.get("pty_exitstatus");
@@ -394,7 +397,7 @@ describe("spawnPty — natural exit via read loop", () => {
 
   it("exitstatus failure in read loop post-break uses exit code -1", async () => {
     const router = createInvokeRouter();
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
 
     const exitSpy = vi.fn();
     pty.onExit(exitSpy);
@@ -441,7 +444,7 @@ describe("spawnPty — edge cases", () => {
     });
 
     // Should not throw despite pty_get_child_pid failure
-    const pty = await spawnPty("cmd.exe", []);
+    const pty = await spawnPty(TEST_SHELL, []);
     expect(pty.pid).toBe(42);
 
     // No register_active_pid call should have been made (osPid is null)
