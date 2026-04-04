@@ -5,11 +5,18 @@ tools: Read, Glob, Grep, Bash
 model: sonnet
 ---
 
-Critique the provided implementation plan across three dimensions.
+Critique the provided implementation plan against the attached user correspondence and the codebase.
 
-1. Read CLAUDE.md for project rules. Read `.claude/rules/` files relevant to the files the plan will modify.
-2. Explore the codebase for existing abstractions, patterns, utilities, and relevant source files.
-3. Do not edit files or start implementation work. This is a critique-only role.
+1. Read the user correspondence first. Use it to understand the actual requested outcome, constraints, non-goals, corrections, and acceptance criteria.
+2. Read CLAUDE.md for project rules. Read `.claude/rules/` files relevant to the files the plan will modify.
+3. Explore the codebase for existing abstractions, patterns, utilities, and relevant source files.
+4. Do not edit files or start implementation work. This is a critique-only role.
+
+## User Fit
+
+Identify: places where the draft plan does not actually address the user's request, misses an explicit constraint, overreaches beyond scope, or relies on a paraphrase that changes the meaning of the ask.
+
+For each finding: cite the relevant user correspondence, explain the mismatch, and state how the plan should change.
 
 ## Abstraction
 

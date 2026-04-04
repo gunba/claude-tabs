@@ -18,6 +18,8 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from datetime import datetime
 
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -203,6 +205,77 @@ def stamp_path(repo_root: pathlib.Path, prefix: str, suffix: str) -> pathlib.Pat
     return repo_root / "plans" / f"{prefix}-{stamp}.{suffix}"
 
 
+READ_ONLY_RESULT_WATCH_WORKFLOWS = {"plan", "review"}
+RESULT_FILE_GRACE_SECONDS = 8.0
+POLL_INTERVAL_SECONDS = 1.0
+
+
+def result_file_ready(path: pathlib.Path) -> bool:
+    try:
+        return bool(path.exists() and path.read_text(encoding="utf-8", errors="replace").strip())
+    except OSError:
+        return False
+
+
+def run_codex_process(
+    *,
+    command: list[str],
+    repo_root: pathlib.Path,
+    prompt: str,
+    result_path: pathlib.Path,
+    workflow: str,
+) -> tuple[str, str, int, bool]:
+    watch_result = workflow in READ_ONLY_RESULT_WATCH_WORKFLOWS
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as stdout_file, tempfile.TemporaryFile(
+        mode="w+t", encoding="utf-8", errors="replace"
+    ) as stderr_file:
+        process = subprocess.Popen(
+            command,
+            cwd=str(repo_root),
+            stdin=subprocess.PIPE,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=child_env(),
+        )
+        if process.stdin is None:
+            raise RuntimeError("Failed to open stdin for Codex subprocess")
+        process.stdin.write(prompt)
+        process.stdin.close()
+
+        result_seen_at: float | None = None
+        forced_stop = False
+        while True:
+            returncode = process.poll()
+            if watch_result:
+                if result_file_ready(result_path):
+                    if result_seen_at is None:
+                        result_seen_at = time.monotonic()
+                    elif returncode is None and time.monotonic() - result_seen_at >= RESULT_FILE_GRACE_SECONDS:
+                        print("Result file detected; stopping lingering Codex process for read-only workflow.")
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=5)
+                        forced_stop = True
+                        returncode = process.returncode
+                else:
+                    result_seen_at = None
+            if returncode is not None:
+                break
+            time.sleep(POLL_INTERVAL_SECONDS)
+
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        stdout = stdout_file.read()
+        stderr = stderr_file.read()
+        return stdout, stderr, process.returncode or 0, forced_stop
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Launch Codex as a subprocess for a Claude workflow")
     parser.add_argument("--repo-root", default=".")
@@ -265,44 +338,32 @@ def main() -> int:
     print("")
 
     try:
-        if os.name == "nt":
-            completed = subprocess.run(
-                command,
-                cwd=str(repo_root),
-                input=prompt,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
-                env=child_env(),
-                check=False,
-            )
-            if completed.stdout:
-                emit_text(completed.stdout)
-                if not completed.stdout.endswith("\n"):
-                    emit_text("\n")
-            if completed.stderr:
-                emit_text(completed.stderr, stream=sys.stderr)
-                if not completed.stderr.endswith("\n"):
-                    emit_text("\n", stream=sys.stderr)
-        else:
-            completed = subprocess.run(
-                command,
-                cwd=str(repo_root),
-                input=prompt,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=child_env(),
-                check=False,
-            )
+        stdout_text, stderr_text, actual_returncode, forced_stop = run_codex_process(
+            command=command,
+            repo_root=repo_root,
+            prompt=prompt,
+            result_path=result_path,
+            workflow=args.workflow,
+        )
     except FileNotFoundError as exc:
         raise RuntimeError(f"Failed to launch Codex CLI at {codex_executable}: {exc}") from exc
+    if stdout_text:
+        emit_text(stdout_text)
+        if not stdout_text.endswith("\n"):
+            emit_text("\n")
+    if stderr_text:
+        emit_text(stderr_text, stream=sys.stderr)
+        if not stderr_text.endswith("\n"):
+            emit_text("\n", stream=sys.stderr)
+    effective_returncode = 0 if forced_stop and result_file_ready(result_path) else actual_returncode
     print("")
-    print(f"Codex exit code: {completed.returncode}")
+    if forced_stop and effective_returncode == 0:
+        print(f"Codex exit code: {effective_returncode} (result captured; original process exit code {actual_returncode})")
+    else:
+        print(f"Codex exit code: {effective_returncode}")
     print(f"Prompt file: {prompt_path}")
     print(f"Result file: {result_path}")
-    return completed.returncode
+    return effective_returncode
 
 
 if __name__ == "__main__":

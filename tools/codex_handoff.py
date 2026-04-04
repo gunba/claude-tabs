@@ -473,6 +473,8 @@ def review_janitor_handoff(repo_root: pathlib.Path, args: argparse.Namespace) ->
 def plan_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
     plan_path = pathlib.Path(args.plan_file).resolve()
     plan_text = plan_path.read_text(encoding="utf-8")
+    user_path = pathlib.Path(args.user_correspondence_file).resolve()
+    user_text = user_path.read_text(encoding="utf-8")
     context_files = plan_context_paths(repo_root, plan_text)
     lines = header(repo_root, "plan", args.mode)
     lines.extend(
@@ -482,19 +484,28 @@ def plan_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
             "",
             *rule_context_lines(repo_root, context_files, read_only=True),
             "## Instructions",
-            "1. Read `CLAUDE.md` and inspect the codebase as needed.",
-            "2. Use the preloaded proofd context for the files or areas mentioned in the draft plan. If you still need more rule detail, prefer direct reads of `CLAUDE.md` and relevant `.claude/rules/*.md` files; only use MCP if it is already configured.",
-            "3. Do not edit files or implement the plan. This is a critique-only pass.",
-            "4. Critique the plan for abstraction, reuse, and risk.",
-            "5. Point out missing steps, risky assumptions, and existing code or tooling the plan should reuse.",
+            "1. Read the user correspondence first and treat it as the source of truth for scope, constraints, non-goals, and acceptance criteria.",
+            "2. Read `CLAUDE.md` and inspect the codebase as needed.",
+            "3. Use the preloaded proofd context for the files or areas mentioned in the draft plan. If you still need more rule detail, prefer direct reads of `CLAUDE.md` and relevant `.claude/rules/*.md` files; only use MCP if it is already configured.",
+            "4. Do not edit files or implement the plan. This is a critique-only pass.",
+            "5. First judge whether the draft plan actually addresses the user's request and constraints before critiquing implementation details.",
+            "6. Critique the plan for user fit, abstraction, reuse, and risk.",
+            "7. Point out missing steps, risky assumptions, and existing code or tooling the plan should reuse.",
         ]
     )
     if args.mode == "adversarial":
-        lines.append("6. Treat this as an adversarial critique. Challenge weak assumptions directly.")
+        lines.append("8. Treat this as an adversarial critique. Challenge weak assumptions directly.")
     else:
-        lines.append("6. Produce a normal plan-critic pass.")
+        lines.append("8. Produce a normal plan-critic pass.")
     lines.extend(
         [
+            "",
+            f"## User Correspondence Source\n`{user_path}`",
+            "",
+            "## User Correspondence",
+            "```markdown",
+            user_text.rstrip(),
+            "```",
             "",
             f"## Draft Plan Source\n`{plan_path}`",
             "",
@@ -535,6 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     plan = subparsers.add_parser("plan")
     plan.add_argument("--plan-file", required=True)
+    plan.add_argument("--user-correspondence-file", required=True)
     plan.add_argument("--mode", choices=["codex", "adversarial"], default="codex")
 
     return parser
