@@ -14,7 +14,7 @@ import { CommandBar } from "./components/CommandBar/CommandBar";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { ConfigManager } from "./components/ConfigManager/ConfigManager";
 import { DebugPanel } from "./components/DebugPanel/DebugPanel";
-import { DiffPanel } from "./components/DiffPanel/DiffPanel";
+import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
 import { SearchPanel } from "./components/SearchPanel/SearchPanel";
 import { ModalOverlay } from "./components/ModalOverlay/ModalOverlay";
 import { ContextViewer } from "./components/ContextViewer/ContextViewer";
@@ -280,7 +280,7 @@ export default function App() {
 
       if (e.ctrlKey && e.shiftKey && e.key === "G") {
         e.preventDefault();
-        setSidePanel(sidePanel === "diff" ? null : "diff");
+        setSidePanel(sidePanel === "activity" ? null : "activity");
       }
 
       // [KB-11] Ctrl+Shift+F: cross-session terminal search panel
@@ -643,8 +643,8 @@ export default function App() {
         {sidePanel === "debug" && (
           <DebugPanel onClose={() => setSidePanel(null)} />
         )}
-        {sidePanel === "diff" && (
-          <DiffPanel onClose={() => setSidePanel(null)} />
+        {sidePanel === "activity" && (
+          <ActivityPanel onClose={() => setSidePanel(null)} />
         )}
         {sidePanel === "search" && (
           <SearchPanel onClose={() => setSidePanel(null)} />
