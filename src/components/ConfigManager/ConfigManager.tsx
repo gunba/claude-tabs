@@ -83,8 +83,8 @@ export function ConfigManager() {
   const onClose = () => setShowConfigManager(false);
 
   return (
-    <ModalOverlay onClose={onClose} className="config-modal">
-      {/* [CM-04] [CM-09] keystroke isolation + Escape/overlay close */}
+    <ModalOverlay onClose={onClose} className="config-modal" closeOnBackdropClick={false}>
+      {/* [CM-04] [CM-09] keystroke isolation + Escape/X/Ctrl+, close */}
       {/* Header with tabs */}
       <div className="config-header">
         <span className="config-title">Config</span>

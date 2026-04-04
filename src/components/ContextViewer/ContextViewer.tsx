@@ -5,6 +5,7 @@ import { formatTokenCount } from "../../lib/claude";
 import { buildMainTabEntries, buildSubagentTabs } from "../../lib/contextProjection";
 import type { UnifiedEntry, SubagentTab } from "../../lib/contextProjection";
 import type { SessionMetadata, SystemPromptBlock, CapturedContentBlock } from "../../types/session";
+import { IconClose } from "../Icons/Icons";
 import "./ContextViewer.css";
 
 interface ContextViewerProps {
@@ -244,7 +245,7 @@ export function ContextViewer({ metadata, onClose }: ContextViewerProps) {
         <div className="context-viewer">
           <div className="context-viewer-header">
             <span className="context-viewer-title">Conversation Context</span>
-            <button className="context-viewer-close" onClick={onClose}>Esc</button>
+            <button className="context-viewer-close" onClick={onClose} title="Close (Esc)" aria-label="Close"><IconClose size={14} /></button>
           </div>
           <div className="context-viewer-empty">No context captured yet.</div>
         </div>
@@ -268,7 +269,7 @@ export function ContextViewer({ metadata, onClose }: ContextViewerProps) {
               {allExpanded ? "Collapse All" : "Expand All"}
             </button>
           </div>
-          <button className="context-viewer-close" onClick={onClose}>Esc</button>
+          <button className="context-viewer-close" onClick={onClose} title="Close (Esc)" aria-label="Close"><IconClose size={14} /></button>
         </div>
 
         {/* Token summary */}

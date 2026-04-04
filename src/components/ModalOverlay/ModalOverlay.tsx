@@ -5,10 +5,11 @@ interface ModalOverlayProps {
   children: React.ReactNode;
   onClose: () => void;
   className?: string;
+  closeOnBackdropClick?: boolean;
 }
 
 // [MO-01] Shared modal wrapper: fixed overlay, z-100, frosted glass, blocks keys except Esc/Ctrl+,
-export function ModalOverlay({ children, onClose, className }: ModalOverlayProps) {
+export function ModalOverlay({ children, onClose, className, closeOnBackdropClick = true }: ModalOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   useEffect(() => { overlayRef.current?.focus(); }, []);
 
@@ -17,7 +18,7 @@ export function ModalOverlay({ children, onClose, className }: ModalOverlayProps
       ref={overlayRef}
       tabIndex={-1}
       className="modal-overlay"
-      onClick={onClose}
+      onClick={closeOnBackdropClick ? onClose : undefined}
       onKeyDown={(e) => {
         // Let Escape and Ctrl+, propagate to global handler
         if (e.key === "Escape") return;
