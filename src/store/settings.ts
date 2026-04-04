@@ -84,6 +84,7 @@ interface SettingsState {
   presets: LaunchPreset[];
   lastConfig: SessionConfig;
   savedDefaults: SessionConfig | null;
+  workspaceDefaults: Record<string, Partial<SessionConfig>>;
   showLauncher: boolean;
   launcherGeneration: number;
   themeName: string;
@@ -164,6 +165,7 @@ export const useSettingsStore = create<SettingsState>()(
       presets: [],
       lastConfig: DEFAULT_SESSION_CONFIG,
       savedDefaults: null,
+      workspaceDefaults: {},
       showLauncher: false,
       launcherGeneration: 0,
       themeName: "Claude",
@@ -247,15 +249,47 @@ export const useSettingsStore = create<SettingsState>()(
         },
       }),
 
-      setSavedDefaults: (config) => set({
-        savedDefaults: {
+      // [SL-21] Workspace defaults: setSavedDefaults writes per-workspace entry keyed by lowercased project root
+      setSavedDefaults: (config) => set((s) => {
+        const stripped = {
           ...config,
           workingDir: normalizePath(config.workingDir),
           resumeSession: null,
           continueSession: false,
           sessionId: null,
           runMode: false,
-        },
+          forkSession: false,
+        };
+
+        // Per-workspace defaults keyed by normalized project root (same pattern as addRecentDir)
+        const wt = parseWorktreePath(config.workingDir);
+        const wsKey = normalizePath(wt ? wt.projectRoot : config.workingDir).toLowerCase();
+
+        const wsDefaults: Partial<SessionConfig> = {
+          model: stripped.model,
+          permissionMode: stripped.permissionMode,
+          dangerouslySkipPermissions: stripped.dangerouslySkipPermissions,
+          effort: stripped.effort,
+          agent: stripped.agent,
+          maxBudget: stripped.maxBudget,
+          verbose: stripped.verbose,
+          debug: stripped.debug,
+          projectDir: stripped.projectDir,
+          extraFlags: stripped.extraFlags,
+          systemPrompt: stripped.systemPrompt,
+          appendSystemPrompt: stripped.appendSystemPrompt,
+          allowedTools: stripped.allowedTools,
+          disallowedTools: stripped.disallowedTools,
+          additionalDirs: stripped.additionalDirs,
+          mcpConfig: stripped.mcpConfig,
+        };
+
+        return {
+          savedDefaults: stripped,
+          workspaceDefaults: wsKey
+            ? { ...s.workspaceDefaults, [wsKey]: wsDefaults }
+            : s.workspaceDefaults,
+        };
       }),
 
       setShowLauncher: (show) => set((s) => ({
@@ -483,7 +517,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -545,6 +579,9 @@ export const useSettingsStore = create<SettingsState>()(
             if (rc.taps.categories.envproxy === undefined) rc.taps.categories.envproxy = false;
           }
         }
+        if (version < 7) {
+          if (!state.workspaceDefaults) state.workspaceDefaults = {};
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -553,6 +590,7 @@ export const useSettingsStore = create<SettingsState>()(
         presets: state.presets,
         lastConfig: state.lastConfig,
         savedDefaults: state.savedDefaults,
+        workspaceDefaults: state.workspaceDefaults,
         themeName: state.themeName,
         notificationsEnabled: state.notificationsEnabled,
         cliVersion: state.cliVersion,
