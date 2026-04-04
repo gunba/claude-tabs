@@ -365,6 +365,19 @@ export function IconAntenna(props: IconProps) {
   );
 }
 
+/** Server rack — MCP servers */
+export function IconServer(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2.5" y="2" width="11" height="4" rx="1" />
+      <rect x="2.5" y="10" width="11" height="4" rx="1" />
+      <circle cx="5" cy="4" r="0.7" fill="currentColor" stroke="none" />
+      <circle cx="5" cy="12" r="0.7" fill="currentColor" stroke="none" />
+      <path d="M8 6v4" />
+    </Icon>
+  );
+}
+
 /** Traffic light — API traffic logging */
 export function IconTraffic(props: IconProps) {
   return (

@@ -8,17 +8,18 @@ import { EnvVarsTab } from "./EnvVarsTab";
 import { MarkdownPane } from "./MarkdownPane";
 import { HooksPane } from "./HooksPane";
 import { PluginsTab } from "./PluginsPane";
+import { McpPane } from "./McpPane";
 import { AgentEditor } from "./AgentEditor";
 import { PromptsTab } from "./PromptsTab";
 import { SkillsEditor } from "./SkillsEditor";
 import { ProvidersPane } from "./ProvidersPane";
-import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconLightning, IconBraces, IconClose, IconCircleFilled } from "../Icons/Icons";
+import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconLightning, IconBraces, IconClose, IconCircleFilled, IconServer } from "../Icons/Icons";
 import { RecordingPane } from "./RecordingPane";
 import { parseWorktreePath } from "../../lib/paths";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import "./ConfigManager.css";
 
-type Tab = "settings" | "envvars" | "claudemd" | "hooks" | "plugins" | "agents" | "prompts" | "skills" | "providers" | "recording";
+type Tab = "settings" | "envvars" | "claudemd" | "hooks" | "plugins" | "mcp" | "agents" | "prompts" | "skills" | "providers" | "recording";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "settings", label: "Settings", icon: <IconGear size={11} /> },
@@ -26,6 +27,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "claudemd", label: "Claude", icon: <IconDocument size={11} /> },
   { id: "hooks", label: "Hooks", icon: <IconHook size={11} /> },
   { id: "plugins", label: "Plugins", icon: <IconPuzzle size={11} /> },
+  { id: "mcp", label: "MCP", icon: <IconServer size={11} /> },
   { id: "agents", label: "Agents", icon: <IconBot size={11} /> },
   { id: "prompts", label: "Prompts", icon: <IconDocument size={11} /> },
   { id: "skills", label: "Skills", icon: <IconSkill size={11} /> },
@@ -33,8 +35,8 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "recording", label: "Recording", icon: <IconCircleFilled size={11} /> },
 ];
 
-// [CM-11] 10-tab config modal (84vw, max 1500px, 78vh), store-controlled active tab
-// [CM-05] Tab routing: editor tabs plus dedicated Plugins/Prompts/Providers/Recording panes
+// [CM-11] 11-tab config modal (84vw, max 1500px, 78vh), store-controlled active tab
+// [CM-05] Tab routing: editor tabs plus dedicated Plugins/Prompts/Providers/Recording panes; MCP/Agents/Skills use 2-col ThreePaneEditor
 // [CM-18] Inline SVG icons per tab — monochrome, cross-platform
 // [CM-20] Tab label "Claude" (not "CLAUDE.md")
 export function ConfigManager() {
@@ -134,6 +136,9 @@ export function ConfigManager() {
           <ThreePaneEditor component={HooksPane} projectDir={projectDir} onStatus={setStatusMsg} tabId="hooks" />
         )}
         <PluginsTab visible={tab === "plugins"} projectDir={projectDir} onStatus={setStatusMsg} />
+        {tab === "mcp" && (
+          <ThreePaneEditor component={McpPane} projectDir={projectDir} onStatus={setStatusMsg} tabId="mcp" scopes={["user", "project"]} />
+        )}
         {tab === "agents" && (
           <ThreePaneEditor component={AgentEditor} projectDir={projectDir} onStatus={setStatusMsg} tabId="agents" scopes={["user", "project"]} />
         )}
