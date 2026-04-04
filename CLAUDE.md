@@ -20,7 +20,8 @@ If Codex is selected, save the draft plan to `plans/` and run `python "$HOME/.cl
 
 If Claude is selected, spawn the `plan-critic` agent, passing the draft plan. Incorporate the feedback into the final plan, then present to the user.
 
-Do NOT use TaskOutput to poll. Wait for task-notifications.
+For long-running Bash commands such as Codex delegates or builds, launch them with `run_in_background: true`.
+Do NOT use TaskOutput to poll. Wait for task-notifications, then read the referenced `<output-file>` if you need the completed command output.
 
 # Documentation
 

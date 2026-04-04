@@ -1109,6 +1109,34 @@ class ProofStore:
         self.save_rule(rule, layer=layer, branch=branch)
         return rule, mutable_entry
 
+    def delete_entry(
+        self,
+        tag_id: str,
+        branch: str | None = None,
+        layer: str = "workspace",
+    ) -> dict[str, Any]:
+        branch = branch or current_branch(self.repo_root)
+        rule, existing_entry = self.find_entry(tag_id, branch=branch)
+        rule = copy.deepcopy(rule)
+        remaining_entries = [entry for entry in rule["entries"] if entry["tag_id"] != tag_id]
+        if len(remaining_entries) == len(rule["entries"]):
+            raise RuntimeError(f"Could not reload tag {tag_id}")
+        rule["entries"] = remaining_entries
+        known_prefixes = {rule.get("default_prefix")}
+        known_prefixes.update(entry.get("prefix") or entry["tag_id"].split("-", 1)[0] for entry in remaining_entries)
+        rule["known_prefixes"] = sorted(prefix for prefix in known_prefixes if prefix)
+        self.save_rule(rule, layer=layer, branch=branch)
+        self.conn.execute("DELETE FROM tag_stats WHERE repo_id = ? AND tag_id = ?", (self.profile["repo_id"], tag_id))
+        self.conn.execute("DELETE FROM verifications WHERE repo_id = ? AND tag_id = ?", (self.profile["repo_id"], tag_id))
+        self.conn.execute("DELETE FROM selections WHERE repo_id = ? AND tag_id = ?", (self.profile["repo_id"], tag_id))
+        self.conn.commit()
+        return {
+            "rule_id": rule["rule_id"],
+            "tag_id": tag_id,
+            "deleted_entry": existing_entry,
+            "remaining_entries": len(remaining_entries),
+        }
+
     def split_rule(
         self,
         rule_id: str,
@@ -1798,6 +1826,11 @@ def build_parser() -> argparse.ArgumentParser:
     update_entry_parser.add_argument("--canonical", action="store_true")
     update_entry_parser.add_argument("--json", action="store_true")
 
+    delete_entry_parser = subparsers.add_parser("delete-entry")
+    delete_entry_parser.add_argument("--tag", required=True)
+    delete_entry_parser.add_argument("--canonical", action="store_true")
+    delete_entry_parser.add_argument("--json", action="store_true")
+
     split_parser = subparsers.add_parser("split-rule")
     split_parser.add_argument("--rule", required=True)
     split_parser.add_argument("--new-title", required=True)
@@ -1976,6 +2009,17 @@ def run_cli(args: argparse.Namespace) -> int:
             else:
                 print(f"Updated [{payload['tag_id']}]")
             return 0
+        if command == "delete-entry":
+            layer = "canonical" if args.canonical else "workspace"
+            payload = store.delete_entry(
+                tag_id=args.tag,
+                layer=layer,
+            )
+            if args.json:
+                print_json(payload)
+            else:
+                print(f"Deleted [{payload['tag_id']}] from {payload['rule_id']}")
+            return 0
         if command == "split-rule":
             layer = "canonical" if args.canonical else "workspace"
             original, new_rule = store.split_rule(
@@ -2110,6 +2154,18 @@ def mcp_tools() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "proofd_delete_entry",
+            "description": "Delete an existing entry by tag id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tag": {"type": "string"},
+                    "canonical": {"type": "boolean"},
+                },
+                "required": ["tag"],
+            },
+        },
+        {
             "name": "proofd_record_verification",
             "description": "Record a verification result and optionally update anchors.",
             "inputSchema": {
@@ -2216,6 +2272,14 @@ def run_mcp_server(store: ProofStore, branch: str | None = None) -> int:
                         branch=branch,
                     )
                     result_text = stable_json(payload)
+                elif name == "proofd_delete_entry":
+                    result_text = stable_json(
+                        store.delete_entry(
+                            tag_id=arguments["tag"],
+                            layer="canonical" if arguments.get("canonical") else "workspace",
+                            branch=branch,
+                        )
+                    )
                 elif name == "proofd_record_verification":
                     result_text = stable_json(
                         store.record_verification(

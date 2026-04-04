@@ -70,6 +70,7 @@ Mutate rules without editing markdown:
 python tools/proofd.py create-rule --title "Foo" --paths "src/foo/**"
 python tools/proofd.py add-entry --rule foo --statement "Foo does bar" --files "src/foo/index.ts"
 python tools/proofd.py update-entry --tag FO-01 --statement "Updated text"
+python tools/proofd.py delete-entry --tag FO-02
 python tools/proofd.py split-rule --rule foo --new-title "Foo Advanced" --tags FO-03,FO-04
 python tools/proofd.py record-verification --tag FO-01 --status confirmed --files "src/foo/index.ts"
 python tools/proofd.py promote-overlay
@@ -101,6 +102,7 @@ Current tools:
 - `proofd_create_rule`
 - `proofd_add_entry`
 - `proofd_update_entry`
+- `proofd_delete_entry`
 - `proofd_record_verification`
 - `proofd_sync`
 - `proofd_lint`
@@ -117,3 +119,4 @@ Current tools:
 
 - `proofd lint` warnings are intentionally advisory. Large projects may legitimately surface many rules.
 - Splitting is supported even when multiple rule files share the same source-file scope. This is the main escape hatch for large single-feature rule sets.
+- If an entry refers to deleted code, remove it with `proofd delete-entry` instead of leaving it as a permanent lint warning.
