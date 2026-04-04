@@ -36,6 +36,7 @@
 
 .terminal-container {
   flex: 1;
+  padding-left: 4px;
   overflow: hidden;
   /* Match terminal background so the sub-cell remainder from
      FitAddon (rounds to whole character cells) is invisible */
