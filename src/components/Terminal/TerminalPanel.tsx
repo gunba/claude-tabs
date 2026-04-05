@@ -146,6 +146,30 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (loading && inspector.connected && !resumeLoadingRef.current) setLoading(false);
   }, [loading, inspector.connected]);
 
+  // Fallback viewport fix: when loading spinner is dismissed (any path),
+  // force xterm.js ScrollableElement to recalculate scroll dimensions via
+  // resize cycle. Covers edge cases where data streamed through writeBytes
+  // instead of the atomic flush path (which has its own resize cycle).
+  const wasLoadingRef = useRef(false);
+  useEffect(() => {
+    const wasLoading = wasLoadingRef.current;
+    wasLoadingRef.current = loading;
+    if (!wasLoading || loading || !visible) return;
+    const term = terminal.termRef.current;
+    if (!term) return;
+    const { cols, rows } = terminal.getDimensions();
+    if (rows > 1) {
+      term.resize(cols, rows - 1);
+      term.resize(cols, rows);
+    }
+    requestAnimationFrame(() => {
+      if (terminal.termRef.current === term) {
+        term.scrollToBottom();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, visible]);
+
   // Sync Claude's internal session ID into config for persistence (plan-mode forks, compaction)
   const prevClaudeSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -176,11 +200,21 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (!resumeLoadingRef.current) return;
     if (!isSessionIdle(session.state) && session.state !== "dead" && session.state !== "error") return;
 
-    resumeLoadingRef.current = false;
-
     // Flush all PTY data buffered during resume as a single write
     const chunks = bgBufferRef.current;
     dlog("terminal", session.id, `resume flush: state=${session.state} chunks=${chunks.length}`, "DEBUG");
+
+    // No data yet and session is still alive — keep buffering.
+    // doSpawn sets state to "idle" immediately after PTY spawn, before the CLI
+    // has produced any output. Without this guard, resumeLoadingRef gets cleared
+    // prematurely and all subsequent resume data bypasses the atomic flush.
+    if (chunks.length === 0 && session.state !== "dead" && session.state !== "error") {
+      dlog("terminal", session.id, "resume flush: no data yet, keeping buffer active", "DEBUG");
+      return;
+    }
+
+    resumeLoadingRef.current = false;
+
     if (chunks.length > 0) {
       bgBufferRef.current = [];
       let totalLen = 0;
@@ -208,10 +242,18 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
               pty.handle.current?.resize(cols, rows);
               dlog("terminal", session.id, `resume flush: forced resize ${cols}x${rows}`, "DEBUG");
             }
-            // Defer scrollToBottom to next animation frame. xterm.js syncs viewport
-            // scroll dimensions via _innerRefresh() -> _sync() in a rAF scheduled
-            // during write processing. That rAF fires before this one (registration
-            // order), so scroll dimensions are current by the time we scroll.
+            // Force xterm.js ScrollableElement to recalculate scroll dimensions.
+            // After a large atomic write, the custom scroll (xterm.js 6) may not
+            // properly update until a resize triggers a full viewport re-layout.
+            // Resize cycle bypasses the same-dimensions guard.
+            const dims = terminal.getDimensions();
+            if (dims.rows > 1) {
+              term.resize(dims.cols, dims.rows - 1);
+              term.resize(dims.cols, dims.rows);
+            }
+            // Defer scrollToBottom to next frame: resize-triggered queueSync()
+            // schedules _sync() via addRefreshCallback, which fires before this
+            // rAF (registration order). Scroll dimensions are current by then.
             requestAnimationFrame(() => {
               if (terminal.termRef.current !== term) return;
               term.scrollToBottom();
@@ -225,11 +267,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         setLoading(false);
       }
     } else {
-      dlog("terminal", session.id, "resume flush: no buffered data", "DEBUG");
+      // Dead/error with no data — just dismiss spinner
+      dlog("terminal", session.id, "resume flush: no buffered data (terminal state)", "DEBUG");
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.state]);
+  }, [session.state, inspector.connected]);
 
   // Cache session config when inspector connects (for resume picker fallback)
   useEffect(() => {
