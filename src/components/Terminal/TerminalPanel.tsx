@@ -176,11 +176,21 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (!resumeLoadingRef.current) return;
     if (!isSessionIdle(session.state) && session.state !== "dead" && session.state !== "error") return;
 
-    resumeLoadingRef.current = false;
-
     // Flush all PTY data buffered during resume as a single write
     const chunks = bgBufferRef.current;
     dlog("terminal", session.id, `resume flush: state=${session.state} chunks=${chunks.length}`, "DEBUG");
+
+    // No data yet and session is still alive — keep buffering.
+    // doSpawn sets state to "idle" immediately after PTY spawn, before the CLI
+    // has produced any output. Without this guard, resumeLoadingRef gets cleared
+    // prematurely and all subsequent resume data bypasses the atomic flush.
+    if (chunks.length === 0 && session.state !== "dead" && session.state !== "error") {
+      dlog("terminal", session.id, "resume flush: no data yet, keeping buffer active", "DEBUG");
+      return;
+    }
+
+    resumeLoadingRef.current = false;
+
     if (chunks.length > 0) {
       bgBufferRef.current = [];
       let totalLen = 0;
@@ -225,11 +235,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         setLoading(false);
       }
     } else {
-      dlog("terminal", session.id, "resume flush: no buffered data", "DEBUG");
+      // Dead/error with no data — just dismiss spinner
+      dlog("terminal", session.id, "resume flush: no buffered data (terminal state)", "DEBUG");
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.state]);
+  }, [session.state, inspector.connected]);
 
   // Cache session config when inspector connects (for resume picker fallback)
   useEffect(() => {
