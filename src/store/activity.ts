@@ -141,16 +141,25 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         // Deduplicate: update existing entry for same path in current turn
         const existing = turn.files.findIndex((f) => f.path === path);
         if (existing >= 0) {
-          // Keep the more significant kind (write > read)
+          // [AP-03] Kind precedence: created > modified > read; never downgrade created
+          // Keep the more significant kind: created > modified > read
+          // Don't downgrade "created" to "modified" on subsequent Edit/Write
           if (kind !== "read" || turn.files[existing].kind === "read") {
+            if (turn.files[existing].kind === "created" && kind === "modified") {
+              entry.kind = "created";
+            }
             turn.files[existing] = entry;
           }
         } else {
           turn.files.push(entry);
         }
       }
-      // Track in session-wide indices
+      // Track in session-wide indices — preserve "created" over "modified"
       activity.visitedPaths.add(path);
+      const prev = activity.allFiles[path];
+      if (prev?.kind === "created" && entry.kind === "modified") {
+        entry.kind = "created";
+      }
       activity.allFiles[path] = entry;
       recomputeStats(activity);
       return { sessions };

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useActivityStore } from "../store/activity";
+import { canonicalizePath } from "../lib/paths";
 import type { SessionState } from "../types/session";
 import { dlog } from "../lib/debugLog";
 
@@ -43,7 +44,8 @@ export function useFileWatcher(
     const unlistenPromise = listen<FsChangeEvent>(
       `fs-change-${sessionId}`,
       (event) => {
-        const { path, kind } = event.payload;
+        const { path: rawPath, kind } = event.payload;
+        const path = canonicalizePath(rawPath);
         const store = useActivityStore.getState();
 
         // Try to confirm an existing unconfirmed TAP-predicted entry
