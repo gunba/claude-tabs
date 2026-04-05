@@ -176,9 +176,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const terminalRef = useRef<ReturnType<typeof useTerminal> | null>(null);
   // [BF-01] Buffer PTY data for background tabs — skip terminal writes when not visible,
   // flush in one write when the tab becomes visible. Saves O(1) rendering cost while hidden.
-  // [BF-02] visibleRef tracks tab visibility for buffering decisions
+  // [BF-02] visibleRef tracks tab visibility
   const visibleRef = useRef(visible);
-  const bgBufferRef = useRef<Uint8Array[]>([]);
   visibleRef.current = visible;
 
   // Suppress context-clear detection during resume loading phase.
@@ -199,25 +198,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           sessionInUseRef.current = true;
         }
       }
-      // Filter TAP lines from terminal display — they're consumed via
-      // BUN_INSPECT Console.messageAdded, not the PTY stream.
-      // Filtering here (frontend) instead of in process.stderr.write
-      // avoids killing the debugger protocol event that Bun derives from the write.
-      let filtered = data;
-      if (data.includes(0)) {
-        const text = new TextDecoder().decode(data);
-        if (text.includes("\x00TAP")) {
-          const cleaned = text.replace(/\x00TAP[^\n]*\n?/g, "");
-          if (cleaned.length === 0) return;
-          filtered = new TextEncoder().encode(cleaned);
-        }
-      }
-      // Write to terminal if visible; buffer otherwise.
-      if (visibleRef.current) {
-        terminalRef.current?.writeBytes(filtered);
-      } else {
-        bgBufferRef.current.push(filtered);
-      }
+      terminalRef.current?.writeBytes(data);
     },
     [session.id]
   );
@@ -305,9 +286,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     updateConfig(session.id, newConfig);
     if (name) renameSession(session.id, name);
 
-    // [PT-11] [RS-09] Clear stale buffers then terminal reset (ANSI RIS \x1bc)
-    bgBufferRef.current = [];
-    deferredResizeRef.current = null;
+    // [PT-11] [RS-09] Terminal reset
     terminal.fit();
     setLoading(!!newConfig.resumeSession);
 
@@ -335,26 +314,14 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   );
 
   const lastPtyDimsRef = useRef<{ cols: number; rows: number } | null>(null);
-  const deferredResizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  // Tracks pending onRender reveal listener — disposed on cleanup to prevent leaks
-  const revealDisposableRef = useRef<{ dispose(): void } | null>(null);
   // [PT-13] Same-dimension gate — skip redundant pty.resize() calls
-  // [BF-03] Resize occlusion — defer PTY resize when hidden (would trigger ConPTY
-  // repaint with no visible terminal) or when bgBuffer has pending data (terminal
-  // hasn't caught up yet, repaint would duplicate content into scrollback).
   const handleResize = useCallback(
     (cols: number, rows: number) => {
       const last = lastPtyDimsRef.current;
       if (last && last.cols === cols && last.rows === rows) return;
       lastPtyDimsRef.current = { cols, rows };
-      if (!visibleRef.current || bgBufferRef.current.length > 0) {
-        deferredResizeRef.current = { cols, rows };
-        dlog("terminal", session.id, `resize deferred ${cols}x${rows} (visible=${visibleRef.current} bgBuf=${bgBufferRef.current.length})`, "DEBUG");
-        return;
-      }
       pty.handle.current?.resize(cols, rows);
     },
-    // pty.handle and bgBufferRef are stable refs — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [session.id]
   );
@@ -465,7 +432,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   useEffect(() => {
     const id = session.id;
     return () => {
-      revealDisposableRef.current?.dispose();
       invoke("stop_tap_server", { sessionId: id }).catch(() => {});
       unregisterPtyWriter(id);
       unregisterPtyKill(id);
@@ -498,85 +464,11 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     }
   }, [killRequest, session.id, session.state, clearKillRequest, pty]);
 
-  // [BF-01] Flush bgBuffer on tab focus, reveal after renderer paints
-  // [TR-10] fit() deferred on tab switch via useLayoutEffect
-  // terminal is NOT in deps because useTerminal returns a new object on every render.
+  // [TR-10] fit() on tab switch via useLayoutEffect
   useLayoutEffect(() => {
-    // Dispose any pending reveal from a prior transition
-    revealDisposableRef.current?.dispose();
-    revealDisposableRef.current = null;
-
     if (!visible) return;
-
-    const container = containerRef.current;
-    const term = terminal.termRef.current;
-    const chunks = bgBufferRef.current;
-    const hasBuffer = chunks.length > 0;
-
-    // Hide content — reveal only after the renderer paints the correct state.
-    // opacity:0 (not visibility:hidden) keeps WebGL renderer active.
-    // Skip on initial mount (term not yet created by useEffect) — nothing to hide.
-    if (container && term) container.style.opacity = '0';
-
-    if (hasBuffer) {
-      bgBufferRef.current = [];
-      let totalLen = 0;
-      for (const c of chunks) totalLen += c.length;
-      const merged = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const c of chunks) { merged.set(c, offset); offset += c.length; }
-      dlog("terminal", session.id, `flush bg buffer ${totalLen}B`, "DEBUG");
-
-      try {
-        const t = term!;
-        t.write(merged, () => {
-          // Scroll after write is fully processed — same fix as resume flush.
-          // Guard: ensure terminal hasn't been disposed/respawned between write and callback.
-          if (terminal.termRef.current === t) t.scrollToBottom();
-          if (container) {
-            requestAnimationFrame(() => {
-              if (containerRef.current) containerRef.current.style.opacity = '';
-            });
-          }
-        });
-      } catch {
-        if (container) container.style.opacity = '';
-      }
-    }
-
     terminal.fit();
-
-    // Send deferred PTY resize now that the buffer has been flushed
-    const deferred = deferredResizeRef.current;
-    if (deferred) {
-      deferredResizeRef.current = null;
-      pty.handle.current?.resize(deferred.cols, deferred.rows);
-    }
-
-    if (!hasBuffer && term) {
-      term.scrollToBottom();
-      // Trigger render cycle and reveal after paint
-      if (container) {
-        try {
-          term.write('', () => {
-            requestAnimationFrame(() => {
-              if (containerRef.current) containerRef.current.style.opacity = '';
-            });
-          });
-        } catch {
-          if (containerRef.current) containerRef.current.style.opacity = '';
-        }
-      }
-    }
-
     terminal.focus();
-
-    // Cleanup: if tab hides before reveal fires, dispose listener and reset opacity
-    return () => {
-      revealDisposableRef.current?.dispose();
-      revealDisposableRef.current = null;
-      if (containerRef.current) containerRef.current.style.opacity = '';
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session.id]);
 

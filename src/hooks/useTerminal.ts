@@ -31,21 +31,12 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
     term.open(el);
     attachedRef.current = true;
 
-    // [DF-06] WebGL renderer for performance, with context loss recovery (retry once, fallback to canvas)
+    // [DF-06] WebGL renderer — if context is lost, fall back to canvas (no retry)
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
         webgl.dispose();
         webglRef.current = null;
-        // Retry once after 1s — if it fails again, stay on canvas
-        setTimeout(() => {
-          try {
-            const retry = new WebglAddon();
-            retry.onContextLoss(() => { retry.dispose(); webglRef.current = null; });
-            term.loadAddon(retry);
-            webglRef.current = retry;
-          } catch {}
-        }, 1000);
       });
       term.loadAddon(webgl);
       webglRef.current = webgl;
