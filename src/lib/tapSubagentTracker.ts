@@ -36,6 +36,7 @@ export class TapSubagentTracker {
   private sidechainActive = false;
   private seenSpawnFingerprints = new Set<string>(); // dedup re-serialized SubagentSpawn events
   private processedUuids = new Set<string>(); // dedup re-serialized ConversationMessage content
+  private lastMainToolCall: string | null = null; // last non-sidechain ToolCallStart tool name
 
   constructor(parentSessionId: string) {
     this.parentSessionId = parentSessionId;
@@ -64,6 +65,11 @@ export class TapSubagentTracker {
   /** The agent ID of the most recently active subagent, or null. */
   getLastActiveAgentId(): string | null {
     return this.lastActiveAgent;
+  }
+
+  /** The tool name from the most recent non-sidechain ToolCallStart, or null. */
+  getLastMainToolCall(): string | null {
+    return this.lastMainToolCall;
   }
 
   /** Mark all active subagents with the given state, returning update actions. */
@@ -347,12 +353,15 @@ export class TapSubagentTracker {
         this.pendingSpawns = [];
         this.seenSpawnFingerprints.clear();
         this.processedUuids.clear();
+        this.lastMainToolCall = null;
         // New user prompt → previous turn's agents are done; mark stale active agents idle
         actions.push(...this.markAllActive("idle"));
         break;
 
       // [IN-26] Route tool activity to active subagent (mirrors parent tab display)
       case "ToolCallStart": {
+        // Track main-agent tool calls for phantom ToolInput suppression
+        if (!this.sidechainActive) this.lastMainToolCall = event.toolName;
         if (!this.sidechainActive || !this.lastActiveAgent) break;
         const tgt = this.lastActiveAgent;
         if (!isSubagentActive(this.agentStates.get(tgt) ?? "dead")) break;
@@ -440,5 +449,6 @@ export class TapSubagentTracker {
     this.sidechainActive = false;
     this.seenSpawnFingerprints.clear();
     this.processedUuids.clear();
+    this.lastMainToolCall = null;
   }
 }
