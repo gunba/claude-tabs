@@ -23,6 +23,19 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$HOME/.claude/agent-proofs/bin/proofd.py\" sync >/dev/null 2>&1 || echo '{\"systemMessage\":\"proofd sync failed on session start; run proofd sync manually.\"}'",
+            "timeout": 60,
+            "statusMessage": "Syncing proofd rules..."
+          }
+        ]
+      }
     ]
   },
   "worktree": {

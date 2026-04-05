@@ -20,6 +20,25 @@ export function normalizePath(p: string): string {
   return p.replace(/\/+$/, "");
 }
 
+/**
+ * Canonicalize a path to a stable forward-slash form for identity comparisons.
+ * Handles Windows backslashes, MSYS-style /c/Users/..., and drive letter casing.
+ */
+// [AP-01] Stable forward-slash identity form: backslashes, MSYS /c/..., drive letter casing
+export function canonicalizePath(p: string): string {
+  let result = p.replace(/\\/g, "/");
+  // Convert MSYS-style /c/Users/... → C:/Users/...
+  const msys = result.match(/^\/([a-zA-Z])(\/|$)/);
+  if (msys) {
+    result = msys[1].toUpperCase() + ":/" + result.slice(3);
+  }
+  // Normalize drive letter casing: c:/ → C:/
+  if (/^[a-z]:\//.test(result)) {
+    result = result[0].toUpperCase() + result.slice(1);
+  }
+  return result.replace(/\/+$/, "");
+}
+
 export interface WorktreeInfo {
   projectName: string;   // last component of project root (e.g., "claude_tabs")
   worktreeName: string;  // full slug (e.g., "sorted-marinating-dove")

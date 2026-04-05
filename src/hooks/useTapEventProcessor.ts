@@ -6,7 +6,7 @@ import { tapEventBus } from "../lib/tapEventBus";
 import { reduceTapEvent, isCompletionEvent } from "../lib/tapStateReducer";
 import { TapMetadataAccumulator } from "../lib/tapMetadataAccumulator";
 import { TapSubagentTracker } from "../lib/tapSubagentTracker";
-import { normalizePath } from "../lib/paths";
+import { normalizePath, canonicalizePath } from "../lib/paths";
 import { getResumeId, resolveModelFamily } from "../lib/claude";
 import { useSettingsStore } from "../store/settings";
 import { dlog } from "../lib/debugLog";
@@ -209,8 +209,9 @@ export function useTapEventProcessor(
         }
 
         if (event.kind === "ToolInput") {
-          const filePath = event.input.file_path;
-          if (typeof filePath === "string") {
+          const rawFilePath = event.input.file_path;
+          if (typeof rawFilePath === "string") {
+            const filePath = canonicalizePath(rawFilePath);
             const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
             const workDir = session?.config.workingDir ?? "";
             const isExternal = workDir ? !normalizePath(filePath).startsWith(workDir) : false;
@@ -222,11 +223,13 @@ export function useTapEventProcessor(
                 isExternal,
               });
             } else if (event.toolName === "Write") {
+              const activity = activityStore.sessions[sid];
+              const isNew = !activity?.visitedPaths.has(filePath);
               const toolInputData: ToolInputDiffData = {
                 type: "write",
                 content: String(event.input.content ?? ""),
               };
-              activityStore.addFileActivity(sid, filePath, "modified", {
+              activityStore.addFileActivity(sid, filePath, isNew ? "created" : "modified", {
                 agentId,
                 toolName: "Write",
                 isExternal,
@@ -258,13 +261,13 @@ export function useTapEventProcessor(
           const lastAction = session?.metadata.currentAction ?? "";
           const pathMatch = lastAction.match(/:\s*(.+)/);
           if (pathMatch) {
-            activityStore.markPermissionDenied(sid, pathMatch[1].trim());
+            activityStore.markPermissionDenied(sid, canonicalizePath(pathMatch[1].trim()));
           }
         }
 
         if (event.kind === "InstructionsLoadedEvent") {
           activityStore.addContextFile(sid, {
-            path: event.filePath,
+            path: canonicalizePath(event.filePath),
             memoryType: event.memoryType,
             loadReason: event.loadReason,
           });

@@ -90,7 +90,7 @@
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.4;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) transparent;
 }
@@ -104,12 +104,14 @@
 .file-tree-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: 3px;
+  padding: 1px 8px;
   cursor: pointer;
   transition: background 0.1s;
-  min-height: 24px;
+  min-height: 20px;
+  line-height: 1.2;
   user-select: none;
+  position: relative;
 }
 
 .file-tree-row:hover {
@@ -118,9 +120,9 @@
 
 /* Chevron for folder expand/collapse */
 .file-tree-chevron {
-  font-size: 8px;
+  font-size: 11px;
   color: var(--text-muted);
-  width: 10px;
+  width: 12px;
   flex-shrink: 0;
   transition: transform 0.15s;
   display: inline-block;
@@ -172,6 +174,43 @@
   font-weight: 500;
 }
 
+/* -- File state indicators -- */
+
+.file-tree-kind-created  { color: var(--success) !important; }
+.file-tree-kind-modified { color: var(--warning) !important; }
+.file-tree-kind-deleted  { color: var(--error) !important; opacity: 0.7; text-decoration: line-through; }
+
+/* -- Tree guide lines -- */
+
+/* Horizontal connector stub for file nodes with guide lines */
+.file-tree-file.file-tree-guided::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--guide-left, 0px) - 10px);
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+/* -- Floating mascot for travel animation -- */
+
+.activity-tree-container {
+  position: relative;
+}
+
+.activity-mascot-float {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+  transition: top 0.3s ease, left 0.15s ease, opacity 0.2s ease;
+}
+
+.activity-mascot-float.fading {
+  opacity: 0;
+}
+
 /* -- Empty state -- */
 
 .activity-panel-empty {
@@ -210,24 +249,16 @@
 
 /* -- Animation states -- */
 
-/* Reading: lean forward */
-.claude-mascot-reading .claude-mascot-img {
-  animation: mascot-read 2s ease-in-out infinite;
-}
-
-@keyframes mascot-read {
-  0%, 100% { transform: perspective(50px) rotateX(0deg); }
-  50% { transform: perspective(50px) rotateX(8deg); }
-}
-
-/* Writing: tilt side-to-side */
+/* Reading and writing: unified rocking motion anchored at left edge */
+.claude-mascot-reading .claude-mascot-img,
 .claude-mascot-writing .claude-mascot-img {
-  animation: mascot-write 0.8s ease-in-out infinite alternate;
+  animation: mascot-rock 0.4s ease-in-out infinite alternate;
+  transform-origin: left center;
 }
 
-@keyframes mascot-write {
-  0% { transform: rotateZ(-3deg); }
-  100% { transform: rotateZ(3deg); }
+@keyframes mascot-rock {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(8deg); }
 }
 
 /* Moving: hop (single play) */
