@@ -184,7 +184,7 @@ export class TapSubagentTracker {
             // (subagentType/model not available from toolAction text; filled by SubagentLifecycle if present)
             for (const tn of event.toolNames) {
               if (tn === "Agent" && event.toolAction.startsWith("Agent: ")) {
-                this.pendingSpawns.push({ description: event.toolAction.slice(7).slice(0, 100) });
+                this.pendingSpawns.push({ description: event.toolAction.slice(7) });
               }
             }
           }
@@ -372,7 +372,7 @@ export class TapSubagentTracker {
         const detail = String(
           event.input.command || event.input.file_path || event.input.pattern ||
           event.input.description || event.input.query || ""
-        ).slice(0, 80);
+        );
 
         // Enrich the last tool message with structured input for rich rendering.
         // Must create a new object (not mutate in place) so React.memo detects the change.

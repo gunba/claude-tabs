@@ -282,15 +282,15 @@ describe("INSTALL_HOOK JSON.stringify interception", () => {
     expect(state.userPrompt).toBe("Plain string prompt here for content");
   });
 
-  it("truncates firstMsg and userPrompt to 200 chars", () => {
+  it("preserves full firstMsg and userPrompt", () => {
     const state = installAndGetState();
     const longText = "a".repeat(300);
     JSON.stringify({
       type: "user",
       message: { content: [{ type: "text", text: longText }] },
     });
-    expect(state.firstMsg).toHaveLength(200);
-    expect(state.userPrompt).toHaveLength(200);
+    expect(state.firstMsg).toHaveLength(300);
+    expect(state.userPrompt).toHaveLength(300);
   });
 
   it("does not extract text from tool_result user events", () => {
@@ -321,7 +321,7 @@ describe("INSTALL_HOOK JSON.stringify interception", () => {
     expect(state.lastText).toBe("Second paragraph with more detail");
   });
 
-  it("truncates lastText to 300 chars from the end", () => {
+  it("preserves full lastText", () => {
     const state = installAndGetState();
     const longText = "x".repeat(500);
     JSON.stringify({
@@ -333,7 +333,7 @@ describe("INSTALL_HOOK JSON.stringify interception", () => {
         usage: { input_tokens: 10, output_tokens: 10 },
       },
     });
-    expect(state.lastText).toHaveLength(300);
+    expect(state.lastText).toHaveLength(500);
   });
 
   it("formats toolAction for Bash tool", () => {
@@ -525,7 +525,7 @@ describe("INSTALL_HOOK JSON.stringify interception", () => {
     expect(events[0].txt).toBe("Here is my response to your question");
   });
 
-  it("truncates ring buffer txt to 100 chars", () => {
+  it("preserves full ring buffer txt", () => {
     const state = installAndGetState();
     const longText = "z".repeat(200);
     JSON.stringify({
@@ -533,7 +533,7 @@ describe("INSTALL_HOOK JSON.stringify interception", () => {
       message: { content: [{ type: "text", text: longText }] },
     });
     const events = state.events as Array<Record<string, unknown>>;
-    expect((events[0].txt as string).length).toBe(100);
+    expect((events[0].txt as string).length).toBe(200);
   });
 
   it("includes ta in ring buffer events for tool actions", () => {

@@ -64,7 +64,7 @@ export const INSTALL_HOOK = `(function() {
   };
   function fmtToolAction(name, inp) {
     var key = toolActionKeys[name];
-    if (key && inp[key]) return name + ': ' + (inp[key] || '').slice(0, 80);
+    if (key && inp[key]) return name + ': ' + (inp[key] || '');
     return name;
   }
 
@@ -81,8 +81,8 @@ export const INSTALL_HOOK = `(function() {
           if (obj.hook_event_name === 'UserPromptSubmit') {
             var hp = obj.prompt || '';
             if (typeof hp === 'string' && hp) {
-              state.userPrompt = hp.slice(0, 200);
-              if (hp.charAt(0) === '/') state.slashCmd = hp.split(' ')[0].slice(0, 50);
+              state.userPrompt = hp;
+              if (hp.charAt(0) === '/') state.slashCmd = hp.split(' ')[0];
             }
           }
 
@@ -127,20 +127,19 @@ export const INSTALL_HOOK = `(function() {
                 if (Array.isArray(sc)) {
                   for (var si = 0; si < sc.length; si++) {
                     if (sc[si].type === 'text' && sc[si].text) {
-                      curSub.msgs.push({r: 'a', x: sc[si].text.slice(0, 4000)});
+                      curSub.msgs.push({r: 'a', x: sc[si].text});
                     }
                     if (sc[si].type === 'tool_use') {
                       var sinp = sc[si].input || {};
                       var sact = fmtToolAction(sc[si].name, sinp);
                       if (sc[si].name === 'Agent' && sinp.description) {
-                        state.pendingDescs.push(sinp.description.slice(0, 100));
+                        state.pendingDescs.push(sinp.description);
                       }
                       curSub.act = sact;
-                      curSub.msgs.push({r: 't', x: (sinp.command || sinp.file_path || sinp.pattern || sinp.description || '').slice(0, 4000), tn: sc[si].name});
+                      curSub.msgs.push({r: 't', x: (sinp.command || sinp.file_path || sinp.pattern || sinp.description || ''), tn: sc[si].name});
                     }
                   }
                 }
-                if (curSub.msgs.length > 200) curSub.msgs = curSub.msgs.slice(-200);
               }
 
               if (obj.type === 'user' && obj.message) {
@@ -156,10 +155,9 @@ export const INSTALL_HOOK = `(function() {
                           if (suc[sl].content[sm].text) srt += suc[sl].content[sm].text;
                         }
                       }
-                      if (srt) curSub.msgs.push({r: 't', x: srt.slice(0, 4000), tn: 'result'});
+                      if (srt) curSub.msgs.push({r: 't', x: srt, tn: 'result'});
                     }
                   }
-                  if (curSub.msgs.length > 200) curSub.msgs = curSub.msgs.slice(-200);
                 }
               }
 
@@ -196,7 +194,7 @@ export const INSTALL_HOOK = `(function() {
                         var inp = content[i].input || {};
                         toolAct = fmtToolAction(tn, inp);
                         if (tn === 'Agent' && inp.description) {
-                          state.pendingDescs.push(inp.description.slice(0, 100));
+                          state.pendingDescs.push(inp.description);
                         }
                       }
                       if (content[i].type === 'text' && content[i].text) {
@@ -204,7 +202,7 @@ export const INSTALL_HOOK = `(function() {
                       }
                     }
                     if (toolNames.length > 0) { state.tools = toolNames; state.turnHasTools = true; }
-                    if (txtSnippet) state.lastText = txtSnippet.slice(-300);
+                    if (txtSnippet) state.lastText = txtSnippet;
                     if (toolAct) state.toolAction = toolAct;
                   }
                 }
@@ -232,8 +230,8 @@ export const INSTALL_HOOK = `(function() {
                 }
                 if (userText && !isToolResult) {
                   txtSnippet = userText;
-                  state.userPrompt = userText.slice(0, 200);
-                  if (!state.firstMsg) state.firstMsg = userText.slice(0, 200);
+                  state.userPrompt = userText;
+                  if (!state.firstMsg) state.firstMsg = userText;
                 }
                 state.inputBuf = '';
                 state.stop = null;
@@ -254,7 +252,7 @@ export const INSTALL_HOOK = `(function() {
                 if (obj.type === 'result' && typeof obj.total_cost_usd === 'number') {
                   evt.c = obj.total_cost_usd;
                 }
-                if (txtSnippet) evt.txt = (typeof txtSnippet === 'string' ? txtSnippet : '').slice(0, 100);
+                if (txtSnippet) evt.txt = (typeof txtSnippet === 'string' ? txtSnippet : '');
                 if (toolAct) evt.ta = toolAct;
                 state.events.push(evt);
                 if (state.events.length > 50) state.events.shift();
@@ -294,7 +292,6 @@ export const INSTALL_HOOK = `(function() {
       } else if (ch.length === 1 && ch.charCodeAt(0) >= 32) {
         state.inputBuf += ch;
       }
-      if (state.inputBuf.length > 500) state.inputBuf = state.inputBuf.slice(-500);
       state.inputTs = Date.now();
     };
     process.stdin.on('data', stdinHandler);
@@ -492,7 +489,7 @@ export const INSTALL_TAPS = `(function() {
       } else {
         tapQueue.push(line);
         globalThis.__tapDiag.queued = tapQueue.length;
-        if (tapQueue.length > 1000) tapQueue = tapQueue.slice(-500);
+        if (tapQueue.length > 1000) tapQueue = tapQueue.slice(-1000);
         tapConnect();
       }
     } catch(e) {
@@ -508,7 +505,7 @@ export const INSTALL_TAPS = `(function() {
     if (flags.parse) {
       try {
         if (typeof text === 'string') {
-          push('parse', { len: text.length, snap: text.slice(0, 2000) });
+          push('parse', { len: text.length, snap: text });
         }
       } catch(e) {}
     }
@@ -626,7 +623,7 @@ export const INSTALL_TAPS = `(function() {
           if (value && typeof value === 'object' && value.notification_type === 'permission_prompt') {
             push('stringify', { len: result.length, snap: origStringify({ notification_type: value.notification_type }) });
           }
-          push('stringify', { len: result.length, snap: result.slice(0, 2000) });
+          push('stringify', { len: result.length, snap: result });
         }
       } catch(e) {}
     }
@@ -644,7 +641,7 @@ export const INSTALL_TAPS = `(function() {
             var parts = [];
             for (var ai = 0; ai < arguments.length; ai++) parts.push(String(arguments[ai]));
             var msg = parts.join(' ');
-            if (msg.length > 0) push('console', { op: method, msg: msg.slice(0, 1000) });
+            if (msg.length > 0) push('console', { op: method, msg: msg });
           } catch(e) {}
         }
         return orig.apply(console, arguments);
@@ -657,13 +654,13 @@ export const INSTALL_TAPS = `(function() {
     var b = Buffer.isBuffer(raw) ? raw : null;
     var size = b ? b.length : (typeof raw === 'string' ? raw.length : 0);
     var content = null;
-    if (b && size < 50000) {
+    if (b) {
       var isBin = false;
       var head = b.slice(0, 100);
       for (var i = 0; i < head.length; i++) { if (head[i] === 0) { isBin = true; break; } }
-      if (!isBin) content = b.toString('utf8').slice(0, 500);
-    } else if (typeof raw === 'string' && size < 50000) {
-      content = raw.slice(0, 500);
+      if (!isBin) content = b.toString('utf8');
+    } else if (typeof raw === 'string') {
+      content = raw;
     }
     return { size: size, content: content };
   }
@@ -678,7 +675,7 @@ export const INSTALL_TAPS = `(function() {
         try {
           var p = typeof path === 'string' ? path : String(path);
           var s = snip(result);
-          push('fs', { op: 'read', path: p.slice(-200), size: s.size, content: s.content });
+          push('fs', { op: 'read', path: p, size: s.size, content: s.content });
         } catch(e) {}
       }
       return result;
@@ -689,7 +686,7 @@ export const INSTALL_TAPS = `(function() {
         try {
           var p = typeof path === 'string' ? path : String(path);
           var s = snip(data);
-          push('fs', { op: 'write', path: p.slice(-200), size: s.size, content: s.content });
+          push('fs', { op: 'write', path: p, size: s.size, content: s.content });
         } catch(e) {}
       }
       return origWrite.apply(this, arguments);
@@ -700,7 +697,7 @@ export const INSTALL_TAPS = `(function() {
       var result = origExists.apply(this, arguments);
       if (flags.fs) {
         try {
-          push('fs', { op: 'exists', path: (typeof path === 'string' ? path : String(path)).slice(-200), result: result });
+          push('fs', { op: 'exists', path: (typeof path === 'string' ? path : String(path)), result: result });
         } catch(e) {}
       }
       return result;
@@ -710,7 +707,7 @@ export const INSTALL_TAPS = `(function() {
       var result = origStat.apply(this, arguments);
       if (flags.fs) {
         try {
-          push('fs', { op: 'stat', path: (typeof path === 'string' ? path : String(path)).slice(-200), isDir: result.isDirectory(), size: result.size });
+          push('fs', { op: 'stat', path: (typeof path === 'string' ? path : String(path)), isDir: result.isDirectory(), size: result.size });
         } catch(e) {}
       }
       return result;
@@ -720,7 +717,7 @@ export const INSTALL_TAPS = `(function() {
       var result = origReaddir.apply(this, arguments);
       if (flags.fs) {
         try {
-          push('fs', { op: 'readdir', path: (typeof path === 'string' ? path : String(path)).slice(-200), count: result.length });
+          push('fs', { op: 'readdir', path: (typeof path === 'string' ? path : String(path)), count: result.length });
         } catch(e) {}
       }
       return result;
@@ -732,20 +729,20 @@ export const INSTALL_TAPS = `(function() {
     var cp = require('child_process');
     function fmtCmd(file, args) {
       var s = String(file || '');
-      if (args && args.length) s += ' ' + Array.prototype.slice.call(args, 0, 10).join(' ');
-      return s.slice(0, 500);
+      if (args && args.length) s += ' ' + Array.prototype.slice.call(args).join(' ');
+      return s;
     }
     var origSpawn = cp.spawn;
     cp.spawn = function(file, args, opts) {
       var result = origSpawn.apply(this, arguments);
       if (flags.spawn) {
         try {
-          var cwd = (opts && opts.cwd) ? String(opts.cwd).slice(-200) : null;
+          var cwd = (opts && opts.cwd) ? String(opts.cwd) : null;
           var pid = result && result.pid;
           push('spawn', { cmd: fmtCmd(file, args), cwd: cwd, pid: pid });
           if (result && typeof result.on === 'function') {
             result.on('close', function(code) {
-              if (flags.spawn) push('spawn.exit', { pid: pid, code: code, cmd: String(file || '').slice(0, 100) });
+              if (flags.spawn) push('spawn.exit', { pid: pid, code: code, cmd: String(file || '') });
             });
           }
         } catch(e) {}
@@ -756,7 +753,7 @@ export const INSTALL_TAPS = `(function() {
     cp.exec = function(cmd) {
       if (flags.spawn) {
         try {
-          push('spawn', { op: 'exec', cmd: String(cmd || '').slice(0, 500) });
+          push('spawn', { op: 'exec', cmd: String(cmd || '') });
         } catch(e) {}
       }
       return origExec.apply(this, arguments);
@@ -767,7 +764,7 @@ export const INSTALL_TAPS = `(function() {
       var result = origSpawnSync.apply(this, arguments);
       if (flags.spawn) {
         try {
-          var cwd = (opts && opts.cwd) ? String(opts.cwd).slice(-200) : null;
+          var cwd = (opts && opts.cwd) ? String(opts.cwd) : null;
           push('spawnSync', { cmd: fmtCmd(file, args), cwd: cwd, code: result && result.status, dur: Date.now() - t0 });
         } catch(e) {}
       }
@@ -781,12 +778,12 @@ export const INSTALL_TAPS = `(function() {
         result = origExecSync.apply(this, arguments);
       } catch(err) {
         if (flags.spawn) {
-          try { push('execSync', { cmd: String(cmd || '').slice(0, 500), err: String(err.message || '').slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+          try { push('execSync', { cmd: String(cmd || ''), err: String(err.message || ''), dur: Date.now() - t0 }); } catch(e) {}
         }
         throw err;
       }
       if (flags.spawn) {
-        try { push('execSync', { cmd: String(cmd || '').slice(0, 500), dur: Date.now() - t0 }); } catch(e) {}
+        try { push('execSync', { cmd: String(cmd || ''), dur: Date.now() - t0 }); } catch(e) {}
       }
       return result;
     };
@@ -823,7 +820,7 @@ export const INSTALL_TAPS = `(function() {
                 } catch(e2) {}
                 var isStream = ct.indexOf('text/event-stream') !== -1;
                 var fetchEntry = flags.fetch
-                  ? { url: url.slice(0, 300), method: method, status: resp.status, bodyLen: bodyLen, dur: Date.now() - t0, hdrs: hdrs, ct: ct, cl: cl }
+                  ? { url: url, method: method, status: resp.status, bodyLen: bodyLen, dur: Date.now() - t0, hdrs: hdrs, ct: ct, cl: cl }
                   : { url: '', method: method, status: resp.status, dur: Date.now() - t0, hdrs: hdrs, ct: ct, cl: cl };
                 if (flags.fetch && isStream) {
                   // SSE: read first chunk via ReadableStream reader for usage data
@@ -834,7 +831,7 @@ export const INSTALL_TAPS = `(function() {
                       rdr.read().then(function(r) {
                         rdr.cancel();
                         if (r.value) {
-                          try { fetchEntry.resp = new TextDecoder().decode(r.value).slice(0, 2000); } catch(e5) {}
+                          try { fetchEntry.resp = new TextDecoder().decode(r.value); } catch(e5) {}
                         }
                         push('fetch', fetchEntry);
                       }, function() { push('fetch', fetchEntry); });
@@ -846,7 +843,7 @@ export const INSTALL_TAPS = `(function() {
                   // Non-streaming: clone and read full body
                   try {
                     resp.clone().text().then(function(txt) {
-                      fetchEntry.resp = txt.slice(0, 2000);
+                      fetchEntry.resp = txt;
                       push('fetch', fetchEntry);
                     }, function() { push('fetch', fetchEntry); });
                   } catch(e4) { push('fetch', fetchEntry); }
@@ -857,7 +854,7 @@ export const INSTALL_TAPS = `(function() {
               return resp;
             }, function(err) {
               if (flags.fetch) {
-                try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+                try { push('fetch', { url: url, method: method, bodyLen: bodyLen, err: String(err.message || err), dur: Date.now() - t0 }); } catch(e) {}
               }
               throw err;
             });
@@ -865,7 +862,7 @@ export const INSTALL_TAPS = `(function() {
           return p;
         } catch(err) {
           if (flags.fetch) {
-            try { push('fetch', { url: url.slice(0, 300), method: method, bodyLen: bodyLen, err: String(err.message || err).slice(0, 200), dur: Date.now() - t0 }); } catch(e) {}
+            try { push('fetch', { url: url, method: method, bodyLen: bodyLen, err: String(err.message || err), dur: Date.now() - t0 }); } catch(e) {}
           }
           throw err;
         }
@@ -896,7 +893,7 @@ export const INSTALL_TAPS = `(function() {
         try {
           var seq = ++timerSeq;
           var caller = '';
-          try { caller = (new Error()).stack.split('\\n')[2] || ''; caller = caller.trim().slice(0, 150); } catch(e) {}
+          try { caller = (new Error()).stack.split('\\n')[2] || ''; caller = caller.trim(); } catch(e) {}
           timerMap[result] = seq;
           push('timer', { op: 'setTimeout', id: seq, delay: delay, caller: caller });
         } catch(e) {}
@@ -918,7 +915,7 @@ export const INSTALL_TAPS = `(function() {
       if (flags.stdout) {
         try {
           var s = typeof chunk === 'string' ? chunk : (Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
-          if (s.length > 0) push('stdout', { len: s.length, snap: s.slice(0, 500) });
+          if (s.length > 0) push('stdout', { len: s.length, snap: s });
         } catch(e) {}
       }
       return origStdoutWrite.apply(process.stdout, arguments);
@@ -932,7 +929,7 @@ export const INSTALL_TAPS = `(function() {
       if (flags.stderr) {
         try {
           var s = typeof chunk === 'string' ? chunk : (Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
-          if (s.length > 0) push('stderr', { len: s.length, snap: s.slice(0, 500) });
+          if (s.length > 0) push('stderr', { len: s.length, snap: s });
         } catch(e) {}
       }
       return origStderrWrite.apply(process.stderr, arguments);
@@ -946,7 +943,7 @@ export const INSTALL_TAPS = `(function() {
       var origModRequire = Module.prototype.require;
       Module.prototype.require = function(id) {
         if (flags.require) {
-          try { push('require', { id: String(id).slice(0, 300) }); } catch(e) {}
+          try { push('require', { id: String(id) }); } catch(e) {}
         }
         return origModRequire.apply(this, arguments);
       };
@@ -964,7 +961,7 @@ export const INSTALL_TAPS = `(function() {
         try {
           var seq = ++timerSeq;
           var caller = '';
-          try { caller = (new Error()).stack.split('\\n')[2] || ''; caller = caller.trim().slice(0, 150); } catch(e) {}
+          try { caller = (new Error()).stack.split('\\n')[2] || ''; caller = caller.trim(); } catch(e) {}
           intervalMap[result] = seq;
           push('timer', { op: 'setInterval', id: seq, delay: delay, caller: caller });
         } catch(e) {}
@@ -990,7 +987,7 @@ export const INSTALL_TAPS = `(function() {
             try {
               var p = typeof dest === 'string' ? dest : (dest && dest.name ? dest.name : String(dest));
               var size = typeof data === 'string' ? data.length : (data && data.byteLength ? data.byteLength : 0);
-              push('bun', { op: 'write', path: p.slice(-200), size: size });
+              push('bun', { op: 'write', path: p, size: size });
             } catch(e) {}
           }
           return result;
@@ -1003,12 +1000,12 @@ export const INSTALL_TAPS = `(function() {
           if (flags.bun) {
             try {
               var c;
-              if (Array.isArray(cmd)) c = cmd.slice(0, 10).join(' ');
-              else if (cmd && Array.isArray(cmd.cmd)) c = cmd.cmd.slice(0, 10).join(' ');
+              if (Array.isArray(cmd)) c = cmd.join(' ');
+              else if (cmd && Array.isArray(cmd.cmd)) c = cmd.cmd.join(' ');
               else c = String(cmd);
               var o = opts || cmd;
-              var cwd = (o && o.cwd) ? String(o.cwd).slice(-200) : null;
-              push('bun', { op: 'spawn', cmd: c.slice(0, 500), cwd: cwd, pid: result && result.pid });
+              var cwd = (o && o.cwd) ? String(o.cwd) : null;
+              push('bun', { op: 'spawn', cmd: c, cwd: cwd, pid: result && result.pid });
             } catch(e) {}
           }
           return result;
@@ -1022,12 +1019,12 @@ export const INSTALL_TAPS = `(function() {
           if (flags.bun) {
             try {
               var c;
-              if (Array.isArray(cmd)) c = cmd.slice(0, 10).join(' ');
-              else if (cmd && Array.isArray(cmd.cmd)) c = cmd.cmd.slice(0, 10).join(' ');
+              if (Array.isArray(cmd)) c = cmd.join(' ');
+              else if (cmd && Array.isArray(cmd.cmd)) c = cmd.cmd.join(' ');
               else c = String(cmd);
               var o = opts || cmd;
-              var cwd = (o && o.cwd) ? String(o.cwd).slice(-200) : null;
-              push('bun', { op: 'spawnSync', cmd: c.slice(0, 500), cwd: cwd, code: result && result.exitCode, dur: Date.now() - t0 });
+              var cwd = (o && o.cwd) ? String(o.cwd) : null;
+              push('bun', { op: 'spawnSync', cmd: c, cwd: cwd, code: result && result.exitCode, dur: Date.now() - t0 });
             } catch(e) {}
           }
           return result;
@@ -1056,10 +1053,10 @@ export const INSTALL_TAPS = `(function() {
       globalThis.WebSocket = function(url, protocols) {
         var ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
         if (flags.websocket) {
-          try { push('websocket', { op: 'open', url: String(url).slice(0, 300) }); } catch(e) {}
+          try { push('websocket', { op: 'open', url: String(url) }); } catch(e) {}
           ws.addEventListener('close', function(ev) {
             if (flags.websocket) {
-              try { push('websocket', { op: 'close', url: String(url).slice(0, 300), code: ev.code, reason: String(ev.reason || '').slice(0, 100) }); } catch(e) {}
+              try { push('websocket', { op: 'close', url: String(url), code: ev.code, reason: String(ev.reason || '') }); } catch(e) {}
             }
           });
           ws.addEventListener('message', function(ev) {
@@ -1067,7 +1064,7 @@ export const INSTALL_TAPS = `(function() {
               try {
                 var d = typeof ev.data === 'string' ? ev.data : '';
                 var mLen = typeof ev.data === 'string' ? ev.data.length : (ev.data && ev.data.byteLength || 0);
-                push('websocket', { op: 'message', url: String(url).slice(0, 300), len: mLen, snap: d.slice(0, 2000) });
+                push('websocket', { op: 'message', url: String(url), len: mLen, snap: d });
               } catch(e) {}
             }
           });
@@ -1077,7 +1074,7 @@ export const INSTALL_TAPS = `(function() {
           if (flags.websocket) {
             try {
               var len = typeof data === 'string' ? data.length : (data.byteLength || 0);
-              push('websocket', { op: 'send', url: String(url).slice(0, 300), len: len });
+              push('websocket', { op: 'send', url: String(url), len: len });
             } catch(e) {}
           }
           return origSend(data);
@@ -1097,14 +1094,14 @@ export const INSTALL_TAPS = `(function() {
     var net = require('net');
     wrapAfter(net, 'createConnection', 'net', function(args, result) {
       var opts = args[0] || {};
-      return { type: 'tcp', host: (opts.host || opts.path || '').toString().slice(0, 200), port: opts.port || 0, pid: result && result.remotePort };
+      return { type: 'tcp', host: (opts.host || opts.path || '').toString(), port: opts.port || 0, pid: result && result.remotePort };
     });
   } catch(e) {}
   try {
     var tls = require('tls');
     wrapAfter(tls, 'connect', 'net', function(args, result) {
       var opts = args[0] || {};
-      return { type: 'tls', host: (opts.host || opts.servername || '').toString().slice(0, 200), port: opts.port || 0 };
+      return { type: 'tls', host: (opts.host || opts.servername || '').toString(), port: opts.port || 0 };
     });
   } catch(e) {}
 
@@ -1170,7 +1167,7 @@ export const INSTALL_TAPS = `(function() {
           origReq.on('response', function(res) {
             var respCt = (res.headers && res.headers['content-type']) || '';
             var respCl = parseInt((res.headers && res.headers['content-length']) || '0') || 0;
-            var respEntry = { op: 'https-resp', url: (h + p).slice(0, 300), status: res.statusCode, ct: respCt, cl: respCl, dur: Date.now() - httpsT0, hdrs: res.headers || {} };
+            var respEntry = { op: 'https-resp', url: (h + p), status: res.statusCode, ct: respCt, cl: respCl, dur: Date.now() - httpsT0, hdrs: res.headers || {} };
             var chunks = [];
             var total = 0;
             res.on('data', function(chunk) {
@@ -1179,7 +1176,7 @@ export const INSTALL_TAPS = `(function() {
             });
             res.on('end', function() {
               try {
-                respEntry.resp = Buffer.concat(chunks).toString('utf8').slice(0, 2000);
+                respEntry.resp = Buffer.concat(chunks).toString('utf8');
                 respEntry.cl = total;
               } catch(eResp) {}
               push('fetch', respEntry);
@@ -1253,12 +1250,12 @@ export const INSTALL_TAPS = `(function() {
             if (flags.fspromises) {
               var p = typeof pathArg === 'string' ? pathArg : String(pathArg);
               var size = result ? (result.length || result.byteLength || 0) : 0;
-              push('fspromises', { op: method, path: p.slice(-200), size: size, dur: Date.now() - t0 });
+              push('fspromises', { op: method, path: p, size: size, dur: Date.now() - t0 });
             }
             return result;
           }, function(err) {
             if (flags.fspromises) {
-              push('fspromises', { op: method, path: String(pathArg).slice(-200), err: String(err).slice(0, 200), dur: Date.now() - t0 });
+              push('fspromises', { op: method, path: String(pathArg), err: String(err), dur: Date.now() - t0 });
             }
             throw err;
           });
@@ -1275,7 +1272,7 @@ export const INSTALL_TAPS = `(function() {
       Bun.file = function(path) {
         var file = origBunFile.apply(Bun, arguments);
         if (!flags.bunfile) return file;
-        var fp = typeof path === 'string' ? path.slice(-200) : String(path).slice(-200);
+        var fp = typeof path === 'string' ? path : String(path);
         ['text', 'json', 'exists'].forEach(function(m) {
           if (typeof file[m] !== 'function') return;
           var orig = file[m].bind(file);
@@ -1299,7 +1296,7 @@ export const INSTALL_TAPS = `(function() {
     var origAbort = AbortController.prototype.abort;
     AbortController.prototype.abort = function(reason) {
       if (flags.abort) {
-        push('abort', { reason: String(reason || '').slice(0, 200) });
+        push('abort', { reason: String(reason || '') });
       }
       return origAbort.apply(this, arguments);
     };
@@ -1313,7 +1310,7 @@ export const INSTALL_TAPS = `(function() {
       var origWatch = fsMod.watch;
       fsMod.watch = function(path) {
         if (flags.fswatch) {
-          push('fswatch', { op: 'watch', path: String(path).slice(-200) });
+          push('fswatch', { op: 'watch', path: String(path) });
         }
         return origWatch.apply(fsMod, arguments);
       };
@@ -1323,7 +1320,7 @@ export const INSTALL_TAPS = `(function() {
       var origWatchFile = fsMod.watchFile;
       fsMod.watchFile = function(path) {
         if (flags.fswatch) {
-          push('fswatch', { op: 'watchFile', path: String(path).slice(-200) });
+          push('fswatch', { op: 'watchFile', path: String(path) });
         }
         return origWatchFile.apply(fsMod, arguments);
       };
@@ -1336,7 +1333,7 @@ export const INSTALL_TAPS = `(function() {
     TextDecoder.prototype.decode = function(input, options) {
       var result = origDecode.apply(this, arguments);
       if (flags.textdecoder && result && result.length > 0) {
-        push('textdecoder', { len: result.length, snap: result.slice(0, 2000) });
+        push('textdecoder', { len: result.length, snap: result });
       }
       return result;
     };
@@ -1352,7 +1349,7 @@ export const INSTALL_TAPS = `(function() {
         if (flags.events && typeof type === 'string') {
           var args = [];
           for (var i = 1; i < arguments.length && i < 3; i++) {
-            try { args.push(origStringify(arguments[i]).slice(0, 500)); } catch(e2) { args.push('[circular]'); }
+            try { args.push(origStringify(arguments[i])); } catch(e2) { args.push('[circular]'); }
           }
           push('events', { type: type, args: args, src: this.constructor ? this.constructor.name : '' });
         }
@@ -1371,7 +1368,7 @@ export const INSTALL_TAPS = `(function() {
       var envHandler = {
         get: function(target, prop) {
           if (flags.envproxy && typeof prop === 'string') {
-            push('envproxy', { key: prop, val: String(target[prop] === undefined ? '' : target[prop]).slice(0, 200) });
+            push('envproxy', { key: prop, val: String(target[prop] === undefined ? '' : target[prop]) });
           }
           return target[prop];
         },

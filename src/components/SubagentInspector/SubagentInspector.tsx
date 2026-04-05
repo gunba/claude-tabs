@@ -13,7 +13,7 @@ interface SubagentInspectorProps {
 function getToolPreview(text: string): string {
   const firstLine = text.split("\n").find(line => line.trim().length > 0) ?? "";
   const trimmed = firstLine.trim();
-  return trimmed.length > 120 ? trimmed.slice(0, 120) + "\u2026" : trimmed;
+  return trimmed;
 }
 
 // ── Tool-specific renderers ──

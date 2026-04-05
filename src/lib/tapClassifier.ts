@@ -12,7 +12,7 @@ const TOOL_ACTION_KEYS: Record<string, string> = {
 
 function fmtToolAction(name: string, inp: Record<string, unknown>): string {
   const key = TOOL_ACTION_KEYS[name];
-  if (key && inp[key]) return name + ": " + String(inp[key]).slice(0, 80);
+  if (key && inp[key]) return name + ": " + String(inp[key]);
   return name;
 }
 
@@ -419,12 +419,12 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
           if (!toolResultSnippets) toolResultSnippets = [];
           toolResultSnippets.push({
             toolUseId: block.tool_use_id || "",
-            content: resultText.slice(0, 2000),
+            content: resultText,
             isError: !!block.is_error,
           });
           if (block.is_error && !hasToolError) {
             hasToolError = true;
-            toolErrorText = resultText.slice(0, 200);
+            toolErrorText = resultText;
           }
         }
       }
@@ -546,8 +546,8 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     // [IN-30] Preserve enough Agent prompt text for retained prompt/result inspector sections.
     return {
       kind: "SubagentSpawn", ts,
-      description: parsed.description.slice(0, 200),
-      prompt: parsed.prompt.slice(0, 2000),
+      description: parsed.description,
+      prompt: parsed.prompt,
       subagentType: typeof parsed.subagent_type === "string" ? parsed.subagent_type : undefined,
       model: typeof parsed.model === "string" ? parsed.model : undefined,
     };
