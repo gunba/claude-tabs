@@ -195,9 +195,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         try {
           term.write(merged, () => {
             if (terminal.termRef.current !== term) return;
-            // fit() recalculates xterm.js viewport after the large buffer flush —
-            // without this, the viewport is stale and only shows one screenful.
-            terminal.fit();
             // Apply deferred resize (handleResize defers when bgBuffer has data),
             // or force a resize to current dimensions to trigger SIGWINCH so the
             // TUI renderer fully redraws after the atomic buffer flush.
@@ -211,14 +208,26 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
               pty.handle.current?.resize(cols, rows);
               dlog("terminal", session.id, `resume flush: forced resize ${cols}x${rows}`, "DEBUG");
             }
-            term.scrollToBottom();
+            // Defer scrollToBottom to next animation frame. xterm.js syncs viewport
+            // scroll dimensions via _innerRefresh() -> _sync() in a rAF scheduled
+            // during write processing. That rAF fires before this one (registration
+            // order), so scroll dimensions are current by the time we scroll.
+            requestAnimationFrame(() => {
+              if (terminal.termRef.current !== term) return;
+              term.scrollToBottom();
+              setLoading(false);
+            });
           });
-        } catch {}
+        } catch {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
       }
     } else {
       dlog("terminal", session.id, "resume flush: no buffered data", "DEBUG");
+      setLoading(false);
     }
-    setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.state]);
 
