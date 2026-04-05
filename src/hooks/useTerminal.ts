@@ -5,6 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { getTerminalTheme } from "../lib/theme";
 import { dlog } from "../lib/debugLog";
+import { isTuiMode } from "../lib/tuiMode";
 
 export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', monospace";
 
@@ -51,6 +52,9 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const writeBatchRef = useRef<Uint8Array[]>([]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceStartRef = useRef(0);
+  // [PT-22] TUI mode: tracks whether a queueMicrotask flush is pending (not cancellable,
+  // so we use a boolean to skip the flush if clearPending was called in between).
+  const tuiFlushPendingRef = useRef(false);
   const webglRef = useRef<WebglAddon | null>(null);
 
   // Helper: open terminal in a DOM element (called once fonts + element are both ready)
@@ -282,18 +286,22 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
       }
     }
 
-    // [PT-20] Detect scrollback clear (baseY shrinkage) and scroll to bottom
-    const buf = term.buffer.active;
-    const baseYBefore = buf.baseY;
+    // [PT-20] Detect scrollback clear (baseY shrinkage) and scroll to bottom.
+    // The check must happen inside the write callback — term.write() is async,
+    // so baseY won't have changed until the data is actually processed.
+    // Re-read buffer.active inside the callback to handle alternate screen switches.
+    const baseYBefore = term.buffer.active.baseY;
 
     try {
-      term.write(merged);
+      term.write(merged, () => {
+        const t = termRef.current;
+        if (t) {
+          const buf = t.buffer.active;
+          if (buf.baseY < baseYBefore) t.scrollToBottom();
+        }
+      });
     } catch (err) {
       dlog("terminal", null, `term.write error: ${err}`, "ERR");
-    }
-
-    if (buf.baseY < baseYBefore) {
-      term.scrollToBottom();
     }
   }, []);
 
@@ -301,11 +309,24 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   // quiet or 50ms max latency. Coalesces BSU+content+ESU into single writes
   // so DEC 2026 sync rendering works correctly.
   // [DF-03] writeBytes: debounce-batched (4ms/50ms) PTY data handler
+  // [PT-22] TUI mode: flush via queueMicrotask (same-tick coalescing, no artificial delay)
   const writeBytes = useCallback((data: Uint8Array) => {
     const term = termRef.current;
     if (!term) return;
 
     writeBatchRef.current.push(data);
+
+    if (isTuiMode()) {
+      // TUI renderer: coalesce within the same microtask but no timer delay
+      if (!tuiFlushPendingRef.current) {
+        tuiFlushPendingRef.current = true;
+        queueMicrotask(() => {
+          tuiFlushPendingRef.current = false;
+          flushWrites();
+        });
+      }
+      return;
+    }
 
     if (debounceStartRef.current === 0) {
       debounceStartRef.current = performance.now();
@@ -460,6 +481,7 @@ export function useTerminal({ onData, onResize }: UseTerminalOptions = {}) {
   const clearPending = useCallback(() => {
     writeBatchRef.current = [];
     debounceStartRef.current = 0;
+    tuiFlushPendingRef.current = false;
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;

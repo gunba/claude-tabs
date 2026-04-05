@@ -1,9 +1,13 @@
 /// [PT-17] Output security filter: byte-level state machine.
 ///
-/// Scrollback fix:
+/// Default scrollback fix:
 ///   ESC[2J → ESC[3J + ESC[H + ESC[J (clears scrollback before each full redraw
 ///   to prevent viewport overflow from duplicating content in scrollback).
-///   ESC[3J from the application is always stripped.
+///   ESC[3J from the application is stripped in the default renderer path.
+///
+/// [PT-22] TUI mode (`CLAUDE_CODE_NO_FLICKER`) leaves CSI sequences untouched so
+/// the Claude TUI can manage its own clears, while the security filters below
+/// still apply.
 ///
 /// Security:
 ///   OSC 52 (clipboard write) — stripped (prevents clipboard hijack)
@@ -12,6 +16,7 @@
 pub struct OutputFilter {
     state: FilterState,
     output: Vec<u8>,
+    tui_mode: bool,
 }
 
 #[derive(Debug)]
@@ -32,10 +37,11 @@ enum FilterState {
 }
 
 impl OutputFilter {
-    pub fn new() -> Self {
+    pub fn new(tui_mode: bool) -> Self {
         Self {
             state: FilterState::Normal,
             output: Vec::with_capacity(8192),
+            tui_mode,
         }
     }
 
@@ -174,13 +180,18 @@ impl OutputFilter {
         let final_byte = buf[buf.len() - 1];
         let params = &buf[..buf.len() - 1];
 
+        // TUI mode: pass through all CSI sequences (no scrollback fix needed —
+        // the TUI renderer manages its own screen clears).
+        if self.tui_mode {
+            return false;
+        }
+
         match final_byte {
-            // [PT-20] CSI 3 J — erase scrollback. Always stripped.
+            // [PT-20] Default renderer: CSI 3 J — erase scrollback. Strip it.
             b'J' if params == b"3" => true,
 
-            // [PT-20] CSI 2 J — clear screen. Replace with ESC[3J + ESC[H + ESC[J.
-            // ESC[3J clears scrollback to prevent duplication from viewport overflow
-            // (xterm.js pushes overflow into scrollback during full redraws).
+            // [PT-20] Default renderer: CSI 2 J — clear screen. Replace with
+            // ESC[3J + ESC[H + ESC[J so full redraws clear scrollback first.
             b'J' if params == b"2" => {
                 self.output.extend_from_slice(b"\x1b[3J\x1b[H\x1b[J");
                 true
@@ -225,38 +236,38 @@ mod tests {
 
     #[test]
     fn passthrough_normal_text() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         assert_eq!(f.filter(b"hello world"), b"hello world");
     }
 
     #[test]
     fn passthrough_normal_csi() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         assert_eq!(f.filter(b"\x1b[32mgreen\x1b[0m"), b"\x1b[32mgreen\x1b[0m");
     }
 
     #[test]
     fn replace_clear_screen() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         assert_eq!(f.filter(b"\x1b[2J"), b"\x1b[3J\x1b[H\x1b[J");
     }
 
     #[test]
     fn strip_erase_scrollback() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         assert_eq!(f.filter(b"\x1b[3J"), b"");
     }
 
     #[test]
     fn strip_osc52_clipboard() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         // OSC 52 ; c ; base64 BEL
         assert_eq!(f.filter(b"\x1b]52;c;SGVsbG8=\x07"), b"");
     }
 
     #[test]
     fn passthrough_osc2_title() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         let input = b"\x1b]2;My Title\x07";
         let output = f.filter(input);
         assert_eq!(output, b"\x1b]2;My Title\x07");
@@ -264,13 +275,13 @@ mod tests {
 
     #[test]
     fn strip_dcs() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         assert_eq!(f.filter(b"\x1bPtest\x1b\\after"), b"after");
     }
 
     #[test]
     fn strip_c1_controls() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         // U+0090 (DCS in C1) encoded as 0xC2 0x90
         let input = [b'a', 0xC2, 0x90, b'b'];
         assert_eq!(f.filter(&input), b"ab");
@@ -278,10 +289,52 @@ mod tests {
 
     #[test]
     fn cross_chunk_esc() {
-        let mut f = OutputFilter::new();
+        let mut f = OutputFilter::new(false);
         let out1 = f.filter(b"hello\x1b").to_vec();
         assert_eq!(out1, b"hello");
         let out2 = f.filter(b"[2J");
         assert_eq!(out2, b"\x1b[3J\x1b[H\x1b[J");
+    }
+
+    // ── TUI mode tests ─────────────────────────────────────────────
+
+    #[test]
+    fn tui_passthrough_clear_screen() {
+        let mut f = OutputFilter::new(true);
+        assert_eq!(f.filter(b"\x1b[2J"), b"\x1b[2J");
+    }
+
+    #[test]
+    fn tui_passthrough_erase_scrollback() {
+        let mut f = OutputFilter::new(true);
+        assert_eq!(f.filter(b"\x1b[3J"), b"\x1b[3J");
+    }
+
+    #[test]
+    fn tui_still_strips_osc52() {
+        let mut f = OutputFilter::new(true);
+        assert_eq!(f.filter(b"\x1b]52;c;SGVsbG8=\x07"), b"");
+    }
+
+    #[test]
+    fn tui_still_strips_dcs() {
+        let mut f = OutputFilter::new(true);
+        assert_eq!(f.filter(b"\x1bPtest\x1b\\after"), b"after");
+    }
+
+    #[test]
+    fn tui_still_strips_c1_controls() {
+        let mut f = OutputFilter::new(true);
+        let input = [b'a', 0xC2, 0x90, b'b'];
+        assert_eq!(f.filter(&input), b"ab");
+    }
+
+    #[test]
+    fn tui_cross_chunk_passthrough() {
+        let mut f = OutputFilter::new(true);
+        let out1 = f.filter(b"hello\x1b").to_vec();
+        assert_eq!(out1, b"hello");
+        let out2 = f.filter(b"[2J");
+        assert_eq!(out2, b"\x1b[2J"); // Pass-through in TUI mode
     }
 }

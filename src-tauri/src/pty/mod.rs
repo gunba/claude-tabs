@@ -78,6 +78,8 @@ pub async fn pty_spawn(
 
     let handler = state.session_id.fetch_add(1, Ordering::Relaxed);
 
+    let tui_mode = std::env::var("CLAUDE_CODE_NO_FLICKER").is_ok();
+
     let session = Arc::new(Session {
         #[cfg(windows)]
         conpty: result.handle,
@@ -86,7 +88,7 @@ pub async fn pty_spawn(
 
         writer: Mutex::new(Box::new(result.writer)),
         output_rx: Mutex::new(result.output_rx),
-        output_filter: Mutex::new(OutputFilter::new()),
+        output_filter: Mutex::new(OutputFilter::new(tui_mode)),
         cols: AtomicU16::new(cols),
         rows: AtomicU16::new(rows),
         process_id: result.process_id,

@@ -15,6 +15,7 @@ import { useFileWatcher } from "../../hooks/useFileWatcher";
 import { useSettingsStore } from "../../store/settings";
 import { IconSearch } from "../Icons/Icons";
 import { normalizePath } from "../../lib/paths";
+import { isTuiMode } from "../../lib/tuiMode";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
 import { isSessionIdle } from "../../types/session";
 import "./TerminalPanel.css";
@@ -190,8 +191,14 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
       const term = terminal.termRef.current;
       if (term) {
-        try { term.write(merged); } catch {}
-        term.scrollToBottom();
+        try {
+          term.write(merged, () => {
+            // Scroll after write is fully processed — avoids race where
+            // scrollToBottom fires before the buffer knows its full extent.
+            // Guard: ensure terminal hasn't been disposed/respawned between write and callback.
+            if (terminal.termRef.current === term) term.scrollToBottom();
+          });
+        } catch {}
       }
     }
     setLoading(false);
@@ -405,8 +412,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       // Send focus-in after resize: Claude Code's Ink renderer marks new columns as
       // dirty after SIGWINCH and fills them lazily on the next focus event. Sending
       // the focus-in sequence immediately triggers that fill without waiting for the
-      // user to click away and back.
-      writeToPty(session.id, '\x1b[I');
+      // user to click away and back. [PT-22] Skip in TUI mode — TUI handles resize natively.
+      if (!isTuiMode()) writeToPty(session.id, '\x1b[I');
     },
     // pty.handle and bgBufferRef are stable refs — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -584,15 +591,19 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       dlog("terminal", session.id, `flush bg buffer ${totalLen}B`, "DEBUG");
 
       try {
-        term!.write(merged);
-        term!.scrollToBottom();
-        if (container) {
-          requestAnimationFrame(() => {
-            if (containerRef.current) containerRef.current.style.opacity = '';
-          });
-        }
+        const t = term!;
+        t.write(merged, () => {
+          // Scroll after write is fully processed — same fix as resume flush.
+          // Guard: ensure terminal hasn't been disposed/respawned between write and callback.
+          if (terminal.termRef.current === t) t.scrollToBottom();
+          if (container) {
+            requestAnimationFrame(() => {
+              if (containerRef.current) containerRef.current.style.opacity = '';
+            });
+          }
+        });
       } catch {
-        if (container) container.style.opacity = '1';
+        if (container) container.style.opacity = '';
       }
     }
 
@@ -603,7 +614,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (deferred) {
       deferredResizeRef.current = null;
       pty.handle.current?.resize(deferred.cols, deferred.rows);
-      writeToPty(session.id, '\x1b[I');
+      if (!isTuiMode()) writeToPty(session.id, '\x1b[I');
     }
 
     if (!hasBuffer && term) {
