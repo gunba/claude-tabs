@@ -13,7 +13,6 @@ export interface SubagentAction {
 
 // [SI-09] Subagent data captured via inspector tap events (no JSONL watcher)
 // [IN-03] Subagent tracking: Agent tool_use -> queue spawn -> first sidechain msg creates entry; pendingSpawns drained on UserInterruption/UserInput/SlashCommand
-// [IN-05] Stale subagent detection removed -- push-based lifecycle via real-time events
 // [IN-06] Dead subagent purge removed -- idle subs remain visible until session ends
 /**
  * Tracks subagent lifecycles from tap events.
@@ -32,6 +31,7 @@ export class TapSubagentTracker {
   private subagentCost = new Map<string, number>();   // agentId → accumulated costUsd
   private subagentMsgs = new Map<string, SubagentMessage[]>(); // agentId → messages
   private agentStates = new Map<string, SessionState>();
+  private lastEventTs = new Map<string, number>();   // agentId → timestamp of last routed event
   private lastActiveAgent: string | null = null;
   private sidechainActive = false;
 
@@ -101,21 +101,7 @@ export class TapSubagentTracker {
 
       case "ConversationMessage": {
         // Track sidechain state for routing non-ConversationMessage events
-        const wasSidechain = this.sidechainActive;
         this.sidechainActive = event.isSidechain;
-        // [IN-30] Sidechain-exit fallback: if sidechain just ended and last active agent is still active,
-        // the parent is continuing so the subagent must have finished — mark idle immediately.
-        if (wasSidechain && !event.isSidechain && this.lastActiveAgent) {
-          const lastState = this.agentStates.get(this.lastActiveAgent);
-          if (lastState && isSubagentActive(lastState)) {
-            dlog("inspector", this.parentSessionId, `sidechain exit fallback: ${this.lastActiveAgent} ${lastState} → idle`, "DEBUG");
-            this.agentStates.set(this.lastActiveAgent, "idle");
-            actions.push({
-              type: "update", subagentId: this.lastActiveAgent,
-              updates: { state: "idle" as SessionState, currentToolName: null, currentAction: null, currentEventKind: null },
-            });
-          }
-        }
         // [IN-04] Subagent messages: isSidechain + agentId routing, late msg gating
         if (!event.isSidechain || !event.agentId) break;
 
@@ -199,6 +185,7 @@ export class TapSubagentTracker {
         }
 
         this.lastActiveAgent = agentId;
+        this.lastEventTs.set(agentId, event.ts || Date.now());
         dlog("inspector", this.parentSessionId, `subagent ${agentId} → ${state} (msgType=${event.messageType} stop=${event.stopReason})`, "DEBUG");
 
         // Accumulate messages
@@ -208,14 +195,19 @@ export class TapSubagentTracker {
         this.subagentMsgs.set(agentId, allMsgs);
 
         this.agentStates.set(agentId, state);
+        const updatePayload: Partial<Subagent> = {
+          state,
+          currentAction: event.toolAction,
+          messages: allMsgs,
+        };
+        // Result messages are an authoritative completion signal
+        if (event.messageType === "result") {
+          updatePayload.completed = true;
+        }
         actions.push({
           type: "update",
           subagentId: agentId,
-          updates: {
-            state,
-            currentAction: event.toolAction,
-            messages: allMsgs,
-          },
+          updates: updatePayload,
         });
         break;
       }
@@ -246,11 +238,13 @@ export class TapSubagentTracker {
             updates: { resultText: event.summary, completed: true },
           });
         }
-        // Mark all active with completed flag for clean completions, dead-only for killed
+        // Mark non-dead agents as completed+dead for clean completions, dead-only for killed.
+        // Uses !== "dead" rather than isSubagentActive() so that agents swept idle by the
+        // stale-agent timer still receive the authoritative completion signal.
         if (event.status === "completed") {
           for (const agentId of this.knownIds) {
             const currentState = this.agentStates.get(agentId);
-            if (currentState && isSubagentActive(currentState)) {
+            if (currentState && currentState !== "dead") {
               this.agentStates.set(agentId, "dead");
               actions.push({ type: "update", subagentId: agentId, updates: {
                 state: "dead",
@@ -297,11 +291,12 @@ export class TapSubagentTracker {
             if (event.durationMs != null) metaUpdates.durationMs = event.durationMs;
             actions.push({ type: "update", subagentId: targetId, updates: metaUpdates });
           }
-          // Mark ALL active subagents as completed+dead — lifecycle "end" means the agent turn is done.
-          // Targeting all active handles parallel agents where lastActiveAgent may be wrong.
+          // Mark ALL non-dead subagents as completed+dead — lifecycle "end" means the agent turn is done.
+          // Targeting all non-dead handles parallel agents where lastActiveAgent may be wrong,
+          // and swept-idle agents that should still receive the real completion signal.
           for (const agentId of this.knownIds) {
             const currentState = this.agentStates.get(agentId);
-            if (currentState && isSubagentActive(currentState)) {
+            if (currentState && currentState !== "dead") {
               this.agentStates.set(agentId, "dead");
               actions.push({ type: "update", subagentId: agentId, updates: {
                 state: "dead",
@@ -332,6 +327,7 @@ export class TapSubagentTracker {
         if (!this.sidechainActive || !this.lastActiveAgent) break;
         const tgt = this.lastActiveAgent;
         if (!isSubagentActive(this.agentStates.get(tgt) ?? "dead")) break;
+        this.lastEventTs.set(tgt, event.ts || Date.now());
         actions.push({
           type: "update", subagentId: tgt,
           updates: { currentToolName: event.toolName, currentEventKind: "ToolCallStart" },
@@ -343,6 +339,7 @@ export class TapSubagentTracker {
         if (!this.sidechainActive || !this.lastActiveAgent) break;
         const tgt = this.lastActiveAgent;
         if (!isSubagentActive(this.agentStates.get(tgt) ?? "dead")) break;
+        this.lastEventTs.set(tgt, event.ts || Date.now());
         const detail = String(
           event.input.command || event.input.file_path || event.input.pattern ||
           event.input.description || event.input.query || ""
@@ -374,6 +371,7 @@ export class TapSubagentTracker {
         if (!this.sidechainActive || !this.lastActiveAgent) break;
         const tgt = this.lastActiveAgent;
         if (!isSubagentActive(this.agentStates.get(tgt) ?? "dead")) break;
+        this.lastEventTs.set(tgt, event.ts || Date.now());
         if (event.stopReason === "end_turn") {
           this.agentStates.set(tgt, "idle");
           actions.push({
@@ -400,6 +398,34 @@ export class TapSubagentTracker {
     return actions;
   }
 
+  private static STALE_THRESHOLD_MS = 30_000;
+
+  /** Sweep agents stuck in active state with no events for 30s. Returns update actions. */
+  sweepStaleAgents(now: number): SubagentAction[] {
+    const actions: SubagentAction[] = [];
+    for (const agentId of this.knownIds) {
+      const state = this.agentStates.get(agentId);
+      if (!state || !isSubagentActive(state)) continue;
+      const lastTs = this.lastEventTs.get(agentId) ?? 0;
+      if (now - lastTs >= TapSubagentTracker.STALE_THRESHOLD_MS) {
+        dlog("inspector", this.parentSessionId,
+          `stale agent sweep: ${agentId} ${state} → idle (${now - lastTs}ms since last event)`, "DEBUG");
+        this.agentStates.set(agentId, "idle");
+        actions.push({
+          type: "update", subagentId: agentId,
+          updates: {
+            state: "idle" as SessionState,
+            completed: true,
+            currentToolName: null,
+            currentAction: null,
+            currentEventKind: null,
+          },
+        });
+      }
+    }
+    return actions;
+  }
+
   /** Reset all tracked state. */
   reset(): void {
     this.pendingSpawns = [];
@@ -408,6 +434,7 @@ export class TapSubagentTracker {
     this.subagentCost.clear();
     this.subagentMsgs.clear();
     this.agentStates.clear();
+    this.lastEventTs.clear();
     this.lastActiveAgent = null;
     this.sidechainActive = false;
   }
