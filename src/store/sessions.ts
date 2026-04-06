@@ -24,7 +24,6 @@ interface SessionsState {
   subagents: Map<string, Subagent[]>; // sessionId -> subagents
   skillInvocations: Map<string, SkillInvocation[]>; // sessionId -> skills (newest first)
   commandHistory: Map<string, CommandHistoryEntry[]>; // sessionId -> commands (newest first)
-  respawnRequest: { tabId: string; config: SessionConfig; name?: string } | null;
   killRequest: string | null; // sessionId to kill
   hookChangeCounter: number;
   inspectorOffSessions: Set<string>;
@@ -44,8 +43,6 @@ interface SessionsState {
   reorderTabs: (order: string[]) => void;
   persist: () => Promise<void>;
   renameSession: (id: string, name: string) => void;
-  requestRespawn: (tabId: string, config: SessionConfig, name?: string) => void;
-  clearRespawnRequest: () => void;
   requestKill: (id: string) => void;
   clearKillRequest: () => void;
   bumpHookChange: () => void;
@@ -71,7 +68,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
   subagents: new Map(),
   skillInvocations: new Map(),
   commandHistory: new Map(),
-  respawnRequest: null,
   killRequest: null,
   hookChangeCounter: 0,
   inspectorOffSessions: new Set(),
@@ -220,7 +216,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
       if (s.activeTabId !== id) {
         activeTabId = s.activeTabId;
       } else {
-        // [DS-12] Prefer nearest live (non-dead) tab; falls back to dead if all are dead
+        // Prefer the nearest live tab; if none remain, leave the terminal area unselected.
         activeTabId = findNearestLiveTab(sessions, closedIndex);
       }
       const subagents = new Map(s.subagents);
@@ -327,15 +323,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
         x.id === id ? { ...x, name } : x
       ),
     }));
-  },
-
-  // [DS-02] Respawn requests target an existing tabId; callers reuse the tab in place.
-  requestRespawn: (tabId, config, name) => {
-    set({ respawnRequest: { tabId, config, name } });
-  },
-
-  clearRespawnRequest: () => {
-    set({ respawnRequest: null });
   },
 
   requestKill: (id) => {

@@ -93,9 +93,6 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
   const ctrlHeld = useCtrlKey();
   const createSession = useSessionStore((s) => s.createSession);
   const storeSessions = useSessionStore((s) => s.sessions);
-  const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeTabId));
-  const activeIsDead = activeSession?.state === "dead";
-  const requestRespawn = useSessionStore((s) => s.requestRespawn);
   const { addRecentDir, setShowLauncher, setLastConfig } = useSettingsStore();
 
   const pastSessions = useSettingsStore((s) => s.pastSessions);
@@ -373,13 +370,6 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       addRecentDir(workingDir);
       const name = displayName || sessionNames[ps.id] || ps.path;
 
-      // [DS-06] Active dead tab resumes in place instead of creating a new tab.
-      if (activeIsDead && activeSession) {
-        requestRespawn(activeSession.id, resumeConfig, name);
-        onClose();
-        return;
-      }
-
       try {
         await createSession(name, resumeConfig);
         onClose();
@@ -387,7 +377,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
         dlog("resume", null, `resume failed: ${err}`, "ERR");
       }
     },
-    [deadSessionMap, sessionConfigs, sessionNames, activeIsDead, activeSession, createSession, addRecentDir, requestRespawn, onClose]
+    [deadSessionMap, sessionConfigs, sessionNames, createSession, addRecentDir, onClose]
   );
 
   // Resume a chain (latest member)

@@ -3,7 +3,6 @@ import { useSessionStore } from "../../store/sessions";
 import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
 import { dlog, getDebugLog, getDebugLogForSession, getDebugLogGeneration, clearDebugLog, type DebugLogEntry, type DebugLogSource } from "../../lib/debugLog";
-import { nudgeTerminalResize } from "../../lib/terminalRegistry";
 import { IconClose } from "../Icons/Icons";
 import "./DebugPanel.css";
 
@@ -203,20 +202,6 @@ export function DebugPanel({ onClose }: DebugPanelProps) {
     });
   }, [selectedSessionId, sessionFilter]);
 
-  const handleResizeNudge = useCallback(() => {
-    if (!selectedSessionId) {
-      dlog("terminal", null, "debug resize nudge requested without a target session", "WARN", {
-        event: "terminal.debug_resize_nudge_missing_target",
-        data: {
-          activeTabId,
-          sessionFilter,
-        },
-      });
-      return;
-    }
-    nudgeTerminalResize(selectedSessionId);
-  }, [activeTabId, selectedSessionId, sessionFilter]);
-
   const toggleModule = useCallback((mod: string) => {
     setModuleFilter((prev) => {
       const next = new Set(prev);
@@ -281,14 +266,6 @@ export function DebugPanel({ onClose }: DebugPanelProps) {
             </button>
           ))}
         </div>
-        <button
-          className="debug-panel-btn"
-          onClick={handleResizeNudge}
-          disabled={!selectedSessionId}
-          title={selectedSessionId ? `Nudge terminal size for ${selectedSessionId}` : "Select a session or open a tab first"}
-        >
-          Nudge Resize
-        </button>
       </div>
 
       {/* Session filter chips */}

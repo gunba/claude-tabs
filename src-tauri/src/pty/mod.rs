@@ -30,6 +30,11 @@ pub struct PtyState {
 
 type PtyHandler = u32;
 
+const TERM_PROGRAM_XTERMJS: &str = "vscode";
+const TERM_PROGRAM_VERSION: &str = env!("CARGO_PKG_VERSION");
+const TERM_KIND: &str = "xterm-256color";
+const COLORTERM_KIND: &str = "truecolor";
+
 struct Session {
     #[cfg(windows)]
     conpty: conpty::ConPtyHandle,
@@ -41,6 +46,14 @@ struct Session {
     cols: AtomicU16,
     rows: AtomicU16,
     process_id: u32,
+}
+
+fn with_terminal_identity(mut env: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    env.insert("TERM_PROGRAM".into(), TERM_PROGRAM_XTERMJS.into());
+    env.insert("TERM_PROGRAM_VERSION".into(), TERM_PROGRAM_VERSION.into());
+    env.insert("TERM".into(), TERM_KIND.into());
+    env.insert("COLORTERM".into(), COLORTERM_KIND.into());
+    env
 }
 
 // ── Commands ─────────────────────────────────────────────────────────
@@ -56,6 +69,7 @@ pub async fn pty_spawn(
     env: BTreeMap<String, String>,
     state: tauri::State<'_, PtyState>,
 ) -> Result<PtyHandler, String> {
+    let env = with_terminal_identity(env);
     let env_keys: Vec<String> = env.keys().cloned().collect();
     record_backend_event(
         &app,

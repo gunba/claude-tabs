@@ -30,7 +30,7 @@ import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForS
 import { dlog, flushDebugLog } from "./lib/debugLog";
 import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
-import type { Subagent, SessionState } from "./types/session";
+import type { Session, Subagent, SessionState } from "./types/session";
 import { isSessionIdle, isSubagentActive } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
 import { useRuntimeStore } from "./store/runtime";
@@ -199,27 +199,47 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [persist]);
 
-  // Activate tab — clicking a dead tab auto-resumes it
+  const relaunchDeadSession = useCallback(async (session: Session) => {
+    const resumeConfig = {
+      ...session.config,
+      resumeSession: getResumeId(session),
+      continueSession: false,
+      extraFlags: stripWorktreeFlags(session.config.extraFlags),
+    };
+    const insertAtIndex = sessions.findIndex((s) => s.id === session.id);
+    const name = session.name || dirToTabName(session.config.workingDir);
+
+    try {
+      await createSession(
+        name,
+        resumeConfig,
+        insertAtIndex >= 0 ? { insertAtIndex } : undefined,
+      );
+      await closeSession(session.id);
+    } catch (err) {
+      dlog("session", session.id, `dead tab relaunch failed: ${err}`, "ERR");
+      setActiveTab(session.id);
+    }
+  }, [closeSession, createSession, sessions, setActiveTab]);
+
+  // Activate tab — dead tabs relaunch explicitly, live tabs are focused.
   const handleTabActivate = useCallback(
     (id: string) => {
       setInspectedSubagent(null);
       dismissFlash(id);
+      const session = sessions.find((s) => s.id === id);
+      if (!session) return;
+
+      if (session.state === "dead" && canResumeSession(session)) {
+        void relaunchDeadSession(session);
+        return;
+      }
+
       if (id !== activeTabId) {
         setActiveTab(id);
-      } else {
-        // [DS-11] Clicking already-active dead tab triggers respawn via requestRespawn
-        const session = useSessionStore.getState().sessions.find((s) => s.id === id);
-        if (session?.state === "dead" && canResumeSession(session)) {
-          useSessionStore.getState().requestRespawn(id, {
-            ...session.config,
-            resumeSession: getResumeId(session),
-            continueSession: false,
-            extraFlags: stripWorktreeFlags(session.config.extraFlags),
-          });
-        }
       }
     },
-    [activeTabId, dismissFlash, setActiveTab]
+    [activeTabId, dismissFlash, relaunchDeadSession, sessions, setActiveTab]
   );
 
   // Close session, prompting for worktree prune on manual single-tab close
@@ -321,13 +341,10 @@ export default function App() {
         }
       }
 
-      // [KB-04] Ctrl+Tab/Ctrl+Shift+Tab: cycle tabs
-      // [DS-10] Ctrl+Tab skips dead tabs (filters to non-dead pool, fallback to full)
+      // [KB-04] Ctrl+Tab/Ctrl+Shift+Tab: cycle live tabs only
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
-        const nonMeta = sessions.filter((s) => !s.isMetaAgent);
-        const live = nonMeta.filter((s) => s.state !== "dead");
-        const pool = live.length > 0 ? live : nonMeta;
+        const pool = sessions.filter((s) => !s.isMetaAgent && s.state !== "dead");
         const idx = pool.findIndex((s) => s.id === activeTabId);
         if (pool.length > 0) {
           const next = e.shiftKey

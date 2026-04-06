@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTerminal } from "../../hooks/useTerminal";
 import { usePty } from "../../hooks/usePty";
@@ -81,8 +81,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const updateState = useSessionStore((s) => s.updateState);
   const updateConfig = useSessionStore((s) => s.updateConfig);
   const renameSession = useSessionStore((s) => s.renameSession);
-  const respawnRequest = useSessionStore((s) => s.respawnRequest);
-  const clearRespawnRequest = useSessionStore((s) => s.clearRespawnRequest);
   const killRequest = useSessionStore((s) => s.killRequest);
   const clearKillRequest = useSessionStore((s) => s.clearKillRequest);
   const spawnedRef = useRef(false);
@@ -297,7 +295,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
   const pty = usePty({ sessionId: session.id, onData: handlePtyData, onExit: handlePtyExit });
 
-  // ── In-tab respawn ────────────────────────────────────────────────────
+  // ── Session restart ──────────────────────────────────────────────────
   const triggerRespawnRef = useRef<(config?: SessionConfig, name?: string) => void>(() => {});
   // Stable ref so callbacks can call triggerRespawn without stale closures
   // [RS-01] triggerRespawn: cleanup old PTY/watchers/inspector, allocate port, increment respawnCounter
@@ -332,12 +330,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     updateConfig(session.id, newConfig);
     if (name) renameSession(session.id, name);
 
-    // [PT-11] [RS-09] Terminal reset
-    terminal.fit();
     setLoading(!!newConfig.resumeSession);
 
     // 5. Reset internal state (inspector port allocated in doSpawn)
-    lastPtyDimsRef.current = null;
     spawnedRef.current = false;
     earlyOutputRef.current = "";
     sessionInUseRef.current = false;
@@ -359,10 +354,8 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     [session.id, session.state]
   );
 
-  const lastPtyDimsRef = useRef<{ cols: number; rows: number } | null>(null);
   const handleResize = useCallback(
     (cols: number, rows: number) => {
-      lastPtyDimsRef.current = { cols, rows };
       pty.handle.current?.resize(cols, rows);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -373,6 +366,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     sessionId: session.id,
     onData: handleTermData,
     onResize: handleResize,
+    instanceKey: respawnCounter,
   });
   terminalRef.current = terminal;
 
@@ -382,12 +376,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       containerRef.current = el;
       terminal.attach(el);
     },
-    [terminal]
+    [terminal.attach]
   );
 
   // [RS-07] Spawn PTY once; guards against dead sessions (prevents stale auto-spawn on startup)
   useEffect(() => {
-    if (spawnedRef.current || !claudePath || session.state === "dead") return;
+    if (spawnedRef.current || !claudePath || session.state === "dead" || !terminal.ready) return;
 
     const doSpawn = async () => {
       spawnedRef.current = true;
@@ -488,22 +482,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       }
     };
 
-    const timer = setTimeout(doSpawn, 50);
-    return () => clearTimeout(timer);
+    void doSpawn();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claudePath, session.id, respawnCounter]);
-
-  // [DS-09] [RS-08] Auto-resume: hidden-to-visible transition on dead+resumable tab
-  const prevVisibleRef = useRef(false);
-  useEffect(() => {
-    const becameVisible = visible && !prevVisibleRef.current;
-    prevVisibleRef.current = visible;
-    if (!becameVisible || session.state !== "dead" || !claudePath) return;
-    if (!canResumeSession(session)) return;
-    // [RS-08] 150ms delay for render settling
-    const timer = setTimeout(() => triggerRespawnRef.current(), 150);
-    return () => clearTimeout(timer);
-  }, [visible, session.state, claudePath]);
+  }, [claudePath, session.id, respawnCounter, terminal.ready]);
 
   // Register terminal buffer readers, search addon, and scroll function
   useEffect(() => {
@@ -512,8 +493,13 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (terminal.termRef.current) {
       registerTerminal(session.id, terminal.termRef.current);
     }
+    return () => {
+      unregisterBufferReader(session.id);
+      unregisterTerminal(session.id);
+      unregisterScrollToLine(session.id);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id, terminal.getBufferText, terminal.scrollToLine]);
+  }, [session.id, terminal.getBufferText, terminal.scrollToLine, terminal.termGeneration]);
 
   // Cleanup PTY and registries on unmount
   useEffect(() => {
@@ -523,9 +509,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       unregisterPtyWriter(id);
       unregisterPtyKill(id);
       unregisterPtyHandleId(id);
-      unregisterBufferReader(id);
-      unregisterTerminal(id);
-      unregisterScrollToLine(id);
       unregisterInspectorPort(id);
       unregisterInspectorCallbacks(id);
       dlog("terminal", id, "terminal panel unmount cleanup", "DEBUG", {
@@ -537,14 +520,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Watch for respawn requests from ResumePicker or other components
-  useEffect(() => {
-    if (respawnRequest?.tabId === session.id && session.state === "dead") {
-      clearRespawnRequest();
-      triggerRespawnRef.current(respawnRequest.config, respawnRequest.name);
-    }
-  }, [respawnRequest, session.state, session.id, clearRespawnRequest]);
-
   // Watch for kill requests from the tab bar
   useEffect(() => {
     if (killRequest === session.id && session.state !== "dead") {
@@ -555,17 +530,16 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     }
   }, [killRequest, session.id, session.state, clearKillRequest, pty]);
 
-  // [TR-10] fit() on tab switch via useLayoutEffect
-  useLayoutEffect(() => {
+  // Keep focus on the visible terminal; attach/fit is handled by the terminal lifecycle.
+  useEffect(() => {
     if (!visible) return;
     dlog("terminal", session.id, "panel became visible", "DEBUG", {
       event: "terminal.visible",
       data: { visible },
     });
-    terminal.fit();
     terminal.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, session.id]);
+  }, [visible, session.id, terminal.termGeneration]);
 
   // Queue input handler: read from terminal buffer (authoritative), or cancel if already queued
   const handleQueueInput = useCallback(() => {

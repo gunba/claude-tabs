@@ -36,7 +36,6 @@ function resetStore() {
     subagents: new Map(),
     skillInvocations: new Map(),
     commandHistory: new Map(),
-    respawnRequest: null,
     killRequest: null,
     hookChangeCounter: 0,
     inspectorOffSessions: new Set(),
@@ -254,13 +253,13 @@ describe("closeSession tab selection", () => {
     expect(useSessionStore.getState().activeTabId).toBe("c");
   });
 
-  it("falls back to dead tab when all remaining tabs are dead", async () => {
+  it("clears activeTabId when all remaining tabs are dead", async () => {
     useSessionStore.setState({
       sessions: [makeSession("a"), { ...makeSession("b"), state: "dead" as const }, { ...makeSession("c"), state: "dead" as const }],
       activeTabId: "a",
     });
     await useSessionStore.getState().closeSession("a");
-    expect(useSessionStore.getState().activeTabId).toBe("b");
+    expect(useSessionStore.getState().activeTabId).toBeNull();
   });
 
   it("removes session from store even when close_session IPC rejects", async () => {
@@ -334,18 +333,6 @@ describe("simple state actions", () => {
     expect(useSessionStore.getState().inspectorOffSessions.has("s1")).toBe(true);
     useSessionStore.getState().setInspectorOff("s1", false);
     expect(useSessionStore.getState().inspectorOffSessions.has("s1")).toBe(false);
-  });
-
-  it("requestRespawn / clearRespawnRequest lifecycle", () => {
-    const config = { ...DEFAULT_SESSION_CONFIG, workingDir: "/tmp" };
-    useSessionStore.getState().requestRespawn("tab-1", config, "test-name");
-    expect(useSessionStore.getState().respawnRequest).toEqual({
-      tabId: "tab-1",
-      config,
-      name: "test-name",
-    });
-    useSessionStore.getState().clearRespawnRequest();
-    expect(useSessionStore.getState().respawnRequest).toBeNull();
   });
 
   it("requestKill / clearKillRequest lifecycle", () => {

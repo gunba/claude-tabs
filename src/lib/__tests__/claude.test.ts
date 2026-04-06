@@ -468,18 +468,18 @@ describe("findNearestLiveTab", () => {
     expect(findNearestLiveTab(sessions, 1)).toBe("a");
   });
 
-  it("falls back to dead tab when all are dead", () => {
+  it("returns null when all are dead", () => {
     const sessions = [dead("a"), dead("b"), dead("c")];
-    expect(findNearestLiveTab(sessions, 1)).toBe("b");
+    expect(findNearestLiveTab(sessions, 1)).toBeNull();
   });
 
-  it("falls back to left dead tab when fromIndex is past end", () => {
+  it("returns null when fromIndex is past end and all tabs are dead", () => {
     const sessions = [dead("a"), dead("b")];
-    expect(findNearestLiveTab(sessions, 2)).toBe("b");
+    expect(findNearestLiveTab(sessions, 2)).toBeNull();
   });
 
-  it("handles single dead tab", () => {
-    expect(findNearestLiveTab([dead("a")], 0)).toBe("a");
+  it("returns null for a single dead tab", () => {
+    expect(findNearestLiveTab([dead("a")], 0)).toBeNull();
   });
 
   it("finds nearest live in mixed array", () => {

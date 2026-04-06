@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -10,11 +10,13 @@ import { startTraceSpan, traceSync } from "../lib/perfTrace";
 export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', monospace";
 
 const PROMPT_MARKER_NEW = ">\u00A0"; // > + NBSP — current Claude Code prompt
+const XTVERSION_REPLY = "\x1bP>|xterm.js(6.0.0)\x1b\\";
 
 interface UseTerminalOptions {
   sessionId?: string | null;
   onData?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
+  instanceKey?: number;
 }
 
 function escapePreview(text: string): string {
@@ -39,24 +41,66 @@ function captureBufferState(term: Terminal) {
   };
 }
 
-export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalOptions = {}) {
+function isElementVisible(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 0 }: UseTerminalOptions = {}) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const attachedRef = useRef(false);
   const pendingElRef = useRef<HTMLDivElement | null>(null);
+  const pasteBlockCleanupRef = useRef<(() => void) | null>(null);
   const sessionIdRef = useRef<string | null>(sessionId);
   sessionIdRef.current = sessionId;
-  const lastFitDimsRef = useRef<{ cols: number; rows: number } | null>(null);
+  const onDataRef = useRef<typeof onData>(onData);
+  onDataRef.current = onData;
+  const [ready, setReady] = useState(false);
+  const [termGeneration, setTermGeneration] = useState(0);
 
   const webglRef = useRef<WebglAddon | null>(null);
 
+  const fit = useCallback(() => {
+    return traceSync("terminal.fit_apply", () => {
+      if (!attachedRef.current) return false;
+      try {
+        const f = fitRef.current;
+        const term = termRef.current;
+        if (!f || !term) return false;
+        const before = { cols: term.cols, rows: term.rows };
+        f.fit();
+        const after = { cols: term.cols, rows: term.rows };
+        dlog("terminal", sessionIdRef.current, "terminal fit", "DEBUG", {
+          event: "terminal.fit",
+          data: {
+            before,
+            after,
+          },
+        });
+        const isReady = after.cols > 0 && after.rows > 0;
+        setReady(isReady);
+        return isReady;
+      } catch {
+        return false;
+      }
+    }, {
+      module: "terminal",
+      sessionId: sessionIdRef.current,
+      event: "terminal.fit_perf",
+      warnAboveMs: 8,
+      data: {},
+    });
+  }, []);
+
   // Helper: open terminal in a DOM element (called once fonts + element are both ready)
   const openTerminal = useCallback((term: Terminal, el: HTMLDivElement) => {
-    if (attachedRef.current) return;
+    if (attachedRef.current || !isElementVisible(el)) return false;
 
     term.open(el);
     attachedRef.current = true;
+    setReady(false);
     dlog("terminal", sessionIdRef.current, "terminal opened", "LOG", {
       event: "terminal.open",
       data: {
@@ -93,28 +137,27 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
     // in attachCustomKeyEventHandler handles paste via navigator.clipboard.
     // Without this, Tauri's permission dialog triggers a synthetic paste
     // event that xterm.js also handles, causing double-paste.
-    el.addEventListener('paste', (e) => {
+    pasteBlockCleanupRef.current?.();
+    const handlePaste = (e: ClipboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-    }, true); // Capture phase — intercept before xterm.js
+    };
+    el.addEventListener("paste", handlePaste, true); // Capture phase — intercept before xterm.js
+    pasteBlockCleanupRef.current = () => {
+      el.removeEventListener("paste", handlePaste, true);
+    };
 
-    // Observe container size changes
-    const observer = new ResizeObserver(() => {
-      try {
-        const f = fitRef.current;
-        if (!f) return;
-        f.fit();
-      } catch {}
-    });
-    observer.observe(el);
-    observerRef.current = observer;
-  }, []);
+    fit();
+    return true;
+  }, [fit]);
 
   // Create terminal instance once fonts are ready
   useEffect(() => {
     let cancelled = false;
     let term: Terminal | null = null;
+    let fitAddon: FitAddon | null = null;
     const lifecycleDisposables: { dispose(): void }[] = [];
+    setReady(false);
 
     (async () => {
       // Wait for fonts so xterm.js measures correct cell dimensions at open()
@@ -166,9 +209,23 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
           });
         }),
       );
+      lifecycleDisposables.push(
+        term.parser.registerCsiHandler({ prefix: ">", final: "q" }, (params) => {
+          if (params.length !== 1 || params[0] !== 0) return false;
+          dlog("terminal", sessionIdRef.current, "terminal identity query", "DEBUG", {
+            event: "terminal.identity_query",
+            data: {
+              params,
+              reply: XTVERSION_REPLY,
+            },
+          });
+          onDataRef.current?.(XTVERSION_REPLY);
+          return true;
+        }),
+      );
 
-      const fit = new FitAddon();
-      term.loadAddon(fit);
+      fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
 
       // Custom key handlers: Ctrl+C copy, Ctrl+V paste
       // xterm.js convention: return false = "I handled this, suppress default"
@@ -251,28 +308,32 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
       });
 
       termRef.current = term;
-      fitRef.current = fit;
+      fitRef.current = fitAddon;
+      setTermGeneration((g) => g + 1);
 
       // If attach was called before WASM was ready, open now
-      if (pendingElRef.current) {
-        openTerminal(term, pendingElRef.current);
+      const pendingEl = pendingElRef.current;
+      if (pendingEl && isElementVisible(pendingEl)) {
+        openTerminal(term, pendingEl);
       }
     })();
 
     return () => {
       cancelled = true;
       observerRef.current?.disconnect();
+      observerRef.current = null;
+      pasteBlockCleanupRef.current?.();
+      pasteBlockCleanupRef.current = null;
       lifecycleDisposables.forEach((d) => d.dispose());
       webglRef.current?.dispose();
       webglRef.current = null;
       term?.dispose();
-      termRef.current = null;
-      fitRef.current = null;
+      if (termRef.current === term) termRef.current = null;
+      if (fitAddon && fitRef.current === fitAddon) fitRef.current = null;
       attachedRef.current = false;
+      setReady(false);
     };
-    // Intentionally empty — create once per hook lifetime
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fit, instanceKey, openTerminal]);
 
   // Wire up onData/onResize handlers (update when callbacks change)
   useEffect(() => {
@@ -309,12 +370,14 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
     }
 
     return () => disposables.forEach((d) => d.dispose());
-  }, [onData, onResize]);
+  }, [onData, onResize, termGeneration]);
 
   // Ref callback to attach terminal to a DOM element
   const attach = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
     pendingElRef.current = el;
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!el) return;
     dlog("terminal", sessionIdRef.current, "terminal attach requested", "DEBUG", {
       event: "terminal.attach",
       data: {
@@ -324,12 +387,24 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
       },
     });
 
+    const observer = new ResizeObserver(() => {
+      const term = termRef.current;
+      if (!term) return;
+      if (!attachedRef.current) {
+        openTerminal(term, el);
+        return;
+      }
+      fit();
+    });
+    observer.observe(el);
+    observerRef.current = observer;
+
     const term = termRef.current;
     if (term && !attachedRef.current) {
       openTerminal(term, el);
     }
     // If term isn't ready yet, openTerminal will be called from the useEffect above
-  }, [openTerminal]);
+  }, [fit, openTerminal]);
 
   const write = useCallback((data: string) => {
     const term = termRef.current;
@@ -498,36 +573,6 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
     return term.buffer.active.viewportY <= 0;
   }, []);
 
-  // [PT-09] FitAddon dimension guard — skip fit if rows <= 1 (not laid out)
-  const fit = useCallback(() => {
-    traceSync("terminal.fit_apply", () => {
-      try {
-        const f = fitRef.current;
-        const term = termRef.current;
-        if (!f || !term) return;
-        const dims = f.proposeDimensions();
-        const before = { cols: term.cols, rows: term.rows };
-        f.fit();
-        const after = { cols: term.cols, rows: term.rows };
-	  lastFitDimsRef.current = after;
-	  dlog("terminal", sessionIdRef.current, "terminal fit", "DEBUG", {
-		event: "terminal.fit",
-		data: {
-		  before,
-		  after,
-		  proposed: dims,
-		},
-	  });
-      } catch {}
-    }, {
-      module: "terminal",
-      sessionId: sessionIdRef.current,
-      event: "terminal.fit_perf",
-      warnAboveMs: 8,
-      data: {},
-    });
-  }, []);
-
   const getDimensions = useCallback(() => {
     const term = termRef.current;
     if (!term) return { cols: 80, rows: 24 };
@@ -587,5 +632,7 @@ export function useTerminal({ sessionId = null, onData, onResize }: UseTerminalO
     getCurrentInput,
     termRef,
     webglRef,
+    ready,
+    termGeneration,
   };
 }
