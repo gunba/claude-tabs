@@ -606,6 +606,201 @@ fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, St
     Ok(results)
 }
 
+// Search specific session JSONL files with regex/case-sensitivity support.
+// Returns multiple matches per session, up to `limit` total.
+#[tauri::command]
+pub async fn search_jsonl_files(
+    sessions: Vec<serde_json::Value>,
+    query: String,
+    case_sensitive: bool,
+    use_regex: bool,
+    limit: usize,
+) -> Result<Vec<serde_json::Value>, String> {
+    tokio::task::spawn_blocking(move || {
+        search_jsonl_files_sync(&sessions, &query, case_sensitive, use_regex, limit)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn search_jsonl_files_sync(
+    sessions: &[serde_json::Value],
+    query: &str,
+    case_sensitive: bool,
+    use_regex: bool,
+    limit: usize,
+) -> Result<Vec<serde_json::Value>, String> {
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let re = if use_regex {
+        if case_sensitive {
+            regex::Regex::new(query)
+        } else {
+            regex::RegexBuilder::new(query)
+                .case_insensitive(true)
+                .build()
+        }
+        .map_err(|e| format!("Invalid regex: {}", e))?
+    } else {
+        let escaped = regex::escape(query);
+        if case_sensitive {
+            regex::Regex::new(&escaped)
+        } else {
+            regex::RegexBuilder::new(&escaped)
+                .case_insensitive(true)
+                .build()
+        }
+        .map_err(|e| format!("Regex build error: {}", e))?
+    };
+
+    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
+    let projects_dir = home.join(".claude").join("projects");
+
+    // Build working-dir -> encoded-dir-name mapping by walking projects dir
+    let mut dir_map: std::collections::HashMap<String, std::path::PathBuf> =
+        std::collections::HashMap::new();
+    if projects_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&projects_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let encoded_name = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                let decoded = path_utils::resolve_project_dir(&encoded_name, &path);
+                dir_map.insert(decoded, path);
+            }
+        }
+    }
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+
+    for session in sessions {
+        if results.len() >= limit {
+            break;
+        }
+
+        let session_id = match session["sessionId"].as_str() {
+            Some(s) => s,
+            None => continue,
+        };
+        let working_dir = match session["workingDir"].as_str() {
+            Some(s) => s,
+            None => continue,
+        };
+
+        // Normalize working dir for lookup (forward slashes, lowercase on Windows)
+        let normalized = working_dir.replace('\\', "/");
+        let jsonl_path = dir_map
+            .iter()
+            .find(|(decoded, _)| {
+                let d = decoded.replace('\\', "/");
+                d.eq_ignore_ascii_case(&normalized)
+            })
+            .map(|(_, dir)| dir.join(format!("{}.jsonl", session_id)));
+
+        let jsonl_path = match jsonl_path {
+            Some(p) if p.exists() => p,
+            _ => continue,
+        };
+
+        let metadata = match std::fs::metadata(&jsonl_path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if metadata.len() > MAX_CONTENT_SEARCH_FILE_SIZE {
+            continue;
+        }
+
+        let file = match std::fs::File::open(&jsonl_path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        use std::io::BufRead;
+        let reader = std::io::BufReader::new(file);
+        let mut message_index: usize = 0;
+
+        for line in reader.lines() {
+            if results.len() >= limit {
+                break;
+            }
+
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            let parsed = match serde_json::from_str::<serde_json::Value>(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            let role = match parsed["type"].as_str() {
+                Some("user") => "user",
+                Some("assistant") => "assistant",
+                _ => continue,
+            };
+
+            let text = match extract_message_text(&parsed) {
+                Some(t) => t,
+                None => {
+                    message_index += 1;
+                    continue;
+                }
+            };
+
+            // Find all matches within this message
+            for m in re.find_iter(&text) {
+                if results.len() >= limit {
+                    break;
+                }
+
+                let pos = m.start();
+                let match_len = m.len();
+
+                // Build snippet centered on match
+                let snippet_half = 150;
+                let start = text.floor_char_boundary(pos.saturating_sub(snippet_half));
+                let end = text.ceil_char_boundary(
+                    (pos + match_len + snippet_half).min(text.len()),
+                );
+                let mut snippet = String::new();
+                if start > 0 {
+                    snippet.push_str("...");
+                }
+                snippet.push_str(&text[start..end]);
+                if end < text.len() {
+                    snippet.push_str("...");
+                }
+
+                // Adjust matchOffset to be relative to snippet
+                let prefix_len = if start > 0 { 3 } else { 0 }; // "..." prefix
+                let match_offset_in_snippet = (pos - start) + prefix_len;
+
+                results.push(serde_json::json!({
+                    "sessionId": session_id,
+                    "messageIndex": message_index,
+                    "role": role,
+                    "matchOffset": match_offset_in_snippet,
+                    "matchLength": match_len,
+                    "snippet": snippet,
+                }));
+            }
+
+            message_index += 1;
+        }
+    }
+
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::extract_user_text;

@@ -32,6 +32,11 @@
   background: var(--bg-primary);
   padding: 1px 6px;
   border-radius: 8px;
+}
+
+.search-panel-scrolling {
+  font-size: 9px;
+  color: var(--accent-tertiary);
   margin-left: auto;
 }
 
@@ -179,10 +184,27 @@
   padding-left: 22px;
 }
 
-.search-result-line {
-  color: var(--text-muted);
+.search-result-role {
   flex-shrink: 0;
-  min-width: 32px;
+  font-size: 9px;
+  font-weight: 600;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.search-result-role-user {
+  color: var(--accent-secondary);
+  background: color-mix(in srgb, var(--accent-secondary) 15%, transparent);
+}
+
+.search-result-role-assistant {
+  color: var(--accent-tertiary);
+  background: color-mix(in srgb, var(--accent-tertiary) 15%, transparent);
 }
 
 .search-result-text {

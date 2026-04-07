@@ -1,10 +1,9 @@
-// [TR-16] Terminal buffer reader, SearchAddon, and scrollToLine registry
+// [TR-16] Terminal buffer reader and render-wait registry
 
 import type { Terminal } from "@xterm/xterm";
 
 const bufferReaders = new Map<string, () => string>();
 const terminals = new Map<string, Terminal>();
-const scrollFns = new Map<string, (line: number) => void>();
 
 export function registerBufferReader(sessionId: string, getBufferText: () => string): void {
   bufferReaders.set(sessionId, getBufferText);
@@ -27,27 +26,21 @@ export function unregisterTerminal(sessionId: string): void {
   terminals.delete(sessionId);
 }
 
-/** Highlight a match in a session's terminal via selection API. */
-export function highlightMatch(sessionId: string, lineIndex: number, col: number, length: number): void {
+/** Returns a Promise that resolves after the next xterm.js render for the given session. */
+export function waitForRender(sessionId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const term = terminals.get(sessionId);
+    if (!term) { resolve(); return; }
+    const d = term.onRender(() => {
+      d.dispose();
+      resolve();
+    });
+  });
+}
+
+/** Check whether the terminal's active buffer is the alternate screen. */
+export function isAltScreen(sessionId: string): boolean {
   const term = terminals.get(sessionId);
-  if (term) term.select(col, lineIndex, length);
-}
-
-/** Clear highlight (selection) in a session's terminal. */
-export function clearHighlight(sessionId: string): void {
-  const term = terminals.get(sessionId);
-  if (term) term.clearSelection();
-}
-
-export function registerScrollToLine(sessionId: string, fn: (line: number) => void): void {
-  scrollFns.set(sessionId, fn);
-}
-
-export function unregisterScrollToLine(sessionId: string): void {
-  scrollFns.delete(sessionId);
-}
-
-export function scrollSessionToLine(sessionId: string, line: number): void {
-  const fn = scrollFns.get(sessionId);
-  if (fn) fn(line);
+  if (!term) return false;
+  return term.buffer.active.type === "alternate";
 }

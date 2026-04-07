@@ -10,7 +10,7 @@ import { useInspectorConnection } from "../../hooks/useInspectorConnection";
 import { useTapPipeline } from "../../hooks/useTapPipeline";
 import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
 import { registerPtyWriter, unregisterPtyWriter, registerPtyKill, unregisterPtyKill, registerPtyHandleId, unregisterPtyHandleId, writeToPty } from "../../lib/ptyRegistry";
-import { registerBufferReader, unregisterBufferReader, registerTerminal, unregisterTerminal, registerScrollToLine, unregisterScrollToLine } from "../../lib/terminalRegistry";
+import { registerBufferReader, unregisterBufferReader, registerTerminal, unregisterTerminal } from "../../lib/terminalRegistry";
 import { useFileWatcher } from "../../hooks/useFileWatcher";
 import { useSettingsStore } from "../../store/settings";
 import { useRuntimeStore } from "../../store/runtime";
@@ -149,8 +149,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   }, [session.id, inspector.disconnect]);
 
   const [loading, setLoading] = useState(!!session.config.resumeSession);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [showScrollTopBtn, setShowScrollTopBtn] = useState(false);
   const [queuedInput, setQueuedInput] = useState<string | null>(null);
 
   // Hide loading spinner when inspector connects
@@ -489,20 +487,18 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claudePath, session.id, respawnCounter, terminal.ready]);
 
-  // Register terminal buffer readers, search addon, and scroll function
+  // Register terminal buffer reader and terminal instance for search/render-wait
   useEffect(() => {
     registerBufferReader(session.id, terminal.getBufferText);
-    registerScrollToLine(session.id, terminal.scrollToLine);
     if (terminal.termRef.current) {
       registerTerminal(session.id, terminal.termRef.current);
     }
     return () => {
       unregisterBufferReader(session.id);
       unregisterTerminal(session.id);
-      unregisterScrollToLine(session.id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id, terminal.getBufferText, terminal.scrollToLine, terminal.termGeneration]);
+  }, [session.id, terminal.getBufferText, terminal.termGeneration]);
 
   // Cleanup PTY and registries on unmount
   useEffect(() => {
@@ -590,18 +586,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tapProcessor.completionCount, queuedInput, session.state]);
 
-  // Poll scroll position to show/hide scroll-to-bottom button
-  useEffect(() => {
-    if (!visible) return;
-    const check = () => {
-      setShowScrollBtn(!terminal.isAtBottom());
-      setShowScrollTopBtn(!terminal.isAtTop());
-    };
-    const interval = setInterval(check, 300);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
   // Reclaim focus when terminal is visible but loses it to non-interactive elements.
   // Uses termRef directly instead of terminal (which is a new object every render).
   useEffect(() => {
@@ -631,24 +615,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const showDeadOverlay = session.state === "dead" && visible;
   const showButtonBar = visible && session.state !== "dead";
 
-  // [TR-09] Ctrl+wheel snaps to top/bottom
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !visible) return;
-    const onWheel = (ev: WheelEvent) => {
-      if (ev.ctrlKey) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (ev.deltaY > 0) terminal.scrollToBottom();
-        else terminal.scrollToTop();
-      }
-    };
-    el.addEventListener("wheel", onWheel, { capture: true, passive: false });
-    return () => {
-      el.removeEventListener("wheel", onWheel, { capture: true });
-    };
-  }, [visible, terminal.scrollToTop, terminal.scrollToBottom]);
-
   // [TR-05] Hidden tabs use CSS display:none — never unmount/remount xterm.js
   return (
     <div
@@ -663,22 +629,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
       )}
       <div className="terminal-inner">
         <div className="terminal-container" ref={setContainer} />
-        {/* [TR-07] Vertical button bar (28px) with scroll, queue, search buttons */}
+        {/* [TR-07] Vertical button bar (28px) with queue and search buttons */}
         {showButtonBar && (
           <div className="terminal-button-bar">
-            {/* [TR-01] Scroll-to-top button, visible when not at top */}
-            <button
-              className="bar-btn"
-              style={{ visibility: showScrollTopBtn ? "visible" : "hidden" }}
-              onClick={() => terminal.scrollToTop()}
-              title="Scroll to top (Ctrl+Home)"
-              aria-label="Scroll to top"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="7" y1="12" x2="7" y2="3" />
-                <polyline points="3 6 7 2 11 6" />
-              </svg>
-            </button>
             <div className="bar-spacer" />
             <button
               className={`bar-btn${queuedInput ? " bar-btn-active" : ""}`}
@@ -692,28 +645,15 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
               </svg>
             </button>
             <button
-              className="bar-btn"
+              className="bar-btn bar-btn-search"
               onClick={() => {
                 const store = useSettingsStore.getState();
                 store.setSidePanel(store.sidePanel === "search" ? null : "search");
               }}
-              title="Search all terminals (Ctrl+Shift+F)"
-              aria-label="Search all terminals"
+              title="Search conversations (Ctrl+Shift+F)"
+              aria-label="Search conversations"
             >
               <IconSearch size={14} />
-            </button>
-            {/* [TR-01] Scroll-to-bottom button, visible when not at bottom */}
-            <button
-              className="bar-btn"
-              style={{ visibility: showScrollBtn ? "visible" : "hidden" }}
-              onClick={() => terminal.scrollToBottom()}
-              title="Scroll to bottom (Ctrl+End)"
-              aria-label="Scroll to bottom"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="7" y1="2" x2="7" y2="11" />
-                <polyline points="3 8 7 12 11 8" />
-              </svg>
             </button>
           </div>
         )}

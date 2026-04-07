@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../../store/sessions";
 import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
-import { getSessionTranscript, highlightMatch, clearHighlight, scrollSessionToLine } from "../../lib/terminalRegistry";
-import { searchBuffers, validateRegex, type SearchMatch } from "../../lib/searchBuffers";
+import { validateRegex } from "../../lib/searchBuffers";
+import { scrollTuiToText } from "../../lib/tuiScrollSearch";
 import { IconClose } from "../Icons/Icons";
 import { dlog } from "../../lib/debugLog";
 import "./SearchPanel.css";
@@ -12,53 +13,59 @@ interface SearchPanelProps {
   onClose: () => void;
 }
 
+interface JsonlMatch {
+  sessionId: string;
+  messageIndex: number;
+  role: string;
+  matchOffset: number;
+  matchLength: number;
+  snippet: string;
+}
+
 interface SessionGroup {
   sessionId: string;
   name: string;
   color: string;
-  matches: SearchMatch[];
+  matches: JsonlMatch[];
 }
 
 const RESULT_LIMIT = 500;
 const DEBOUNCE_MS = 250;
-const CONTEXT_TRUNCATE = 200;
+const SNIPPET_TRUNCATE = 300;
 
-// [TR-16] Cross-session terminal search panel (Ctrl+Shift+F)
 export function SearchPanel({ onClose }: SearchPanelProps) {
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
-  const [results, setResults] = useState<SearchMatch[]>([]);
+  const [results, setResults] = useState<JsonlMatch[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [regexError, setRegexError] = useState<string | null>(null);
+  const [scrolling, setScrolling] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevHighlightSession = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const searchGenRef = useRef(0);
 
   const sessions = useSessionStore((s) => s.sessions);
   const setActiveTab = useSessionStore((s) => s.setActiveTab);
 
-  // Ref for reading current sessions without triggering executeSearch recreation.
-  // executeSearch only needs session IDs (to call getSessionTranscript), not full objects.
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
 
-  // Stable scope key: only changes when sessions are added/removed (not on state/metadata churn).
-  // Prevents session state transitions (idle/waiting/active) from re-triggering search.
+  // Stable scope key: only changes when sessions are added/removed
   const sessionScope = useMemo(
     () => sessions.filter(s => !s.isMetaAgent).map(s => s.id).join('\0'),
     [sessions]
   );
 
-  // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Perform search (debounced)
-  const executeSearch = useCallback(() => {
+  // Perform search via Rust IPC
+  const executeSearch = useCallback(async () => {
     if (!query) {
       setResults([]);
       setActiveIndex(-1);
@@ -77,17 +84,51 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
     }
     setRegexError(null);
 
-    const buffers: Array<{ id: string; text: string }> = [];
-    for (const s of sessionsRef.current) {
-      if (s.isMetaAgent) continue;
-      const text = getSessionTranscript(s.id);
-      if (text) buffers.push({ id: s.id, text });
+    // Build session list for Rust command
+    const sessionList = sessionsRef.current
+      .filter(s => !s.isMetaAgent && s.config.sessionId && s.config.workingDir)
+      .map(s => ({ sessionId: s.config.sessionId, workingDir: s.config.workingDir }));
+
+    if (!sessionList.length) {
+      setResults([]);
+      setActiveIndex(-1);
+      return;
     }
 
-    const matches = searchBuffers(buffers, query, caseSensitive, useRegex, RESULT_LIMIT);
-    setResults(matches);
-    setActiveIndex(matches.length > 0 ? 0 : -1);
-    dlog("search", null, `Search "${query}" → ${matches.length} matches across ${buffers.length} sessions`);
+    const gen = ++searchGenRef.current;
+
+    try {
+      const matches = await invoke<JsonlMatch[]>("search_jsonl_files", {
+        sessions: sessionList,
+        query,
+        caseSensitive,
+        useRegex,
+        limit: RESULT_LIMIT,
+      });
+
+      // Discard stale results
+      if (gen !== searchGenRef.current) return;
+
+      // Map Rust sessionId (Claude session ID) back to app session ID
+      const claudeToApp = new Map<string, string>();
+      for (const s of sessionsRef.current) {
+        if (s.config.sessionId) claudeToApp.set(s.config.sessionId, s.id);
+      }
+
+      const mapped = matches.map(m => ({
+        ...m,
+        sessionId: claudeToApp.get(m.sessionId) ?? m.sessionId,
+      }));
+
+      setResults(mapped);
+      setActiveIndex(mapped.length > 0 ? 0 : -1);
+      dlog("search", null, `Search "${query}" → ${mapped.length} matches across ${sessionList.length} sessions`);
+    } catch (err) {
+      if (gen !== searchGenRef.current) return;
+      dlog("search", null, `Search error: ${err}`, "ERR");
+      setResults([]);
+      setActiveIndex(-1);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, caseSensitive, useRegex, sessionScope]);
 
@@ -100,9 +141,9 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
     };
   }, [executeSearch]);
 
-  // Group results by session, with precomputed flat offsets
+  // Group results by session
   const groups: SessionGroup[] = useMemo(() => {
-    const map = new Map<string, SearchMatch[]>();
+    const map = new Map<string, JsonlMatch[]>();
     for (const r of results) {
       let arr = map.get(r.sessionId);
       if (!arr) { arr = []; map.set(r.sessionId, arr); }
@@ -118,7 +159,6 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
     return out;
   }, [results, sessions]);
 
-  // Precompute the flat offset for each group so the render doesn't mutate
   const groupOffsets = useMemo(() => {
     const offsets: number[] = [];
     let offset = 0;
@@ -129,29 +169,42 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
     return offsets;
   }, [groups]);
 
-  // Navigate to a specific result
-  const navigateToResult = useCallback((match: SearchMatch) => {
-    // Skip if session was closed while results are still displayed
+  // Navigate to a result: switch tab, then scroll TUI
+  const navigateToResult = useCallback(async (match: JsonlMatch) => {
     if (!sessionsRef.current.some(s => s.id === match.sessionId)) return;
 
-    // Clear previous highlight
-    if (prevHighlightSession.current && prevHighlightSession.current !== match.sessionId) {
-      clearHighlight(prevHighlightSession.current);
-    }
+    const session = sessionsRef.current.find(s => s.id === match.sessionId);
+    if (!session || session.state === "dead") return;
 
-    // Switch tab
     setActiveTab(match.sessionId);
-    prevHighlightSession.current = match.sessionId;
 
-    // Defer scroll + highlight after tab layout reflow (double-rAF pattern)
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      scrollSessionToLine(match.sessionId, Math.max(0, match.lineIndex - 2));
+    // Abort any in-progress scroll
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-      if (query) {
-        highlightMatch(match.sessionId, match.lineIndex, match.matchStart, match.matchLength);
-      }
-    }));
-  }, [query, setActiveTab]);
+    // Extract a search phrase from the snippet for viewport matching.
+    // Use the matched text plus surrounding context for reliable identification.
+    const snippet = match.snippet;
+    const start = match.matchOffset;
+    const phraseEnd = Math.min(start + match.matchLength + 40, snippet.length);
+    const phraseStart = Math.max(0, start - 20);
+    const searchPhrase = snippet.slice(phraseStart, phraseEnd);
+
+    if (!searchPhrase.trim()) return;
+
+    setScrolling(true);
+
+    // Wait for tab switch to render
+    await new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
+    await scrollTuiToText(match.sessionId, searchPhrase, controller.signal);
+    if (!controller.signal.aborted) {
+      setScrolling(false);
+    }
+  }, [setActiveTab]);
 
   // Navigate to active result when activeIndex changes
   useEffect(() => {
@@ -171,6 +224,11 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.stopPropagation();
+      if (scrolling) {
+        abortRef.current?.abort();
+        setScrolling(false);
+        return;
+      }
       if (query) {
         setQuery("");
       } else {
@@ -202,14 +260,12 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       }
       return;
     }
-  }, [query, results, activeIndex, navigateToResult, onClose]);
+  }, [query, results, activeIndex, navigateToResult, onClose, scrolling]);
 
-  // Clean up highlights on unmount
+  // Abort scroll on unmount
   useEffect(() => {
     return () => {
-      if (prevHighlightSession.current) {
-        clearHighlight(prevHighlightSession.current);
-      }
+      abortRef.current?.abort();
     };
   }, []);
 
@@ -223,6 +279,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
             {activeIndex >= 0 ? ` (${activeIndex + 1})` : ""}
           </span>
         )}
+        {scrolling && <span className="search-panel-scrolling">Scrolling...</span>}
         <button className="search-panel-close" onClick={onClose} title="Close (Esc)">
           <IconClose size={14} />
         </button>
@@ -234,7 +291,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search all terminals..."
+          placeholder="Search conversations..."
           className={regexError ? "search-input-error" : ""}
           spellCheck={false}
         />
@@ -262,7 +319,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
         {query && results.length === 0 && !regexError ? (
           <div className="search-panel-empty">No results</div>
         ) : !query ? (
-          <div className="search-panel-empty">Type to search across all terminals</div>
+          <div className="search-panel-empty">Type to search across all conversations</div>
         ) : (
           groups.map((group, gi) => {
             const baseOffset = groupOffsets[gi];
@@ -275,23 +332,27 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
                 </div>
                 {group.matches.map((match, mi) => {
                   const idx = baseOffset + mi;
-                  const text = match.lineText.length > CONTEXT_TRUNCATE
-                    ? match.lineText.slice(0, CONTEXT_TRUNCATE) + "..."
-                    : match.lineText;
+                  const snippet = match.snippet.length > SNIPPET_TRUNCATE
+                    ? match.snippet.slice(0, SNIPPET_TRUNCATE) + "..."
+                    : match.snippet;
 
                   // Highlight the match in the snippet
-                  const before = text.slice(0, Math.min(match.matchStart, text.length));
-                  const matched = text.slice(match.matchStart, Math.min(match.matchStart + match.matchLength, text.length));
-                  const after = text.slice(Math.min(match.matchStart + match.matchLength, text.length));
+                  const mStart = Math.min(match.matchOffset, snippet.length);
+                  const mEnd = Math.min(match.matchOffset + match.matchLength, snippet.length);
+                  const before = snippet.slice(0, mStart);
+                  const matched = snippet.slice(mStart, mEnd);
+                  const after = snippet.slice(mEnd);
 
                   return (
                     <div
-                      key={`${match.lineIndex}-${mi}`}
+                      key={`${match.messageIndex}-${mi}`}
                       className={`search-result${idx === activeIndex ? " active" : ""}`}
                       onClick={() => setActiveIndex(idx)}
-                      title={match.lineText}
+                      title={match.snippet}
                     >
-                      <span className="search-result-line">{match.lineIndex + 1}</span>
+                      <span className={`search-result-role search-result-role-${match.role}`}>
+                        {match.role === "user" ? "U" : "A"}
+                      </span>
                       <span className="search-result-text">
                         {before}<mark>{matched}</mark>{after}
                       </span>
