@@ -209,6 +209,18 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
           });
         }),
       );
+      // ConPTY passes through alt-screen switch (\e[?1049h) but not mouse
+      // tracking modes. Tie mouse tracking to buffer lifecycle so it enables
+      // on alt-screen entry and disables on exit.
+      lifecycleDisposables.push(
+        term.buffer.onBufferChange((buf) => {
+          if (buf.type === 'alternate') {
+            term!.write('\x1b[?1003h\x1b[?1006h');
+          } else {
+            term!.write('\x1b[?1003l\x1b[?1006l');
+          }
+        }),
+      );
       lifecycleDisposables.push(
         term.parser.registerCsiHandler({ prefix: ">", final: "q" }, (params) => {
           if (params.length !== 1 || params[0] !== 0) return false;

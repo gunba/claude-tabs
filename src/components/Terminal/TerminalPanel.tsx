@@ -233,6 +233,9 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         event: "session.exit",
         data: { exitCode: info.exitCode },
       });
+      // Restore text selection in dead terminal (ConPTY may not pass through
+      // the disable sequences that Claude Code sends on exit)
+      terminalRef.current?.write('\x1b[?1003l\x1b[?1006l');
       // Stop TCP tap server immediately (before any early-return paths)
       invoke("stop_tap_server", { sessionId: session.id }).catch(() => {});
       // [DS-07] [RS-06] Session-in-use auto-recovery: kill own orphans, retry; show overlay for external
@@ -464,6 +467,11 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           },
         });
         updateState(session.id, "idle");
+
+        // ConPTY does not pass through DEC mouse tracking sequences on
+        // initial startup. Write them directly to xterm.js so mouse
+        // interaction works immediately without requiring a resize or alt-tab.
+        terminal.write('\x1b[?1003h\x1b[?1006h');
 
         spawnSpan.end({
           inspectorPort: inspPort,
