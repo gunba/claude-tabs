@@ -55,6 +55,8 @@ export class TapMetadataAccumulator {
   private pingRttMs = 0;
   // EMA-smoothed server-side processing time (from x-envoy-upstream-service-time header)
   private serverTimeMs = 0;
+  // EMA-smoothed output tokens per second (from ApiTelemetry outputTokens/durationMs)
+  private tokPerSec = 0;
   // Sidechain tracking: true when processing subagent events, prevents TurnStart from overwriting main context
   private sidechainActive = false;
   // Dedup: skip consecutive identical ApiTelemetry (stringify can serialize the same object multiple times)
@@ -106,6 +108,12 @@ export class TapMetadataAccumulator {
           // double-counting; ApiTelemetry classification doesn't match current CLI output.
           this.lastTurnCostUsd = event.costUSD;
           this.lastTurnTtftMs = event.ttftMs;
+          // Compute EMA-smoothed output tok/s from total API call duration
+          if (event.outputTokens > 0 && event.durationMs > 0) {
+            const tps = event.outputTokens / (event.durationMs / 1000);
+            const EMA = 0.3;
+            this.tokPerSec = this.tokPerSec > 0 ? EMA * tps + (1 - EMA) * this.tokPerSec : tps;
+          }
         }
         if (event.model && event.queryDepth === 0) this.runtimeModel = event.model;
         break;
@@ -494,6 +502,7 @@ export class TapMetadataAccumulator {
       apiLatencyMs: this.apiLatencyMs,
       pingRttMs: this.pingRttMs,
       serverTimeMs: this.serverTimeMs,
+      tokPerSec: this.tokPerSec,
       linesAdded: this.linesAdded,
       linesRemoved: this.linesRemoved,
       lastToolDurationMs: this.lastToolDurationMs,
@@ -568,6 +577,7 @@ export class TapMetadataAccumulator {
     this.apiLatencyMs = 0;
     this.pingRttMs = 0;
     this.serverTimeMs = 0;
+    this.tokPerSec = 0;
     this.sidechainActive = false;
     this.lastTelemetryKey = "";
     this.linesAdded = 0;

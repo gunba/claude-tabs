@@ -468,11 +468,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         });
         updateState(session.id, "idle");
 
-        // ConPTY does not pass through DEC mouse tracking sequences on
-        // initial startup. Write them directly to xterm.js so mouse
-        // interaction works immediately without requiring a resize or alt-tab.
-        terminal.write('\x1b[?1003h\x1b[?1006h');
-
         spawnSpan.end({
           inspectorPort: inspPort,
           tapPort,

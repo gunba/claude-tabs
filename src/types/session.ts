@@ -92,6 +92,8 @@ export interface SessionMetadata {
   pingRttMs: number;
   /** Server-side processing time in ms (EMA-smoothed, from x-envoy-upstream-service-time) */
   serverTimeMs: number;
+  /** Output tokens per second (EMA-smoothed, from ApiTelemetry outputTokens/durationMs) */
+  tokPerSec: number;
   // Unified rate limit data from API response headers
   fiveHourPercent: number | null;
   fiveHourResetsAt: number | null;

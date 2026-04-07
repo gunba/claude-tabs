@@ -24,6 +24,27 @@ describe("TapMetadataAccumulator", () => {
     expect(diff2?.outputTokens).toBe(0); // not from ApiTelemetry anymore
   });
 
+  it("computes EMA-smoothed tokPerSec from ApiTelemetry", () => {
+    const acc = new TapMetadataAccumulator();
+    // 50 output tokens in 1000ms = 50 tok/s (first sample seeds EMA)
+    const diff1 = acc.process({
+      kind: "ApiTelemetry", ts: 0, model: "opus", costUSD: 0.01,
+      inputTokens: 100, outputTokens: 50, cachedInputTokens: 0,
+      uncachedInputTokens: 100, durationMs: 1000, ttftMs: 200,
+      queryChainId: null, queryDepth: 0, stopReason: null,
+    });
+    expect(diff1?.tokPerSec).toBe(50);
+
+    // 100 output tokens in 500ms = 200 tok/s; EMA(0.3) = 0.3*200 + 0.7*50 = 95
+    const diff2 = acc.process({
+      kind: "ApiTelemetry", ts: 1, model: "opus", costUSD: 0.02,
+      inputTokens: 200, outputTokens: 100, cachedInputTokens: 0,
+      uncachedInputTokens: 200, durationMs: 500, ttftMs: 100,
+      queryChainId: null, queryDepth: 0, stopReason: null,
+    });
+    expect(diff2?.tokPerSec).toBe(95);
+  });
+
   it("accumulates session tokens from TurnStart/TurnEnd (SSE)", () => {
     const acc = new TapMetadataAccumulator();
 

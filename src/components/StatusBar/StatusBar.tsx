@@ -91,7 +91,7 @@ function SessionStatus({
             ? `Cloudflare POP: ${m.apiRegion || "—"}` +
               (apiIp ? ` · IP: ${apiIp}` : "") +
               (m.pingRttMs > 0 ? ` · RTT: ${Math.round(m.pingRttMs)}ms` : "") +
-              (m.serverTimeMs > 0 ? ` · Server: ${Math.round(m.serverTimeMs)}ms` : "")
+              (m.tokPerSec > 0 ? ` · ${Math.round(m.tokPerSec)} tok/s` : "")
             : "Model"
         } style={{ color: modelColor(model) }}>
           {modelLabel(model)}
@@ -111,14 +111,11 @@ function SessionStatus({
             {apiIp}
           </span>
         )}
-        {m.pingRttMs > 0 && (
-          <span className="status-item" title="Network round-trip time (EMA)" style={{ opacity: 0.5 }}>
-            {Math.round(m.pingRttMs)}ms
-          </span>
-        )}
-        {m.serverTimeMs > 0 && (
-          <span className="status-item" title="Server processing time (EMA)" style={{ opacity: 0.5 }}>
-            srv:{Math.round(m.serverTimeMs)}ms
+        {(m.pingRttMs > 0 || m.tokPerSec > 0) && (
+          <span className="status-item" title="Network round-trip time / output tokens per second (EMA)" style={{ opacity: 0.5 }}>
+            {m.pingRttMs > 0 && `${Math.round(m.pingRttMs)}ms`}
+            {m.pingRttMs > 0 && m.tokPerSec > 0 && " "}
+            {m.tokPerSec > 0 && `(${Math.round(m.tokPerSec)} tok/s)`}
           </span>
         )}
         {(() => {
