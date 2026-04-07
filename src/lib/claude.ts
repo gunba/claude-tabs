@@ -123,14 +123,14 @@ export const TOOL_COLORS: Record<string, string> = {
   Read: "var(--accent)", Write: "var(--accent)", Edit: "var(--accent)", NotebookEdit: "var(--accent)",
   // Execution
   Bash: "var(--warning)",
-  // Agent / skills
-  Agent: "var(--accent-tertiary)", Skill: "var(--accent-tertiary)", RemoteTrigger: "var(--accent-tertiary)",
+  // Agent / skills (tool execution → blue, not action-needed)
+  Agent: "var(--accent-secondary)", Skill: "var(--accent-secondary)", RemoteTrigger: "var(--accent-secondary)",
   // LSP
   LSP: "var(--text-secondary)",
-  // Plan
+  // Plan / user-action-needed (these trigger actionNeeded state → purple)
   EnterPlanMode: "var(--accent-tertiary)", ExitPlanMode: "var(--accent-tertiary)",
-  // User interaction
-  AskUserQuestion: "var(--success)",
+  // User interaction (triggers actionNeeded state → purple)
+  AskUserQuestion: "var(--accent-tertiary)",
 };
 
 /** Color for a tool name. Falls back to muted for unknown/MCP tools. */
@@ -142,8 +142,10 @@ export function toolCategoryColor(toolName: string): string {
 export const EVENT_KIND_COLORS: Record<string, string> = {
   // Session lifecycle
   TurnStart: "var(--success)", TurnEnd: "var(--success)", SessionResume: "var(--success)", IdlePrompt: "var(--success)",
-  // Thinking / planning
-  ThinkingStart: "var(--accent-tertiary)", PlanModeEvent: "var(--accent-tertiary)", ModeChange: "var(--accent-tertiary)",
+  // Thinking (matches thinking state → orange/clay)
+  ThinkingStart: "var(--accent)",
+  // Plan / mode (action-needed signal → purple)
+  PlanModeEvent: "var(--accent-tertiary)", ModeChange: "var(--accent-tertiary)",
   // Text generation
   TextStart: "var(--text-secondary)", ConversationMessage: "var(--text-secondary)",
   // Tool execution
@@ -151,7 +153,7 @@ export const EVENT_KIND_COLORS: Record<string, string> = {
   // Tool results
   ToolResult: "var(--text-muted)",
   // Permission flow
-  PermissionPromptShown: "var(--permission)", PermissionApproved: "var(--success)", PermissionRejected: "var(--error)",
+  PermissionPromptShown: "var(--accent-tertiary)", PermissionApproved: "var(--success)", PermissionRejected: "var(--error)",
   // User interaction
   UserInput: "var(--accent)", SlashCommand: "var(--accent)", UserInterruption: "var(--error)",
   // Errors
@@ -160,8 +162,8 @@ export const EVENT_KIND_COLORS: Record<string, string> = {
   ApiRetry: "var(--warning)", StreamStall: "var(--warning)", RateLimit: "var(--warning)",
   // System / hooks
   HookProgress: "var(--text-muted)", HookTelemetry: "var(--text-muted)", SubprocessSpawn: "var(--text-muted)",
-  // Agents / skills
-  SubagentSpawn: "var(--accent-tertiary)", SubagentNotification: "var(--accent-tertiary)", SubagentLifecycle: "var(--accent-tertiary)", SkillInvocation: "var(--accent-tertiary)",
+  // Agents / skills (tool execution → blue)
+  SubagentSpawn: "var(--accent-secondary)", SubagentNotification: "var(--accent-secondary)", SubagentLifecycle: "var(--accent-secondary)", SkillInvocation: "var(--accent-secondary)",
 };
 
 /** Color for an event kind. Falls back to muted for unknown kinds. */
