@@ -231,6 +231,13 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
               reply: XTVERSION_REPLY,
             },
           });
+          // ConPTY strips DEC mouse tracking sequences (\e[?1003h etc.) that the
+          // CLI writes during VTUI init.  The XTVERSION probe (CSI > 0 q) is the
+          // first deterministic signal that fires AFTER the CLI's VTUI is fully
+          // rendered and ready to consume mouse reports.  Enable tracking here
+          // instead of at spawn to avoid SGR motion reports flooding CLI stdin
+          // before the VTUI mouse handler is active.
+          term!.write('\x1b[?1003h\x1b[?1006h');
           onDataRef.current?.(XTVERSION_REPLY);
           return true;
         }),
@@ -356,19 +363,15 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
 
     if (onData) {
       disposables.push(term.onData((data) => {
-        // Strip SGR mouse tracking reports — xterm.js generates these when
-        // mouse tracking is enabled (\x1b[?1003h) but the CLI doesn't consume them.
-        const filtered = data.replace(/\x1b\[<[\d;]+[Mm]/g, "");
-        if (!filtered) return;
         dlog("terminal", sessionIdRef.current, "terminal input", "DEBUG", {
           event: "terminal.input",
           data: {
-            length: filtered.length,
-            text: filtered,
-            preview: escapePreview(filtered),
+            length: data.length,
+            text: data,
+            preview: escapePreview(data),
           },
         });
-        onData(filtered);
+        onData(data);
       }));
     }
     if (onResize) {

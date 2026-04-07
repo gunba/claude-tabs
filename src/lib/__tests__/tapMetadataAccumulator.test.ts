@@ -24,32 +24,30 @@ describe("TapMetadataAccumulator", () => {
     expect(diff2?.outputTokens).toBe(0); // not from ApiTelemetry anymore
   });
 
-  it("computes EMA-smoothed tokPerSec from ApiTelemetry durationMs + TurnEnd outputTokens", () => {
+  it("computes EMA-smoothed tokPerSec from TurnEnd outputTokens and ApiFetch envoy time", () => {
     const acc = new TapMetadataAccumulator();
-    // ApiTelemetry provides durationMs, TurnEnd provides outputTokens
-    // 50 output tokens in 1000ms = 50 tok/s (first sample seeds EMA)
-    acc.process({
-      kind: "ApiTelemetry", ts: 0, model: "opus", costUSD: 0.01,
-      inputTokens: 100, outputTokens: 50, cachedInputTokens: 0,
-      uncachedInputTokens: 100, durationMs: 1000, ttftMs: 200,
-      queryChainId: null, queryDepth: 0, stopReason: null,
-    });
+    // Turn 1: 500 output tokens, server processed in 3880ms = 500/3.88 ≈ 128.87 tok/s (seeds EMA)
+    acc.process({ kind: "TurnEnd", ts: 0, stopReason: "end_turn", outputTokens: 500 });
     const diff1 = acc.process({
-      kind: "TurnEnd", ts: 1, stopReason: "end_turn", outputTokens: 50,
+      kind: "ApiFetch", ts: 1,
+      url: "https://api.anthropic.com/v1/messages", method: "POST",
+      status: 200, bodyLen: 50000, durationMs: 4263,
+      headers: { "x-envoy-upstream-service-time": "3880" },
     });
-    expect(diff1?.tokPerSec).toBe(50);
+    const expected1 = 500 / (3880 / 1000); // ≈ 128.87
+    expect(diff1?.tokPerSec).toBeCloseTo(expected1, 1);
 
-    // 100 output tokens in 500ms = 200 tok/s; EMA(0.3) = 0.3*200 + 0.7*50 = 95
-    acc.process({
-      kind: "ApiTelemetry", ts: 2, model: "opus", costUSD: 0.02,
-      inputTokens: 200, outputTokens: 100, cachedInputTokens: 0,
-      uncachedInputTokens: 200, durationMs: 500, ttftMs: 100,
-      queryChainId: null, queryDepth: 0, stopReason: null,
-    });
+    // Turn 2: 228 tokens, server 2000ms = 114 tok/s; EMA(0.3) = 0.3*114 + 0.7*128.87 ≈ 124.41
+    acc.process({ kind: "TurnEnd", ts: 2, stopReason: "end_turn", outputTokens: 228 });
     const diff2 = acc.process({
-      kind: "TurnEnd", ts: 3, stopReason: "end_turn", outputTokens: 100,
+      kind: "ApiFetch", ts: 3,
+      url: "https://api.anthropic.com/v1/messages", method: "POST",
+      status: 200, bodyLen: 30000, durationMs: 2400,
+      headers: { "x-envoy-upstream-service-time": "2000" },
     });
-    expect(diff2?.tokPerSec).toBe(95);
+    const tps2 = 228 / (2000 / 1000);
+    const expected2 = 0.3 * tps2 + 0.7 * expected1;
+    expect(diff2?.tokPerSec).toBeCloseTo(expected2, 1);
   });
 
   it("accumulates session tokens from TurnStart/TurnEnd (SSE)", () => {

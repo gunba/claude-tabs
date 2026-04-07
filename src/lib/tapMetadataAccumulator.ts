@@ -56,10 +56,10 @@ export class TapMetadataAccumulator {
   private pingRttMs = 0;
   // EMA-smoothed server-side processing time (from x-envoy-upstream-service-time header)
   private serverTimeMs = 0;
-  // EMA-smoothed output tokens per second (from TurnEnd outputTokens / ApiTelemetry durationMs)
+  // EMA-smoothed output tokens per second
   private tokPerSec = 0;
-  // Last API call duration (stored from ApiTelemetry, consumed in TurnEnd for tok/sec)
-  private lastApiDurationMs = 0;
+  // Stores output tokens from the most recent TurnEnd; consumed by the next ApiFetch to compute tok/sec
+  private lastTurnOutputTokens = 0;
   // Sidechain tracking: true when processing subagent events, prevents TurnStart from overwriting main context
   private sidechainActive = false;
   // Dedup: skip consecutive identical ApiTelemetry (stringify can serialize the same object multiple times)
@@ -111,8 +111,6 @@ export class TapMetadataAccumulator {
           // double-counting; ApiTelemetry classification doesn't match current CLI output.
           this.lastTurnCostUsd = event.costUSD;
           this.lastTurnTtftMs = event.ttftMs;
-          // Store durationMs for tok/sec computation in TurnEnd handler
-          if (event.durationMs > 0) this.lastApiDurationMs = event.durationMs;
         }
         if (event.model && event.queryDepth === 0) this.runtimeModel = event.model;
         break;
@@ -204,13 +202,8 @@ export class TapMetadataAccumulator {
         // accumulate at TurnEnd so each completed turn is counted exactly once.
         this.inputTokens += this.lastTurnInputTokens + this.lastCacheRead + this.lastCacheCreation;
         this.outputTokens += event.outputTokens;
-        // Compute EMA-smoothed tok/sec from TurnEnd outputTokens + ApiTelemetry durationMs
-        if (event.outputTokens > 0 && this.lastApiDurationMs > 0) {
-          const tps = event.outputTokens / (this.lastApiDurationMs / 1000);
-          const EMA = 0.3;
-          this.tokPerSec = this.tokPerSec > 0 ? EMA * tps + (1 - EMA) * this.tokPerSec : tps;
-          this.lastApiDurationMs = 0;
-        }
+        // Store for tok/sec computation when the corresponding ApiFetch arrives
+        this.lastTurnOutputTokens = event.outputTokens;
         if (event.stopReason === "end_turn") {
           this.currentToolName = null;
           this.currentAction = null;
@@ -257,6 +250,13 @@ export class TapMetadataAccumulator {
             // No server-timing header (lightweight GET requests) — total dur ≈ RTT
             this.pingRttMs = this.pingRttMs > 0 ? EMA * event.durationMs + (1 - EMA) * this.pingRttMs : event.durationMs;
           }
+        }
+        // tok/sec: outputTokens from most recent TurnEnd, server time from this ApiFetch
+        if (this.lastTurnOutputTokens > 0 && envoyMs > 0) {
+          const tps = this.lastTurnOutputTokens / (envoyMs / 1000);
+          const EMA_TPS = 0.3;
+          this.tokPerSec = this.tokPerSec > 0 ? EMA_TPS * tps + (1 - EMA_TPS) * this.tokPerSec : tps;
+          this.lastTurnOutputTokens = 0;
         }
         break;
       }
@@ -584,7 +584,7 @@ export class TapMetadataAccumulator {
     this.pingRttMs = 0;
     this.serverTimeMs = 0;
     this.tokPerSec = 0;
-    this.lastApiDurationMs = 0;
+    this.lastTurnOutputTokens = 0;
     this.sidechainActive = false;
     this.lastTelemetryKey = "";
     this.linesAdded = 0;

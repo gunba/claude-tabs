@@ -304,9 +304,7 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
   const devtoolsAvailable = useRuntimeStore((s) => s.observabilityInfo.devtoolsAvailable);
   const openMainDevtools = useRuntimeStore((s) => s.openMainDevtools);
 
-  // Version + update state
-  const appVersion = useVersionStore((s) => s.appVersion);
-  const claudeCodeBuildVersion = useVersionStore((s) => s.claudeCodeBuildVersion);
+  // Update state
   const appUpdate = useVersionStore((s) => s.appUpdate);
   const appUpdateDownloading = useVersionStore((s) => s.appUpdateDownloading);
   const appUpdateProgress = useVersionStore((s) => s.appUpdateProgress);
@@ -362,16 +360,8 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
         <span className="status-empty">No active session</span>
       )}
 
-      {/* CENTER: version info + update buttons */}
+      {/* CENTER: update buttons (only when updates available) */}
       <div className="status-center">
-        {appVersion && (
-          <span className="status-item status-version">
-            v{appVersion}
-            {claudeCodeBuildVersion && claudeCodeBuildVersion !== "unknown" && (
-              <span className="status-build"> ({claudeCodeBuildVersion})</span>
-            )}
-          </span>
-        )}
         {appUpdate && (
           <button
             className="status-update-btn"
@@ -381,9 +371,6 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
           >
             {appUpdateDownloading ? `${appUpdateProgress}%` : `App ${appUpdate.version}`}
           </button>
-        )}
-        {cliVersion && (
-          <span className="status-item status-version">CLI {cliVersion}</span>
         )}
         {cliUpdateAvailable && (
           <button
