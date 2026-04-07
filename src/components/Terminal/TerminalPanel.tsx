@@ -16,6 +16,7 @@ import { useSettingsStore } from "../../store/settings";
 import { useRuntimeStore } from "../../store/runtime";
 import { IconSearch } from "../Icons/Icons";
 import { normalizePath } from "../../lib/paths";
+import { settledStateManager } from "../../lib/settledState";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
 import { isSessionIdle } from "../../types/session";
 import { startTraceSpan, traceAsync } from "../../lib/perfTrace";
@@ -564,27 +565,36 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedInput]);
 
-  // Auto-send queued input on event-confirmed completion (not transient idle flashes).
-  // tapProcessor.completionCount only increments on result/end_turn events.
+  // Auto-send queued input on settled-idle (unified hysteresis, not transient idle flashes).
   useEffect(() => {
     if (!queuedInput) return;
     if (session.state === "dead") { setQueuedInput(null); return; }
-    const timer = setTimeout(() => {
-      if (!isSessionIdle(session.state)) return; // Belt-and-suspenders: verify still idle
-      dlog("terminal", session.id, "sending queued input", "LOG", {
+
+    const sendIfReady = () => {
+      if (!isSessionIdle(session.state)) return; // Belt-and-suspenders
+      dlog("terminal", session.id, "sending queued input (settled-idle)", "LOG", {
         event: "terminal.queue_input_sent",
-        data: {
-          text: queuedInput,
-          completionCount: tapProcessor.completionCount,
-        },
+        data: { text: queuedInput },
       });
       writeToPty(session.id, queuedInput + "\r");
       setQueuedInput(null);
-    }, 300);
-    return () => clearTimeout(timer);
+    };
+
+    // If already settled when queued input is set, send immediately
+    if (settledStateManager.getSettled(session.id) === "idle" && isSessionIdle(session.state)) {
+      sendIfReady();
+      return;
+    }
+
+    return settledStateManager.subscribe(
+      (sid, kind) => {
+        if (sid === session.id && kind === "idle") sendIfReady();
+      },
+      () => {},
+    );
     // pty.handle is a stable ref — omitted from deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tapProcessor.completionCount, queuedInput, session.state]);
+  }, [queuedInput, session.id, session.state]);
 
   // Reclaim focus when terminal is visible but loses it to non-interactive elements.
   // Uses termRef directly instead of terminal (which is a new object every render).

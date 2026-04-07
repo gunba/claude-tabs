@@ -9,8 +9,7 @@ import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 import { dlog } from "../lib/debugLog";
 import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
-import { isSessionIdle } from "../types/session";
-import { getEffectiveState } from "../lib/claude";
+import { settledStateManager } from "../lib/settledState";
 
 /**
  * Sends native desktop notifications when background sessions
@@ -69,78 +68,81 @@ export function useNotifications() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // Subscribe to session state changes
+  // Subscribe to settled-state changes for notifications
   useEffect(() => {
     if (!notificationsEnabled) return;
 
-    const prevStates: Record<string, string> = {};
     const COOLDOWN_MS = 30_000;
 
-    const unsub = useSessionStore.subscribe((state) => {
-      if (!permissionGrantedRef.current) return;
+    const unsub = settledStateManager.subscribe(
+      (sessionId, kind) => {
+        if (!permissionGrantedRef.current) return;
 
-      const activeTabId = state.activeTabId;
-      const now = Date.now();
+        const state = useSessionStore.getState();
+        const session = state.sessions.find((s) => s.id === sessionId);
+        if (!session || session.isMetaAgent) return;
+        if (session.id === state.activeTabId) return;
 
-      for (const session of state.sessions) {
-        if (session.isMetaAgent) continue;
-
-        // Use effective state to account for active subagents
-        const subs = state.subagents.get(session.id) || [];
-        const effState = getEffectiveState(session.state, subs);
-        const prev = prevStates[session.id];
-        prevStates[session.id] = effState;
-
-        // Skip the first observation (no previous state to compare)
-        if (!prev) continue;
-        // Skip if this is the active session
-        if (session.id === activeTabId) continue;
-        // Skip if we recently notified for this session
-        if (lastNotifyRef.current[session.id] && now - lastNotifyRef.current[session.id] < COOLDOWN_MS) continue;
-        // Skip if effective state didn't change
-        if (prev === effState) continue;
+        const now = Date.now();
+        if (lastNotifyRef.current[sessionId] && now - lastNotifyRef.current[sessionId] < COOLDOWN_MS) return;
 
         let title: string | null = null;
         let body: string | null = null;
 
-        if ((prev === "thinking" || prev === "toolUse") && isSessionIdle(effState)) {
+        if (kind === "idle") {
           title = `${session.name} — Response Complete`;
           body = session.metadata.currentAction || "Session is ready for input.";
-        } else if (session.state === "actionNeeded") {
+        } else if (kind === "actionNeeded") {
           title = `${session.name} — Action Needed`;
           body = "A session needs your input.";
-        } else if (session.state === "waitingPermission") {
+        } else if (kind === "waitingPermission") {
           title = `${session.name} — Permission Required`;
           body = "A session needs your permission to continue.";
-        } else if (session.state === "error") {
-          title = `${session.name} — Error`;
-          body = "A session encountered an error.";
         }
 
         if (title && body) {
-          lastNotifyRef.current[session.id] = now;
-          invoke("send_notification", { title, body, sessionId: session.id });
+          lastNotifyRef.current[sessionId] = now;
+          invoke("send_notification", { title, body, sessionId });
 
           // [WN-04] Flash OS taskbar when window is not focused
           // [DR-08] Record notification-attention flashes in structured debug logs.
           if (!windowFocusedRef.current) {
-            dlog("notify", session.id, `taskbar flash: ${effState}`);
+            dlog("notify", sessionId, `taskbar flash: ${kind}`);
             getCurrentWindow()
               .requestUserAttention(UserAttentionType.Informational)
               .catch(() => {});
           }
         }
-      }
+      },
+      () => {}, // No action on clear
+    );
 
-      // Clean up entries for removed sessions
-      for (const id of Object.keys(prevStates)) {
-        if (!state.sessions.find((s) => s.id === id)) {
-          delete prevStates[id];
-          delete lastNotifyRef.current[id];
+    // Separate subscription for error state (not a settled kind)
+    const unsubError = useSessionStore.subscribe((state) => {
+      if (!permissionGrantedRef.current) return;
+      const now = Date.now();
+
+      for (const session of state.sessions) {
+        if (session.isMetaAgent || session.id === state.activeTabId) continue;
+        if (session.state !== "error") continue;
+        if (lastNotifyRef.current[session.id] && now - lastNotifyRef.current[session.id] < COOLDOWN_MS) continue;
+
+        lastNotifyRef.current[session.id] = now;
+        invoke("send_notification", {
+          title: `${session.name} — Error`,
+          body: "A session encountered an error.",
+          sessionId: session.id,
+        });
+
+        if (!windowFocusedRef.current) {
+          dlog("notify", session.id, "taskbar flash: error");
+          getCurrentWindow()
+            .requestUserAttention(UserAttentionType.Informational)
+            .catch(() => {});
         }
       }
     });
 
-    return unsub;
+    return () => { unsub(); unsubError(); };
   }, [notificationsEnabled]);
 }

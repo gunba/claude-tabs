@@ -13,6 +13,7 @@ import { useSettingsStore } from "../store/settings";
 import { dlog } from "../lib/debugLog";
 import { getNoisyEventKinds } from "../lib/noisyEventKinds";
 import { traceSync } from "../lib/perfTrace";
+import { settledStateManager } from "../lib/settledState";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
 import type { ToolInputDiffData } from "../types/activity";
@@ -218,9 +219,8 @@ export function useTapEventProcessor(
           activityStore.startTurn(sid, `turn-${activityTurnCounter}`);
         }
 
-        if (event.kind === "TurnEnd" && event.stopReason === "end_turn" && !isSidechain) {
-          activityStore.endTurn(sid);
-        }
+        // endTurn is driven by settled-state (see subscription below), not TurnEnd,
+        // so it only fires when all work is genuinely done (including subagents).
 
         if (event.kind === "ToolInput") {
           // Suppress phantom Read events during subagent context re-serialization.
@@ -464,8 +464,19 @@ export function useTapEventProcessor(
 
     const unsub = tapEventBus.subscribe(sessionId, handleEvent);
 
+    // End activity turns on settled-idle (accounts for subagent completion + hysteresis)
+    const unsubSettled = settledStateManager.subscribe(
+      (settledSid, kind) => {
+        if (settledSid === sessionId && kind === "idle") {
+          useActivityStore.getState().endTurn(sessionId);
+        }
+      },
+      () => {},
+    );
+
     return () => {
       unsub();
+      unsubSettled();
       metaAcc.reset();
       subTracker.reset();
       metaAccRef.current = null;

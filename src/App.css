@@ -70,37 +70,20 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-/* Permission waiting: pulsing permission-colored bar matching the dot */
-.tab-active.tab-permission {
-  animation: permission-pulse 2s ease-in-out infinite;
+/* Settled idle: static green tint, persists until user interaction */
+.tab-settled-idle:not(.tab-active) {
+  background: color-mix(in srgb, var(--success) 15%, var(--bg-surface));
+}
+.tab-settled-idle.tab-active {
+  box-shadow: inset 0 -2px 0 var(--success);
 }
 
-@keyframes permission-pulse {
-  0%, 100% { box-shadow: inset 0 -2px 0 var(--accent); }
-  50% { box-shadow: inset 0 -2px 0 var(--accent-tertiary), 0 2px 6px color-mix(in srgb, var(--accent-tertiary) 20%, transparent); }
+/* Settled action needed / permission: static purple tint */
+.tab-settled-action:not(.tab-active) {
+  background: color-mix(in srgb, var(--accent-tertiary) 15%, var(--bg-surface));
 }
-
-/* Purple attention pulse for inactive tabs needing user input */
-.tab-attention:not(.tab-active) {
-  animation: tab-attention-pulse 2s ease-in-out infinite;
-}
-
-@keyframes tab-attention-pulse {
-  0%, 100% { background: transparent; }
-  50% { background: color-mix(in srgb, var(--accent-tertiary) 15%, var(--bg-surface)); }
-}
-
-/* Brief flash when a non-active tab transitions to idle (finished working) */
-.tab-flash:not(.tab-active) {
-  animation: tab-done-flash 5s ease;
-}
-
-@keyframes tab-done-flash {
-  0% {
-    background: color-mix(in srgb, var(--success) 40%, var(--bg-surface));
-    box-shadow: inset 0 -2px 0 var(--success), 0 0 6px color-mix(in srgb, var(--success) 30%, transparent);
-  }
-  100% { background: transparent; box-shadow: none; }
+.tab-settled-action.tab-active {
+  box-shadow: inset 0 -2px 0 var(--accent-tertiary);
 }
 
 .tab-dead {
@@ -127,23 +110,7 @@
   box-shadow: inset 0 -2px 0 var(--accent), inset 0 2px 0 var(--accent-secondary);
 }
 
-.ctrl-held .tab-active.tab-permission {
-  animation: none;
-  box-shadow: inset 0 -2px 0 var(--accent-tertiary), inset 0 2px 0 var(--accent-secondary);
-}
-
-/* Action needed: pulsing purple bar */
-.tab-active.tab-actionNeeded {
-  animation: actionNeeded-pulse 2s ease-in-out infinite;
-}
-
-@keyframes actionNeeded-pulse {
-  0%, 100% { box-shadow: inset 0 -2px 0 var(--accent); }
-  50% { box-shadow: inset 0 -2px 0 var(--accent-tertiary), 0 2px 6px color-mix(in srgb, var(--accent-tertiary) 20%, transparent); }
-}
-
-.ctrl-held .tab-active.tab-actionNeeded {
-  animation: none;
+.ctrl-held .tab-active.tab-settled-action {
   box-shadow: inset 0 -2px 0 var(--accent-tertiary), inset 0 2px 0 var(--accent-secondary);
 }
 
@@ -167,8 +134,8 @@
 .tab-dot.state-idle { background: var(--success); }
 .tab-dot.state-thinking { background: var(--accent); animation: dot-pulse 2s ease infinite; }
 .tab-dot.state-toolUse { background: var(--info); animation: dot-pulse 2s ease infinite; }
-.tab-dot.state-actionNeeded { background: var(--accent-tertiary); animation: dot-pulse 2s ease infinite; }
-.tab-dot.state-waitingPermission { background: var(--accent-tertiary); animation: dot-pulse 2s ease infinite; }
+.tab-dot.state-actionNeeded { background: var(--accent-tertiary); }
+.tab-dot.state-waitingPermission { background: var(--accent-tertiary); }
 .tab-dot.state-error { background: var(--error); }
 .tab-dot.state-interrupted { background: var(--error); }
 .tab-dot.state-dead { background: var(--text-muted); }

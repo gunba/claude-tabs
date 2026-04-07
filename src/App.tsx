@@ -30,9 +30,10 @@ import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForS
 import { dlog, flushDebugLog } from "./lib/debugLog";
 import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
-import type { Session, Subagent, SessionState } from "./types/session";
-import { isSessionIdle, isSubagentActive } from "./types/session";
+import type { Session, Subagent } from "./types/session";
+import { isSubagentActive } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
+import { settledStateManager, type SettledKind } from "./lib/settledState";
 import { useRuntimeStore } from "./store/runtime";
 import "./App.css";
 
@@ -68,11 +69,8 @@ export default function App() {
   const [inspectedSubagent, setInspectedSubagent] = useState<{ sessionId: string; subagentId: string } | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
-  const [flashingTabs, setFlashingTabs] = useState<Set<string>>(new Set());
+  const [settledTabs, setSettledTabs] = useState<Map<string, SettledKind>>(new Map());
   const ctrlHeld = useCtrlKey();
-  const prevStatesRef = useRef<Map<string, string>>(new Map());
-  const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const pendingFlashRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const dragTabRef = useRef<string | null>(null);
   const initRef = useRef(false);
   const [pruneConfirm, setPruneConfirm] = useState<{
@@ -82,64 +80,28 @@ export default function App() {
   useNotifications();
   useCommandDiscovery();
 
-  // Track state transitions — flash tabs that become idle from an active state (5s, dismiss on hover)
-  // Uses effective state (accounts for subagents) so flash only fires when all work is truly done.
+  // Feed settled-state manager from effective state changes.
+  // Replaces per-consumer ad-hoc debounce with a unified hysteresis system.
   const subagentMap = useSessionStore((s) => s.subagents);
   useEffect(() => {
-    const prev = prevStatesRef.current;
-    const timers = flashTimersRef.current;
-    const pending = pendingFlashRef.current;
     const subagents = useSessionStore.getState().subagents;
     for (const s of sessions) {
       const effState = getEffectiveState(s.state, subagents.get(s.id) || []);
-      const prevState = prev.get(s.id);
-      if (prevState && !isSessionIdle(prevState as SessionState) && prevState !== "dead" && prevState !== "starting" && isSessionIdle(effState)) {
-        // [SI-24] Active -> idle: start 2s debounce before flashing
-        const existingPending = pending.get(s.id);
-        if (existingPending) clearTimeout(existingPending);
-        const sid = s.id;
-        const debounce = setTimeout(() => {
-          pending.delete(sid);
-          dlog("session", sid, "flash: idle confirmed after 2s debounce");
-          const existingFlash = timers.get(sid);
-          if (existingFlash) clearTimeout(existingFlash);
-          setFlashingTabs((f) => new Set(f).add(sid));
-          const dismiss = setTimeout(() => {
-            setFlashingTabs((f) => { const n = new Set(f); n.delete(sid); return n; });
-            timers.delete(sid);
-          }, 5000);
-          timers.set(sid, dismiss);
-        }, 2000);
-        pending.set(s.id, debounce);
-      } else if (prevState && isSessionIdle(prevState as SessionState) && !isSessionIdle(effState)) {
-        // Idle → non-idle: cancel pending flash (transient idle)
-        const existingPending = pending.get(s.id);
-        if (existingPending) {
-          clearTimeout(existingPending);
-          pending.delete(s.id);
-          dlog("session", s.id, "flash: idle cancelled (transient)", "DEBUG");
-        }
-      }
-      prev.set(s.id, effState);
+      settledStateManager.update(s.id, effState);
     }
-    // Clean up timers for sessions that were removed (closed)
+    // Clean up removed sessions
     const sessionIds = new Set(sessions.map((s) => s.id));
-    for (const id of new Set([...pending.keys(), ...timers.keys()])) {
-      if (!sessionIds.has(id)) {
-        if (pending.has(id)) { clearTimeout(pending.get(id)!); pending.delete(id); }
-        if (timers.has(id)) { clearTimeout(timers.get(id)!); timers.delete(id); }
-      }
+    for (const id of settledStateManager._getTrackedSessions()) {
+      if (!sessionIds.has(id)) settledStateManager.removeSession(id);
     }
   }, [sessions, subagentMap]);
 
-  const dismissFlash = useCallback((sessionId: string) => {
-    const pending = pendingFlashRef.current;
-    const pendingTimer = pending.get(sessionId);
-    if (pendingTimer) { clearTimeout(pendingTimer); pending.delete(sessionId); }
-    const timers = flashTimersRef.current;
-    const timer = timers.get(sessionId);
-    if (timer) { clearTimeout(timer); timers.delete(sessionId); }
-    setFlashingTabs((f) => { const n = new Set(f); n.delete(sessionId); return n; });
+  // Subscribe to settled-state changes for tab styling
+  useEffect(() => {
+    return settledStateManager.subscribe(
+      (sid, kind) => setSettledTabs((prev) => new Map(prev).set(sid, kind)),
+      (sid) => setSettledTabs((prev) => { const n = new Map(prev); n.delete(sid); return n; }),
+    );
   }, []);
 
   // Initialize once
@@ -226,7 +188,7 @@ export default function App() {
   const handleTabActivate = useCallback(
     (id: string) => {
       setInspectedSubagent(null);
-      dismissFlash(id);
+      settledStateManager.clearSettled(id);
       const session = sessions.find((s) => s.id === id);
       if (!session) return;
 
@@ -239,7 +201,7 @@ export default function App() {
         setActiveTab(id);
       }
     },
-    [activeTabId, dismissFlash, relaunchDeadSession, sessions, setActiveTab]
+    [activeTabId, relaunchDeadSession, sessions, setActiveTab]
   );
 
   // Close session, prompting for worktree prune on manual single-tab close
@@ -450,7 +412,7 @@ export default function App() {
               return (
                 <div
                   key={session.id}
-                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${session.state === "waitingPermission" && isActive ? " tab-permission" : ""}${session.state === "actionNeeded" && isActive ? " tab-actionNeeded" : ""}${(session.state === "waitingPermission" || session.state === "actionNeeded") ? " tab-attention" : ""}${flashingTabs.has(session.id) ? " tab-flash" : ""}`}
+                  className={`tab${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOverTabId === session.id ? " tab-drag-over" : ""}${settledTabs.get(session.id) === "idle" ? " tab-settled-idle" : ""}${settledTabs.get(session.id) === "actionNeeded" || settledTabs.get(session.id) === "waitingPermission" ? " tab-settled-action" : ""}`}
                   role="button"
                   tabIndex={0}
                   draggable
@@ -514,7 +476,7 @@ export default function App() {
                     e.stopPropagation();
                     setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId: session.id });
                   }}
-                  onMouseEnter={() => dismissFlash(session.id)}
+                  onMouseEnter={() => settledStateManager.clearSettled(session.id)}
                   title={ctrlHeld ? `Ctrl+Click: Relaunch ${fullName}` : `${fullName} — ${getEffectiveState(session.state, subs)}\n${session.config.workingDir}${wt ? `\nWorktree: ${wt.worktreeName}` : ""}`}
                 >
                   <span className={`tab-dot state-${getEffectiveState(session.state, subs)}${inspectorOffSessions.has(session.id) ? " inspector-off" : ""}`} />
