@@ -27,6 +27,7 @@ const DEFAULT_CONFIG: SessionConfig = {
   extraFlags: null,
   sessionId: null,
   runMode: false,
+  providerId: null,
 };
 
 const DEFAULT_METADATA: SessionMetadata = {

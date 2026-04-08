@@ -428,10 +428,13 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         // TAP_PORT for dedicated TCP event delivery
         const env: Record<string, string> = { BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0` };
         if (tapPort) env.TAP_PORT = String(tapPort);
-        // [TR-15] Inject proxy URL for multi-provider routing
+        // [TR-15] [PR-01] Inject a session-scoped proxy URL and bind the session provider
         const { proxyPort } = useSettingsStore.getState();
         if (proxyPort) {
           env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}/s/${session.id}`;
+          const providerId = session.config.providerId
+            ?? useSettingsStore.getState().providerConfig.defaultProviderId;
+          invoke("bind_session_provider", { sessionId: session.id, providerId }).catch(() => {});
         }
         dlog("terminal", session.id, "launching Claude session", "LOG", {
           event: "session.launch",

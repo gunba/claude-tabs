@@ -52,6 +52,8 @@ pub struct SessionConfig {
     pub session_id: Option<String>,
     #[serde(default)]
     pub run_mode: bool,
+    #[serde(default)]
+    pub provider_id: Option<String>,
 }
 
 impl Default for SessionConfig {
@@ -79,6 +81,7 @@ impl Default for SessionConfig {
             extra_flags: None,
             session_id: None,
             run_mode: false,
+            provider_id: None,
         }
     }
 }
@@ -193,22 +196,41 @@ impl From<&Session> for SessionSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelProvider {
+pub struct ModelMapping {
     pub id: String,
-    pub name: String,
-    pub base_url: String,
-    pub api_key: Option<String>,
-    #[serde(default)]
-    pub socks5_proxy: Option<String>,
+    pub pattern: String,
+    pub rewrite_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelRoute {
+pub struct ModelProvider {
     pub id: String,
-    pub pattern: String,
-    pub rewrite_model: Option<String>,
-    pub provider_id: String,
+    pub name: String,
+    #[serde(default = "default_anthropic_compatible")]
+    pub kind: String,
+    #[serde(default)]
+    pub predefined: bool,
+    #[serde(default)]
+    pub model_mappings: Vec<ModelMapping>,
+
+    // anthropic_compatible fields
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub socks5_proxy: Option<String>,
+
+    // openai_codex fields
+    #[serde(default)]
+    pub codex_primary_model: Option<String>,
+    #[serde(default)]
+    pub codex_small_model: Option<String>,
+}
+
+fn default_anthropic_compatible() -> String {
+    "anthropic_compatible".into()
 }
 
 fn default_true() -> bool {
@@ -231,8 +253,6 @@ pub struct SystemPromptRule {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
     pub providers: Vec<ModelProvider>,
-    #[serde(default)]
-    pub routes: Vec<ModelRoute>,
     pub default_provider_id: String,
 }
 
@@ -242,15 +262,14 @@ impl Default for ProviderConfig {
             providers: vec![ModelProvider {
                 id: "anthropic".into(),
                 name: "Anthropic".into(),
-                base_url: "https://api.anthropic.com".into(),
+                kind: "anthropic_compatible".into(),
+                predefined: false,
+                model_mappings: Vec::new(),
+                base_url: Some("https://api.anthropic.com".into()),
                 api_key: None,
                 socks5_proxy: None,
-            }],
-            routes: vec![ModelRoute {
-                id: "default-catchall".into(),
-                pattern: "*".into(),
-                rewrite_model: None,
-                provider_id: "anthropic".into(),
+                codex_primary_model: None,
+                codex_small_model: None,
             }],
             default_provider_id: "anthropic".into(),
         }

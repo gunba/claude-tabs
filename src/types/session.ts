@@ -50,6 +50,7 @@ export interface SessionConfig {
   extraFlags: string | null;
   sessionId: string | null;
   runMode: boolean;
+  providerId: string | null;
 }
 
 export interface SessionMetadata {
@@ -246,39 +247,66 @@ export interface ContentSearchMatch {
 
 // ── Provider / Proxy types ──────────────────────────────────────────
 
-export interface ModelProvider {
-  id: string;            // unique ID (e.g., "anthropic", "glm")
-  name: string;          // display name
-  baseUrl: string;       // upstream API endpoint
-  apiKey: string | null; // API key (null = passthrough from request)
-  socks5Proxy?: string | null; // SOCKS5 proxy URL (e.g., "socks5h://user:pass@host:port")
+export type ProviderKind = "anthropic_compatible" | "openai_codex";
+
+export interface ModelMapping {
+  id: string;
+  pattern: string;       // glob pattern matching model name (e.g., "claude-haiku-*")
+  rewriteModel?: string; // rewrite to this model name (undefined = keep original)
 }
 
-export interface ModelRoute {
-  id: string;            // unique ID
-  pattern: string;       // glob pattern to match model name (e.g., "claude-haiku-*")
-  rewriteModel?: string; // rewrite model name (undefined = keep original)
-  providerId: string;    // route to this provider
+export interface ModelProvider {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  predefined: boolean;
+  modelMappings: ModelMapping[];
+
+  // anthropic_compatible fields
+  baseUrl?: string;
+  apiKey?: string | null;
+  socks5Proxy?: string | null;
+
+  // openai_codex fields
+  codexPrimaryModel?: string;
+  codexSmallModel?: string;
 }
 
 export interface ProviderConfig {
   providers: ModelProvider[];
-  routes: ModelRoute[];
   defaultProviderId: string;
 }
 
+// [PR-02] Predefined OpenAI Codex provider maps Claude families onto
+// primary/small Codex models and ships in the default provider config.
+export const CODEX_PROVIDER: ModelProvider = {
+  id: "openai-codex",
+  name: "OpenAI Codex",
+  kind: "openai_codex",
+  predefined: true,
+  codexPrimaryModel: "gpt-5.4",
+  codexSmallModel: "gpt-5.4-mini",
+  modelMappings: [
+    { id: "codex-opus", pattern: "claude-opus-*", rewriteModel: "gpt-5.4" },
+    { id: "codex-sonnet", pattern: "claude-sonnet-*", rewriteModel: "gpt-5.4" },
+    { id: "codex-haiku", pattern: "claude-haiku-*", rewriteModel: "gpt-5.4-mini" },
+    { id: "codex-catchall", pattern: "*", rewriteModel: "gpt-5.4" },
+  ],
+};
+
 export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
-  providers: [{
-    id: "anthropic",
-    name: "Anthropic",
-    baseUrl: "https://api.anthropic.com",
-    apiKey: null,
-  }],
-  routes: [{
-    id: "default-catchall",
-    pattern: "*",
-    providerId: "anthropic",
-  }],
+  providers: [
+    {
+      id: "anthropic",
+      name: "Anthropic",
+      kind: "anthropic_compatible",
+      predefined: false,
+      modelMappings: [],
+      baseUrl: "https://api.anthropic.com",
+      apiKey: null,
+    },
+    CODEX_PROVIDER,
+  ],
   defaultProviderId: "anthropic",
 };
 
@@ -337,4 +365,5 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
   extraFlags: null,
   sessionId: null,
   runMode: false,
+  providerId: null,
 };

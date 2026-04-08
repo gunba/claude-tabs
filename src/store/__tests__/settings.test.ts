@@ -283,6 +283,7 @@ describe("setSavedDefaults with workspaceDefaults", () => {
     extraFlags: null,
     sessionId: null,
     runMode: false,
+    providerId: null,
     ...overrides,
   });
 

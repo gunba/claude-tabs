@@ -7,13 +7,15 @@ use tokio::sync::oneshot;
 
 use tauri::{Emitter, State};
 
-use crate::session::types::{ModelProvider, ModelRoute, ProviderConfig, SystemPromptRule};
+use crate::session::types::{ModelMapping, ModelProvider, ProviderConfig, SystemPromptRule};
 use crate::observability::{
     record_backend_event,
     record_backend_perf_end,
     record_backend_perf_fail,
     record_backend_perf_start,
 };
+
+pub mod codex;
 
 // ── Proxy state ──────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ pub struct ProxyInner {
     pub default_client: reqwest::Client,
     pub traffic_log_files: HashMap<String, std::io::BufWriter<std::fs::File>>,
     pub traffic_log_paths: HashMap<String, std::path::PathBuf>,
+    pub session_providers: HashMap<String, String>,
 }
 
 pub struct ProxyState(pub Arc<Mutex<ProxyInner>>);
@@ -41,6 +44,7 @@ impl ProxyState {
             default_client: build_plain_client(),
             traffic_log_files: HashMap::new(),
             traffic_log_paths: HashMap::new(),
+            session_providers: HashMap::new(),
         })))
     }
 }
@@ -89,7 +93,6 @@ pub async fn start_api_proxy(
     let span_start = std::time::Instant::now();
     let span_data = serde_json::json!({
         "providerCount": config.providers.len(),
-        "routeCount": config.routes.len(),
     });
     record_backend_perf_start(&app, "proxy", None, "proxy.start_api_proxy", span_data.clone());
 
@@ -144,14 +147,14 @@ pub async fn start_api_proxy(
                                         "remoteAddr": addr.to_string(),
                                     }),
                                 );
-                                let (config, clients, default_client, rules) = match state.lock() {
-                                    Ok(s) => (s.config.clone(), s.clients.clone(), s.default_client.clone(), s.rules.clone()),
+                                let (config, clients, default_client, rules, session_providers) = match state.lock() {
+                                    Ok(s) => (s.config.clone(), s.clients.clone(), s.default_client.clone(), s.rules.clone(), s.session_providers.clone()),
                                     Err(_) => continue,
                                 };
                                 let a = app_for_loop.clone();
                                 let st = state.clone();
                                 tokio::spawn(async move {
-                                    if let Err(e) = handle_connection(stream, config, clients, default_client, rules, a, st).await {
+                                    if let Err(e) = handle_connection(stream, config, clients, default_client, rules, session_providers, a, st).await {
                                         log::debug!("proxy connection error: {e}");
                                     }
                                 });
@@ -231,7 +234,6 @@ pub fn update_provider_config(
     let span_start = std::time::Instant::now();
     let span_data = serde_json::json!({
         "providerCount": config.providers.len(),
-        "routeCount": config.routes.len(),
     });
     record_backend_perf_start(&app, "proxy", None, "proxy.update_provider_config", span_data.clone());
     let result = (|| -> Result<(), String> {
@@ -278,6 +280,100 @@ pub fn update_provider_config(
             Err(err)
         }
     }
+}
+
+#[tauri::command]
+pub fn bind_session_provider(
+    session_id: String,
+    provider_id: String,
+    proxy_state: State<'_, ProxyState>,
+) -> Result<(), String> {
+    let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    s.session_providers.insert(session_id, provider_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn unbind_session_provider(
+    session_id: String,
+    proxy_state: State<'_, ProxyState>,
+) -> Result<(), String> {
+    let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    s.session_providers.remove(&session_id);
+    Ok(())
+}
+
+// ── Codex auth commands ─────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn codex_login(app: tauri::AppHandle) -> Result<(), String> {
+    let (auth_url, verifier, state) = codex::auth::build_auth_url();
+
+    // Open browser for OAuth
+    open::that(&auth_url).map_err(|e| format!("Failed to open browser: {e}"))?;
+
+    // Wait for callback in background, then exchange code
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        match codex::auth::wait_for_callback(&state).await {
+            Ok(code) => {
+                match codex::auth::exchange_code(&code, &verifier).await {
+                    Ok(tokens) => {
+                        let auth_state = get_codex_auth_state();
+                        let email = tokens.email.clone();
+                        auth_state.set_tokens(tokens);
+                        let _ = app_clone.emit("codex-auth-changed", serde_json::json!({
+                            "loggedIn": true,
+                            "email": email,
+                        }));
+                    }
+                    Err(e) => {
+                        let _ = app_clone.emit("codex-auth-changed", serde_json::json!({
+                            "loggedIn": false,
+                            "error": e,
+                        }));
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = app_clone.emit("codex-auth-changed", serde_json::json!({
+                    "loggedIn": false,
+                    "error": e,
+                }));
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn codex_logout() -> Result<(), String> {
+    let auth_state = get_codex_auth_state();
+    auth_state.clear();
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct CodexAuthStatus {
+    pub logged_in: bool,
+    pub email: Option<String>,
+}
+
+#[tauri::command]
+pub fn codex_auth_status() -> Result<CodexAuthStatus, String> {
+    let auth_state = get_codex_auth_state();
+    Ok(CodexAuthStatus {
+        logged_in: auth_state.is_logged_in(),
+        email: auth_state.get_email(),
+    })
+}
+
+fn get_codex_auth_state() -> codex::auth::CodexAuthState {
+    let app_data = dirs::data_local_dir()
+        .unwrap_or_default()
+        .join("claude-tabs");
+    codex::auth::CodexAuthState::new(app_data)
 }
 
 #[tauri::command]
@@ -473,6 +569,7 @@ async fn handle_connection(
     clients: HashMap<String, reqwest::Client>,
     default_client: reqwest::Client,
     rules: Vec<SystemPromptRule>,
+    session_providers: HashMap<String, String>,
     app: tauri::AppHandle,
     proxy_state: Arc<Mutex<ProxyInner>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -524,12 +621,13 @@ async fn handle_connection(
         proxy_state.lock().ok().map_or(false, |s| s.traffic_log_files.contains_key(id))
     });
 
-    // Route: extract model, find matching route + provider, rewrite if needed
+    // Route: look up session's provider, then apply its model mappings
     let model = extract_model(&body);
-    let (route, provider) = route_request(model.as_deref(), &config);
+    let provider = resolve_session_provider(session_id.as_deref(), &session_providers, &config);
 
-    let rewrite = route.and_then(|r| r.rewrite_model.as_deref());
-    let mut final_body = match rewrite {
+    let rewrite = model.as_deref()
+        .and_then(|m| apply_model_mappings(m, &provider.model_mappings));
+    let mut final_body = match rewrite.as_deref() {
         Some(new_model) => rewrite_model_in_body(&body, new_model),
         None => body.to_vec(),
     };
@@ -545,8 +643,25 @@ async fn handle_connection(
         "path": path,
     }));
 
+    // Dispatch by provider kind
+    if provider.kind == "openai_codex" {
+        let auth_state = get_codex_auth_state();
+        return codex::handle_request(
+            &mut stream,
+            &method,
+            &path,
+            &headers,
+            &final_body,
+            provider,
+            &auth_state,
+        ).await;
+    }
+
+    // ── Anthropic-compatible provider: passthrough with model rewrite ──
+
     // Build upstream URL
-    let url = format!("{}{}", provider.base_url.trim_end_matches('/'), path);
+    let base_url = provider.base_url.as_deref().unwrap_or("https://api.anthropic.com");
+    let url = format!("{}{}", base_url.trim_end_matches('/'), path);
 
     // Build upstream request
     let client = clients.get(&provider.id).unwrap_or(&default_client);
@@ -579,7 +694,7 @@ async fn handle_connection(
         .as_secs_f64();
     let log_model = model.clone();
     let log_provider = provider.name.clone();
-    let log_rewrite = rewrite.map(|s| s.to_string());
+    let log_rewrite = rewrite.clone();
     let log_method = method.clone();
     let log_path = path.clone();
     let log_session_id = session_id.clone();
@@ -773,43 +888,51 @@ fn write_traffic_entry(
 
 // ── Routing ─────────────────────────────────────────────────────────
 
-/// Find the first matching route and its provider. Falls back to default provider.
-fn route_request<'a>(
-    model: Option<&str>,
+/// [PR-01] Resolve /s/{sessionId} traffic through the bound provider first,
+/// then fall back to the default provider.
+fn resolve_session_provider<'a>(
+    session_id: Option<&str>,
+    session_providers: &HashMap<String, String>,
     config: &'a ProviderConfig,
-) -> (Option<&'a ModelRoute>, &'a ModelProvider) {
+) -> &'a ModelProvider {
     let default_provider = config
         .providers
         .iter()
         .find(|p| p.id == config.default_provider_id)
         .or_else(|| config.providers.first());
 
-    let m = match model {
-        Some(m) => m,
-        None => return (None, default_provider.unwrap_or_else(|| &FALLBACK_PROVIDER)),
-    };
-
-    for route in &config.routes {
-        if glob_match::glob_match(&route.pattern, m) {
-            let provider = config
-                .providers
-                .iter()
-                .find(|p| p.id == route.provider_id)
-                .or(default_provider)
-                .unwrap_or(&FALLBACK_PROVIDER);
-            return (Some(route), provider);
+    if let Some(sid) = session_id {
+        if let Some(pid) = session_providers.get(sid) {
+            if let Some(provider) = config.providers.iter().find(|p| &p.id == pid) {
+                return provider;
+            }
         }
     }
 
-    (None, default_provider.unwrap_or(&FALLBACK_PROVIDER))
+    default_provider.unwrap_or(&FALLBACK_PROVIDER)
+}
+
+/// Match model against a provider's model mappings. Returns the rewrite model if matched.
+fn apply_model_mappings(model: &str, mappings: &[ModelMapping]) -> Option<String> {
+    for mapping in mappings {
+        if glob_match::glob_match(&mapping.pattern, model) {
+            return mapping.rewrite_model.clone();
+        }
+    }
+    None
 }
 
 static FALLBACK_PROVIDER: ModelProvider = ModelProvider {
     id: String::new(),
     name: String::new(),
-    base_url: String::new(),
+    kind: String::new(),
+    predefined: false,
+    model_mappings: Vec::new(),
+    base_url: None,
     api_key: None,
     socks5_proxy: None,
+    codex_primary_model: None,
+    codex_small_model: None,
 };
 
 fn rewrite_model_in_body(body: &[u8], new_model: &str) -> Vec<u8> {
@@ -961,169 +1084,115 @@ async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) 
 mod tests {
     use super::*;
 
+    fn make_provider(id: &str, name: &str, base_url: &str, api_key: Option<&str>, socks5: Option<&str>) -> ModelProvider {
+        ModelProvider {
+            id: id.into(),
+            name: name.into(),
+            kind: "anthropic_compatible".into(),
+            predefined: false,
+            model_mappings: Vec::new(),
+            base_url: Some(base_url.into()),
+            api_key: api_key.map(|s| s.into()),
+            socks5_proxy: socks5.map(|s| s.into()),
+            codex_primary_model: None,
+            codex_small_model: None,
+        }
+    }
+
+    // ── Session-provider resolution tests ────────────────────────────
+
     #[test]
-    fn test_route_request_default() {
+    fn test_resolve_session_provider_default() {
         let config = ProviderConfig::default();
-        let (route, provider) = route_request(Some("anything"), &config);
-        assert!(route.is_some());
+        let sp = HashMap::new();
+        let provider = resolve_session_provider(Some("sess-1"), &sp, &config);
         assert_eq!(provider.id, "anthropic");
     }
 
     #[test]
-    fn test_route_request_pattern_match() {
+    fn test_resolve_session_provider_bound() {
         let config = ProviderConfig {
             providers: vec![
-                ModelProvider {
-                    id: "glm".into(),
-                    name: "GLM".into(),
-                    base_url: "https://api.z.ai/api/anthropic".into(),
-                    api_key: Some("k".into()),
-                    socks5_proxy: None,
-                },
-                ModelProvider {
-                    id: "anthropic".into(),
-                    name: "Anthropic".into(),
-                    base_url: "https://api.anthropic.com".into(),
-                    api_key: None,
-                    socks5_proxy: None,
-                },
-            ],
-            routes: vec![
-                ModelRoute {
-                    id: "r1".into(),
-                    pattern: "glm-*".into(),
-                    rewrite_model: None,
-                    provider_id: "glm".into(),
-                },
-                ModelRoute {
-                    id: "r2".into(),
-                    pattern: "*".into(),
-                    rewrite_model: None,
-                    provider_id: "anthropic".into(),
-                },
+                make_provider("glm", "GLM", "https://api.z.ai/api/anthropic", Some("k"), None),
+                make_provider("anthropic", "Anthropic", "https://api.anthropic.com", None, None),
             ],
             default_provider_id: "anthropic".into(),
         };
-        let (_, p) = route_request(Some("glm-5.0"), &config);
-        assert_eq!(p.id, "glm");
-        let (_, p) = route_request(Some("claude-opus-4-6"), &config);
-        assert_eq!(p.id, "anthropic");
-    }
-
-    #[test]
-    fn test_route_request_with_rewrite() {
-        let config = ProviderConfig {
-            providers: vec![
-                ModelProvider {
-                    id: "glm".into(),
-                    name: "GLM".into(),
-                    base_url: "https://api.z.ai/api/anthropic".into(),
-                    api_key: Some("k".into()),
-                    socks5_proxy: None,
-                },
-                ModelProvider {
-                    id: "anthropic".into(),
-                    name: "Anthropic".into(),
-                    base_url: "https://api.anthropic.com".into(),
-                    api_key: None,
-                    socks5_proxy: None,
-                },
-            ],
-            routes: vec![
-                ModelRoute {
-                    id: "r1".into(),
-                    pattern: "claude-haiku-*".into(),
-                    rewrite_model: Some("glm-5.0".into()),
-                    provider_id: "glm".into(),
-                },
-                ModelRoute {
-                    id: "r2".into(),
-                    pattern: "*".into(),
-                    rewrite_model: None,
-                    provider_id: "anthropic".into(),
-                },
-            ],
-            default_provider_id: "anthropic".into(),
-        };
-        let (route, provider) = route_request(Some("claude-haiku-4-5-20251001"), &config);
+        let mut sp = HashMap::new();
+        sp.insert("sess-1".to_string(), "glm".to_string());
+        let provider = resolve_session_provider(Some("sess-1"), &sp, &config);
         assert_eq!(provider.id, "glm");
-        assert_eq!(
-            route.unwrap().rewrite_model.as_deref(),
-            Some("glm-5.0")
-        );
-    }
-
-    #[test]
-    fn test_route_request_no_model() {
-        let config = ProviderConfig::default();
-        let (route, provider) = route_request(None, &config);
-        assert!(route.is_none());
+        // Unbound session falls back to default
+        let provider = resolve_session_provider(Some("sess-2"), &sp, &config);
         assert_eq!(provider.id, "anthropic");
     }
 
     #[test]
-    fn test_route_ordering_first_match_wins() {
+    fn test_resolve_session_provider_no_session() {
+        let config = ProviderConfig::default();
+        let sp = HashMap::new();
+        let provider = resolve_session_provider(None, &sp, &config);
+        assert_eq!(provider.id, "anthropic");
+    }
+
+    #[test]
+    fn test_resolve_session_provider_missing_provider_fallback() {
         let config = ProviderConfig {
             providers: vec![
-                ModelProvider {
-                    id: "a".into(),
-                    name: "A".into(),
-                    base_url: "http://a".into(),
-                    api_key: None,
-                    socks5_proxy: None,
-                },
-                ModelProvider {
-                    id: "b".into(),
-                    name: "B".into(),
-                    base_url: "http://b".into(),
-                    api_key: None,
-                    socks5_proxy: None,
-                },
+                make_provider("anthropic", "Anthropic", "https://api.anthropic.com", None, None),
             ],
-            routes: vec![
-                ModelRoute {
-                    id: "r1".into(),
-                    pattern: "claude-*".into(),
-                    rewrite_model: None,
-                    provider_id: "a".into(),
-                },
-                ModelRoute {
-                    id: "r2".into(),
-                    pattern: "claude-haiku-*".into(),
-                    rewrite_model: None,
-                    provider_id: "b".into(),
-                },
-            ],
-            default_provider_id: "a".into(),
+            default_provider_id: "anthropic".into(),
         };
-        // "claude-*" matches first, even though "claude-haiku-*" is more specific
-        let (_, p) = route_request(Some("claude-haiku-4-5"), &config);
-        assert_eq!(p.id, "a");
+        let mut sp = HashMap::new();
+        sp.insert("sess-1".to_string(), "nonexistent".to_string());
+        // Bound to nonexistent provider -> falls back to default
+        let provider = resolve_session_provider(Some("sess-1"), &sp, &config);
+        assert_eq!(provider.id, "anthropic");
+    }
+
+    // ── Model mapping tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_apply_model_mappings_match() {
+        let mappings = vec![
+            ModelMapping { id: "m1".into(), pattern: "claude-haiku-*".into(), rewrite_model: Some("glm-5.0".into()) },
+            ModelMapping { id: "m2".into(), pattern: "*".into(), rewrite_model: None },
+        ];
+        assert_eq!(apply_model_mappings("claude-haiku-4-5", &mappings), Some("glm-5.0".into()));
     }
 
     #[test]
-    fn test_route_provider_missing_fallback() {
-        let config = ProviderConfig {
-            providers: vec![ModelProvider {
-                id: "anthropic".into(),
-                name: "Anthropic".into(),
-                base_url: "https://api.anthropic.com".into(),
-                api_key: None,
-                socks5_proxy: None,
-            }],
-            routes: vec![ModelRoute {
-                id: "r1".into(),
-                pattern: "*".into(),
-                rewrite_model: None,
-                provider_id: "nonexistent".into(),
-            }],
-            default_provider_id: "anthropic".into(),
-        };
-        // Route matches but provider_id "nonexistent" doesn't exist -> falls back to default
-        let (route, provider) = route_request(Some("test"), &config);
-        assert!(route.is_some());
-        assert_eq!(provider.id, "anthropic");
+    fn test_apply_model_mappings_no_rewrite() {
+        let mappings = vec![
+            ModelMapping { id: "m1".into(), pattern: "*".into(), rewrite_model: None },
+        ];
+        assert_eq!(apply_model_mappings("claude-opus-4-6", &mappings), None);
     }
+
+    #[test]
+    fn test_apply_model_mappings_first_match_wins() {
+        let mappings = vec![
+            ModelMapping { id: "m1".into(), pattern: "claude-*".into(), rewrite_model: Some("a".into()) },
+            ModelMapping { id: "m2".into(), pattern: "claude-haiku-*".into(), rewrite_model: Some("b".into()) },
+        ];
+        // "claude-*" matches first, even though "claude-haiku-*" is more specific
+        assert_eq!(apply_model_mappings("claude-haiku-4-5", &mappings), Some("a".into()));
+    }
+
+    #[test]
+    fn test_apply_model_mappings_no_match() {
+        let mappings = vec![
+            ModelMapping { id: "m1".into(), pattern: "glm-*".into(), rewrite_model: Some("x".into()) },
+        ];
+        assert_eq!(apply_model_mappings("claude-opus-4-6", &mappings), None);
+    }
+
+    #[test]
+    fn test_apply_model_mappings_empty() {
+        assert_eq!(apply_model_mappings("anything", &[]), None);
+    }
+
+    // ── Model rewrite tests ─────────────────────────────────────────
 
     #[test]
     fn test_rewrite_model() {
@@ -1131,7 +1200,6 @@ mod tests {
         let rewritten = rewrite_model_in_body(body, "glm-5.0");
         let json: serde_json::Value = serde_json::from_slice(&rewritten).unwrap();
         assert_eq!(json["model"], "glm-5.0");
-        // Other fields preserved
         assert!(json["messages"].is_array());
     }
 
@@ -1177,22 +1245,9 @@ mod tests {
     fn test_build_client_map_with_proxy() {
         let config = ProviderConfig {
             providers: vec![
-                ModelProvider {
-                    id: "proxied".into(),
-                    name: "Proxied".into(),
-                    base_url: "https://api.example.com".into(),
-                    api_key: None,
-                    socks5_proxy: Some("socks5h://user:pass@127.0.0.1:1080".into()),
-                },
-                ModelProvider {
-                    id: "direct".into(),
-                    name: "Direct".into(),
-                    base_url: "https://api.anthropic.com".into(),
-                    api_key: None,
-                    socks5_proxy: None,
-                },
+                make_provider("proxied", "Proxied", "https://api.example.com", None, Some("socks5h://user:pass@127.0.0.1:1080")),
+                make_provider("direct", "Direct", "https://api.anthropic.com", None, None),
             ],
-            routes: vec![],
             default_provider_id: "direct".into(),
         };
         let clients = build_client_map(&config).unwrap();
@@ -1204,14 +1259,7 @@ mod tests {
     #[test]
     fn test_build_client_map_invalid_proxy_url() {
         let config = ProviderConfig {
-            providers: vec![ModelProvider {
-                id: "bad".into(),
-                name: "Bad".into(),
-                base_url: "https://api.example.com".into(),
-                api_key: None,
-                socks5_proxy: Some("not a valid url!!!".into()),
-            }],
-            routes: vec![],
+            providers: vec![make_provider("bad", "Bad", "https://api.example.com", None, Some("not a valid url!!!"))],
             default_provider_id: "bad".into(),
         };
         let result = build_client_map(&config);
