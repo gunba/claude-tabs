@@ -122,7 +122,12 @@ export function ProvidersPane({ visible, onStatus }: ProvidersPaneProps) {
         </div>
         <div className="providers-list">
           {[...providerConfig.providers]
-            .sort((a, b) => (b.predefined ? 1 : 0) - (a.predefined ? 1 : 0))
+            .sort((a, b) => {
+              // Anthropic always first, then predefined, then user-added
+              if (a.id === "anthropic") return -1;
+              if (b.id === "anthropic") return 1;
+              return (b.predefined ? 1 : 0) - (a.predefined ? 1 : 0);
+            })
             .map((p) => (
             <ProviderCard
               key={p.id}
@@ -369,18 +374,15 @@ function CodexAuthSection() {
       <div className="providers-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         {authStatus.loggedIn ? (
           <>
-            <span style={{ color: "var(--accent)", fontSize: 12 }}>
-              Logged in{authStatus.email ? ` as ${authStatus.email}` : ""}
+            <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+              {authStatus.email ?? "Authenticated"}
             </span>
             <button className="providers-card-btn" onClick={handleLogout}>Logout</button>
           </>
         ) : (
-          <>
-            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Not logged in</span>
-            <button className="providers-card-btn" onClick={handleLogin} disabled={loading}>
-              {loading ? "Waiting..." : "Login with OpenAI"}
-            </button>
-          </>
+          <button className="providers-card-btn" onClick={handleLogin} disabled={loading}>
+            {loading ? "Waiting..." : "Login"}
+          </button>
         )}
       </div>
     </div>

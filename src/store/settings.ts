@@ -730,11 +730,14 @@ export const useSettingsStore = create<SettingsState>()(
             pc.providers.push(CODEX_PROVIDER as never);
           }
         }
-        // v10→v11: Backfill knownModels and effortLevels on existing providers
+        // v10→v11: Backfill knownModels and effortLevels on existing providers, rename Codex provider
         if (version < 11) {
           const pc = state.providerConfig as { providers?: Array<Record<string, unknown>> } | undefined;
           if (pc?.providers) {
             for (const p of pc.providers) {
+              if (p.id === "openai-codex" && (p.name === "OpenAI Codex" || p.name === "ChatGPT")) {
+                p.name = "OpenAI";
+              }
               if (!Array.isArray(p.knownModels) || (p.knownModels as unknown[]).length === 0) {
                 if (p.kind === "openai_codex") {
                   p.knownModels = CHATGPT_MODELS;

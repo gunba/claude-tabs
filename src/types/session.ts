@@ -295,35 +295,38 @@ export interface ProviderConfig {
 // ── Default provider catalogs ───────────────────────────────────────
 
 export const ANTHROPIC_MODELS: ProviderModel[] = [
-  { id: "opus",   label: "Opus",   family: "opus",   contextWindow: 200000, color: "#ff8000" },
-  { id: "sonnet", label: "Sonnet", family: "sonnet", contextWindow: 200000, color: "#a335ee" },
-  { id: "haiku",  label: "Haiku",  family: "haiku",  contextWindow: 200000, color: "#0070dd" },
+  { id: "opus",       label: "opus",       family: "opus",   contextWindow: 200000, color: "#ff8000" },
+  { id: "opus[1m]",   label: "opus [1m]",  family: "opus",   contextWindow: 1000000, color: "#ff8000" },
+  { id: "opusplan",   label: "opusplan",   family: "opus",   contextWindow: 200000, color: "#ff8000" },
+  { id: "sonnet",     label: "sonnet",     family: "sonnet", contextWindow: 200000, color: "#a335ee" },
+  { id: "sonnet[1m]", label: "sonnet [1m]", family: "sonnet", contextWindow: 1000000, color: "#a335ee" },
+  { id: "haiku",      label: "haiku",      family: "haiku",  contextWindow: 200000, color: "#0070dd" },
 ];
 
 export const ANTHROPIC_EFFORTS: ProviderEffort[] = [
-  { value: "low",    label: "Low" },
-  { value: "medium", label: "Med" },
-  { value: "high",   label: "High" },
-  { value: "max",    label: "Max" },
+  { value: "low",    label: "low" },
+  { value: "medium", label: "medium" },
+  { value: "high",   label: "high" },
+  { value: "max",    label: "max" },
 ];
 
 export const CHATGPT_MODELS: ProviderModel[] = [
-  { id: "gpt-5.4",      label: "GPT-5.4",      contextWindow: 272000 },
-  { id: "gpt-5.4-mini", label: "GPT-5.4 Mini", contextWindow: 272000 },
+  { id: "gpt-5.4",      label: "gpt-5.4",      contextWindow: 272000 },
+  { id: "gpt-5.4-mini", label: "gpt-5.4-mini", contextWindow: 272000 },
 ];
 
 export const CHATGPT_EFFORTS: ProviderEffort[] = [
-  { value: "low",    label: "Low" },
-  { value: "medium", label: "Med" },
-  { value: "high",   label: "High" },
-  { value: "xhigh",  label: "xHigh" },
+  { value: "low",    label: "low" },
+  { value: "medium", label: "medium" },
+  { value: "high",   label: "high" },
+  { value: "xhigh",  label: "xhigh" },
 ];
 
 // [PR-02] Predefined OpenAI Codex provider maps Claude families onto
 // primary/small Codex models and ships in the default provider config.
 export const CODEX_PROVIDER: ModelProvider = {
   id: "openai-codex",
-  name: "ChatGPT",
+  name: "OpenAI",
   kind: "openai_codex",
   predefined: true,
   codexPrimaryModel: "gpt-5.4",

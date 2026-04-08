@@ -12,7 +12,7 @@ import {
   type PermissionMode,
   DEFAULT_SESSION_CONFIG,
 } from "../../types/session";
-import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, IconSkull, IconBulldozer } from "../Icons/Icons";
+import { IconReturn, IconFolder, IconSkull, IconBulldozer } from "../Icons/Icons";
 import { PillGroup } from "../PillGroup/PillGroup";
 import "./SessionLauncher.css";
 
@@ -185,10 +185,6 @@ export function SessionLauncher() {
     updateConfig("providerId", value);
   }, [updateConfig]);
 
-  const providerPills = useMemo(() =>
-    providerConfig.providers.map((p) => ({ value: p.id, label: p.name })),
-    [providerConfig.providers]
-  );
   const showProviderSelector = providerConfig.providers.length > 1;
 
   // Derive model and effort options from the selected provider
@@ -513,48 +509,46 @@ export function SessionLauncher() {
         {/* Pill selectors — inline, wrapping */}
         <div className={`launcher-pills-section${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
           {showProviderSelector && (
-            <>
-              <PillGroup
-                options={providerPills}
-                selected={config.providerId ?? providerConfig.defaultProviderId}
-                onChange={handleProviderChange}
-                disabled={isNonSessionCommand}
-              />
-              <span className="launcher-pills-break" />
-            </>
+            <select
+              className="launcher-select"
+              value={config.providerId ?? providerConfig.defaultProviderId}
+              onChange={(e) => handleProviderChange(e.target.value || null)}
+              disabled={isNonSessionCommand}
+            >
+              {providerConfig.providers.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           )}
-          <span className="launcher-pill-icon" title="Model"><IconModelDiamond size={13} /></span>
           <select
             className="launcher-select"
             value={config.model ?? ""}
             onChange={(e) => handleModelSelect(e.target.value)}
             disabled={isNonSessionCommand}
           >
-            <option value="">Default</option>
+            <option value="">model: default</option>
             {modelOptions.map((m) => (
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
-          <span className="launcher-pill-icon" title="Permissions"><IconLock size={13} /></span>
-          <PillGroup
-            options={PERM_PILLS}
-            selected={config.permissionMode === "default" ? null : config.permissionMode}
-            onChange={handlePermChange}
-            disabled={isNonSessionCommand}
-          />
-          <span className="launcher-pills-break" />
-          <span className="launcher-pill-icon" title="Effort"><IconLightning size={13} /></span>
           <select
             className="launcher-select"
             value={config.effort ?? ""}
             onChange={(e) => handleEffortSelect(e.target.value)}
             disabled={isNonSessionCommand}
           >
-            <option value="">Default</option>
+            <option value="">effort: default</option>
             {effortOptions.map((e) => (
               <option key={e.value} value={e.value}>{e.label}</option>
             ))}
           </select>
+          <span className="launcher-pills-break" />
+          <PillGroup
+            options={PERM_PILLS}
+            selected={config.permissionMode === "default" ? null : config.permissionMode}
+            onChange={handlePermChange}
+            disabled={isNonSessionCommand}
+          />
           <button
             className={`launcher-toggle-pill${config.dangerouslySkipPermissions ? " launcher-toggle-pill-on launcher-toggle-skip" : ""}`}
             onClick={() => updateConfig("dangerouslySkipPermissions", !config.dangerouslySkipPermissions)}
