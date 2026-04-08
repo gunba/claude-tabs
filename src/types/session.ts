@@ -276,7 +276,6 @@ export interface ModelProvider {
   predefined: boolean;
   modelMappings: ModelMapping[];
   knownModels: ProviderModel[];
-  effortLevels: ProviderEffort[];
 
   // anthropic_compatible fields
   baseUrl?: string;
@@ -331,7 +330,6 @@ export const CODEX_PROVIDER: ModelProvider = {
   codexPrimaryModel: "gpt-5.4",
   codexSmallModel: "gpt-5.4-mini",
   knownModels: [],
-  effortLevels: ANTHROPIC_EFFORTS,
   modelMappings: [
     { id: "codex-opus", pattern: "claude-opus-*", rewriteModel: "gpt-5.4" },
     { id: "codex-sonnet", pattern: "claude-sonnet-*", rewriteModel: "gpt-5.4" },
@@ -349,7 +347,6 @@ export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
       predefined: false,
       modelMappings: [],
       knownModels: ANTHROPIC_MODELS,
-      effortLevels: ANTHROPIC_EFFORTS,
       baseUrl: "https://api.anthropic.com",
       apiKey: null,
     },

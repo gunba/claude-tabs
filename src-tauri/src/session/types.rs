@@ -218,13 +218,6 @@ pub struct ProviderModel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProviderEffort {
-    pub value: String,
-    pub label: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ModelProvider {
     pub id: String,
     pub name: String,
@@ -236,8 +229,6 @@ pub struct ModelProvider {
     pub model_mappings: Vec<ModelMapping>,
     #[serde(default)]
     pub known_models: Vec<ProviderModel>,
-    #[serde(default)]
-    pub effort_levels: Vec<ProviderEffort>,
 
     // anthropic_compatible fields
     #[serde(default)]
@@ -291,7 +282,6 @@ impl Default for ProviderConfig {
                 predefined: false,
                 model_mappings: Vec::new(),
                 known_models: Vec::new(),
-                effort_levels: Vec::new(),
                 base_url: Some("https://api.anthropic.com".into()),
                 api_key: None,
                 socks5_proxy: None,

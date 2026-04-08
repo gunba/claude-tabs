@@ -344,7 +344,7 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-            effort_levels: Vec::new(),
+
         };
         assert_eq!(resolve_codex_model(Some("claude-haiku-4-5"), &provider), "gpt-5.4-mini");
         assert_eq!(resolve_codex_model(Some("haiku"), &provider), "gpt-5.4-mini");
@@ -364,7 +364,7 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-            effort_levels: Vec::new(),
+
         };
         assert_eq!(resolve_codex_model(Some("claude-opus-4-6"), &provider), "gpt-5.4");
         assert_eq!(resolve_codex_model(Some("opus"), &provider), "gpt-5.4");
@@ -385,7 +385,7 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-            effort_levels: Vec::new(),
+
         };
         assert_eq!(resolve_codex_model(Some("gpt-5.4"), &provider), "gpt-5.4");
     }
@@ -404,7 +404,7 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-            effort_levels: Vec::new(),
+
         };
         assert_eq!(resolve_codex_model(Some("claude-opus-4-6[1m]"), &provider), "gpt-5.4");
         assert_eq!(resolve_codex_model(Some("claude-haiku-4-5[1m]"), &provider), "gpt-5.4-mini");

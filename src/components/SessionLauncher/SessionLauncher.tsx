@@ -11,6 +11,7 @@ import {
   type SessionConfig,
   type PermissionMode,
   DEFAULT_SESSION_CONFIG,
+  ANTHROPIC_EFFORTS,
 } from "../../types/session";
 import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, IconSkull, IconBulldozer } from "../Icons/Icons";
 import { PillGroup } from "../PillGroup/PillGroup";
@@ -213,11 +214,11 @@ export function SessionLauncher() {
   }, [selectedProvider]);
 
   const effortOptions = useMemo(() =>
-    (selectedProvider?.effortLevels ?? []).map((e) => ({
+    ANTHROPIC_EFFORTS.map((e) => ({
       value: e.value,
       label: e.value === "max" && selectedProvider?.kind === "openai_codex" ? "xhigh" : e.label,
     })),
-    [selectedProvider?.effortLevels, selectedProvider?.kind]
+    [selectedProvider?.kind]
   );
 
   const handleModelSelect = useCallback((value: string) => {

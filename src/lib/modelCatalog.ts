@@ -1,5 +1,5 @@
-import type { ProviderModel, ProviderEffort } from "../types/session";
-import { ANTHROPIC_MODELS, ANTHROPIC_EFFORTS } from "../types/session";
+import type { ProviderModel } from "../types/session";
+import { ANTHROPIC_MODELS } from "../types/session";
 
 const MODEL_CONFIG_URL = "https://code.claude.com/docs/en/model-config.md";
 
@@ -57,27 +57,11 @@ function parseModelAliases(md: string): ProviderModel[] {
 }
 
 /**
- * Parse effort levels from the docs page.
- * Looks for: "low", "medium", "high", "max" in the effort section.
- */
-function parseEffortLevels(md: string): ProviderEffort[] {
-  // The effort levels are well-established — just verify they're mentioned
-  const levels: ProviderEffort[] = [];
-  for (const level of ["low", "medium", "high", "max"]) {
-    if (md.includes(`**\`${level}\`**`) || md.includes(`\`${level}\``) || md.includes(`"${level}"`)) {
-      levels.push({ value: level, label: level });
-    }
-  }
-  return levels.length >= 3 ? levels : ANTHROPIC_EFFORTS;
-}
-
-/**
- * Fetch the Claude Code model config docs and extract model aliases + effort levels.
+ * Fetch the Claude Code model config docs and extract model aliases.
  * Falls back to static defaults on any failure.
  */
 export async function fetchAnthropicModelCatalog(): Promise<{
   models: ProviderModel[];
-  efforts: ProviderEffort[];
 }> {
   try {
     const resp = await fetch(MODEL_CONFIG_URL);
@@ -85,12 +69,11 @@ export async function fetchAnthropicModelCatalog(): Promise<{
     const md = await resp.text();
 
     const models = parseModelAliases(md);
-    const efforts = parseEffortLevels(md);
 
     if (models.length === 0) throw new Error("No models parsed");
 
-    return { models, efforts };
+    return { models };
   } catch {
-    return { models: ANTHROPIC_MODELS, efforts: ANTHROPIC_EFFORTS };
+    return { models: ANTHROPIC_MODELS };
   }
 }

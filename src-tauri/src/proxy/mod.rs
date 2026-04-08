@@ -937,7 +937,7 @@ static FALLBACK_PROVIDER: ModelProvider = ModelProvider {
     predefined: false,
     model_mappings: Vec::new(),
     known_models: Vec::new(),
-    effort_levels: Vec::new(),
+
     base_url: None,
     api_key: None,
     socks5_proxy: None,
@@ -1102,7 +1102,7 @@ mod tests {
             predefined: false,
             model_mappings: Vec::new(),
             known_models: Vec::new(),
-            effort_levels: Vec::new(),
+        
             base_url: Some(base_url.into()),
             api_key: api_key.map(|s| s.into()),
             socks5_proxy: socks5.map(|s| s.into()),

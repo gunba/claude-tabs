@@ -172,10 +172,10 @@ export const useSessionStore = create<SessionsState>((set) => ({
     }
 
     // Refresh Anthropic model catalog from docs (fire-and-forget, updates settings store)
-    fetchAnthropicModelCatalog().then(({ models, efforts }) => {
+    fetchAnthropicModelCatalog().then(({ models }) => {
       const { providerConfig, setProviderConfig } = useSettingsStore.getState();
       const updated = providerConfig.providers.map((p) =>
-        p.kind === "anthropic_compatible" ? { ...p, knownModels: models, effortLevels: efforts } : p
+        p.kind === "anthropic_compatible" ? { ...p, knownModels: models } : p
       );
       if (JSON.stringify(updated) !== JSON.stringify(providerConfig.providers)) {
         setProviderConfig({ ...providerConfig, providers: updated });

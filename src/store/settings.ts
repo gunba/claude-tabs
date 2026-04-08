@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import type { LaunchPreset, SessionConfig, PastSession, ProviderConfig, SystemPromptRule } from "../types/session";
-import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG, CODEX_PROVIDER, ANTHROPIC_EFFORTS } from "../types/session";
+import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG, CODEX_PROVIDER } from "../types/session";
 import { normalizePath, parseWorktreePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
 import type { EnvVarEntry } from "../lib/envVars";
@@ -732,19 +732,15 @@ export const useSettingsStore = create<SettingsState>()(
               pc.providers.push(CODEX_PROVIDER as never);
             }
             for (const p of pc.providers) {
-              // Force canonical names and catalogs on predefined providers
+              // Force canonical names on predefined providers
               if (p.id === "openai-codex") {
                 p.name = "OpenAI";
-                p.effortLevels = ANTHROPIC_EFFORTS;
               }
               if (p.id === "anthropic") {
                 p.name = "Anthropic";
               }
               // Backfill missing fields
               if (!Array.isArray(p.knownModels)) p.knownModels = [];
-              if (!Array.isArray(p.effortLevels)) {
-                p.effortLevels = ANTHROPIC_EFFORTS;
-              }
               if (!Array.isArray(p.modelMappings)) p.modelMappings = [];
               // Custom providers: dropdown derives from mapping rewrites, not knownModels
               if (p.id !== "anthropic" && p.kind !== "openai_codex") {

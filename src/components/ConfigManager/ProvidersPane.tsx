@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "../../store/settings";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import type { ModelProvider, ModelMapping, ProviderConfig, ProviderModel } from "../../types/session";
-import { ANTHROPIC_EFFORTS, DEFAULT_CLAUDE_MAPPINGS } from "../../types/session";
+import { DEFAULT_CLAUDE_MAPPINGS } from "../../types/session";
 import { parseSocks5Url, buildSocks5Url } from "../../lib/socks5Url";
 import type { Socks5Parts } from "../../lib/socks5Url";
 import "./ProvidersPane.css";
@@ -39,7 +39,6 @@ export function ProvidersPane({ visible, onStatus }: ProvidersPaneProps) {
       predefined: false,
       modelMappings: DEFAULT_CLAUDE_MAPPINGS.map((m, i) => ({ ...m, id: `${id}-map-${i}` })),
       knownModels: [],
-      effortLevels: ANTHROPIC_EFFORTS,
       baseUrl: "",
       apiKey: null,
     };
