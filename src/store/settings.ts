@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
-import type { LaunchPreset, SessionConfig, PastSession, ProviderConfig, ModelRoute, SystemPromptRule } from "../types/session";
-import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG } from "../types/session";
+import type { LaunchPreset, SessionConfig, PastSession, ProviderConfig, SystemPromptRule } from "../types/session";
+import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG, CODEX_PROVIDER } from "../types/session";
 import { normalizePath, parseWorktreePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
 import type { EnvVarEntry } from "../lib/envVars";
@@ -287,6 +287,7 @@ export const useSettingsStore = create<SettingsState>()(
           disallowedTools: stripped.disallowedTools,
           additionalDirs: stripped.additionalDirs,
           mcpConfig: stripped.mcpConfig,
+          providerId: stripped.providerId,
         };
 
         return {
@@ -388,6 +389,7 @@ export const useSettingsStore = create<SettingsState>()(
             disallowedTools: config.disallowedTools.length > 0 ? config.disallowedTools : undefined,
             additionalDirs: config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
             mcpConfig: config.mcpConfig,
+            providerId: config.providerId,
           };
           // Strip undefined/null/default values to keep entries small
           for (const [k, v] of Object.entries(partial)) {
@@ -628,7 +630,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 8,
+      version: 10,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -639,7 +641,7 @@ export const useSettingsStore = create<SettingsState>()(
           // Convert old modelPatterns on providers into routes
           const pc = state.providerConfig as Record<string, unknown> | undefined;
           if (pc?.providers && Array.isArray(pc.providers)) {
-            const routes: ModelRoute[] = [];
+            const routes: Array<{ id: string; pattern: string; providerId: string }> = [];
             for (const p of pc.providers as Array<Record<string, unknown>>) {
               if (Array.isArray(p.modelPatterns)) {
                 for (const pat of p.modelPatterns as string[]) {
@@ -696,6 +698,37 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 8) {
           const rc = state.recordingConfig as { debugCapture?: boolean } | undefined;
           if (rc && rc.debugCapture === undefined) rc.debugCapture = true;
+        }
+        // v8→v9: Convert global routes to per-provider modelMappings, add kind/predefined fields
+        if (version < 9) {
+          const pc = state.providerConfig as Record<string, unknown> | undefined;
+          if (pc?.providers && Array.isArray(pc.providers)) {
+            const routes = (pc.routes as Array<{ id: string; pattern: string; rewriteModel?: string; providerId: string }>) ?? [];
+            for (const p of pc.providers as Array<Record<string, unknown>>) {
+              // Collect routes targeting this provider and convert to modelMappings
+              const mappings = routes
+                .filter((r) => r.providerId === p.id)
+                .map((r) => ({ id: r.id, pattern: r.pattern, rewriteModel: r.rewriteModel }));
+              p.modelMappings = mappings;
+              if (p.kind === undefined) p.kind = "anthropic_compatible";
+              if (p.predefined === undefined) p.predefined = false;
+            }
+            delete pc.routes;
+          }
+          // Add providerId to persisted session configs
+          if (state.lastConfig && typeof state.lastConfig === "object") {
+            (state.lastConfig as Record<string, unknown>).providerId ??= null;
+          }
+          if (state.savedDefaults && typeof state.savedDefaults === "object") {
+            (state.savedDefaults as Record<string, unknown>).providerId ??= null;
+          }
+        }
+        // v9→v10: Inject predefined Codex provider if not already present
+        if (version < 10) {
+          const pc = state.providerConfig as { providers?: Array<{ id: string }> } | undefined;
+          if (pc?.providers && !pc.providers.some((p) => p.id === "openai-codex")) {
+            pc.providers.push(CODEX_PROVIDER as never);
+          }
         }
         return state;
       },

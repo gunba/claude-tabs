@@ -75,6 +75,7 @@ export function SessionLauncher() {
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
   const modelRegistry = useSettingsStore((s) => s.modelRegistry);
+  const providerConfig = useSettingsStore((s) => s.providerConfig);
   const registryEntries = useMemo(() => Object.values(modelRegistry), [modelRegistry]);
 
   // When resuming, use session-specific settings from lastConfig (set by handleConfigure);
@@ -238,6 +239,16 @@ export function SessionLauncher() {
     updateConfig("effort", value);
   }, [updateConfig]);
 
+  const handleProviderChange = useCallback((value: string | null) => {
+    updateConfig("providerId", value);
+  }, [updateConfig]);
+
+  const providerPills = useMemo(() =>
+    providerConfig.providers.map((p) => ({ value: p.id, label: p.name })),
+    [providerConfig.providers]
+  );
+  const showProviderSelector = providerConfig.providers.length > 1;
+
   const filteredCliOptions = useMemo((): CliOption[] => {
     return (cliCapabilities.options || [])
       .filter((opt) => !DEDICATED_FLAGS.has(opt.flag) && !NON_SESSION_FLAGS.has(opt.flag))
@@ -323,6 +334,21 @@ export function SessionLauncher() {
       const exists = await invoke<boolean>("dir_exists", { path: normalizePath(launchConfig.workingDir.trim()) });
       if (!exists) {
         setLaunchError("Directory does not exist");
+        return;
+      }
+    }
+    // [PR-02] Non-utility Codex launches require an authenticated provider session
+    const selectedProviderId = launchConfig.providerId ?? providerConfig.defaultProviderId;
+    const selectedProvider = providerConfig.providers.find((p) => p.id === selectedProviderId);
+    if (selectedProvider?.kind === "openai_codex" && !isNonSessionCommand) {
+      try {
+        const status = await invoke<{ logged_in: boolean }>("codex_auth_status");
+        if (!status.logged_in) {
+          setLaunchError("OpenAI login required. Log in via Settings > Providers.");
+          return;
+        }
+      } catch {
+        setLaunchError("Failed to check Codex auth status");
         return;
       }
     }
@@ -501,6 +527,17 @@ export function SessionLauncher() {
 
         {/* Pill selectors — inline, wrapping */}
         <div className={`launcher-pills-section${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
+          {showProviderSelector && (
+            <>
+              <PillGroup
+                options={providerPills}
+                selected={config.providerId ?? providerConfig.defaultProviderId}
+                onChange={handleProviderChange}
+                disabled={isNonSessionCommand}
+              />
+              <span className="launcher-pills-break" />
+            </>
+          )}
           <span className="launcher-pill-icon" title="Model"><IconModelDiamond size={13} /></span>
           <PillGroup
             options={MODEL_PILLS}

@@ -244,6 +244,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
     invoke("close_session", { id }).catch((err) =>
       dlog("session", id, `close_session IPC failed: ${err}`, "WARN")
     );
+    invoke("unbind_session_provider", { sessionId: id }).catch(() => {});
   },
 
   setActiveTab: (id) => {

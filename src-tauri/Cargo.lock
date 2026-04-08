@@ -580,14 +580,17 @@ dependencies = [
 name = "claude-tabs"
 version = "0.42.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "dirs",
  "flate2",
+ "futures-util",
  "glob-match",
  "libc",
  "log",
  "notify",
  "open",
+ "rand 0.8.5",
  "regex",
  "reqwest 0.12.28",
  "serde",
