@@ -32,7 +32,6 @@ const DEDICATED_FLAGS = new Set([
   "--model", "--permission-mode", "--effort",
   "--dangerously-skip-permissions", "--project-dir",
   "--resume", "--session-id", "--continue",
-  "--system-prompt", "--append-system-prompt",
 ]);
 
 // [SL-14] Non-session flags rendered in separate Utility Commands section
@@ -56,6 +55,7 @@ export function SessionLauncher() {
   const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
+  const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
   const providerConfig = useSettingsStore((s) => s.providerConfig);
 
   // When resuming, use session-specific settings from lastConfig (set by handleConfigure);
@@ -541,7 +541,43 @@ export function SessionLauncher() {
               <option key={e.value} value={e.value}>{e.label}</option>
             ))}
           </select>
-          <span className="launcher-pills-break" />
+          <div className="launcher-prompt-slot">
+            {savedPrompts.length > 0 ? (
+              <>
+                <select
+                  className="launcher-select launcher-prompt-select"
+                  value={selectedPromptId}
+                  onChange={(e) => setSelectedPromptId(e.target.value)}
+                  disabled={isNonSessionCommand}
+                  title="System prompt"
+                >
+                  <option value="">Default Prompt</option>
+                  {savedPrompts.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {selectedPromptId && (
+                  <button
+                    className={`launcher-toggle-pill launcher-prompt-mode${promptMode === "append" ? " launcher-toggle-pill-on" : ""}`}
+                    onClick={() => setPromptMode((m) => m === "replace" ? "append" : "replace")}
+                    title={promptMode === "replace" ? "Replace system prompt" : "Append to system prompt"}
+                    type="button"
+                  >
+                    {promptMode === "replace" ? "Replace" : "Append"}
+                  </button>
+                )}
+              </>
+            ) : (
+              <button
+                className="launcher-toggle-pill launcher-prompt-config-btn"
+                onClick={() => setShowConfigManager("prompts")}
+                title="Open system prompt configuration"
+                type="button"
+              >
+                System Prompt
+              </button>
+            )}
+          </div>
           <span className="launcher-pill-icon" title="Permissions"><IconLock size={13} /></span>
           <PillGroup
             options={PERM_PILLS}
@@ -567,32 +603,6 @@ export function SessionLauncher() {
           >
             <IconBulldozer size={12} /> Sandbox
           </button>
-          {savedPrompts.length > 0 && (
-            <>
-              <select
-                className="launcher-select launcher-prompt-select"
-                value={selectedPromptId}
-                onChange={(e) => setSelectedPromptId(e.target.value)}
-                disabled={isNonSessionCommand}
-                title="System prompt"
-              >
-                <option value="">Default Prompt</option>
-                {savedPrompts.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              {selectedPromptId && (
-                <button
-                  className={`launcher-toggle-pill launcher-prompt-mode${promptMode === "append" ? " launcher-toggle-pill-on" : ""}`}
-                  onClick={() => setPromptMode((m) => m === "replace" ? "append" : "replace")}
-                  title={promptMode === "replace" ? "Replace system prompt" : "Append to system prompt"}
-                  type="button"
-                >
-                  {promptMode === "replace" ? "Replace" : "Append"}
-                </button>
-              )}
-            </>
-          )}
         </div>
 
         {/* CLI Options header (always shown) with TAP/TFC and save defaults */}

@@ -154,9 +154,13 @@
   margin-top: 10px;
 }
 
-.launcher-pills-break {
-  flex-basis: 100%;
-  height: 0;
+.launcher-prompt-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .launcher-pill-icon {
@@ -555,6 +559,10 @@
 
 .launcher-prompt-select {
   max-width: 130px;
+}
+
+.launcher-prompt-config-btn {
+  white-space: nowrap;
 }
 
 .launcher-prompt-mode {
