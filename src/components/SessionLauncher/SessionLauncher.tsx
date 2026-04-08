@@ -196,22 +196,14 @@ export function SessionLauncher() {
 
   const modelOptions = useMemo(() => {
     if (!selectedProvider) return [];
-    // Anthropic: use knownModels directly
-    if (selectedProvider.id === "anthropic") {
-      return selectedProvider.knownModels.map((m) => ({ value: m.id, label: m.id }));
-    }
-    // Non-Anthropic: derive from unique mapping rewrite targets
-    const seen = new Set<string>();
-    const opts: Array<{ value: string; label: string }> = [];
-    for (const m of selectedProvider.modelMappings) {
-      const target = m.rewriteModel;
-      if (target && !seen.has(target)) {
-        seen.add(target);
-        opts.push({ value: target, label: target });
-      }
-    }
-    return opts;
-  }, [selectedProvider]);
+    // Always show Claude model names — the CLI is always Claude Code.
+    // Non-Anthropic providers rewrite models in the proxy, not the CLI args.
+    const anthropic = providerConfig.providers.find((p) => p.id === "anthropic");
+    const models = selectedProvider.id === "anthropic"
+      ? selectedProvider.knownModels
+      : (anthropic?.knownModels ?? []);
+    return models.map((m) => ({ value: m.id, label: m.id }));
+  }, [selectedProvider, providerConfig.providers]);
 
   const effortOptions = useMemo(() =>
     ANTHROPIC_EFFORTS.map((e) => ({
@@ -335,9 +327,10 @@ export function SessionLauncher() {
     const finalConfig: SessionConfig = isNonSessionCommand
       ? { ...launchConfig, runMode: true, model: null, permissionMode: "default", effort: null, dangerouslySkipPermissions: false, projectDir: false }
       : { ...launchConfig, runMode: false };
-    // For non-Anthropic providers, ensure model defaults to the first available option
+    // For non-Anthropic providers, ensure a model is set (CLI needs a Claude model name)
     if (!isNonSessionCommand && selectedProvider && selectedProvider.id !== "anthropic" && !finalConfig.model) {
-      const firstModel = selectedProvider.modelMappings.find((m) => m.rewriteModel)?.rewriteModel;
+      const anthropic = providerConfig.providers.find((p) => p.id === "anthropic");
+      const firstModel = anthropic?.knownModels[0]?.id;
       if (firstModel) finalConfig.model = firstModel;
     }
     const storedName = finalConfig.resumeSession
