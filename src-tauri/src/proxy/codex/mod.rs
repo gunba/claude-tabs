@@ -1,24 +1,25 @@
 pub mod auth;
-pub mod types;
+pub mod stream;
 pub mod translate_req;
 pub mod translate_resp;
-pub mod stream;
+pub mod types;
 
+use crate::observability::{
+    record_backend_event, record_backend_perf_end, record_backend_perf_start,
+};
+use crate::session::types::ModelProvider;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
-use crate::session::types::ModelProvider;
-use crate::observability::{
-    record_backend_event,
-    record_backend_perf_end,
-    record_backend_perf_start,
-};
 
 const CODEX_API_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 
 /// Resolve the Codex model name from the request model and provider config.
 fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String {
     let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
-    let small = provider.codex_small_model.as_deref().unwrap_or("gpt-5.4-mini");
+    let small = provider
+        .codex_small_model
+        .as_deref()
+        .unwrap_or("gpt-5.4-mini");
 
     let model = match model {
         Some(m) => m,
@@ -26,9 +27,7 @@ fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String 
     };
 
     // Strip [1m] context suffix and ANSI formatting codes
-    let cleaned = model.to_lowercase()
-        .replace("[1m]", "")
-        .trim().to_string();
+    let cleaned = model.to_lowercase().replace("[1m]", "").trim().to_string();
     // Strip remaining ANSI bracket codes (e.g., bold markers from subagents)
     let cleaned: String = {
         let mut s = cleaned;
@@ -67,7 +66,10 @@ const GPT_5_4_MINI_MAX_OUTPUT: u64 = 128_000;
 /// Claude Code uses this to determine context window size for compaction.
 fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
     let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
-    let small = provider.codex_small_model.as_deref().unwrap_or("gpt-5.4-mini");
+    let small = provider
+        .codex_small_model
+        .as_deref()
+        .unwrap_or("gpt-5.4-mini");
 
     // Build model entries that look like Anthropic's model list response
     let models = serde_json::json!({
@@ -111,7 +113,11 @@ pub async fn handle_request(
     rewrite: &Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Intercept model listing — return synthetic metadata with correct context windows
-    if method == "GET" && (path == "/v1/models" || path.starts_with("/v1/models?") || path.starts_with("/v1/models/")) {
+    if method == "GET"
+        && (path == "/v1/models"
+            || path.starts_with("/v1/models?")
+            || path.starts_with("/v1/models/"))
+    {
         let body = build_synthetic_models_response(provider);
         let resp = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
@@ -120,7 +126,15 @@ pub async fn handle_request(
         tcp_stream.write_all(resp.as_bytes()).await?;
         tcp_stream.write_all(&body).await?;
         tcp_stream.flush().await?;
-        record_backend_event(app, "DEBUG", "proxy", session_id, "codex.synthetic_models", "Served synthetic model metadata", serde_json::json!({}));
+        record_backend_event(
+            app,
+            "DEBUG",
+            "proxy",
+            session_id,
+            "codex.synthetic_models",
+            "Served synthetic model metadata",
+            serde_json::json!({}),
+        );
         return Ok(());
     }
 
@@ -130,7 +144,11 @@ pub async fn handle_request(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64();
-    let req_body_for_log = if should_log { Some(body.to_vec()) } else { None };
+    let req_body_for_log = if should_log {
+        Some(body.to_vec())
+    } else {
+        None
+    };
 
     // Get client from persistent state
     let codex_client = {
@@ -148,7 +166,15 @@ pub async fn handle_request(
         match token {
             Some(t) => t,
             None => {
-                record_backend_event(app, "WARN", "proxy", session_id, "codex.auth_failed", "Codex: not logged in", serde_json::json!({}));
+                record_backend_event(
+                    app,
+                    "WARN",
+                    "proxy",
+                    session_id,
+                    "codex.auth_failed",
+                    "Codex: not logged in",
+                    serde_json::json!({}),
+                );
                 send_error(tcp_stream, 401, "Codex auth failed: not logged in").await;
                 return Ok(());
             }
@@ -160,8 +186,16 @@ pub async fn handle_request(
     let codex_model = resolve_codex_model(req_model.as_deref(), provider);
 
     record_backend_event(
-        app, "DEBUG", "proxy", session_id, "codex.translate_request",
-        &format!("Codex: {} -> {}", req_model.as_deref().unwrap_or("(none)"), codex_model),
+        app,
+        "DEBUG",
+        "proxy",
+        session_id,
+        "codex.translate_request",
+        &format!(
+            "Codex: {} -> {}",
+            req_model.as_deref().unwrap_or("(none)"),
+            codex_model
+        ),
         serde_json::json!({ "requestModel": req_model, "codexModel": codex_model }),
     );
 
@@ -169,7 +203,15 @@ pub async fn handle_request(
     let codex_body = match translate_req::translate_request(body, &codex_model) {
         Ok(b) => b,
         Err(e) => {
-            record_backend_event(app, "ERR", "proxy", session_id, "codex.translate_request_failed", &format!("Translation failed: {e}"), serde_json::json!({}));
+            record_backend_event(
+                app,
+                "ERR",
+                "proxy",
+                session_id,
+                "codex.translate_request_failed",
+                &format!("Translation failed: {e}"),
+                serde_json::json!({}),
+            );
             send_error(tcp_stream, 400, &format!("Request translation failed: {e}")).await;
             return Ok(());
         }
@@ -183,22 +225,36 @@ pub async fn handle_request(
     let original_model = req_model.as_deref().unwrap_or("claude-opus-4-6");
 
     record_backend_perf_start(
-        app, "proxy", session_id, "codex.upstream_request",
+        app,
+        "proxy",
+        session_id,
+        "codex.upstream_request",
         serde_json::json!({ "model": codex_model, "streaming": is_streaming, "bodyLen": codex_body.len() }),
     );
 
     // Send to OpenAI using persistent client
-    let resp = match codex_client
+    let request = codex_client
         .post(CODEX_API_URL)
         .header("Authorization", format!("Bearer {access_token}"))
-        .header("Content-Type", "application/json")
-        .body(codex_body)
-        .send()
-        .await
-    {
+        .header("Content-Type", "application/json");
+    let request = if is_streaming {
+        request.header("Accept", "text/event-stream")
+    } else {
+        request
+    };
+
+    let resp = match request.body(codex_body).send().await {
         Ok(r) => r,
         Err(e) => {
-            record_backend_event(app, "ERR", "proxy", session_id, "codex.upstream_failed", &format!("Upstream failed: {e}"), serde_json::json!({}));
+            record_backend_event(
+                app,
+                "ERR",
+                "proxy",
+                session_id,
+                "codex.upstream_failed",
+                &format!("Upstream failed: {e}"),
+                serde_json::json!({}),
+            );
             send_error(tcp_stream, 502, &format!("Codex upstream failed: {e}")).await;
             return Ok(());
         }
@@ -207,7 +263,15 @@ pub async fn handle_request(
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let body = resp.text().await.unwrap_or_default();
-        record_backend_event(app, "WARN", "proxy", session_id, "codex.api_error", &format!("Codex API {status}"), serde_json::json!({ "status": status, "body": body }));
+        record_backend_event(
+            app,
+            "WARN",
+            "proxy",
+            session_id,
+            "codex.api_error",
+            &format!("Codex API {status}"),
+            serde_json::json!({ "status": status, "body": body }),
+        );
         send_error(tcp_stream, status, &format!("Codex API error: {body}")).await;
         return Ok(());
     }
@@ -224,13 +288,25 @@ pub async fn handle_request(
         use futures_util::StreamExt;
         let mut byte_stream = resp.bytes_stream();
         let mut buffer = String::new();
-        let mut resp_log_buf: Vec<u8> = if should_log { Vec::with_capacity(8192) } else { Vec::new() };
+        let mut resp_log_buf: Vec<u8> = if should_log {
+            Vec::with_capacity(8192)
+        } else {
+            Vec::new()
+        };
 
         while let Some(chunk) = byte_stream.next().await {
             let chunk = match chunk {
                 Ok(c) => c,
                 Err(e) => {
-                    record_backend_event(app, "WARN", "proxy", session_id, "codex.stream_chunk_error", &format!("Stream chunk error: {e}"), serde_json::json!({}));
+                    record_backend_event(
+                        app,
+                        "WARN",
+                        "proxy",
+                        session_id,
+                        "codex.stream_chunk_error",
+                        &format!("Stream chunk error: {e}"),
+                        serde_json::json!({}),
+                    );
                     break;
                 }
             };
@@ -239,11 +315,15 @@ pub async fn handle_request(
             while let Some(newline_pos) = buffer.find('\n') {
                 let line = buffer[..newline_pos].trim().to_string();
                 buffer = buffer[newline_pos + 1..].to_string();
-                if line.is_empty() { continue; }
+                if line.is_empty() {
+                    continue;
+                }
 
                 let output = translator.process_line(&line);
                 if !output.is_empty() {
-                    if should_log { resp_log_buf.extend_from_slice(&output); }
+                    if should_log {
+                        resp_log_buf.extend_from_slice(&output);
+                    }
                     tcp_stream.write_all(&output).await?;
                     tcp_stream.flush().await?;
                 }
@@ -253,7 +333,9 @@ pub async fn handle_request(
         if !buffer.trim().is_empty() {
             let output = translator.process_line(buffer.trim());
             if !output.is_empty() {
-                if should_log { resp_log_buf.extend_from_slice(&output); }
+                if should_log {
+                    resp_log_buf.extend_from_slice(&output);
+                }
                 tcp_stream.write_all(&output).await?;
                 tcp_stream.flush().await?;
             }
@@ -261,20 +343,51 @@ pub async fn handle_request(
 
         if should_log {
             super::write_traffic_entry(
-                proxy_state, &session_id_owned, req_ts, span_start,
-                "POST", "/v1/messages", orig_model, &provider.name, rewrite,
-                &req_body_for_log, 200, &resp_log_buf,
+                proxy_state,
+                &session_id_owned,
+                req_ts,
+                span_start,
+                "POST",
+                "/v1/messages",
+                orig_model,
+                &provider.name,
+                rewrite,
+                &req_body_for_log,
+                200,
+                &resp_log_buf,
             );
         }
 
-        record_backend_perf_end(app, "proxy", session_id, "codex.upstream_request", span_start, 5000, serde_json::json!({ "model": codex_model, "streaming": true }), serde_json::json!({}));
+        record_backend_perf_end(
+            app,
+            "proxy",
+            session_id,
+            "codex.upstream_request",
+            span_start,
+            5000,
+            serde_json::json!({ "model": codex_model, "streaming": true }),
+            serde_json::json!({}),
+        );
     } else {
         let codex_body = resp.bytes().await.map_err(|e| format!("Read error: {e}"))?;
         let translated = match translate_resp::translate_response(&codex_body, original_model) {
             Ok(b) => b,
             Err(e) => {
-                record_backend_event(app, "ERR", "proxy", session_id, "codex.translate_response_failed", &format!("Response translation failed: {e}"), serde_json::json!({}));
-                send_error(tcp_stream, 500, &format!("Response translation failed: {e}")).await;
+                record_backend_event(
+                    app,
+                    "ERR",
+                    "proxy",
+                    session_id,
+                    "codex.translate_response_failed",
+                    &format!("Response translation failed: {e}"),
+                    serde_json::json!({}),
+                );
+                send_error(
+                    tcp_stream,
+                    500,
+                    &format!("Response translation failed: {e}"),
+                )
+                .await;
                 return Ok(());
             }
         };
@@ -289,13 +402,31 @@ pub async fn handle_request(
 
         if should_log {
             super::write_traffic_entry(
-                proxy_state, &session_id_owned, req_ts, span_start,
-                "POST", "/v1/messages", orig_model, &provider.name, rewrite,
-                &req_body_for_log, 200, &translated,
+                proxy_state,
+                &session_id_owned,
+                req_ts,
+                span_start,
+                "POST",
+                "/v1/messages",
+                orig_model,
+                &provider.name,
+                rewrite,
+                &req_body_for_log,
+                200,
+                &translated,
             );
         }
 
-        record_backend_perf_end(app, "proxy", session_id, "codex.upstream_request", span_start, 5000, serde_json::json!({ "model": codex_model, "streaming": false }), serde_json::json!({ "responseLen": translated.len() }));
+        record_backend_perf_end(
+            app,
+            "proxy",
+            session_id,
+            "codex.upstream_request",
+            span_start,
+            5000,
+            serde_json::json!({ "model": codex_model, "streaming": false }),
+            serde_json::json!({ "responseLen": translated.len() }),
+        );
     }
 
     Ok(())
@@ -304,14 +435,19 @@ pub async fn handle_request(
 fn extract_model_from_body(body: &[u8]) -> Option<String> {
     serde_json::from_slice::<serde_json::Value>(body)
         .ok()
-        .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(|s| s.to_string()))
+        .and_then(|v| {
+            v.get("model")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string())
+        })
 }
 
 async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) {
     let body = serde_json::json!({
         "type": "error",
         "error": { "type": "proxy_error", "message": msg }
-    }).to_string();
+    })
+    .to_string();
     let reason = match status {
         400 => "Bad Request",
         401 => "Unauthorized",
@@ -344,10 +480,15 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-
         };
-        assert_eq!(resolve_codex_model(Some("claude-haiku-4-5"), &provider), "gpt-5.4-mini");
-        assert_eq!(resolve_codex_model(Some("haiku"), &provider), "gpt-5.4-mini");
+        assert_eq!(
+            resolve_codex_model(Some("claude-haiku-4-5"), &provider),
+            "gpt-5.4-mini"
+        );
+        assert_eq!(
+            resolve_codex_model(Some("haiku"), &provider),
+            "gpt-5.4-mini"
+        );
     }
 
     #[test]
@@ -364,9 +505,11 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-
         };
-        assert_eq!(resolve_codex_model(Some("claude-opus-4-6"), &provider), "gpt-5.4");
+        assert_eq!(
+            resolve_codex_model(Some("claude-opus-4-6"), &provider),
+            "gpt-5.4"
+        );
         assert_eq!(resolve_codex_model(Some("opus"), &provider), "gpt-5.4");
         assert_eq!(resolve_codex_model(Some("sonnet"), &provider), "gpt-5.4");
     }
@@ -385,7 +528,6 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-
         };
         assert_eq!(resolve_codex_model(Some("gpt-5.4"), &provider), "gpt-5.4");
     }
@@ -404,9 +546,14 @@ mod tests {
             codex_primary_model: Some("gpt-5.4".into()),
             codex_small_model: Some("gpt-5.4-mini".into()),
             known_models: Vec::new(),
-
         };
-        assert_eq!(resolve_codex_model(Some("claude-opus-4-6[1m]"), &provider), "gpt-5.4");
-        assert_eq!(resolve_codex_model(Some("claude-haiku-4-5[1m]"), &provider), "gpt-5.4-mini");
+        assert_eq!(
+            resolve_codex_model(Some("claude-opus-4-6[1m]"), &provider),
+            "gpt-5.4"
+        );
+        assert_eq!(
+            resolve_codex_model(Some("claude-haiku-4-5[1m]"), &provider),
+            "gpt-5.4-mini"
+        );
     }
 }

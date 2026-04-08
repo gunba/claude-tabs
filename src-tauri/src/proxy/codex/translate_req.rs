@@ -2,8 +2,8 @@ use serde_json::{json, Value};
 
 /// Translate an Anthropic Messages API request body into an OpenAI Codex request body.
 pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, String> {
-    let req: Value = serde_json::from_slice(body)
-        .map_err(|e| format!("Failed to parse request: {e}"))?;
+    let req: Value =
+        serde_json::from_slice(body).map_err(|e| format!("Failed to parse request: {e}"))?;
 
     let mut codex_req = json!({
         "model": codex_model,
@@ -19,41 +19,10 @@ pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, Stri
         }
     }
 
-    // max_tokens — Codex API does not support maxOutputTokens; skip
-
-    // Passthrough fields
-    if let Some(t) = req.get("temperature") { codex_req["temperature"] = t.clone(); }
-    if let Some(t) = req.get("top_p") { codex_req["top_p"] = t.clone(); }
-    if let Some(ss) = req.get("stop_sequences") { codex_req["stop"] = ss.clone(); }
-
-    // output_config.effort → reasoning.effort
-    // Claude: low/medium/high/max → OpenAI: low/medium/high/xhigh
-    if let Some(oc) = req.get("output_config") {
-        if let Some(effort) = oc.get("effort").and_then(|v| v.as_str()) {
-            let oai_effort = match effort {
-                "low" => "low",
-                "medium" => "medium",
-                "high" => "high",
-                "max" => "xhigh",
-                _ => "high",
-            };
-            codex_req["reasoning"] = json!({ "effort": oai_effort });
-        }
-    }
-    // Fallback: thinking.budget_tokens → reasoning.effort (older models)
-    if codex_req.get("reasoning").is_none() {
-        if let Some(thinking) = req.get("thinking") {
-            if let Some(budget) = thinking.get("budget_tokens").and_then(|v| v.as_u64()) {
-                let effort = match budget {
-                    0..=2048 => "low",
-                    2049..=8192 => "medium",
-                    8193..=32768 => "high",
-                    _ => "xhigh",
-                };
-                codex_req["reasoning"] = json!({ "effort": effort });
-            }
-        }
-    }
+    // Keep the request body to the minimal shape used by the known-good
+    // Codex transport. The chatgpt.com Codex backend rejects some Responses
+    // API fields (for example `temperature`), so we intentionally omit
+    // Anthropic-only and optional tuning parameters here.
 
     // tools
     if let Some(tools) = req.get("tools").and_then(|v| v.as_array()) {
@@ -65,7 +34,7 @@ pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, Stri
 
     // tool_choice
     if let Some(tc) = req.get("tool_choice") {
-        codex_req["toolChoice"] = translate_tool_choice(tc);
+        codex_req["tool_choice"] = translate_tool_choice(tc);
     }
 
     // messages → input (each message may produce multiple top-level input items)
@@ -80,12 +49,11 @@ pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, Stri
 fn extract_system_text(system: &Value) -> String {
     match system {
         Value::String(s) => s.clone(),
-        Value::Array(arr) => {
-            arr.iter()
-                .filter_map(|block| block.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
+        Value::Array(arr) => arr
+            .iter()
+            .filter_map(|block| block.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n"),
         _ => String::new(),
     }
 }
@@ -123,7 +91,11 @@ fn translate_tool_choice(tc: &Value) -> Value {
 /// inside a message's content array.
 fn translate_message(msg: &Value) -> Vec<Value> {
     let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
-    let text_type = if role == "assistant" { "output_text" } else { "input_text" };
+    let text_type = if role == "assistant" {
+        "output_text"
+    } else {
+        "input_text"
+    };
 
     // Simple string content — single message item
     if let Some(text) = msg.get("content").and_then(|v| v.as_str()) {
@@ -171,7 +143,10 @@ fn translate_message(msg: &Value) -> Vec<Value> {
                 }));
             }
             "tool_result" => {
-                let tool_use_id = block.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
+                let tool_use_id = block
+                    .get("tool_use_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let output = extract_tool_result_text(block);
                 items.push(json!({
                     "type": "function_call_output",
@@ -218,7 +193,10 @@ fn translate_image_block(block: &Value) -> Option<Value> {
     let source_type = source.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match source_type {
         "base64" => {
-            let media_type = source.get("media_type").and_then(|v| v.as_str()).unwrap_or("image/png");
+            let media_type = source
+                .get("media_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("image/png");
             let data = source.get("data").and_then(|v| v.as_str()).unwrap_or("");
             Some(json!({
                 "type": "input_image",
@@ -241,7 +219,8 @@ fn extract_tool_result_text(block: &Value) -> String {
         match content {
             Value::String(s) => return s.clone(),
             Value::Array(arr) => {
-                return arr.iter()
+                return arr
+                    .iter()
                     .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -267,10 +246,8 @@ mod tests {
             ],
             "stream": true,
         });
-        let result = translate_request(
-            serde_json::to_vec(&body).unwrap().as_slice(),
-            "gpt-5.4",
-        ).unwrap();
+        let result =
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(translated["model"], "gpt-5.4");
         assert_eq!(translated["instructions"], "You are a helpful assistant");
@@ -295,10 +272,8 @@ mod tests {
             ],
             "stream": true,
         });
-        let result = translate_request(
-            serde_json::to_vec(&body).unwrap().as_slice(),
-            "gpt-5.4",
-        ).unwrap();
+        let result =
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         // Assistant tool_use → top-level function_call
         assert_eq!(translated["input"][0]["type"], "function_call");
@@ -322,28 +297,52 @@ mod tests {
             ],
             "stream": true,
         });
-        let result = translate_request(
-            serde_json::to_vec(&body).unwrap().as_slice(),
-            "gpt-5.4",
-        ).unwrap();
+        let result =
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(translated["input"][0]["content"][0]["type"], "input_image");
-        assert_eq!(translated["input"][0]["content"][0]["image_url"], "data:image/png;base64,abc123");
+        assert_eq!(
+            translated["input"][0]["content"][0]["image_url"],
+            "data:image/png;base64,abc123"
+        );
     }
 
     #[test]
-    fn test_effort_mapping() {
-        for (claude_effort, oai_effort) in [("low", "low"), ("medium", "medium"), ("high", "high"), ("max", "xhigh")] {
-            let body = json!({
-                "model": "claude-opus-4-6",
-                "max_tokens": 1024,
-                "output_config": { "effort": claude_effort },
-                "messages": [{"role": "user", "content": "test"}],
-                "stream": true,
-            });
-            let result = translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
-            let translated: Value = serde_json::from_slice(&result).unwrap();
-            assert_eq!(translated["reasoning"]["effort"], oai_effort, "effort {claude_effort} should map to {oai_effort}");
-        }
+    fn test_unsupported_optional_fields_are_omitted() {
+        let body = json!({
+            "model": "claude-opus-4-6",
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "stop_sequences": ["STOP"],
+            "output_config": { "effort": "max" },
+            "thinking": { "budget_tokens": 32000 },
+            "messages": [{"role": "user", "content": "test"}],
+            "stream": true,
+        });
+        let result =
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+        let translated: Value = serde_json::from_slice(&result).unwrap();
+
+        assert!(translated.get("temperature").is_none());
+        assert!(translated.get("top_p").is_none());
+        assert!(translated.get("stop").is_none());
+        assert!(translated.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn test_tool_choice_uses_codex_field_name() {
+        let body = json!({
+            "model": "claude-opus-4-6",
+            "tool_choice": { "type": "tool", "name": "write_file" },
+            "messages": [{"role": "user", "content": "test"}],
+            "stream": true,
+        });
+        let result =
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+        let translated: Value = serde_json::from_slice(&result).unwrap();
+
+        assert!(translated.get("toolChoice").is_none());
+        assert_eq!(translated["tool_choice"]["type"], "function");
+        assert_eq!(translated["tool_choice"]["name"], "write_file");
     }
 }
