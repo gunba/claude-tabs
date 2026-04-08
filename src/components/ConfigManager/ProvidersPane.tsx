@@ -241,8 +241,8 @@ function ProviderCard({
         onChange={(models) => onUpdate({ knownModels: models })}
       />
 
-      {/* Model Mappings (collapsible) */}
-      {provider.modelMappings.length > 0 && (
+      {/* Model Mappings (collapsible) — hidden for the default Anthropic provider */}
+      {provider.id !== "anthropic" && provider.modelMappings.length > 0 && (
         <div className="providers-mappings-section">
           <button
             className="providers-mappings-toggle"
@@ -278,7 +278,7 @@ function ProviderCard({
           )}
         </div>
       )}
-      {provider.modelMappings.length === 0 && !provider.predefined && (
+      {provider.id !== "anthropic" && provider.modelMappings.length === 0 && !provider.predefined && (
         <button className="providers-add-btn" onClick={onAddMapping} style={{ alignSelf: "flex-start" }}>
           + Mapping
         </button>
@@ -302,7 +302,13 @@ function KnownModelsEditor({ models, onChange }: { models: ProviderModel[]; onCh
   };
 
   const updateModel = (index: number, updates: Partial<ProviderModel>) => {
-    onChange(models.map((m, i) => i === index ? { ...m, ...updates } : m));
+    onChange(models.map((m, i) => {
+      if (i !== index) return m;
+      const updated = { ...m, ...updates };
+      // Auto-sync label to id
+      if (updates.id !== undefined) updated.label = updates.id;
+      return updated;
+    }));
   };
 
   return (
@@ -314,18 +320,12 @@ function KnownModelsEditor({ models, onChange }: { models: ProviderModel[]; onCh
         <>
           <div className="providers-route-list">
             {models.map((m, i) => (
-              <div key={i} className="providers-route-row" style={{ gridTemplateColumns: "1fr 1fr 22px" }}>
+              <div key={i} className="providers-route-row" style={{ gridTemplateColumns: "1fr 22px" }}>
                 <input
                   type="text"
                   value={m.id}
                   onChange={(e) => updateModel(i, { id: e.target.value })}
                   placeholder="model-id"
-                />
-                <input
-                  type="text"
-                  value={m.label}
-                  onChange={(e) => updateModel(i, { label: e.target.value })}
-                  placeholder="Display name"
                 />
                 <button className="providers-route-remove" onClick={() => removeModel(i)} title="Remove model">
                   {"\u00D7"}
@@ -374,10 +374,10 @@ function CodexAuthSection() {
       <div className="providers-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         {authStatus.loggedIn ? (
           <>
-            <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>
+            <span style={{ fontStyle: "italic", color: "var(--text-secondary)", fontSize: 11, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {authStatus.email ?? "Authenticated"}
             </span>
-            <button className="providers-card-btn" onClick={handleLogout}>Logout</button>
+            <button className="providers-card-btn" onClick={handleLogout} style={{ flexShrink: 0 }}>Logout</button>
           </>
         ) : (
           <button className="providers-card-btn" onClick={handleLogin} disabled={loading}>

@@ -12,7 +12,7 @@ const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const CALLBACK_PORT: u16 = 1455;
-const SCOPES: &str = "openid profile email offline_access api.connectors.read api.connectors.invoke api.responses.write";
+const SCOPES: &str = "openid profile email offline_access api.connectors.read api.connectors.invoke";
 const FLOW_TIMEOUT_SECS: u64 = 600; // 10 minutes
 const TOKEN_REFRESH_BUFFER_SECS: u64 = 60;
 

@@ -735,7 +735,7 @@ export const useSettingsStore = create<SettingsState>()(
           const pc = state.providerConfig as { providers?: Array<Record<string, unknown>> } | undefined;
           if (pc?.providers) {
             for (const p of pc.providers) {
-              if (p.id === "openai-codex" && (p.name === "OpenAI Codex" || p.name === "ChatGPT")) {
+              if (p.id === "openai-codex") {
                 p.name = "OpenAI";
               }
               if (!Array.isArray(p.knownModels) || (p.knownModels as unknown[]).length === 0) {
@@ -761,7 +761,7 @@ export const useSettingsStore = create<SettingsState>()(
               if (p.kind === "openai_codex") {
                 p.knownModels = CHATGPT_MODELS;
                 p.effortLevels = CHATGPT_EFFORTS;
-              } else if (p.id === "anthropic" || p.kind === "anthropic_compatible") {
+              } else if (p.id === "anthropic") {
                 p.knownModels = ANTHROPIC_MODELS;
                 p.effortLevels = ANTHROPIC_EFFORTS;
               }
