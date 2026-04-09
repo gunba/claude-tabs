@@ -71,10 +71,12 @@ Mutate rules without editing markdown:
 
 ```powershell
 python tools/proofd.py create-rule --title "Foo" --paths "src/foo/**"
+python tools/proofd.py update-rule --rule foo --paths "src/foo/**,src/bar/**"
 python tools/proofd.py add-entry --rule foo --statement "Foo does bar" --files "src/foo/index.ts"
 python tools/proofd.py update-entry --tag FO-01 --statement "Updated text"
 python tools/proofd.py entry-files --tag FO-01
 python tools/proofd.py delete-entry --tag FO-02
+python tools/proofd.py delete-rule --rule foo
 python tools/proofd.py split-rule --rule foo --new-title "Foo Advanced" --tags FO-03,FO-04
 python tools/proofd.py record-verification --tag FO-01 --status confirmed --files "src/foo/index.ts"
 python tools/proofd.py promote-overlay
@@ -90,6 +92,8 @@ Generated rule files include:
 - Stable tag statements
 
 They intentionally omit verification telemetry, `Files:` lines, and long historical notes. Query anchors on demand with `proofd entry-files --tag <TAG>`.
+If `proofd delete-entry` removes the final entry in a rule, proofd now prunes the rule from the store instead of leaving an empty placeholder behind.
+Rules with no entries are not rendered by `proofd sync`; delete obsolete empty rules from the store instead of keeping placeholder markdown around.
 
 ## MCP
 

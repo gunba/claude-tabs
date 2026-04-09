@@ -840,6 +840,12 @@ class ProofStore:
             self._seed_counters_from_rule(rule)
         self.conn.commit()
 
+    def _reset_repo_indexes(self) -> None:
+        self.conn.execute("DELETE FROM prefix_registry WHERE repo_id = ?", (self.profile["repo_id"],))
+        self.conn.execute("DELETE FROM tag_counters WHERE repo_id = ?", (self.profile["repo_id"],))
+        self.conn.commit()
+        self._reseed_repo_indexes()
+
     def canonical_repo_dir(self, profile: dict[str, Any] | None = None) -> pathlib.Path:
         profile = profile or self.profile
         return self.kb_root / "repos" / profile["repo_id"]
@@ -1065,6 +1071,52 @@ class ProofStore:
         self.save_rule(rule, layer=layer, branch=branch)
         return rule
 
+    def update_rule(
+        self,
+        rule_id: str,
+        title: str | None = None,
+        paths: list[str] | None = None,
+        summary: str | None = None,
+        branch: str | None = None,
+        layer: str = "workspace",
+    ) -> dict[str, Any]:
+        branch = branch or current_branch(self.repo_root)
+        rule = copy.deepcopy(self.find_rule(rule_id, branch=branch))
+        if title is not None:
+            rule["title"] = title.strip()
+        if paths is not None:
+            rule["scope"] = {"paths": [normalize_path(path) for path in paths]}
+        if summary is not None:
+            rule["summary"] = summary.strip()
+        self.save_rule(rule, layer=layer, branch=branch)
+        return rule
+
+    def delete_rule(
+        self,
+        rule_id: str,
+        branch: str | None = None,
+        layer: str = "workspace",
+    ) -> dict[str, Any]:
+        branch = branch or current_branch(self.repo_root)
+        rule = copy.deepcopy(self.find_rule(rule_id, branch=branch))
+        path = self.canonical_rule_path(rule_id) if layer == "canonical" else self.overlay_rule_path(branch, rule_id)
+        if not path.exists():
+            raise KeyError(f"Rule not found in {layer}: {rule_id}")
+        path.unlink()
+        deleted_tags = [entry["tag_id"] for entry in rule.get("entries", [])]
+        for tag_id in deleted_tags:
+            self.conn.execute("DELETE FROM tag_stats WHERE repo_id = ? AND tag_id = ?", (self.profile["repo_id"], tag_id))
+            self.conn.execute("DELETE FROM verifications WHERE repo_id = ? AND tag_id = ?", (self.profile["repo_id"], tag_id))
+            self.conn.execute("DELETE FROM selections WHERE repo_id = ? AND tag_id = ?", (self.profile["repo_id"], tag_id))
+        self.conn.commit()
+        self._reset_repo_indexes()
+        return {
+            "rule_id": rule_id,
+            "deleted_tags": deleted_tags,
+            "deleted_entries": len(deleted_tags),
+            "layer": layer,
+        }
+
     def add_entry(
         self,
         rule_id: str,
@@ -1145,6 +1197,17 @@ class ProofStore:
         remaining_entries = [entry for entry in rule["entries"] if entry["tag_id"] != tag_id]
         if len(remaining_entries) == len(rule["entries"]):
             raise RuntimeError(f"Could not reload tag {tag_id}")
+        if not remaining_entries:
+            payload = self.delete_rule(rule["rule_id"], branch=branch, layer=layer)
+            payload.update(
+                {
+                    "tag_id": tag_id,
+                    "deleted_entry": existing_entry,
+                    "remaining_entries": 0,
+                    "deleted_rule": True,
+                }
+            )
+            return payload
         rule["entries"] = remaining_entries
         known_prefixes = {rule.get("default_prefix")}
         known_prefixes.update(entry.get("prefix") or entry["tag_id"].split("-", 1)[0] for entry in remaining_entries)
@@ -1543,6 +1606,8 @@ class ProofStore:
 
         generated_files = []
         for rule_id, rule in sorted(rules.items()):
+            if not rule.get("entries"):
+                continue
             path = output_dir / f"{rule_id}.md"
             content = self.render_rule_markdown(rule)
             path.write_text(content, encoding="utf-8")
@@ -1685,6 +1750,8 @@ class ProofStore:
 
         for rule in sorted(rules.values(), key=lambda item: item["rule_id"]):
             entry_count = len(rule["entries"])
+            if entry_count == 0:
+                warnings.append(f"EMPTY RULE: {rule['rule_id']} has no entries and will not be rendered by proofd sync")
             if entry_count > split_threshold:
                 warnings.append(
                     f"SPLIT SUGGESTION: {rule['rule_id']} has {entry_count} entries. Consider splitting by topic, even if the scope paths stay the same."
@@ -1831,6 +1898,19 @@ def build_parser() -> argparse.ArgumentParser:
     create_rule_parser.add_argument("--rule-id", default=None)
     create_rule_parser.add_argument("--canonical", action="store_true")
     create_rule_parser.add_argument("--json", action="store_true")
+
+    update_rule_parser = subparsers.add_parser("update-rule")
+    update_rule_parser.add_argument("--rule", required=True)
+    update_rule_parser.add_argument("--title", default=None)
+    update_rule_parser.add_argument("--paths", default=None, help="Comma-separated path globs")
+    update_rule_parser.add_argument("--summary", default=None)
+    update_rule_parser.add_argument("--canonical", action="store_true")
+    update_rule_parser.add_argument("--json", action="store_true")
+
+    delete_rule_parser = subparsers.add_parser("delete-rule")
+    delete_rule_parser.add_argument("--rule", required=True)
+    delete_rule_parser.add_argument("--canonical", action="store_true")
+    delete_rule_parser.add_argument("--json", action="store_true")
 
     allocate_parser = subparsers.add_parser("allocate-tag")
     allocate_parser.add_argument("--rule", required=True)
@@ -2013,6 +2093,31 @@ def run_cli(args: argparse.Namespace) -> int:
                 print_json(payload)
             else:
                 print(f"Created rule {payload['rule_id']} with default prefix {payload['default_prefix']}")
+            return 0
+        if command == "update-rule":
+            layer = "canonical" if args.canonical else "workspace"
+            payload = store.update_rule(
+                rule_id=args.rule,
+                title=args.title,
+                paths=split_csv(args.paths) if args.paths is not None else None,
+                summary=args.summary,
+                layer=layer,
+            )
+            if args.json:
+                print_json(payload)
+            else:
+                print(f"Updated rule {payload['rule_id']}")
+            return 0
+        if command == "delete-rule":
+            layer = "canonical" if args.canonical else "workspace"
+            payload = store.delete_rule(
+                rule_id=args.rule,
+                layer=layer,
+            )
+            if args.json:
+                print_json(payload)
+            else:
+                print(f"Deleted rule {payload['rule_id']}")
             return 0
         if command == "allocate-tag":
             branch = args.branch or current_branch(store.repo_root)
