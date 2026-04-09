@@ -35,6 +35,8 @@ SCHEMA_VERSION = 1
 ENTRY_RE = re.compile(r"^- \[([A-Z]{2}-\d{2,4})\]\s+(.*)$")
 SOURCE_TAG_RE = re.compile(r"\[([A-Z]{2}-\d{2,4})\]")
 DEFAULT_SOURCE_DIRS = ["src", "src-tauri/src"]
+DEFAULT_SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".rs", ".css", ".scss"]
+DEFAULT_SOURCE_EXCLUDES = [".git", ".claude/worktrees"]
 DEFAULT_BATCH_SIZE = 20
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -237,12 +239,6 @@ def split_csv(value: str | None) -> list[str]:
     return [normalize_path(item) for item in value.split(",") if item.strip()]
 
 
-def split_anchor_csv(value: str | None) -> list[str]:
-    if not value:
-        return []
-    return [normalize_anchor_path(item) for item in value.split(",") if item.strip()]
-
-
 def file_matches(path: str, patterns: list[str]) -> bool:
     if not patterns:
         return True
@@ -256,6 +252,14 @@ def file_matches(path: str, patterns: list[str]) -> bool:
             if normalized == prefix or normalized.startswith(prefix + "/"):
                 return True
     return False
+
+
+def path_has_prefix(path: str, prefix: str) -> bool:
+    normalized = normalize_path(path).strip("/")
+    normalized_prefix = normalize_path(prefix).strip("/")
+    if not normalized_prefix:
+        return False
+    return normalized == normalized_prefix or normalized.startswith(normalized_prefix + "/")
 
 
 def parse_tag_number(tag_id: str) -> tuple[str, int]:
@@ -279,6 +283,46 @@ def parse_datetime_any(value: str | None) -> datetime | None:
 
 def sorted_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(entries, key=lambda entry: parse_tag_number(entry["tag_id"]))
+
+
+def sanitize_entry_details(details: list[Any] | None) -> list[str]:
+    sanitized: list[str] = []
+    for detail in details or []:
+        text = str(detail).strip()
+        if not text or text.lower().startswith("files:"):
+            continue
+        sanitized.append(text)
+    return sanitized
+
+
+def sanitize_entry_storage(entry: dict[str, Any]) -> dict[str, Any]:
+    tag_id = str(entry["tag_id"]).strip()
+    sanitized = copy.deepcopy(entry)
+    sanitized["tag_id"] = tag_id
+    sanitized["statement"] = str(sanitized.get("statement", "")).strip()
+    sanitized["details"] = sanitize_entry_details(sanitized.get("details"))
+    sanitized["notes"] = [note for note in sanitized.get("notes", []) if note]
+    sanitized["prefix"] = sanitized.get("prefix") or tag_id.split("-", 1)[0]
+    sanitized.pop("anchors", None)
+    return sanitized
+
+
+def sanitize_rule_storage(rule: dict[str, Any]) -> dict[str, Any]:
+    sanitized = copy.deepcopy(rule)
+    sanitized["schema_version"] = SCHEMA_VERSION
+    scope_paths = [
+        normalize_path(path)
+        for path in sanitized.get("scope", {}).get("paths", [])
+        if normalize_path(path)
+    ]
+    sanitized["scope"] = {"paths": scope_paths}
+    sanitized["entries"] = [sanitize_entry_storage(entry) for entry in sanitized.get("entries", [])]
+    known_prefixes = set(sanitized.get("known_prefixes", []))
+    if sanitized.get("default_prefix"):
+        known_prefixes.add(str(sanitized["default_prefix"]))
+    known_prefixes.update(entry["tag_id"].split("-", 1)[0] for entry in sanitized["entries"])
+    sanitized["known_prefixes"] = sorted(prefix for prefix in known_prefixes if prefix)
+    return sanitized
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -384,7 +428,6 @@ def parse_rule_markdown(path: pathlib.Path) -> dict[str, Any]:
             current_entry = {
                 "tag_id": tag_id,
                 "statement": statement,
-                "anchors": [],
                 "details": [],
                 "notes": [],
                 "prefix": prefix,
@@ -393,10 +436,9 @@ def parse_rule_markdown(path: pathlib.Path) -> dict[str, Any]:
             continue
         if current_entry and line.startswith("  - "):
             detail = line[4:].strip()
-            current_entry["details"].append(detail)
             if detail.lower().startswith("files:"):
-                files = split_anchor_csv(detail.split(":", 1)[1].strip())
-                current_entry["anchors"] = [{"path": file_path} for file_path in files]
+                continue
+            current_entry["details"].append(detail)
             continue
         if current_entry and line.startswith("  "):
             continuation = line.strip()
@@ -558,6 +600,7 @@ class ProofStore:
         ensure_dir(self.canonical_rules_dir(profile))
         ensure_dir(self.overlay_root_dir(profile))
         self.ensure_repo_metadata(profile)
+        self._migrate_rule_storage()
         self._reseed_repo_indexes()
         return profile
 
@@ -808,6 +851,8 @@ class ProofStore:
         metadata["default_output_dir"] = profile["output_dir"]
         metadata.setdefault("default_batch_size", DEFAULT_BATCH_SIZE)
         metadata.setdefault("source_dirs", DEFAULT_SOURCE_DIRS)
+        metadata.setdefault("source_extensions", DEFAULT_SOURCE_EXTENSIONS)
+        metadata.setdefault("source_excludes", DEFAULT_SOURCE_EXCLUDES)
         metadata.setdefault(
             "lint",
             {
@@ -869,17 +914,79 @@ class ProofStore:
     def output_rules_dir(self) -> pathlib.Path:
         return self.repo_root / self.profile["output_dir"]
 
+    def source_exclude_prefixes(self, metadata: dict[str, Any] | None = None) -> list[str]:
+        metadata = metadata or self.repo_metadata()
+        prefixes = {normalize_path(value) for value in metadata.get("source_excludes", DEFAULT_SOURCE_EXCLUDES) if value}
+        try:
+            prefixes.add(normalize_path(str(self.output_rules_dir().relative_to(self.repo_root))))
+        except ValueError:
+            pass
+        return sorted(prefix.strip("/") for prefix in prefixes if prefix)
+
+    def source_extensions(self, metadata: dict[str, Any] | None = None) -> set[str]:
+        metadata = metadata or self.repo_metadata()
+        values = metadata.get("source_extensions", DEFAULT_SOURCE_EXTENSIONS)
+        normalized: set[str] = set()
+        for value in values:
+            text = str(value).strip().lower()
+            if not text:
+                continue
+            normalized.add(text if text.startswith(".") else f".{text}")
+        return normalized
+
+    def iter_source_files(self, metadata: dict[str, Any] | None = None) -> list[tuple[str, pathlib.Path]]:
+        metadata = metadata or self.repo_metadata()
+        source_dirs = metadata.get("source_dirs", DEFAULT_SOURCE_DIRS)
+        source_extensions = self.source_extensions(metadata)
+        exclude_prefixes = self.source_exclude_prefixes(metadata)
+        seen_paths: set[str] = set()
+        files: list[tuple[str, pathlib.Path]] = []
+        for source_dir in source_dirs:
+            root = self.repo_root / source_dir
+            if not root.exists():
+                continue
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                try:
+                    rel_path = normalize_path(str(path.relative_to(self.repo_root)))
+                except ValueError:
+                    continue
+                if rel_path in seen_paths:
+                    continue
+                if any(path_has_prefix(rel_path, prefix) for prefix in exclude_prefixes):
+                    continue
+                if source_extensions and path.suffix.lower() not in source_extensions:
+                    continue
+                seen_paths.add(rel_path)
+                files.append((rel_path, path))
+        files.sort(key=lambda item: item[0])
+        return files
+
     def canonical_rule_path(self, rule_id: str) -> pathlib.Path:
         return self.canonical_rules_dir() / f"{rule_id}.json"
 
     def overlay_rule_path(self, branch: str, rule_id: str) -> pathlib.Path:
         return self.overlay_rules_dir(branch) / f"{rule_id}.json"
 
+    def _migrate_rule_storage(self) -> None:
+        rule_paths = list(self.canonical_rules_dir().glob("*.json"))
+        overlay_root = self.overlay_root_dir()
+        if overlay_root.exists():
+            rule_paths.extend(overlay_root.rglob("rules/*.json"))
+        for path in rule_paths:
+            try:
+                raw_rule = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            sanitized = sanitize_rule_storage(raw_rule)
+            if stable_json(raw_rule) != stable_json(sanitized):
+                path.write_text(stable_json(sanitized), encoding="utf-8")
+
     def save_rule(self, rule: dict[str, Any], layer: str = "workspace", branch: str | None = None) -> pathlib.Path:
         path = self.canonical_rule_path(rule["rule_id"]) if layer == "canonical" else self.overlay_rule_path(branch or current_branch(self.repo_root), rule["rule_id"])
         ensure_dir(path.parent)
-        payload = copy.deepcopy(rule)
-        payload["schema_version"] = SCHEMA_VERSION
+        payload = sanitize_rule_storage(rule)
         payload["entries"] = sorted_entries(payload.get("entries", []))
         path.write_text(stable_json(payload), encoding="utf-8")
         self._register_prefixes(payload)
@@ -897,12 +1004,12 @@ class ProofStore:
     def load_rules(self, branch: str | None = None) -> dict[str, dict[str, Any]]:
         rules: dict[str, dict[str, Any]] = {}
         for path in sorted(self.canonical_rules_dir().glob("*.json")):
-            rules[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+            rules[path.stem] = sanitize_rule_storage(json.loads(path.read_text(encoding="utf-8")))
         if branch:
             overlay_dir = self.overlay_rules_dir(branch)
             if overlay_dir.exists():
                 for path in sorted(overlay_dir.glob("*.json")):
-                    rules[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+                    rules[path.stem] = sanitize_rule_storage(json.loads(path.read_text(encoding="utf-8")))
         return rules
 
     def find_rule(self, rule_id: str, branch: str | None = None) -> dict[str, Any]:
@@ -1018,27 +1125,17 @@ class ProofStore:
 
     def scan_source_tags(self) -> dict[str, list[str]]:
         metadata = self.repo_metadata()
-        source_dirs = metadata.get("source_dirs", DEFAULT_SOURCE_DIRS)
         hits: dict[str, list[str]] = {}
-        for source_dir in source_dirs:
-            root = self.repo_root / source_dir
-            if not root.exists():
+        for rel_path, path in self.iter_source_files(metadata):
+            try:
+                content = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
                 continue
-            for path in root.rglob("*"):
-                if not path.is_file():
-                    continue
-                if path.suffix.lower() not in {".ts", ".tsx", ".js", ".jsx", ".rs", ".css", ".scss"}:
-                    continue
-                try:
-                    content = path.read_text(encoding="utf-8")
-                except UnicodeDecodeError:
-                    continue
-                rel_path = normalize_path(str(path.relative_to(self.repo_root)))
-                for match in SOURCE_TAG_RE.finditer(content):
-                    tag_id = match.group(1)
-                    hits.setdefault(tag_id, [])
-                    if rel_path not in hits[tag_id]:
-                        hits[tag_id].append(rel_path)
+            for match in SOURCE_TAG_RE.finditer(content):
+                tag_id = match.group(1)
+                hits.setdefault(tag_id, [])
+                if rel_path not in hits[tag_id]:
+                    hits[tag_id].append(rel_path)
         return hits
 
     def create_rule(
@@ -1121,7 +1218,6 @@ class ProofStore:
         self,
         rule_id: str,
         statement: str,
-        files: list[str],
         details: list[str] | None = None,
         branch: str | None = None,
         layer: str = "workspace",
@@ -1132,8 +1228,7 @@ class ProofStore:
         entry = {
             "tag_id": tag_id,
             "statement": statement.strip(),
-            "anchors": [{"path": normalize_anchor_path(file_path)} for file_path in files],
-            "details": details or [],
+            "details": sanitize_entry_details(details),
             "notes": [],
             "prefix": tag_id.split("-", 1)[0],
         }
@@ -1147,7 +1242,6 @@ class ProofStore:
         self,
         tag_id: str,
         statement: str | None = None,
-        files: list[str] | None = None,
         details: list[str] | None = None,
         branch: str | None = None,
         layer: str = "workspace",
@@ -1160,28 +1254,19 @@ class ProofStore:
             raise RuntimeError(f"Could not reload tag {tag_id}")
         if statement is not None:
             mutable_entry["statement"] = statement.strip()
-        if files is not None:
-            normalized_files = [normalize_anchor_path(file_path) for file_path in files]
-            mutable_entry["anchors"] = [{"path": file_path} for file_path in normalized_files]
-            if details is None:
-                mutable_entry["details"] = [
-                    detail for detail in mutable_entry.get("details", [])
-                    if not detail.lower().startswith("files:")
-                ]
         if details is not None:
-            mutable_entry["details"] = details
+            mutable_entry["details"] = sanitize_entry_details(details)
         self.save_rule(rule, layer=layer, branch=branch)
         return rule, mutable_entry
 
     def entry_files(self, tag_id: str, branch: str | None = None) -> dict[str, Any]:
         branch = branch or current_branch(self.repo_root)
-        rule, entry = self.find_entry(tag_id, branch=branch)
-        anchors = [anchor["path"] for anchor in entry.get("anchors", []) if anchor.get("path")]
+        rule, _ = self.find_entry(tag_id, branch=branch)
         source_hits = self.scan_source_tags().get(tag_id, [])
         return {
             "tag_id": tag_id,
             "rule_id": rule["rule_id"],
-            "files": anchors,
+            "files": source_hits,
             "source_hits": source_hits,
         }
 
@@ -1325,7 +1410,6 @@ class ProofStore:
         notes: str | None,
         agent: str | None = None,
         source: str = "manual",
-        update_anchors: bool = False,
         branch: str | None = None,
         layer: str = "workspace",
     ) -> dict[str, Any]:
@@ -1351,8 +1435,6 @@ class ProofStore:
         self.upsert_tag_stats(tag_id, last_verified_at=verified_at)
 
         rule, _ = self.find_entry(tag_id, branch=branch or current_branch(self.repo_root))
-        if update_anchors and normalized_files:
-            self.update_entry(tag_id, files=normalized_files, branch=branch, layer=layer)
         return {
             "tag_id": tag_id,
             "rule_id": rule["rule_id"],
@@ -1486,9 +1568,6 @@ class ProofStore:
                 if isinstance(imported_notes, str):
                     imported_notes = [{"date": imported_meta.get("verified"), "text": imported_notes}]
                 entry["notes"] = [note for note in imported_notes if note]
-                if imported_meta.get("files") and not entry.get("anchors"):
-                    normalized_files = [normalize_anchor_path(file_path) for file_path in imported_meta["files"]]
-                    entry["anchors"] = [{"path": file_path} for file_path in normalized_files]
                 counts = citations.get(tag_id, {})
                 self.upsert_tag_stats(
                     tag_id,
@@ -1508,7 +1587,7 @@ class ProofStore:
                             tag_id,
                             "imported",
                             imported_meta["verified"],
-                            json.dumps([anchor["path"] for anchor in entry.get("anchors", [])]),
+                            json.dumps([normalize_anchor_path(file_path) for file_path in imported_meta.get("files", [])]),
                             "Imported from legacy proofs metadata",
                             "proofd-import",
                             "legacy-import",
@@ -1564,37 +1643,37 @@ class ProofStore:
             "orphan_metadata": orphan_metadata,
         }
 
-    def render_rule_markdown(self, rule: dict[str, Any]) -> str:
-        frontmatter = {}
-        paths = [normalize_path(path) for path in rule.get("scope", {}).get("paths", [])]
-        if paths:
-            frontmatter["paths"] = paths
+    def generated_rule_filename(self, source_path: str) -> str:
+        digest = hashlib.sha1(source_path.encode("utf-8")).hexdigest()[:8]
+        return f"{slugify(source_path)}-{digest}.md"
 
-        lines = []
-        lines.append(f"# {rule['title']}")
-        lines.append("")
-        lines.append(f"<!-- Generated by proofd. Rule ID: {rule['rule_id']}. Do not edit manually. -->")
-        if rule.get("default_prefix"):
-            known_prefixes = ", ".join(rule.get("known_prefixes", []))
-            lines.append(f"<!-- Default Prefix: {rule['default_prefix']} | Prefixes: {known_prefixes} -->")
-        if rule.get("summary"):
+    def render_file_scoped_markdown(
+        self,
+        source_path: str,
+        rule_groups: list[tuple[int, dict[str, Any], list[dict[str, Any]]]],
+    ) -> str:
+        frontmatter = {"paths": [source_path]}
+        lines = [
+            f"# Rules for {source_path}",
+            "",
+            f"<!-- Generated by proofd. Source: {source_path}. Do not edit manually. -->",
+        ]
+        for _, rule, entries in rule_groups:
             lines.append("")
-            lines.extend(rule["summary"].splitlines())
-        if rule.get("entries"):
+            lines.append(f"## {rule['title']} ({rule['rule_id']})")
+            if rule.get("summary"):
+                lines.append(rule["summary"])
             lines.append("")
-            for entry in sorted_entries(rule["entries"]):
+            for entry in entries:
                 lines.append(f"- [{entry['tag_id']}] {entry['statement']}")
-                non_file_details = [detail for detail in entry.get("details", []) if not detail.lower().startswith("files:")]
-                for detail in non_file_details:
+                for detail in entry.get("details", []):
                     lines.append(f"  - {detail}")
-        else:
-            lines.append("")
-            lines.append("_No entries yet._")
         return render_frontmatter(frontmatter) + "\n".join(lines).rstrip() + "\n"
 
     def sync_rules(self, branch: str | None = None, clean: bool = True) -> dict[str, Any]:
         branch = branch or current_branch(self.repo_root)
         rules = self.load_rules(branch)
+        source_hits = self.scan_source_tags()
         output_dir = ensure_dir(self.output_rules_dir())
         manifest_path = output_dir / ".proofd-manifest.json"
         previous_manifest = []
@@ -1605,11 +1684,23 @@ class ProofStore:
                 previous_manifest = []
 
         generated_files = []
-        for rule_id, rule in sorted(rules.items()):
-            if not rule.get("entries"):
+        source_files = sorted({path for paths in source_hits.values() for path in paths})
+        for source_path in source_files:
+            matched: list[tuple[int, dict[str, Any], list[dict[str, Any]]]] = []
+            for rule in rules.values():
+                relevant_entries = [
+                    entry
+                    for entry in sorted_entries(rule.get("entries", []))
+                    if source_path in source_hits.get(entry["tag_id"], [])
+                ]
+                if not relevant_entries:
+                    continue
+                matched.append((len(rule.get("scope", {}).get("paths", [])), rule, relevant_entries))
+            matched.sort(key=lambda item: (item[0] == 0, item[0], item[1]["title"]))
+            if not matched:
                 continue
-            path = output_dir / f"{rule_id}.md"
-            content = self.render_rule_markdown(rule)
+            path = output_dir / self.generated_rule_filename(source_path)
+            content = self.render_file_scoped_markdown(source_path, matched)
             path.write_text(content, encoding="utf-8")
             generated_files.append(path.name)
 
@@ -1635,9 +1726,8 @@ class ProofStore:
                 continue
             anchored_entries = []
             for entry in rule["entries"]:
-                exact_anchor = any(anchor.get("path") in normalized_paths for anchor in entry.get("anchors", []))
                 source_anchor = any(path in source_hits.get(entry["tag_id"], []) for path in normalized_paths)
-                score = (20 if exact_anchor else 0) + (10 if source_anchor else 0)
+                score = 10 if source_anchor else 0
                 anchored_entries.append((score, entry))
             anchored_entries.sort(key=lambda item: (-item[0], parse_tag_number(item[1]["tag_id"])))
             matched.append((len(scope_paths), rule, [entry for _, entry in anchored_entries]))
@@ -1663,7 +1753,7 @@ class ProofStore:
                 output.append(rule["summary"])
             for entry in entries:
                 output.append(f"- [{entry['tag_id']}] {entry['statement']}")
-                for detail in [detail for detail in entry.get("details", []) if not detail.lower().startswith("files:")]:
+                for detail in entry.get("details", []):
                     output.append(f"  - {detail}")
         if len(output) == 1:
             output.extend(["", "_No matching rules._"])
@@ -1674,6 +1764,7 @@ class ProofStore:
         batch_size = batch_size or int(self.repo_metadata().get("default_batch_size", DEFAULT_BATCH_SIZE))
         normalized_paths = [normalize_path(path) for path in changed_paths]
         rules = self.load_rules(branch)
+        source_hits = self.scan_source_tags()
         candidates: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
         for rule in rules.values():
             scope_paths = rule.get("scope", {}).get("paths", [])
@@ -1695,8 +1786,8 @@ class ProofStore:
                     else:
                         age_days = (datetime.now(timezone.utc) - verified_at).days
                     score += min(max(age_days, 0), 365)
-                anchor_paths = {anchor["path"] for anchor in entry.get("anchors", []) if anchor.get("path")}
-                if anchor_paths & set(normalized_paths):
+                source_paths = set(source_hits.get(entry["tag_id"], []))
+                if source_paths & set(normalized_paths):
                     score += 25.0
                 score += max(0, 5 - int(stats["seen_count"]))
                 if selection and selection["selection_count"]:
@@ -1738,15 +1829,7 @@ class ProofStore:
         warnings: list[str] = []
         entries_by_tag: dict[str, str] = {}
         source_hits = self.scan_source_tags()
-
-        tracked_files: list[str] = []
-        for source_dir in metadata.get("source_dirs", DEFAULT_SOURCE_DIRS):
-            root = self.repo_root / source_dir
-            if not root.exists():
-                continue
-            for path in root.rglob("*"):
-                if path.is_file():
-                    tracked_files.append(normalize_path(str(path.relative_to(self.repo_root))))
+        tracked_files = [rel_path for rel_path, _ in self.iter_source_files(metadata)]
 
         for rule in sorted(rules.values(), key=lambda item: item["rule_id"]):
             entry_count = len(rule["entries"])
@@ -1761,17 +1844,21 @@ class ProofStore:
                 for pattern in paths:
                     if not any(file_matches(file_path, [pattern]) for file_path in tracked_files):
                         warnings.append(f"STALE PATH: {rule['rule_id']} pattern '{pattern}' matches no tracked source file")
+            rule_has_source_refs = False
             for entry in rule["entries"]:
                 tag_id = entry["tag_id"]
                 if tag_id in entries_by_tag:
                     warnings.append(f"DUPLICATE TAG: {tag_id} appears in both {entries_by_tag[tag_id]} and {rule['rule_id']}")
                 entries_by_tag[tag_id] = rule["rule_id"]
-                anchors = [anchor["path"] for anchor in entry.get("anchors", []) if anchor.get("path")]
-                if not anchors and tag_id not in source_hits:
-                    warnings.append(f"UNANCHORED ENTRY: {tag_id} in {rule['rule_id']} has no anchors and no source-code tag hit")
-                non_file_details = [detail for detail in entry.get("details", []) if not detail.lower().startswith("files:")]
-                if entry.get("statement", "").strip().endswith(":") and not non_file_details:
+                entry_source_hits = source_hits.get(tag_id, [])
+                if not entry_source_hits:
+                    warnings.append(f"MISSING SOURCE REF: {tag_id} in {rule['rule_id']} has no source-code tag hit")
+                else:
+                    rule_has_source_refs = True
+                if entry.get("statement", "").strip().endswith(":") and not entry.get("details", []):
                     warnings.append(f"SUSPICIOUS ENTRY: {tag_id} in {rule['rule_id']} ends with ':' but has no supporting details")
+            if entry_count > 0 and not rule_has_source_refs:
+                warnings.append(f"NO SOURCE REFERENCES: {rule['rule_id']} has no source-code tag hits and will not generate any file-scoped rules")
 
         for tag_id, paths in sorted(source_hits.items()):
             if tag_id not in entries_by_tag:
@@ -1780,20 +1867,13 @@ class ProofStore:
         per_file_tag_load: dict[str, int] = {}
         for file_path in tracked_files:
             total = 0
-            for rule in rules.values():
-                paths = rule.get("scope", {}).get("paths", [])
-                if not paths or file_matches(file_path, paths):
-                    total += len(rule["entries"])
+            for tag_id in entries_by_tag:
+                if file_path in source_hits.get(tag_id, []):
+                    total += 1
             per_file_tag_load[file_path] = total
         for file_path, total in sorted(per_file_tag_load.items(), key=lambda item: item[1], reverse=True)[:25]:
             if total > heavy_context:
                 warnings.append(f"HEAVY AUTO-LOAD: {file_path} surfaces {total} tags. This is allowed, but consider more concise statements or additional rule files.")
-
-        global_tags = sum(len(rule["entries"]) for rule in rules.values() if not rule.get("scope", {}).get("paths"))
-        if global_tags > int(lint_config.get("global_rule_threshold", 16)):
-            warnings.append(
-                f"GLOBAL CONTEXT: global rules expose {global_tags} tags. Keep them concise, but surfacing them globally is still permitted."
-            )
 
         return {"branch": branch, "warnings": warnings}
 
@@ -1835,11 +1915,8 @@ def format_select_matching(selection: dict[str, Any]) -> str:
         entry = item["entry"]
         lines.append(f"[{entry['tag_id']}] ({rule_id})")
         lines.append(f"- [{entry['tag_id']}] {entry['statement']}")
-        for detail in [detail for detail in entry.get("details", []) if not detail.lower().startswith("files:")]:
+        for detail in entry.get("details", []):
             lines.append(f"  - {detail}")
-        anchor_paths = [anchor["path"] for anchor in entry.get("anchors", []) if anchor.get("path")]
-        if anchor_paths:
-            lines.append(f"  - Files: {', '.join(anchor_paths)}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -1920,7 +1997,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_entry_parser = subparsers.add_parser("add-entry")
     add_entry_parser.add_argument("--rule", required=True)
     add_entry_parser.add_argument("--statement", required=True)
-    add_entry_parser.add_argument("--files", required=True, help="Comma-separated file paths")
     add_entry_parser.add_argument("--detail", action="append", default=[])
     add_entry_parser.add_argument("--canonical", action="store_true")
     add_entry_parser.add_argument("--json", action="store_true")
@@ -1928,7 +2004,6 @@ def build_parser() -> argparse.ArgumentParser:
     update_entry_parser = subparsers.add_parser("update-entry")
     update_entry_parser.add_argument("--tag", required=True)
     update_entry_parser.add_argument("--statement", default=None)
-    update_entry_parser.add_argument("--files", default=None, help="Comma-separated file paths")
     update_entry_parser.add_argument("--detail", action="append", default=None)
     update_entry_parser.add_argument("--canonical", action="store_true")
     update_entry_parser.add_argument("--json", action="store_true")
@@ -1954,7 +2029,6 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--notes", default=None)
     verify_parser.add_argument("--agent", default=None)
     verify_parser.add_argument("--source", default="manual")
-    verify_parser.add_argument("--update-anchors", action="store_true")
     verify_parser.add_argument("--canonical", action="store_true")
     verify_parser.add_argument("--json", action="store_true")
 
@@ -2061,17 +2135,12 @@ def run_cli(args: argparse.Namespace) -> int:
             if args.format == "json":
                 print_json(payload)
             else:
-                print(f"# Files for {payload['tag_id']} ({payload['rule_id']})")
+                print(f"# Source references for {payload['tag_id']} ({payload['rule_id']})")
                 if payload["files"]:
                     for path in payload["files"]:
                         print(path)
                 else:
-                    print("_No anchored files._")
-                if payload["source_hits"]:
-                    print("")
-                    print("## Source Tag Hits")
-                    for path in payload["source_hits"]:
-                        print(path)
+                    print("_No source references._")
             return 0
         if command == "select-matching":
             payload = store.select_matching(args.paths, batch_size=args.batch_size, branch=args.branch)
@@ -2135,7 +2204,6 @@ def run_cli(args: argparse.Namespace) -> int:
             payload = store.add_entry(
                 rule_id=args.rule,
                 statement=args.statement,
-                files=split_csv(args.files),
                 details=args.detail,
                 layer=layer,
             )
@@ -2149,7 +2217,6 @@ def run_cli(args: argparse.Namespace) -> int:
             _, payload = store.update_entry(
                 tag_id=args.tag,
                 statement=args.statement,
-                files=split_csv(args.files) if args.files is not None else None,
                 details=args.detail,
                 layer=layer,
             )
@@ -2198,7 +2265,6 @@ def run_cli(args: argparse.Namespace) -> int:
                 notes=args.notes,
                 agent=args.agent,
                 source=args.source,
-                update_anchors=args.update_anchors,
                 layer="canonical" if args.canonical else "workspace",
             )
             if args.json:
@@ -2261,7 +2327,7 @@ def mcp_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "proofd_entry_files",
-            "description": "Return anchored files and source tag hits for one tag.",
+            "description": "Return source-reference files for one tag.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"tag": {"type": "string"}},
@@ -2276,10 +2342,9 @@ def mcp_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "rule": {"type": "string"},
                     "statement": {"type": "string"},
-                    "files": {"type": "array", "items": {"type": "string"}},
                     "canonical": {"type": "boolean"},
                 },
-                "required": ["rule", "statement", "files"],
+                "required": ["rule", "statement"],
             },
         },
         {
@@ -2305,7 +2370,6 @@ def mcp_tools() -> list[dict[str, Any]]:
                 "properties": {
                     "tag": {"type": "string"},
                     "statement": {"type": "string"},
-                    "files": {"type": "array", "items": {"type": "string"}},
                     "canonical": {"type": "boolean"},
                 },
                 "required": ["tag"],
@@ -2325,7 +2389,7 @@ def mcp_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "proofd_record_verification",
-            "description": "Record a verification result and optionally update anchors.",
+            "description": "Record a verification result.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2333,13 +2397,12 @@ def mcp_tools() -> list[dict[str, Any]]:
                     "status": {"type": "string"},
                     "files": {"type": "array", "items": {"type": "string"}},
                     "notes": {"type": "string"},
-                    "update_anchors": {"type": "boolean"},
                 },
                 "required": ["tag", "status", "files"],
             },
         },
         {"name": "proofd_sync", "description": "Generate `.claude/rules/*.md` from the canonical+overlay store.", "inputSchema": {"type": "object", "properties": {}}},
-        {"name": "proofd_lint", "description": "Lint rules, anchors, and auto-load coverage.", "inputSchema": {"type": "object", "properties": {}}},
+        {"name": "proofd_lint", "description": "Lint rules, source references, and auto-load coverage.", "inputSchema": {"type": "object", "properties": {}}},
     ]
 
 
@@ -2407,7 +2470,6 @@ def run_mcp_server(store: ProofStore, branch: str | None = None) -> int:
                         store.add_entry(
                             rule_id=arguments["rule"],
                             statement=arguments["statement"],
-                            files=arguments.get("files", []),
                             layer="canonical" if arguments.get("canonical") else "workspace",
                             branch=branch,
                         )
@@ -2427,7 +2489,6 @@ def run_mcp_server(store: ProofStore, branch: str | None = None) -> int:
                     _, payload = store.update_entry(
                         tag_id=arguments["tag"],
                         statement=arguments.get("statement"),
-                        files=arguments.get("files"),
                         layer="canonical" if arguments.get("canonical") else "workspace",
                         branch=branch,
                     )
@@ -2447,7 +2508,6 @@ def run_mcp_server(store: ProofStore, branch: str | None = None) -> int:
                             status=arguments["status"],
                             files=arguments.get("files", []),
                             notes=arguments.get("notes"),
-                            update_anchors=bool(arguments.get("update_anchors")),
                             branch=branch,
                         )
                     )
