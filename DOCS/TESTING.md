@@ -12,7 +12,6 @@ Test framework, test suites, manual test cases, and coverage notes.
 
 | Suite | File | Count | What it tests |
 |-------|------|-------|---------------|
-| `inspectorHooks` | `src/lib/__tests__/inspectorHooks.test.ts` | 150 | Inspector hook install/idempotency, JSON.stringify interception, state derivation, subagent tracking, slash command detection, stdin handler, fetch/https wrappers |
 | `inspectorTaps` | `src/lib/__tests__/inspectorTaps.test.ts` | 20 | INSTALL_TAPS hook: JSON.parse, console, stdout, timer wrappers; tapToggle expressions |
 | `paths` | `src/lib/__tests__/paths.test.ts` | 78 | Path helpers, worktree detection, tab grouping |
 | `claude` | `src/lib/__tests__/claude.test.ts` | 73 | Color assignment, `dirToTabName`, `formatTokenCount`, model resolution |
@@ -45,17 +44,13 @@ Test framework, test suites, manual test cases, and coverage notes.
 
 ## Global-Wrapping Tests (OOM Prevention)
 
-INSTALL_HOOK and INSTALL_TAPS both monkey-patch `JSON.stringify`, `JSON.parse`, `setTimeout`, `console.*`, etc. These tests require special care:
+INSTALL_TAPS monkey-patches `JSON.stringify`, `JSON.parse`, `console.*`, and other globals. These tests require special care:
 
-1. **Never share a vitest worker between INSTALL_HOOK and INSTALL_TAPS tests.** Both wrap `JSON.stringify`. When wrappers stack (wrapper captures wrapped version as "original"), vitest's internal JSON operations create exponential data growth → OOM. This is why `inspectorHooks.test.ts` and `inspectorTaps.test.ts` are separate files.
+1. **Snapshot pristine globals at module load, restore in afterEach.** Before any wrapper installs, capture the real `JSON.stringify`, `setTimeout`, etc. Restore them in every cleanup function so wrappers never stack across tests.
 
-2. **Snapshot pristine globals at module load, restore in afterEach.** Before any wrapper installs, capture the real `JSON.stringify`, `setTimeout`, etc. Restore them in every `afterEach` / `cleanupX` function so wrappers never stack across tests.
+2. **Use pristine functions inside test helpers.** `collectTapEntries()` must use `_pristine.jsonParse()` instead of `JSON.parse()` — otherwise calling `JSON.parse` inside a loop over spy results triggers the parse wrapper, which adds more spy entries, creating an infinite loop.
 
-3. **Use pristine functions inside test helpers.** `collectTapEntries()` must use `_pristine.jsonParse()` instead of `JSON.parse()` — otherwise calling `JSON.parse` inside a loop over spy results triggers the parse wrapper, which adds more spy entries, creating an infinite loop.
-
-4. **Mute always-on flags immediately after install.** INSTALL_TAPS defaults `parse: true, stringify: true`. Vitest's own JSON operations flood the `console.debug` spy with TAP entries. Call `muteTapDefaults()` right after `_installTapsFn()`, then re-enable only the flag each test needs.
-
-5. **Don't restore timers in INSTALL_HOOK cleanup.** INSTALL_HOOK doesn't wrap timers, and `restoreGlobals()` in `cleanupGlobalHook` would clobber `vi.useFakeTimers()`.
+3. **Mute always-on flags immediately after install.** INSTALL_TAPS defaults `parse: true, stringify: true`. Vitest's own JSON operations flood the `console.debug` spy with TAP entries. Call `muteTapDefaults()` right after `_installTapsFn()`, then re-enable only the flag each test needs.
 
 ## Manual Test Cases
 

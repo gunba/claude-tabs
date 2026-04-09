@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Subagent, SubagentMessage } from "../../types/session";
 import { isSubagentActive } from "../../types/session";
-import { splitFilePath } from "../../lib/diffParser";
+import { splitFilePath } from "../../lib/paths";
 import "./SubagentInspector.css";
 
 interface SubagentInspectorProps {

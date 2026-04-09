@@ -19,7 +19,6 @@ import {
   reconnectInspectorForSession,
 } from "../inspectorPort";
 
-// NOTE: allocateInspectorPort has existing tests in inspectorHooks.test.ts.
 // These tests cover the port registry and callback registry.
 
 const S1 = "session-1";

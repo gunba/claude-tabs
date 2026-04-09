@@ -199,28 +199,25 @@ pub async fn handle_request(
         s.codex_client.clone()
     };
 
-    // Get access token from persistent state
-    let access_token = {
-        let token = {
-            let s = proxy_state.lock().map_err(|e| e.to_string())?;
-            s.codex_auth.get_access_token_sync()
-        };
-        // Lock dropped before any await
-        match token {
-            Some(t) => t,
-            None => {
-                record_backend_event(
-                    app,
-                    "WARN",
-                    "proxy",
-                    session_id,
-                    "codex.auth_failed",
-                    "Codex: not logged in",
-                    serde_json::json!({}),
-                );
-                send_error(tcp_stream, 401, "Codex auth failed: not logged in").await;
-                return Ok(());
-            }
+    // Get access token from persistent state, refreshing if needed.
+    let codex_auth = {
+        let s = proxy_state.lock().map_err(|e| e.to_string())?;
+        s.codex_auth.clone()
+    };
+    let access_token = match codex_auth.get_access_token().await {
+        Ok(token) => token,
+        Err(err) => {
+            record_backend_event(
+                app,
+                "WARN",
+                "proxy",
+                session_id,
+                "codex.auth_failed",
+                &format!("Codex auth failed: {err}"),
+                serde_json::json!({}),
+            );
+            send_error(tcp_stream, 401, &format!("Codex auth failed: {err}")).await;
+            return Ok(());
         }
     };
 

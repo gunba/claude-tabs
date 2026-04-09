@@ -4,7 +4,6 @@ paths:
   - "src/lib/ptyRegistry.ts"
   - "src/hooks/useTerminal.ts"
   - "src/lib/paths.ts"
-  - "src/lib/diffParser.ts"
   - "src/components/Icons/**"
 ---
 
@@ -21,4 +20,3 @@ paths:
 - [DF-06] useTerminal attempts the WebglAddon once when the terminal opens. If WebGL creation fails or the context is later lost, the hook logs the event, disposes the addon, and lets xterm continue on the canvas renderer; there is no retry loop.
 - [DF-08] Icons module: src/components/Icons/Icons.tsx exports 35 inline SVG icon components (stroke-based, 16x16 viewBox, currentColor inheritance, pointerEvents none). Includes scope icons: IconUser (person silhouette), IconBraces (curly brackets), IconTerminal (terminal prompt). No dependencies. All UI icons are monochrome SVGs.
 - [DF-09] groupSessionsByDir() and swapWithinGroup() in paths.ts: pure functions for tab grouping by normalized workingDir (Map-based, O(n) single pass, insertion-order groups) and position swapping within group boundaries. TabGroup type exported. parseWorktreePath() detects `.claude/worktrees/<slug>` paths, worktreeAcronym() abbreviates slugs by hyphen initials.
-- [DF-10] toSideBySide(hunks) in diffParser.ts: transforms unified DiffHunk[] into aligned SideBySideRow[] for dual-pane rendering. Context lines go to both sides. Consecutive del+add runs are paired 1:1 (excess gets null on the other side). Hunk headers become separator rows. Pure function, memoized in DiffModal via useMemo.

@@ -96,6 +96,16 @@ export function parentDir(filePath: string): string {
   return lastSlash > 0 ? filePath.substring(0, lastSlash) : filePath;
 }
 
+/** Split a file path into directory prefix and basename, preserving separators. */
+export function splitFilePath(filePath: string): { dir: string; name: string } {
+  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  if (lastSlash === -1) return { dir: "", name: filePath };
+  return {
+    dir: filePath.slice(0, lastSlash + 1),
+    name: filePath.slice(lastSlash + 1),
+  };
+}
+
 export interface TabGroup {
   key: string;          // normalizePath(workingDir) — stable identity
   label: string;        // dirToTabName(workingDir)

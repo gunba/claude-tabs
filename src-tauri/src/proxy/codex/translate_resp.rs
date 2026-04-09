@@ -9,11 +9,6 @@ pub struct TranslatedResponse {
     pub summary: ResponseTranslationSummary,
 }
 
-/// Translate an OpenAI Codex response body into Anthropic Messages API format.
-pub fn translate_response(body: &[u8], original_model: &str) -> Result<Vec<u8>, String> {
-    translate_response_with_summary(body, original_model).map(|translated| translated.body)
-}
-
 pub fn translate_response_with_summary(
     body: &[u8],
     original_model: &str,
@@ -154,12 +149,12 @@ mod tests {
             "usage": {"input_tokens": 10, "output_tokens": 5},
             "status": "completed",
         });
-        let result = translate_response(
+        let result = translate_response_with_summary(
             serde_json::to_vec(&codex_resp).unwrap().as_slice(),
             "claude-opus-4-6",
         )
         .unwrap();
-        let resp: Value = serde_json::from_slice(&result).unwrap();
+        let resp: Value = serde_json::from_slice(&result.body).unwrap();
         assert_eq!(resp["type"], "message");
         assert_eq!(resp["role"], "assistant");
         assert_eq!(resp["model"], "claude-opus-4-6");
@@ -180,12 +175,12 @@ mod tests {
             "usage": {"input_tokens": 20, "output_tokens": 10},
             "status": "completed",
         });
-        let result = translate_response(
+        let result = translate_response_with_summary(
             serde_json::to_vec(&codex_resp).unwrap().as_slice(),
             "claude-opus-4-6",
         )
         .unwrap();
-        let resp: Value = serde_json::from_slice(&result).unwrap();
+        let resp: Value = serde_json::from_slice(&result.body).unwrap();
         assert_eq!(resp["content"][0]["type"], "tool_use");
         assert_eq!(resp["content"][0]["name"], "read_file");
         assert_eq!(resp["content"][0]["input"]["path"], "test.txt");

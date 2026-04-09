@@ -27,6 +27,7 @@ pub struct CodexTokens {
 }
 
 /// [PR-02] Shared OAuth-backed authentication state for the Codex provider.
+#[derive(Clone)]
 pub struct CodexAuthState {
     inner: Arc<Mutex<Option<CodexTokens>>>,
     storage_path: PathBuf,
@@ -62,14 +63,6 @@ impl CodexAuthState {
             .lock()
             .ok()
             .and_then(|t| t.as_ref().and_then(|t| t.email.clone()))
-    }
-
-    /// Get the current access token without refreshing. Returns None if not logged in.
-    pub fn get_access_token_sync(&self) -> Option<String> {
-        self.inner
-            .lock()
-            .ok()
-            .and_then(|t| t.as_ref().map(|t| t.access_token.clone()))
     }
 
     /// Get a valid access token, auto-refreshing if expired.

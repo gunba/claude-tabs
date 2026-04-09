@@ -19,8 +19,8 @@ export interface SubagentAction {
  * Tracks subagent lifecycles from tap events.
  * One instance per session. Emits SubagentActions for the store.
  *
- * Replaces the agentId routing in INSTALL_HOOK (lines 90-162) and
- * subagent processing in useInspectorState (lines 218-248).
+ * Replaces the old agentId-routed inspector path and the former
+ * useInspectorState subagent processing.
  */
 type PendingSpawn = { description: string; prompt?: string; subagentType?: string; model?: string };
 

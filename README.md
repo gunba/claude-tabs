@@ -51,12 +51,11 @@ A desktop app for managing multiple Claude Code CLI sessions in tabs. Rust backe
 - Multi-provider routing configuration
 - TAP recording category toggles grouped by subsystem
 
-### Git Integration (Ctrl+Shift+G)
-- Diff side panel with staged, unstaged, and untracked sections
-- Per-file insertion/deletion stats with pulse animation on change
-- Side-by-side diff modal with syntax highlighting (23 languages)
-- File navigation with Alt+Left/Right; diff cache with stale-response protection
-- Git status polling (2s) with change detection
+### Activity Panel (Ctrl+Shift+G)
+- Response/session file tree showing files the agent touched
+- Floating mascot tracks the main agent; subagents stay pinned to their last file
+- Context files and external file accesses are surfaced in the same tree
+- Click a file to open it directly from the panel
 
 ### Debug & Inspection
 - Debug panel (Ctrl+Shift+D) with structured logging, severity coloring, and 2000-entry ring buffer
@@ -136,11 +135,10 @@ npm run build:debug      # Debug build (no NSIS installer)
 | Ctrl+Shift+R | Resume past session |
 | Ctrl+Shift+D | Toggle debug panel |
 | Ctrl+Shift+F | Cross-session terminal search |
-| Ctrl+Shift+G | Git diff panel |
+| Ctrl+Shift+G | Activity panel |
 | Ctrl+Home / Ctrl+End | Scroll to top / bottom |
 | Ctrl+Wheel | Snap to top / bottom |
 | Ctrl+Middle-click | Scroll to last message |
-| Alt+Left / Alt+Right | Prev / next file in diff modal |
 | Shift+Click tab | Relaunch with new options |
 | Right-click tab | Context menu (copy ID, rename, etc.) |
 | Escape | Dismiss (ordered: context menu, palette, side panel, config, resume, launcher, inspector) |

@@ -26,12 +26,10 @@ Analysis of Claude Code source (`C:\Users\jorda\PycharmProjects\claude_code`) ve
 | 14 | `net.createConnection` / `tls.connect` | Both | Raw TCP/TLS connections |
 | 15 | `stream.Readable.prototype.pipe` | `.pipe()` | Stream piping |
 
-### Additional hooks in INSTALL_HOOK (legacy/polling path)
+### Existing always-on patches in INSTALL_TAPS
 
 | Global | What it captures |
 |--------|-----------------|
-| `JSON.stringify` | Duplicate wrap for POLL_STATE compat — captures conversation messages, subagent routing |
-| `process.stdin.on('data')` | Raw keystrokes for input buffer tracking |
 | `https.request` | WebFetch domain blocklist bypass + 90s hard timeout |
 | `globalThis.fetch` (second wrap) | 120s timeout for non-streaming Anthropic API calls |
 

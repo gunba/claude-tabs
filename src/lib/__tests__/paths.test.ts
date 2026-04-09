@@ -9,6 +9,7 @@ import {
   worktreeAcronym,
   dirToTabName,
   parentDir,
+  splitFilePath,
   IS_WINDOWS,
 } from "../paths";
 // TabGroup type used implicitly via groupSessionsByDir return
@@ -318,6 +319,22 @@ describe("parentDir", () => {
 
   it("returns empty string unchanged", () => {
     expect(parentDir("")).toBe("");
+  });
+});
+
+// ── splitFilePath ─────────────────────────────────────────────
+
+describe("splitFilePath", () => {
+  it("splits a forward-slash path", () => {
+    expect(splitFilePath("src/lib/app.ts")).toEqual({ dir: "src/lib/", name: "app.ts" });
+  });
+
+  it("handles bare filenames", () => {
+    expect(splitFilePath("app.ts")).toEqual({ dir: "", name: "app.ts" });
+  });
+
+  it("preserves backslash separators", () => {
+    expect(splitFilePath("src\\lib\\app.ts")).toEqual({ dir: "src\\lib\\", name: "app.ts" });
   });
 });
 

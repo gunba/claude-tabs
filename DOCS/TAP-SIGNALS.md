@@ -29,7 +29,7 @@ React Frontend
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/lib/inspectorHooks.ts` | INSTALL_TAPS expression | JS injected into Bun process. Wraps 12 function categories. Push-based via `console.debug` with `\x00TAP` prefix. `parse` and `stringify` always on; others opt-in. Also contains fetch bypass and HTTPS timeout patches (moved from former INSTALL_HOOK). |
+| `src/lib/inspectorHooks.ts` | INSTALL_TAPS expression | JS injected into Bun process. Wraps 22 tap categories. `parse` and `stringify` are always on; the rest are opt-in. Also contains fetch bypass and HTTPS timeout patches. |
 | `src/types/tapEvents.ts` | 264 | Discriminated union of ~28 typed event interfaces. Every event has `ts: number` and `kind: string`. |
 | `src/lib/tapClassifier.ts` | 424 | Stateless pure function: `TapEntry → TapEvent \| null`. Pattern-matches on `entry.cat` + parsed `entry.snap`. Returns null for noise and high-frequency deltas. |
 | `src/lib/tapEventBus.ts` | 53 | Module-level singleton pub/sub. Per-session subscriber registration. `dispatch()` and `dispatchBatch()`. |

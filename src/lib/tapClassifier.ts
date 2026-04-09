@@ -3,7 +3,7 @@ import type { SystemPromptBlock, CapturedMessage } from "../types/session";
 
 /**
  * Shared helper: format tool_use name + input into a human-readable action string.
- * Mirrors fmtToolAction in inspectorHooks.ts INSTALL_HOOK.
+ * Mirrors the tool action formatting used by the active tap hook.
  */
 const TOOL_ACTION_KEYS: Record<string, string> = {
   Bash: "command", Read: "file_path", Write: "file_path", Edit: "file_path",
