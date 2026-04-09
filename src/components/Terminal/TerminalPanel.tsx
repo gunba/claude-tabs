@@ -16,6 +16,7 @@ import { useSettingsStore } from "../../store/settings";
 import { useRuntimeStore } from "../../store/runtime";
 import { normalizePath } from "../../lib/paths";
 import type { Session, SessionConfig, SessionState } from "../../types/session";
+import { getAutoCompactThreshold, getLaunchEnvForProvider, getLaunchModelForProvider, getProviderContextWindow } from "../../lib/providerLaunch";
 import { startTraceSpan, traceAsync } from "../../lib/perfTrace";
 import "./TerminalPanel.css";
 
@@ -81,6 +82,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const renameSession = useSessionStore((s) => s.renameSession);
   const killRequest = useSessionStore((s) => s.killRequest);
   const clearKillRequest = useSessionStore((s) => s.clearKillRequest);
+  const providerConfig = useSettingsStore((s) => s.providerConfig);
   const spawnedRef = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [respawnCounter, setRespawnCounter] = useState(0);
@@ -418,20 +420,32 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
           dlog("terminal", session.id, `tap server failed: ${err}`, "WARN");
         }
 
-        const args = await buildClaudeArgs(session.config);
+        // [PR-07] Resolve the provider-sized launch model/env before invoking
+        // Claude Code so autocompact tracks the provider window instead of 200k.
+        const selectedProviderId = session.config.providerId ?? providerConfig.defaultProviderId;
+        const selectedProvider = providerConfig.providers.find((p) => p.id === selectedProviderId) ?? null;
+        const launchModel = getLaunchModelForProvider(session.config.model, selectedProvider);
+        const launchConfig: SessionConfig = {
+          ...session.config,
+          model: launchModel,
+        };
+        const providerContextWindow = getProviderContextWindow(selectedProvider, session.config.model);
+        const compactThreshold = providerContextWindow ? getAutoCompactThreshold(providerContextWindow) : null;
+        const args = await buildClaudeArgs(launchConfig);
         const { cols, rows } = terminal.getDimensions();
         const cwd = normalizePath(session.config.workingDir);
         // Pass BUN_INSPECT env for inspector-based hook injection,
         // TAP_PORT for dedicated TCP event delivery
-        const env: Record<string, string> = { BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0` };
+        const env: Record<string, string> = {
+          BUN_INSPECT: `ws://127.0.0.1:${inspPort}/0`,
+          ...getLaunchEnvForProvider(selectedProvider, session.config.model),
+        };
         if (tapPort) env.TAP_PORT = String(tapPort);
         // [TR-15] [PR-01] Inject a session-scoped proxy URL and bind the session provider
         const { proxyPort } = useSettingsStore.getState();
         if (proxyPort) {
           env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}/s/${session.id}`;
-          const providerId = session.config.providerId
-            ?? useSettingsStore.getState().providerConfig.defaultProviderId;
-          invoke("bind_session_provider", { sessionId: session.id, providerId }).catch(() => {});
+          invoke("bind_session_provider", { sessionId: session.id, providerId: selectedProviderId }).catch(() => {});
         }
         dlog("terminal", session.id, "launching Claude session", "LOG", {
           event: "session.launch",
@@ -448,6 +462,11 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
             continueSession: session.config.continueSession,
             permissionMode: session.config.permissionMode,
             model: session.config.model,
+            launchModel,
+            providerId: selectedProviderId,
+            providerKind: selectedProvider?.kind ?? null,
+            providerContextWindow,
+            compactThreshold,
           },
         });
         const handle = await pty.spawn(claudePath, args, cwd, cols, rows, env);
@@ -485,7 +504,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
 
     void doSpawn();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claudePath, session.id, respawnCounter, terminal.ready]);
+  }, [claudePath, providerConfig.defaultProviderId, providerConfig.providers, session.config, session.id, session.state, respawnCounter, terminal.ready]);
 
   // Register terminal buffer reader and terminal instance for search/render-wait
   useEffect(() => {

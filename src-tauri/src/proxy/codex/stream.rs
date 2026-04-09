@@ -193,7 +193,9 @@ impl StreamTranslator {
         // Close text block if started
         output.extend_from_slice(&self.stop_text_block_if_open());
 
-        let shaped_tool_calls = shape_function_calls(&self.function_calls);
+        // [PR-04] Apply the same model-aware tool shaping for streaming outputs
+        // before finalizing the Anthropic response envelope.
+        let shaped_tool_calls = shape_function_calls(&self.function_calls, &self.original_model);
         let stop_reason = self.stop_reason_override.clone().unwrap_or_else(|| {
             if shaped_tool_calls.summary.emitted_tool_call_count > 0 {
                 "tool_use".to_string()
@@ -588,6 +590,21 @@ mod tests {
         assert_eq!(summary.emitted_tool_call_count, 2);
         assert_eq!(summary.suppressed_tool_call_ids, vec!["agent-2"]);
         assert!(summary.shaping_applied);
+    }
+
+    #[test]
+    fn test_stream_finalize_clamps_read_limits() {
+        let mut t = StreamTranslator::new("sonnet");
+        let output = t.process_line(
+            "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":10,\"output_tokens\":5},\"output\":[{\"type\":\"function_call\",\"call_id\":\"read-1\",\"name\":\"Read\",\"arguments\":\"{\\\"file_path\\\":\\\"README.md\\\",\\\"limit\\\":900,\\\"offset\\\":1,\\\"pages\\\":\\\"\\\"}\"}]}}"
+        );
+        let text = String::from_utf8_lossy(&output);
+
+        assert!(text.contains("\\\"limit\\\":300"));
+
+        let summary = t.final_summary().unwrap();
+        assert_eq!(summary.adjusted_tool_call_count, 1);
+        assert_eq!(summary.adjusted_tool_call_ids, vec!["read-1"]);
     }
 
     #[test]

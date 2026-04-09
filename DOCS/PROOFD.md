@@ -90,8 +90,9 @@ Generated rule files include:
 
 - Rule title
 - Stable tag statements
+- Compact `L<n>` source-tag line hints for that file (`L<n+1>` is usually the implementation line)
 
-They intentionally omit verification telemetry, `Files:` lines, and long historical notes. Query anchors on demand with `proofd entry-files --tag <TAG>`.
+They intentionally omit verification telemetry, `Files:` lines, and long historical notes. Query anchors on demand with `proofd entry-files --tag <TAG>`, which now returns line-aware `path:L<n>` references.
 If `proofd delete-entry` removes the final entry in a rule, proofd now prunes the rule from the store instead of leaving an empty placeholder behind.
 Rules with no entries are not rendered by `proofd sync`; delete obsolete empty rules from the store instead of keeping placeholder markdown around.
 

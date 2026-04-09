@@ -15,7 +15,33 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 
 const CODEX_API_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const CODEX_CLI_ORIGINATOR: &str = "codex_cli_rs";
 
+/// [PR-06] Codex upstream requests send CLI-style identity headers so
+/// OpenAI usage/reporting can classify interactive Claude Tabs traffic
+/// consistently instead of falling back to generic client buckets.
+fn codex_identity_headers(session_id: Option<&str>) -> Vec<(&'static str, String)> {
+    let version = env!("CARGO_PKG_VERSION");
+    let mut headers = vec![
+        ("originator", CODEX_CLI_ORIGINATOR.to_string()),
+        (
+            "user-agent",
+            format!(
+                "{CODEX_CLI_ORIGINATOR}/{version} ({} {}; claude-tabs/{version})",
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+            ),
+        ),
+    ];
+    if let Some(id) = session_id.filter(|value| !value.is_empty()) {
+        headers.push(("session_id", id.to_string()));
+        headers.push(("x-client-request-id", id.to_string()));
+    }
+    headers
+}
+
+/// [PR-04] Short Claude aliases resolve to the configured primary or small
+/// OpenAI Codex model before the upstream request is built.
 /// Resolve the Codex model name from the request model and provider config.
 fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String {
     let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
@@ -47,7 +73,12 @@ fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String 
     if cleaned.contains("haiku") {
         return small.to_string();
     }
-    if cleaned.contains("sonnet") || cleaned.contains("opus") || cleaned.starts_with("claude") {
+    if cleaned.contains("best")
+        || cleaned.contains("opusplan")
+        || cleaned.contains("sonnet")
+        || cleaned.contains("opus")
+        || cleaned.starts_with("claude")
+    {
         return primary.to_string();
     }
 
@@ -59,14 +90,16 @@ fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String 
 /// through the OpenAI Responses API for the OpenAI Codex provider.
 /// Context window sizes for OpenAI models (tokens).
 /// Default is 272k; 1M is opt-in and costs 2x input.
-/// We report the default window so Claude Code compacts appropriately.
+/// We report the default window for clients that consult `/v1/models`, though
+/// public Claude Code still appears to fall back to static thresholds for
+/// unknown model IDs.
 const GPT_5_4_CONTEXT_WINDOW: u64 = 272_000;
 const GPT_5_4_MINI_CONTEXT_WINDOW: u64 = 272_000;
 const GPT_5_4_MAX_OUTPUT: u64 = 128_000;
 const GPT_5_4_MINI_MAX_OUTPUT: u64 = 128_000;
 
 /// Build a synthetic Anthropic `/v1/models` response for the Codex provider.
-/// Claude Code uses this to determine context window size for compaction.
+/// This preserves model metadata for clients that query `/v1/models`.
 fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
     let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
     let small = provider
@@ -101,6 +134,8 @@ fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
     serde_json::to_vec(&models).unwrap_or_default()
 }
 
+/// [PR-05] Traffic logs persist the translated upstream OpenAI request payload
+/// so proxy rewrites can be compared against the raw Anthropic request body.
 fn codex_traffic_meta(
     provider: &ModelProvider,
     session_scoped: bool,
@@ -108,6 +143,7 @@ fn codex_traffic_meta(
     rewrite: &Option<String>,
     codex_model: &str,
     upstream_mode: &str,
+    translated_request_body: &[u8],
     translated_request_len: usize,
     summary: Option<&response_shape::ResponseTranslationSummary>,
 ) -> Value {
@@ -117,6 +153,8 @@ fn codex_traffic_meta(
         "requestModel": request_model,
         "resolvedCodexModel": codex_model,
         "translatedRequestLen": translated_request_len,
+        "translatedRequest": serde_json::from_slice::<Value>(translated_request_body)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(translated_request_body).into_owned())),
     });
     if let Some(summary) = summary {
         if let Some(obj) = translation.as_object_mut() {
@@ -256,6 +294,13 @@ pub async fn handle_request(
             return Ok(());
         }
     };
+    // [PR-05] Preserve the translated request body only when traffic logging is
+    // enabled so observability shows both the raw and rewritten payloads.
+    let codex_body_for_log = if should_log {
+        Some(codex_body.clone())
+    } else {
+        None
+    };
 
     let is_streaming = serde_json::from_slice::<serde_json::Value>(body)
         .ok()
@@ -301,10 +346,13 @@ pub async fn handle_request(
     );
 
     // Send to OpenAI using persistent client
-    let request = codex_client
+    let mut request = codex_client
         .post(CODEX_API_URL)
         .header("Authorization", format!("Bearer {access_token}"))
         .header("Content-Type", "application/json");
+    for (name, value) in codex_identity_headers(session_id) {
+        request = request.header(name, value);
+    }
     let request = if is_streaming {
         request.header("Accept", "text/event-stream")
     } else {
@@ -335,6 +383,7 @@ pub async fn handle_request(
                         rewrite,
                         &codex_model,
                         upstream_mode,
+                        codex_body_for_log.as_deref().unwrap_or(&[]),
                         translated_request_len,
                         None,
                     )),
@@ -388,6 +437,7 @@ pub async fn handle_request(
                     rewrite,
                     &codex_model,
                     upstream_mode,
+                    codex_body_for_log.as_deref().unwrap_or(&[]),
                     translated_request_len,
                     None,
                 )),
@@ -535,6 +585,7 @@ pub async fn handle_request(
                     rewrite,
                     &codex_model,
                     upstream_mode,
+                    codex_body_for_log.as_deref().unwrap_or(&[]),
                     translated_request_len,
                     translation_summary.as_ref(),
                 )),
@@ -602,6 +653,7 @@ pub async fn handle_request(
                             rewrite,
                             &codex_model,
                             upstream_mode,
+                            codex_body_for_log.as_deref().unwrap_or(&[]),
                             translated_request_len,
                             None,
                         )),
@@ -680,6 +732,7 @@ pub async fn handle_request(
                     rewrite,
                     &codex_model,
                     upstream_mode,
+                    codex_body_for_log.as_deref().unwrap_or(&[]),
                     translated_request_len,
                     Some(&translated.summary),
                 )),
@@ -738,6 +791,12 @@ async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) 
 mod tests {
     use super::*;
 
+    fn header_value<'a>(headers: &'a [(&'static str, String)], name: &str) -> Option<&'a str> {
+        headers
+            .iter()
+            .find_map(|(header_name, value)| (*header_name == name).then_some(value.as_str()))
+    }
+
     #[test]
     fn test_resolve_codex_model_haiku() {
         let provider = ModelProvider {
@@ -783,6 +842,8 @@ mod tests {
             "gpt-5.4"
         );
         assert_eq!(resolve_codex_model(Some("opus"), &provider), "gpt-5.4");
+        assert_eq!(resolve_codex_model(Some("best"), &provider), "gpt-5.4");
+        assert_eq!(resolve_codex_model(Some("opusplan"), &provider), "gpt-5.4");
         assert_eq!(resolve_codex_model(Some("sonnet"), &provider), "gpt-5.4");
     }
 
@@ -827,5 +888,67 @@ mod tests {
             resolve_codex_model(Some("claude-haiku-4-5[1m]"), &provider),
             "gpt-5.4-mini"
         );
+        assert_eq!(resolve_codex_model(Some("best[1m]"), &provider), "gpt-5.4");
+        assert_eq!(
+            resolve_codex_model(Some("opusplan[1m]"), &provider),
+            "gpt-5.4"
+        );
+    }
+
+    #[test]
+    fn test_codex_traffic_meta_includes_translated_request_payload() {
+        let provider = ModelProvider {
+            id: "codex".into(),
+            name: "Codex".into(),
+            kind: "openai_codex".into(),
+            predefined: true,
+            model_mappings: Vec::new(),
+            base_url: None,
+            api_key: None,
+            socks5_proxy: None,
+            codex_primary_model: Some("gpt-5.4".into()),
+            codex_small_model: Some("gpt-5.4-mini".into()),
+            known_models: Vec::new(),
+        };
+
+        let translated_request = br#"{"model":"gpt-5.4","input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}]}"#;
+
+        let meta = codex_traffic_meta(
+            &provider,
+            true,
+            &Some("claude-opus-4-6".into()),
+            &Some("gpt-5.4".into()),
+            "gpt-5.4",
+            "streaming",
+            translated_request,
+            translated_request.len(),
+            None,
+        );
+
+        assert_eq!(meta["translation"]["translatedRequest"]["model"], "gpt-5.4");
+        assert_eq!(
+            meta["translation"]["translatedRequest"]["input"][0]["role"],
+            "user"
+        );
+        assert_eq!(
+            meta["translation"]["translatedRequest"]["input"][0]["content"][0]["text"],
+            "hello"
+        );
+    }
+
+    #[test]
+    fn test_codex_identity_headers_match_cli_shape() {
+        let headers = codex_identity_headers(Some("session-123"));
+
+        assert_eq!(header_value(&headers, "originator"), Some(CODEX_CLI_ORIGINATOR));
+        assert_eq!(header_value(&headers, "session_id"), Some("session-123"));
+        assert_eq!(
+            header_value(&headers, "x-client-request-id"),
+            Some("session-123")
+        );
+
+        let user_agent = header_value(&headers, "user-agent").expect("missing user-agent");
+        assert!(user_agent.starts_with("codex_cli_rs/"));
+        assert!(user_agent.contains("claude-tabs/"));
     }
 }

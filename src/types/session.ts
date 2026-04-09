@@ -321,6 +321,54 @@ export const DEFAULT_CLAUDE_MAPPINGS: ModelMapping[] = [
   { id: "map-catchall", pattern: "*",              rewriteModel: "" },
 ];
 
+// [PR-02] OpenAI Codex provider metadata ships with canonical 272k-cap model
+// definitions plus short-alias and Claude-family mappings for default config.
+export const OPENAI_CODEX_CONTEXT_WINDOW = 272000;
+export const OPENAI_CODEX_PRIMARY_MODEL = "gpt-5.4";
+export const OPENAI_CODEX_SMALL_MODEL = "gpt-5.4-mini";
+
+export function buildOpenAICodexModels(
+  primaryModel = OPENAI_CODEX_PRIMARY_MODEL,
+  smallModel = OPENAI_CODEX_SMALL_MODEL,
+): ProviderModel[] {
+  const models: ProviderModel[] = [
+    {
+      id: primaryModel,
+      label: primaryModel,
+      family: "codex-primary",
+      contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+      color: "#10a37f",
+    },
+  ];
+  if (smallModel !== primaryModel) {
+    models.push({
+      id: smallModel,
+      label: smallModel,
+      family: "codex-small",
+      contextWindow: OPENAI_CODEX_CONTEXT_WINDOW,
+      color: "#76b900",
+    });
+  }
+  return models;
+}
+
+export function buildOpenAICodexMappings(
+  primaryModel = OPENAI_CODEX_PRIMARY_MODEL,
+  smallModel = OPENAI_CODEX_SMALL_MODEL,
+): ModelMapping[] {
+  return [
+    { id: "codex-best", pattern: "best*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-opus", pattern: "opus*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-opusplan", pattern: "opusplan*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-sonnet", pattern: "sonnet*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-haiku", pattern: "haiku*", rewriteModel: smallModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-claude-opus", pattern: "claude-opus-*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-claude-sonnet", pattern: "claude-sonnet-*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-claude-haiku", pattern: "claude-haiku-*", rewriteModel: smallModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+    { id: "codex-catchall", pattern: "*", rewriteModel: primaryModel, contextWindow: OPENAI_CODEX_CONTEXT_WINDOW },
+  ];
+}
+
 // [PR-02] Predefined OpenAI Codex provider maps Claude families onto
 // primary/small Codex models and ships in the default provider config.
 export const CODEX_PROVIDER: ModelProvider = {
@@ -328,15 +376,10 @@ export const CODEX_PROVIDER: ModelProvider = {
   name: "OpenAI",
   kind: "openai_codex",
   predefined: true,
-  codexPrimaryModel: "gpt-5.4",
-  codexSmallModel: "gpt-5.4-mini",
-  knownModels: [],
-  modelMappings: [
-    { id: "codex-opus", pattern: "claude-opus-*", rewriteModel: "gpt-5.4" },
-    { id: "codex-sonnet", pattern: "claude-sonnet-*", rewriteModel: "gpt-5.4" },
-    { id: "codex-haiku", pattern: "claude-haiku-*", rewriteModel: "gpt-5.4-mini" },
-    { id: "codex-catchall", pattern: "*", rewriteModel: "gpt-5.4" },
-  ],
+  codexPrimaryModel: OPENAI_CODEX_PRIMARY_MODEL,
+  codexSmallModel: OPENAI_CODEX_SMALL_MODEL,
+  knownModels: buildOpenAICodexModels(),
+  modelMappings: buildOpenAICodexMappings(),
 };
 
 export const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {

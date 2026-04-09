@@ -35,7 +35,9 @@ pub fn translate_response_with_summary(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let shaped_tool_calls = shape_function_calls(&raw_function_calls);
+    // [PR-04] Apply model-aware tool shaping before Anthropic translation emits
+    // tool_use blocks in non-streaming Responses API payloads.
+    let shaped_tool_calls = shape_function_calls(&raw_function_calls, original_model);
 
     // Process output items
     if let Some(output) = resp.get("output").and_then(|v| v.as_array()) {
@@ -279,5 +281,27 @@ mod tests {
         assert_eq!(translated.summary.suppressed_tool_call_count, 1);
         assert_eq!(translated.summary.suppressed_tool_call_ids, vec!["agent-2"]);
         assert!(translated.summary.shaping_applied);
+    }
+
+    #[test]
+    fn test_read_tool_limits_are_clamped_in_translated_response() {
+        let codex_resp = json!({
+            "id": "resp_read_limit",
+            "output": [
+                {"type": "function_call", "call_id": "read-1", "name": "Read", "arguments": "{\"file_path\":\"README.md\",\"limit\":900,\"offset\":1,\"pages\":\"\"}"}
+            ],
+            "usage": {"input_tokens": 20, "output_tokens": 10},
+            "status": "completed",
+        });
+        let translated = translate_response_with_summary(
+            serde_json::to_vec(&codex_resp).unwrap().as_slice(),
+            "sonnet",
+        )
+        .unwrap();
+        let resp: Value = serde_json::from_slice(&translated.body).unwrap();
+
+        assert_eq!(resp["content"][0]["input"]["limit"], 300);
+        assert_eq!(translated.summary.adjusted_tool_call_count, 1);
+        assert_eq!(translated.summary.adjusted_tool_call_ids, vec!["read-1"]);
     }
 }

@@ -2,7 +2,15 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import type { LaunchPreset, SessionConfig, PastSession, ProviderConfig, SystemPromptRule } from "../types/session";
-import { DEFAULT_SESSION_CONFIG, DEFAULT_PROVIDER_CONFIG, CODEX_PROVIDER } from "../types/session";
+import {
+  DEFAULT_SESSION_CONFIG,
+  DEFAULT_PROVIDER_CONFIG,
+  CODEX_PROVIDER,
+  OPENAI_CODEX_PRIMARY_MODEL,
+  OPENAI_CODEX_SMALL_MODEL,
+  buildOpenAICodexMappings,
+  buildOpenAICodexModels,
+} from "../types/session";
 import { normalizePath, parseWorktreePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
 import type { EnvVarEntry } from "../lib/envVars";
@@ -734,7 +742,43 @@ export const useSettingsStore = create<SettingsState>()(
             for (const p of pc.providers) {
               // Force canonical names on predefined providers
               if (p.id === "openai-codex") {
+                // [PR-02] Persisted OpenAI Codex configs are normalized back to
+                // canonical kind/models/mappings on load.
                 p.name = "OpenAI";
+                p.kind = "openai_codex";
+                p.predefined = true;
+                const primaryModel = typeof p.codexPrimaryModel === "string" && p.codexPrimaryModel
+                  ? p.codexPrimaryModel
+                  : OPENAI_CODEX_PRIMARY_MODEL;
+                const smallModel = typeof p.codexSmallModel === "string" && p.codexSmallModel
+                  ? p.codexSmallModel
+                  : OPENAI_CODEX_SMALL_MODEL;
+                const defaultMappings = buildOpenAICodexMappings(primaryModel, smallModel);
+                const defaultMappingById = new Map(defaultMappings.map((mapping) => [mapping.id, mapping]));
+                p.codexPrimaryModel = primaryModel;
+                p.codexSmallModel = smallModel;
+                p.knownModels = buildOpenAICodexModels(primaryModel, smallModel);
+                if (!Array.isArray(p.modelMappings) || p.modelMappings.length === 0) {
+                  p.modelMappings = defaultMappings;
+                } else {
+                  const migratedMappings = p.modelMappings.map((mapping) => {
+                    const defaultMapping = defaultMappingById.get(mapping.id);
+                    let pattern = mapping.pattern;
+                    if (mapping.id === "codex-opus" && pattern === "claude-opus-*") pattern = "opus*";
+                    if (mapping.id === "codex-sonnet" && pattern === "claude-sonnet-*") pattern = "sonnet*";
+                    if (mapping.id === "codex-haiku" && pattern === "claude-haiku-*") pattern = "haiku*";
+                    return {
+                      ...mapping,
+                      pattern,
+                      contextWindow: mapping.contextWindow ?? defaultMapping?.contextWindow,
+                    };
+                  });
+                  const existingIds = new Set(migratedMappings.map((mapping) => mapping.id));
+                  for (const defaultMapping of defaultMappings) {
+                    if (!existingIds.has(defaultMapping.id)) migratedMappings.push(defaultMapping);
+                  }
+                  p.modelMappings = migratedMappings;
+                }
               }
               if (p.id === "anthropic") {
                 p.name = "Anthropic";

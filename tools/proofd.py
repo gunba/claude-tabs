@@ -267,6 +267,46 @@ def parse_tag_number(tag_id: str) -> tuple[str, int]:
     return prefix, int(number)
 
 
+def dedupe_source_refs(refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, int]] = set()
+    deduped: list[dict[str, Any]] = []
+    for ref in sorted(refs, key=lambda item: (item["path"], item["line"])):
+        key = (str(ref["path"]), int(ref["line"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(ref)
+    return deduped
+
+
+def source_refs_to_paths(source_refs: dict[str, list[dict[str, Any]]]) -> dict[str, list[str]]:
+    hits: dict[str, list[str]] = {}
+    for tag_id, refs in source_refs.items():
+        for ref in refs:
+            hits.setdefault(tag_id, [])
+            if ref["path"] not in hits[tag_id]:
+                hits[tag_id].append(ref["path"])
+    return hits
+
+
+def format_line_refs(refs: list[dict[str, Any]]) -> str:
+    line_numbers = sorted({int(ref["line"]) for ref in refs})
+    if not line_numbers:
+        return ""
+    return "L" + ",".join(str(line) for line in line_numbers)
+
+
+def format_source_ref_locations(refs: list[dict[str, Any]]) -> str:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for ref in refs:
+        grouped.setdefault(str(ref["path"]), []).append(ref)
+    parts = []
+    for path in sorted(grouped):
+        lines = format_line_refs(grouped[path])
+        parts.append(f"{path}:{lines}" if lines else path)
+    return "; ".join(parts)
+
+
 def parse_datetime_any(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -285,6 +325,8 @@ def sorted_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(entries, key=lambda entry: parse_tag_number(entry["tag_id"]))
 
 
+# [PP-02] Canonical proof storage strips manual file metadata; generated rule
+# files derive scope from source-tag locations only, and file-list details are ignored.
 def sanitize_entry_details(details: list[Any] | None) -> list[str]:
     sanitized: list[str] = []
     for detail in details or []:
@@ -1123,20 +1165,64 @@ class ProofStore:
         self._register_prefixes(rule)
         return tag_id
 
-    def scan_source_tags(self) -> dict[str, list[str]]:
+    # [PP-01] Source-tag scanning retains exact line numbers so generated rules
+    # and entry lookups can point agents at the real tag location.
+    def scan_source_refs(self) -> dict[str, list[dict[str, Any]]]:
         metadata = self.repo_metadata()
-        hits: dict[str, list[str]] = {}
+        hits: dict[str, list[dict[str, Any]]] = {}
         for rel_path, path in self.iter_source_files(metadata):
             try:
                 content = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue
-            for match in SOURCE_TAG_RE.finditer(content):
-                tag_id = match.group(1)
-                hits.setdefault(tag_id, [])
-                if rel_path not in hits[tag_id]:
-                    hits[tag_id].append(rel_path)
-        return hits
+            for line_number, line in enumerate(content.splitlines(), start=1):
+                for match in SOURCE_TAG_RE.finditer(line):
+                    tag_id = match.group(1)
+                    hits.setdefault(tag_id, [])
+                    hits[tag_id].append(
+                        {
+                            "path": rel_path,
+                            "line": line_number,
+                            "code_line": line_number + 1,
+                        }
+                    )
+        return {tag_id: dedupe_source_refs(refs) for tag_id, refs in hits.items()}
+
+    def scan_source_tags(self) -> dict[str, list[str]]:
+        return source_refs_to_paths(self.scan_source_refs())
+
+    def refs_for_tag(self, tag_id: str, source_refs: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+        return source_refs.get(tag_id, [])
+
+    def refs_for_tag_in_path(
+        self,
+        tag_id: str,
+        source_path: str,
+        source_refs: dict[str, list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        return [ref for ref in self.refs_for_tag(tag_id, source_refs) if ref["path"] == source_path]
+
+    def format_tag_label(
+        self,
+        tag_id: str,
+        source_path: str,
+        source_refs: dict[str, list[dict[str, Any]]],
+    ) -> str:
+        line_refs = format_line_refs(self.refs_for_tag_in_path(tag_id, source_path, source_refs))
+        return f"{tag_id} {line_refs}".strip()
+
+    # [PP-01] File-scoped rule output orders entries by the earliest tagged line
+    # in that file so agents read rules in source order within each category.
+    def entry_sort_key_for_path(
+        self,
+        entry: dict[str, Any],
+        source_path: str,
+        source_refs: dict[str, list[dict[str, Any]]],
+    ) -> tuple[int, str, int]:
+        refs = self.refs_for_tag_in_path(entry["tag_id"], source_path, source_refs)
+        first_line = min((int(ref["line"]) for ref in refs), default=sys.maxsize)
+        prefix, number = parse_tag_number(entry["tag_id"])
+        return first_line, prefix, number
 
     def create_rule(
         self,
@@ -1262,12 +1348,14 @@ class ProofStore:
     def entry_files(self, tag_id: str, branch: str | None = None) -> dict[str, Any]:
         branch = branch or current_branch(self.repo_root)
         rule, _ = self.find_entry(tag_id, branch=branch)
-        source_hits = self.scan_source_tags().get(tag_id, [])
+        source_refs = self.scan_source_refs().get(tag_id, [])
+        source_hits = source_refs_to_paths({tag_id: source_refs}).get(tag_id, [])
         return {
             "tag_id": tag_id,
             "rule_id": rule["rule_id"],
             "files": source_hits,
             "source_hits": source_hits,
+            "refs": source_refs,
         }
 
     def delete_entry(
@@ -1651,21 +1739,29 @@ class ProofStore:
         self,
         source_path: str,
         rule_groups: list[tuple[int, dict[str, Any], list[dict[str, Any]]]],
+        source_refs: dict[str, list[dict[str, Any]]],
     ) -> str:
+        # [PP-01] Generated file-scoped rules stay compact and annotate each tag
+        # with its source line so agents can jump from rules back to code.
         frontmatter = {"paths": [source_path]}
         lines = [
-            f"# Rules for {source_path}",
+            f"# {source_path}",
             "",
-            f"<!-- Generated by proofd. Source: {source_path}. Do not edit manually. -->",
+            "Tag line: `L<n>`; code usually starts at `L<n+1>`.",
         ]
         for _, rule, entries in rule_groups:
             lines.append("")
-            lines.append(f"## {rule['title']} ({rule['rule_id']})")
+            lines.append(f"## {rule['title']}")
             if rule.get("summary"):
                 lines.append(rule["summary"])
             lines.append("")
-            for entry in entries:
-                lines.append(f"- [{entry['tag_id']}] {entry['statement']}")
+            ordered_entries = sorted(
+                entries,
+                key=lambda entry: self.entry_sort_key_for_path(entry, source_path, source_refs),
+            )
+            for entry in ordered_entries:
+                tag_label = self.format_tag_label(entry["tag_id"], source_path, source_refs)
+                lines.append(f"- [{tag_label}] {entry['statement']}")
                 for detail in entry.get("details", []):
                     lines.append(f"  - {detail}")
         return render_frontmatter(frontmatter) + "\n".join(lines).rstrip() + "\n"
@@ -1673,7 +1769,8 @@ class ProofStore:
     def sync_rules(self, branch: str | None = None, clean: bool = True) -> dict[str, Any]:
         branch = branch or current_branch(self.repo_root)
         rules = self.load_rules(branch)
-        source_hits = self.scan_source_tags()
+        source_refs = self.scan_source_refs()
+        source_hits = source_refs_to_paths(source_refs)
         output_dir = ensure_dir(self.output_rules_dir())
         manifest_path = output_dir / ".proofd-manifest.json"
         previous_manifest = []
@@ -1700,7 +1797,7 @@ class ProofStore:
             if not matched:
                 continue
             path = output_dir / self.generated_rule_filename(source_path)
-            content = self.render_file_scoped_markdown(source_path, matched)
+            content = self.render_file_scoped_markdown(source_path, matched, source_refs)
             path.write_text(content, encoding="utf-8")
             generated_files.append(path.name)
 
@@ -1718,7 +1815,8 @@ class ProofStore:
         branch = branch or current_branch(self.repo_root)
         normalized_paths = [normalize_path(path) for path in paths]
         rules = self.load_rules(branch)
-        source_hits = self.scan_source_tags()
+        source_refs = self.scan_source_refs()
+        source_hits = source_refs_to_paths(source_refs)
         matched: list[tuple[int, dict[str, Any], list[dict[str, Any]]]] = []
         for rule in rules.values():
             scope_paths = rule.get("scope", {}).get("paths", [])
@@ -1739,7 +1837,13 @@ class ProofStore:
                     "rule_id": rule["rule_id"],
                     "title": rule["title"],
                     "paths": rule.get("scope", {}).get("paths", []),
-                    "entries": entries,
+                    "entries": [
+                        {
+                            **entry,
+                            "source_refs": self.refs_for_tag(entry["tag_id"], source_refs),
+                        }
+                        for entry in entries
+                    ],
                 }
                 for _, rule, entries in matched
             ]
@@ -1753,6 +1857,13 @@ class ProofStore:
                 output.append(rule["summary"])
             for entry in entries:
                 output.append(f"- [{entry['tag_id']}] {entry['statement']}")
+                refs = [
+                    ref
+                    for ref in self.refs_for_tag(entry["tag_id"], source_refs)
+                    if ref["path"] in normalized_paths
+                ]
+                if refs:
+                    output.append(f"  - source: {format_source_ref_locations(refs)}")
                 for detail in entry.get("details", []):
                     output.append(f"  - {detail}")
         if len(output) == 1:
@@ -1764,7 +1875,8 @@ class ProofStore:
         batch_size = batch_size or int(self.repo_metadata().get("default_batch_size", DEFAULT_BATCH_SIZE))
         normalized_paths = [normalize_path(path) for path in changed_paths]
         rules = self.load_rules(branch)
-        source_hits = self.scan_source_tags()
+        source_refs = self.scan_source_refs()
+        source_hits = source_refs_to_paths(source_refs)
         candidates: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
         for rule in rules.values():
             scope_paths = rule.get("scope", {}).get("paths", [])
@@ -1815,11 +1927,21 @@ class ProofStore:
         return {
             "branch": branch,
             "changed_paths": normalized_paths,
-            "selected": [{"rule_id": rule["rule_id"], "title": rule["title"], "entry": entry} for _, rule, entry in selected],
+            "selected": [
+                {
+                    "rule_id": rule["rule_id"],
+                    "title": rule["title"],
+                    "entry": entry,
+                    "source_refs": self.refs_for_tag(entry["tag_id"], source_refs),
+                }
+                for _, rule, entry in selected
+            ],
             "grouped": grouped,
         }
 
     def lint(self, branch: str | None = None) -> dict[str, Any]:
+        # [PP-02] Lint warns when rules have no source references so canonical
+        # entries stay maintainable while generated output stays file-scoped.
         branch = branch or current_branch(self.repo_root)
         rules = self.load_rules(branch)
         metadata = self.repo_metadata()
@@ -1898,6 +2020,8 @@ class ProofStore:
 
 
 def format_select_matching(selection: dict[str, Any]) -> str:
+    # [PP-01] Matching output includes line-aware source refs for each selected
+    # entry so agents can grep or open the exact code-tag line efficiently.
     selected = selection["selected"]
     grouped = selection["grouped"]
     lines = []
@@ -1915,6 +2039,8 @@ def format_select_matching(selection: dict[str, Any]) -> str:
         entry = item["entry"]
         lines.append(f"[{entry['tag_id']}] ({rule_id})")
         lines.append(f"- [{entry['tag_id']}] {entry['statement']}")
+        if item.get("source_refs"):
+            lines.append(f"  source: {format_source_ref_locations(item['source_refs'])}")
         for detail in entry.get("details", []):
             lines.append(f"  - {detail}")
         lines.append("")
@@ -2136,9 +2262,9 @@ def run_cli(args: argparse.Namespace) -> int:
                 print_json(payload)
             else:
                 print(f"# Source references for {payload['tag_id']} ({payload['rule_id']})")
-                if payload["files"]:
-                    for path in payload["files"]:
-                        print(path)
+                if payload["refs"]:
+                    for ref in payload["refs"]:
+                        print(f"{ref['path']}:L{ref['line']}")
                 else:
                     print("_No source references._")
             return 0

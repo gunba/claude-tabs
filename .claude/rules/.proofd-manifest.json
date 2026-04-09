@@ -43,6 +43,7 @@
     "src-lib-paths-ts-5b5bd4a6.md",
     "src-lib-perftrace-ts-eabbe523.md",
     "src-lib-promptdiff-ts-1de35bff.md",
+    "src-lib-providerlaunch-ts-6d1c2438.md",
     "src-lib-ptyprocess-ts-695bd634.md",
     "src-lib-ptyregistry-ts-097244da.md",
     "src-lib-settingsschema-ts-c96b7ece.md",
@@ -68,11 +69,15 @@
     "src-tauri-src-observability-rs-5dd12545.md",
     "src-tauri-src-proxy-codex-auth-rs-bf1a55c6.md",
     "src-tauri-src-proxy-codex-mod-rs-8fe89cd0.md",
+    "src-tauri-src-proxy-codex-response-shape-rs-c6b4acb5.md",
+    "src-tauri-src-proxy-codex-stream-rs-a0303783.md",
+    "src-tauri-src-proxy-codex-translate-resp-rs-98754860.md",
     "src-tauri-src-proxy-mod-rs-6bfbb601.md",
     "src-tauri-src-pty-conpty-rs-269c879d.md",
     "src-tauri-src-pty-mod-rs-dbeabb9a.md",
     "src-tauri-src-pty-unix-rs-b4f804b3.md",
     "src-types-session-ts-b2c31cff.md",
-    "src-types-tapevents-ts-79312c4c.md"
+    "src-types-tapevents-ts-79312c4c.md",
+    "tools-proofd-py-91e9dbef.md"
   ]
 }
