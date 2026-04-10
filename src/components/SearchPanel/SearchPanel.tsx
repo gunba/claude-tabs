@@ -5,6 +5,7 @@ import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
 import { validateRegex } from "../../lib/searchBuffers";
 import { scrollTuiToText } from "../../lib/tuiScrollSearch";
+import { focusTerminal } from "../../lib/terminalRegistry";
 import { dlog } from "../../lib/debugLog";
 import "./SearchPanel.css";
 
@@ -54,7 +55,7 @@ export function SearchPanel() {
   const searchableSessionScope = useMemo(
     () => sessions
       .filter((s) => !s.isMetaAgent)
-      .map((s) => `${s.id}\0${s.config.sessionId ?? ""}\0${s.config.workingDir ?? ""}`)
+      .map((s) => `${s.id}\0${s.config.sessionId ?? ""}\0${s.config.workingDir ?? ""}\0${s.state}`)
       .join("\u0001"),
     [sessions]
   );
@@ -85,7 +86,7 @@ export function SearchPanel() {
 
     // Build session list for Rust command
     const sessionList = sessionsRef.current
-      .filter(s => !s.isMetaAgent && s.config.sessionId && s.config.workingDir)
+      .filter(s => !s.isMetaAgent && s.state !== "dead" && s.config.sessionId && s.config.workingDir)
       .map(s => ({ sessionId: s.config.sessionId, workingDir: s.config.workingDir }));
 
     if (!sessionList.length) {
@@ -257,7 +258,8 @@ export function SearchPanel() {
     if (e.key === "Enter") {
       e.preventDefault();
       if (activeIndex >= 0 && activeIndex < results.length) {
-        navigateToResult(results[activeIndex]);
+        const match = results[activeIndex];
+        navigateToResult(match).then(() => focusTerminal(match.sessionId));
       }
       return;
     }

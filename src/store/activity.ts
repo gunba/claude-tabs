@@ -6,6 +6,8 @@ import type {
   ContextFileEntry,
   FileChangeKind,
   ToolInputDiffData,
+  ActivityBreadcrumb,
+  ViewMode,
 } from "../types/activity";
 import { emptySessionActivity, computeStats } from "../types/activity";
 import { traceSync } from "../lib/perfTrace";
@@ -36,6 +38,10 @@ interface ActivityState {
   markUserMessage: (sessionId: string) => void;
   addContextFile: (sessionId: string, entry: ContextFileEntry) => void;
   clearSession: (sessionId: string) => void;
+  toggleExpandedPath: (sessionId: string, path: string) => void;
+  mergeExpandedPaths: (sessionId: string, paths: Iterable<string>) => void;
+  setViewMode: (sessionId: string, mode: ViewMode) => void;
+  addBreadcrumb: (sessionId: string, crumb: ActivityBreadcrumb) => void;
 }
 
 function ensureSession(
@@ -103,6 +109,7 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         startedAt: Date.now(),
         endedAt: null,
         files: [],
+        breadcrumbs: [],
       });
       evictOldTurns(activity);
       sessions[sessionId] = { ...activity };
@@ -292,4 +299,57 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       warnAboveMs: 8,
       data: {},
     })),
+
+  toggleExpandedPath: (sessionId, path) =>
+    set((state) => {
+      const sessions = { ...state.sessions };
+      const activity = sessions[sessionId];
+      if (!activity) return state;
+      const next = new Set(activity.expandedPaths);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      sessions[sessionId] = { ...activity, expandedPaths: next };
+      return { sessions };
+    }),
+
+  mergeExpandedPaths: (sessionId, paths) =>
+    set((state) => {
+      const sessions = { ...state.sessions };
+      const activity = sessions[sessionId];
+      if (!activity) return state;
+      let changed = false;
+      const next = new Set(activity.expandedPaths);
+      for (const p of paths) {
+        if (!next.has(p)) {
+          next.add(p);
+          changed = true;
+        }
+      }
+      if (!changed) return state;
+      sessions[sessionId] = { ...activity, expandedPaths: next };
+      return { sessions };
+    }),
+
+  setViewMode: (sessionId, mode) =>
+    set((state) => {
+      const sessions = { ...state.sessions };
+      const activity = sessions[sessionId];
+      if (!activity || activity.viewMode === mode) return state;
+      sessions[sessionId] = { ...activity, viewMode: mode };
+      return { sessions };
+    }),
+
+  addBreadcrumb: (sessionId, crumb) =>
+    set((state) => {
+      const sessions = { ...state.sessions };
+      const activity = sessions[sessionId];
+      if (!activity) return state;
+      const turn = currentTurn(activity);
+      if (!turn || turn.endedAt !== null) return state;
+      // Limit breadcrumbs per turn to avoid unbounded growth
+      if (turn.breadcrumbs.length >= 30) return state;
+      turn.breadcrumbs.push(crumb);
+      sessions[sessionId] = { ...activity };
+      return { sessions };
+    }),
 }));

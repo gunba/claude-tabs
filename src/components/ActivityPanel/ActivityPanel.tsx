@@ -6,15 +6,14 @@ import { ClaudeMascot } from "./ClaudeMascot";
 import type { MascotState } from "./ClaudeMascot";
 import { IconFolder, IconDocument } from "../Icons/Icons";
 import { isSubagentActive } from "../../types/session";
-import type { FileActivity, ContextFileEntry } from "../../types/activity";
+import type { FileActivity, ContextFileEntry, ViewMode, ActivityBreadcrumb } from "../../types/activity";
 import { buildFileTree, flattenTree, allFolderPaths } from "../../lib/fileTree";
 import type { FileTreeNode } from "../../lib/fileTree";
 import { canonicalizePath } from "../../lib/paths";
 import "./ActivityPanel.css";
 
-type ViewMode = "response" | "session";
-
 const INDENT_STEP = 16;
+const emptySet = new Set<string>();
 // [AP-04] Floating mascot tracks the main agent; subagent inline mascots persist by last-touched file, and completed subagents stay dimmed at their last-touched file; indent at INDENT_STEP=16
 // [AP-05] Two view modes: Response (since lastUserMessageAt) and Session (all visited paths)
 
@@ -27,6 +26,19 @@ function extractPathFromAction(action: string): string | null {
 }
 
 const FILE_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit"]);
+
+function breadcrumbIcon(toolName: string): string {
+  switch (toolName) {
+    case "Bash": return "$";
+    case "Grep": return "?";
+    case "Glob": return "*";
+    case "Agent": return ">";
+    case "WebSearch": return "~";
+    case "WebFetch": return "@";
+    case "LSP": return "#";
+    default: return ">";
+  }
+}
 
 function toolToMascotState(toolName: string): MascotState {
   if (toolName === "Read") return "reading";
@@ -167,18 +179,15 @@ export function ActivityPanel() {
   const activeSession = sessions.find((s) => s.id === activeTabId);
 
   const activity = useActivityStore((s) => activeTabId ? s.sessions[activeTabId] ?? null : null);
+  const activityStore = useActivityStore.getState;
 
-  const [mode, setMode] = useState<ViewMode>("response");
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  // Store-backed view mode and expanded paths (persist across tab/mode switches)
+  const mode: ViewMode = activity?.viewMode ?? "response";
+  const expandedPaths: Set<string> = activity?.expandedPaths ?? emptySet;
 
   // Floating/sticky mascot
   const containerRef = useRef<HTMLDivElement>(null);
   const [mascot, setMascot] = useState<StickyMascot | null>(null);
-
-  // Reset expanded paths on session switch (but NOT mascot — recomputed from activity)
-  useEffect(() => {
-    setExpandedPaths(new Set());
-  }, [activeTabId]);
 
   // Derive the last file the main agent touched from activity data
   // This persists across tab switches and idle periods
@@ -325,7 +334,13 @@ export function ActivityPanel() {
       for (const turn of activity.turns) {
         for (const f of turn.files) {
           if (f.timestamp >= boundary) {
-            map.set(f.path, f);
+            const existing = map.get(f.path);
+            // AP-03 cross-turn: never downgrade "created" to "modified" within same response
+            if (existing?.kind === "created" && f.kind === "modified") {
+              map.set(f.path, { ...f, kind: "created" });
+            } else {
+              map.set(f.path, f);
+            }
           }
         }
       }
@@ -363,16 +378,10 @@ export function ActivityPanel() {
 
   // Auto-expand new folders when tree changes
   useEffect(() => {
-    if (tree.length === 0) return;
+    if (tree.length === 0 || !activeTabId) return;
     const newFolders = allFolderPaths(tree);
-    setExpandedPaths((prev) => {
-      const merged = new Set(prev);
-      for (const path of newFolders) {
-        merged.add(path);
-      }
-      return merged;
-    });
-  }, [tree]);
+    activityStore().mergeExpandedPaths(activeTabId, newFolders);
+  }, [tree, activeTabId]);
 
   // Flatten for rendering
   const rows = useMemo(() => flattenTree(tree, expandedPaths), [tree, expandedPaths]);
@@ -426,17 +435,27 @@ export function ActivityPanel() {
   }, [primaryActive, lastMainAgentFile, depthByPath, rows]);
 
   const toggleFolder = useCallback((path: string) => {
-    setExpandedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  }, []);
+    if (activeTabId) activityStore().toggleExpandedPath(activeTabId, path);
+  }, [activeTabId]);
 
   const handleFileClick = useCallback((filePath: string) => {
     invoke("shell_open", { path: filePath }).catch(() => {});
   }, []);
+
+  // Derive breadcrumbs for the current view scope
+  const breadcrumbs = useMemo(() => {
+    if (!activity) return [];
+    const result: ActivityBreadcrumb[] = [];
+    const boundary = mode === "response" ? activity.lastUserMessageAt : 0;
+    for (const turn of activity.turns) {
+      for (const crumb of turn.breadcrumbs) {
+        if (crumb.timestamp >= boundary) {
+          result.push(crumb);
+        }
+      }
+    }
+    return result;
+  }, [activity, mode]);
 
   if (!activeSession) return <EmptyPanel message="No active session" />;
   if (activeSession.state === "dead") return <EmptyPanel message="Session ended" />;
@@ -448,13 +467,13 @@ export function ActivityPanel() {
         <div className="activity-mode-toggle">
           <button
             className={`activity-mode-btn${mode === "response" ? " active" : ""}`}
-            onClick={() => setMode("response")}
+            onClick={() => activeTabId && activityStore().setViewMode(activeTabId, "response")}
           >
             Response
           </button>
           <button
             className={`activity-mode-btn${mode === "session" ? " active" : ""}`}
-            onClick={() => setMode("session")}
+            onClick={() => activeTabId && activityStore().setViewMode(activeTabId, "session")}
           >
             Session
           </button>
@@ -462,7 +481,7 @@ export function ActivityPanel() {
       </div>
 
       <div className="activity-panel-body activity-tree-container" ref={containerRef}>
-        {rows.length === 0 ? (
+        {rows.length === 0 && breadcrumbs.length === 0 ? (
           <div className="activity-panel-empty">
             {mode === "response" ? "No activity yet" : "No files visited"}
           </div>
@@ -489,6 +508,19 @@ export function ActivityPanel() {
                 />
               );
             })}
+            {breadcrumbs.length > 0 && (
+              <div className="activity-breadcrumbs">
+                <div className="activity-breadcrumbs-label">Actions</div>
+                {breadcrumbs.map((crumb, i) => (
+                  <div key={i} className="activity-breadcrumb-row" title={crumb.summary}>
+                    <span className={`activity-breadcrumb-icon activity-breadcrumb-tool-${crumb.toolName.toLowerCase()}`}>
+                      {breadcrumbIcon(crumb.toolName)}
+                    </span>
+                    <span className="activity-breadcrumb-text">{crumb.summary}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {mascot && (
               <div
                 className="activity-mascot-float"

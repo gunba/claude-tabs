@@ -19,11 +19,23 @@ export type ToolInputDiffData =
   | { type: "edit"; oldString: string; newString: string }
   | { type: "write"; content: string };
 
+export type ViewMode = "response" | "session";
+
 export interface TurnActivity {
   turnId: string;
   startedAt: number;
   endedAt: number | null;
   files: FileActivity[];
+  breadcrumbs: ActivityBreadcrumb[];
+}
+
+/** Non-file agent action shown as a contextual annotation in the activity log. */
+export interface ActivityBreadcrumb {
+  timestamp: number;
+  toolName: string;
+  /** Short description: command, pattern, agent description, etc. */
+  summary: string;
+  agentId: string | null;
 }
 
 export interface SessionActivity {
@@ -35,6 +47,10 @@ export interface SessionActivity {
   lastUserMessageAt: number;
   contextFiles: ContextFileEntry[];
   stats: ActivityStats;
+  /** Persisted collapsed/expanded folder paths for the activity tree. */
+  expandedPaths: Set<string>;
+  /** Persisted view mode toggle (Response vs Session). */
+  viewMode: ViewMode;
 }
 
 export interface ActivityStats {
@@ -58,6 +74,8 @@ export function emptySessionActivity(): SessionActivity {
     lastUserMessageAt: 0,
     contextFiles: [],
     stats: { filesModified: 0, filesCreated: 0, filesDeleted: 0, filesRead: 0 },
+    expandedPaths: new Set(),
+    viewMode: "response",
   };
 }
 

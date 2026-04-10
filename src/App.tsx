@@ -865,6 +865,19 @@ export default function App() {
                       Close
                     </button>
                   )}
+                  {regularSessions.length > 1 && (
+                    <button
+                      className="tab-context-menu-item"
+                      onClick={() => {
+                        for (const s of regularSessions) {
+                          if (s.id !== ctxSession.id) closeSession(s.id);
+                        }
+                        setTabContextMenu(null);
+                      }}
+                    >
+                      Close Other Tabs
+                    </button>
+                  )}
                   <div className="tab-context-menu-divider" />
                   <button
                     className="tab-context-menu-item tab-context-menu-item-danger"
@@ -880,6 +893,15 @@ export default function App() {
                       const group = groups.find((g) => g.sessions.some((s) => s.id === ctxSession.id));
                       return group ? group.sessions.length : 0;
                     })()})
+                  </button>
+                  <button
+                    className="tab-context-menu-item tab-context-menu-item-danger"
+                    onClick={() => {
+                      for (const s of regularSessions) closeSession(s.id);
+                      setTabContextMenu(null);
+                    }}
+                  >
+                    Close All Tabs ({regularSessions.length})
                   </button>
                 </>
               );

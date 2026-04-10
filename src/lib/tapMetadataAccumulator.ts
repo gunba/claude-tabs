@@ -117,8 +117,12 @@ export class TapMetadataAccumulator {
       }
 
       case "TurnStart":
-        // Initializer-only: set model from first TurnStart, don't let subagent TurnStart overwrite
-        if (event.model && !this.runtimeModel) this.runtimeModel = event.model;
+        // Update model from non-sidechain TurnStarts. Previous "first wins" guard
+        // (IN-14) blocked subagent overwrite but also blocked the main conversation
+        // model from correcting a title-gen sidecar's Haiku model — the Haiku
+        // message_start arrives before Opus since it's a faster/smaller call.
+        // Sidechain gating already handles subagent isolation.
+        if (event.model && !this.sidechainActive) this.runtimeModel = event.model;
         // Only update from main session turns (not subagent sidechain turns)
         if (!this.sidechainActive) {
           this.lastCacheRead = event.cacheRead;
@@ -410,6 +414,10 @@ export class TapMetadataAccumulator {
         break;
 
       case "StatusLineUpdate":
+        // StatusLineUpdate.modelId NOT used for runtimeModel — it reads from
+        // settings.json which suffers cross-session leakage (claude-code#37596).
+        // TurnStart (sidechain-gated) and ApiTelemetry (queryDepth-gated) are
+        // the authoritative sources.
         // [SI-25] Status line data capture: stored as grouped nullable statusLine object
         this.statusLine = {
           cliVersion: event.cliVersion,

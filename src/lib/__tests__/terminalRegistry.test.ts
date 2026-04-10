@@ -8,6 +8,7 @@ import {
   unregisterTerminal,
   waitForRender,
   isAltScreen,
+  scrollBufferToText,
 } from "../terminalRegistry";
 
 // ── Minimal Terminal mock ──
@@ -27,6 +28,28 @@ function mockTerminal(altScreen = false) {
     },
     _fireRender: () => { renderListeners.forEach(cb => cb({ start: 0, end: 24 })); },
   } as unknown as import("@xterm/xterm").Terminal & { _fireRender: () => void };
+}
+
+/** Terminal mock with scrollable buffer lines for scrollBufferToText tests. */
+function mockTerminalWithBuffer(lines: string[], rows = 24) {
+  const scrollToLine = vi.fn();
+  return {
+    term: {
+      rows,
+      scrollToLine,
+      buffer: {
+        active: {
+          type: "normal" as const,
+          length: lines.length,
+          getLine: (i: number) =>
+            i >= 0 && i < lines.length
+              ? { translateToString: () => lines[i] }
+              : null,
+        },
+      },
+    } as unknown as import("@xterm/xterm").Terminal,
+    scrollToLine,
+  };
 }
 
 // ── Tests ──
@@ -141,6 +164,96 @@ describe("terminalRegistry", () => {
     it("returns true for alternate buffer", () => {
       registerTerminal(SID, mockTerminal(true));
       expect(isAltScreen(SID)).toBe(true);
+    });
+  });
+
+  // ── scrollBufferToText ──
+
+  describe("scrollBufferToText", () => {
+    it("returns false for unregistered session", () => {
+      expect(scrollBufferToText("nonexistent", "hello")).toBe(false);
+    });
+
+    it("returns false when target text is empty/whitespace", () => {
+      const { term } = mockTerminalWithBuffer(["hello world"]);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "")).toBe(false);
+      expect(scrollBufferToText(SID, "   ")).toBe(false);
+    });
+
+    it("returns false when text is not found", () => {
+      const { term, scrollToLine } = mockTerminalWithBuffer([
+        "line one",
+        "line two",
+        "line three",
+      ]);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "not present")).toBe(false);
+      expect(scrollToLine).not.toHaveBeenCalled();
+    });
+
+    it("finds a single-line match and scrolls to it", () => {
+      const { term, scrollToLine } = mockTerminalWithBuffer([
+        "first line",
+        "the target text here",
+        "third line",
+      ], 24);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "target text")).toBe(true);
+      // Offset = floor(24/3) = 8, line 1 - 8 = clamped to 0
+      expect(scrollToLine).toHaveBeenCalledWith(0);
+    });
+
+    it("case-insensitive matching", () => {
+      const { term, scrollToLine } = mockTerminalWithBuffer([
+        "Hello World Target",
+      ]);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "hello world target")).toBe(true);
+      expect(scrollToLine).toHaveBeenCalled();
+    });
+
+    it("normalizes whitespace for matching", () => {
+      const { term, scrollToLine } = mockTerminalWithBuffer([
+        "foo   bar    baz",
+      ]);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "foo bar baz")).toBe(true);
+      expect(scrollToLine).toHaveBeenCalled();
+    });
+
+    it("finds match spanning two adjacent lines", () => {
+      const { term, scrollToLine } = mockTerminalWithBuffer([
+        "start of the",
+        "target phrase here",
+        "unrelated",
+      ], 24);
+      registerTerminal(SID, term);
+      // "the target phrase" spans lines 0 and 1
+      expect(scrollBufferToText(SID, "the target phrase")).toBe(true);
+      // Should scroll to line 0 (clamped from 0 - 8)
+      expect(scrollToLine).toHaveBeenCalledWith(0);
+    });
+
+    it("prefers last match (scans bottom-to-top)", () => {
+      const lines = Array.from({ length: 50 }, (_, i) => `line ${i}`);
+      lines[10] = "match here";
+      lines[40] = "match here";
+      const { term, scrollToLine } = mockTerminalWithBuffer(lines, 24);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "match here")).toBe(true);
+      // Should find line 40 first (bottom-to-top), offset = floor(24/3) = 8
+      expect(scrollToLine).toHaveBeenCalledWith(32);
+    });
+
+    it("offsets scroll so match appears 1/3 from top", () => {
+      const lines = Array.from({ length: 100 }, (_, i) => `padding ${i}`);
+      lines[60] = "the target";
+      const { term, scrollToLine } = mockTerminalWithBuffer(lines, 30);
+      registerTerminal(SID, term);
+      expect(scrollBufferToText(SID, "the target")).toBe(true);
+      // offset = floor(30/3) = 10, scroll to 60 - 10 = 50
+      expect(scrollToLine).toHaveBeenCalledWith(50);
     });
   });
 });

@@ -48,3 +48,54 @@ export function isAltScreen(sessionId: string): boolean {
   if (!term) return false;
   return term.buffer.active.type === "alternate";
 }
+
+/**
+ * Search the terminal's scrollback buffer for text and scroll to the first
+ * matching line. Best-effort fallback for normal-screen mode where PTY-based
+ * scrolling (Page Up) doesn't work.
+ *
+ * Scans bottom-to-top (recent matches more relevant). Case-insensitive,
+ * whitespace-normalized. Two-pass: single lines, then adjacent pairs for
+ * line-wrapped matches. Offsets scroll by rows/3 so the match appears
+ * roughly one-third from the top.
+ */
+export function scrollBufferToText(sessionId: string, targetText: string): boolean {
+  const term = terminals.get(sessionId);
+  if (!term) return false;
+
+  const buf = term.buffer.active;
+  const normalizedTarget = targetText
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!normalizedTarget) return false;
+
+  const offset = Math.floor(term.rows / 3);
+
+  // Pass 1: single lines, bottom-to-top
+  for (let i = buf.length - 1; i >= 0; i--) {
+    const line = buf.getLine(i);
+    if (!line) continue;
+    const text = line.translateToString(true).replace(/\s+/g, " ").trim().toLowerCase();
+    if (text.includes(normalizedTarget)) {
+      term.scrollToLine(Math.max(0, i - offset));
+      return true;
+    }
+  }
+
+  // Pass 2: adjacent line pairs (target may span a line break)
+  for (let i = buf.length - 2; i >= 0; i--) {
+    const line1 = buf.getLine(i);
+    const line2 = buf.getLine(i + 1);
+    if (!line1 || !line2) continue;
+    const combined = (
+      line1.translateToString(true) + " " + line2.translateToString(true)
+    ).replace(/\s+/g, " ").trim().toLowerCase();
+    if (combined.includes(normalizedTarget)) {
+      term.scrollToLine(Math.max(0, i - offset));
+      return true;
+    }
+  }
+
+  return false;
+}

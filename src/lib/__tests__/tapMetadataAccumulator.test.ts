@@ -283,6 +283,36 @@ describe("TapMetadataAccumulator", () => {
     expect(diff?.statusLine?.totalCostUsd).toBe(0.05);
   });
 
+  it("StatusLineUpdate does not override runtimeModel (settings.json cross-session leakage)", () => {
+    const acc = new TapMetadataAccumulator();
+    acc.process({
+      kind: "ApiTelemetry", ts: 0, model: "claude-opus-4-6", costUSD: 0.01,
+      inputTokens: 100, outputTokens: 50, cachedInputTokens: 0,
+      uncachedInputTokens: 100, durationMs: 500, ttftMs: 200,
+      queryChainId: null, queryDepth: 0, stopReason: null,
+    });
+    const diff = acc.process({
+      kind: "StatusLineUpdate", ts: 1,
+      sessionId: "abc123", cwd: "/tmp", modelId: "claude-haiku-4-5-20251001", modelDisplayName: "Haiku",
+      cliVersion: "2.1.80", outputStyle: "default",
+      totalCostUsd: 0.05, totalDurationMs: 60000, totalApiDurationMs: 3000,
+      totalLinesAdded: 100, totalLinesRemoved: 10,
+      totalInputTokens: 50000, totalOutputTokens: 10000,
+      contextWindowSize: 1000000,
+      currentInputTokens: 8000, currentOutputTokens: 1000,
+      cacheCreationInputTokens: 4000, cacheReadInputTokens: 2000,
+      contextUsedPercent: 5, contextRemainingPercent: 95,
+      exceeds200kTokens: false,
+      fiveHourUsedPercent: 42, fiveHourResetsAt: 1774020000,
+      sevenDayUsedPercent: 15, sevenDayResetsAt: 1774540000,
+      vimMode: "NORMAL",
+    });
+    // StatusLineUpdate should NOT overwrite — it reads from settings.json
+    // which suffers cross-session leakage (claude-code#37596).
+    // runtimeModel stays as the ApiTelemetry value, not the StatusLineUpdate value.
+    expect(diff?.runtimeModel).toBe("claude-opus-4-6");
+  });
+
   it("updates statusLine on subsequent StatusLineUpdate", () => {
     const acc = new TapMetadataAccumulator();
     acc.process({

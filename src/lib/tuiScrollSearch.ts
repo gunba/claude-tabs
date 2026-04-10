@@ -1,4 +1,4 @@
-import { getSessionTranscript, waitForRender, isAltScreen } from "./terminalRegistry";
+import { getSessionTranscript, waitForRender, isAltScreen, scrollBufferToText } from "./terminalRegistry";
 import { writeToPty } from "./ptyRegistry";
 import { dlog } from "./debugLog";
 
@@ -26,8 +26,8 @@ export async function scrollTuiToText(
   signal: AbortSignal,
 ): Promise<boolean> {
   if (!isAltScreen(sessionId)) {
-    dlog("search", sessionId, "scrollTuiToText: not in alt-screen mode", "WARN");
-    return false;
+    dlog("search", sessionId, "scrollTuiToText: not in alt-screen, trying buffer scroll", "DEBUG");
+    return scrollBufferToText(sessionId, targetText);
   }
 
   const normalizedTarget = normalizeText(targetText);

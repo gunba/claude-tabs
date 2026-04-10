@@ -39,6 +39,7 @@ export class TapSubagentTracker {
   private consumedSpawnFingerprints = new Set<string>(); // block stale re-serializations after UserInput clears seenSpawnFingerprints
   private processedUuids = new Set<string>(); // dedup re-serialized ConversationMessage content
   private lastMainToolCall: string | null = null; // last non-sidechain ToolCallStart tool name
+  private lastUnnamedAgentId: string | null = null; // agentId that received "Agent" fallback description
 
   constructor(parentSessionId: string) {
     this.parentSessionId = parentSessionId;
@@ -115,6 +116,25 @@ export class TapSubagentTracker {
           break;
         }
         this.seenSpawnFingerprints.add(fingerprint);
+        // Late spawn: if an agent was already created with the "Agent" fallback,
+        // retroactively patch it instead of queuing (the queue was empty when the
+        // first sidechain ConversationMessage arrived before this SubagentSpawn).
+        if (this.lastUnnamedAgentId) {
+          const targetId = this.lastUnnamedAgentId;
+          this.lastUnnamedAgentId = null;
+          this.consumedSpawnFingerprints.add(fingerprint);
+          actions.push({
+            type: "update", subagentId: targetId,
+            updates: {
+              description: event.description,
+              promptText: event.prompt,
+              subagentType: event.subagentType,
+              model: event.model,
+            },
+          });
+          dlog("inspector", this.parentSessionId, `subagent ${targetId} retroactively named "${event.description.slice(0, 60)}"`, "DEBUG");
+          break;
+        }
         this.pendingSpawns.push({
           description: event.description,
           prompt: event.prompt,
@@ -127,7 +147,24 @@ export class TapSubagentTracker {
 
       case "ConversationMessage": {
         // Track sidechain state for routing non-ConversationMessage events
+        const wasSidechainActive = this.sidechainActive;
         this.sidechainActive = event.isSidechain;
+        // Sidechain-exit completion: parent agent resumed → idle subagents are done
+        if (wasSidechainActive && !event.isSidechain) {
+          for (const agentId of this.knownIds) {
+            if (this.agentStates.get(agentId) === "idle") {
+              dlog("inspector", this.parentSessionId, `subagent ${agentId} idle → dead+completed (sidechain exit)`, "DEBUG");
+              this.agentStates.set(agentId, "dead");
+              actions.push({ type: "update", subagentId: agentId, updates: {
+                state: "dead",
+                completed: true,
+                currentToolName: null,
+                currentEventKind: null,
+                currentAction: null,
+              } });
+            }
+          }
+        }
         // [IN-04] Subagent messages: isSidechain + agentId routing, late msg gating
         if (!event.isSidechain || !event.agentId) break;
 
@@ -156,6 +193,8 @@ export class TapSubagentTracker {
           if (spawn) {
             const fp = spawn.description + "|" + (spawn.prompt || "").slice(0, 200);
             this.consumedSpawnFingerprints.add(fp);
+          } else {
+            this.lastUnnamedAgentId = agentId;
           }
           this.subagentTokens.set(agentId, 0);
           this.subagentMsgs.set(agentId, []);
@@ -368,8 +407,24 @@ export class TapSubagentTracker {
         this.seenSpawnFingerprints.clear();
         this.processedUuids.clear();
         this.lastMainToolCall = null;
+        this.lastUnnamedAgentId = null;
         // New user prompt → previous turn's agents are done; mark stale active agents idle
         actions.push(...this.markAllActive("idle"));
+        // Sweep idle agents to dead+completed — a new user prompt is an authoritative
+        // signal that all previous subagent work is finished.
+        for (const agentId of this.knownIds) {
+          if (this.agentStates.get(agentId) === "idle") {
+            dlog("inspector", this.parentSessionId, `subagent ${agentId} idle → dead+completed (new user prompt)`, "DEBUG");
+            this.agentStates.set(agentId, "dead");
+            actions.push({ type: "update", subagentId: agentId, updates: {
+              state: "dead",
+              completed: true,
+              currentToolName: null,
+              currentEventKind: null,
+              currentAction: null,
+            } });
+          }
+        }
         break;
 
       // [IN-26] Route tool activity to active subagent (mirrors parent tab display)
@@ -465,5 +520,6 @@ export class TapSubagentTracker {
     this.consumedSpawnFingerprints.clear();
     this.processedUuids.clear();
     this.lastMainToolCall = null;
+    this.lastUnnamedAgentId = null;
   }
 }

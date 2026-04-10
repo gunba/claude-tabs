@@ -234,7 +234,15 @@ describe("TapMetadataAccumulator queryDepth filtering", () => {
       inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0,
     } as TapEvent);
     expect(diff1!.runtimeModel).toBe("claude-opus-4-6");
-    // Second TurnStart (subagent) should NOT overwrite — model already set
+    // Subagent ConversationMessage marks sidechain active
+    acc.process({
+      kind: "ConversationMessage", ts: 1.5, isSidechain: true,
+      messageType: "assistant", toolAction: null, toolNames: [],
+      textSnippet: "", hasToolError: false, toolErrorText: null,
+      agentId: null, uuid: null, parentUuid: null, promptId: null,
+      stopReason: null, cwd: null, toolResultSnippets: null,
+    } as TapEvent);
+    // Subagent TurnStart should NOT overwrite — sidechain is active
     acc.process({
       kind: "TurnStart", ts: 2, model: "claude-haiku-4-5-20251001",
       inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0,
@@ -246,6 +254,22 @@ describe("TapMetadataAccumulator queryDepth filtering", () => {
       durationMs: 100, ttftMs: 50, queryChainId: null, queryDepth: 0, stopReason: "end_turn",
     } as TapEvent);
     expect(diff3!.runtimeModel).toBe("claude-opus-4-6");
+  });
+
+  it("main-thread TurnStart overwrites title-gen sidecar model", () => {
+    const acc = new TapMetadataAccumulator();
+    // Title-gen Haiku message_start arrives first (faster response)
+    const diff1 = acc.process({
+      kind: "TurnStart", ts: 1, model: "claude-haiku-4-5-20251001",
+      inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0,
+    } as TapEvent);
+    expect(diff1!.runtimeModel).toBe("claude-haiku-4-5-20251001");
+    // Main conversation Opus message_start arrives second
+    const diff2 = acc.process({
+      kind: "TurnStart", ts: 2, model: "claude-opus-4-6",
+      inputTokens: 1000, outputTokens: 0, cacheRead: 500, cacheCreation: 0,
+    } as TapEvent);
+    expect(diff2!.runtimeModel).toBe("claude-opus-4-6");
   });
 });
 

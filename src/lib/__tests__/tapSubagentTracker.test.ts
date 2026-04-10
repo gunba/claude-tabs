@@ -359,9 +359,9 @@ describe("TapSubagentTracker", () => {
     });
   });
 
-  // ── Sidechain-exit does NOT mark agents (fallback removed — Bug 006) ──
+  // ── Sidechain-exit completion ──
 
-  describe("sidechain-exit (fallback removed)", () => {
+  describe("sidechain-exit completion", () => {
     it("non-sidechain message does NOT mark active agents idle", () => {
       spawnAndActivate(tracker, "agent-1");
       const actions = tracker.process({
@@ -370,13 +370,169 @@ describe("TapSubagentTracker", () => {
         promptId: null, stopReason: "end_turn", toolNames: [], toolAction: null,
         textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
       } as TapEvent);
-      // No subagent state changes — only sidechainActive tracking
+      // No subagent state changes for active agents — only idle ones get completed
       expect(actions.filter(a => a.subagentId === "agent-1")).toEqual([]);
       expect(tracker.hasActiveAgents()).toBe(true);
+    });
+
+    it("marks idle agents dead+completed on sidechain exit", () => {
+      spawnAndActivate(tracker, "agent-1");
+      // Transition to idle via end_turn
+      tracker.process({
+        kind: "TurnEnd", ts: 5, stopReason: "end_turn", outputTokens: 100,
+      } as TapEvent);
+      expect(tracker.hasActiveAgents()).toBe(false);
+
+      // Non-sidechain message → sidechain exit
+      const actions = tracker.process({
+        kind: "ConversationMessage", ts: 20, messageType: "assistant",
+        isSidechain: false, agentId: null, uuid: null, parentUuid: null,
+        promptId: null, stopReason: "end_turn", toolNames: [], toolAction: null,
+        textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
+      } as TapEvent);
+      const deadUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "dead");
+      expect(deadUpdate).toBeDefined();
+      expect(deadUpdate!.updates!.completed).toBe(true);
+    });
+
+    it("does not mark already-dead agents on sidechain exit", () => {
+      spawnAndActivate(tracker, "agent-1");
+      // Kill via SubagentNotification
+      tracker.process({ kind: "SubagentNotification", ts: 5, status: "completed", summary: "done" } as TapEvent);
+
+      // Non-sidechain message
+      const actions = tracker.process({
+        kind: "ConversationMessage", ts: 20, messageType: "assistant",
+        isSidechain: false, agentId: null, uuid: null, parentUuid: null,
+        promptId: null, stopReason: "end_turn", toolNames: [], toolAction: null,
+        textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
+      } as TapEvent);
+      // No state updates — agent already dead
+      expect(actions.filter(a => a.subagentId === "agent-1")).toEqual([]);
+    });
+
+    it("does not fire when sidechain was already inactive", () => {
+      // No subagent activity at all — sidechainActive was never true
+      const actions = tracker.process({
+        kind: "ConversationMessage", ts: 10, messageType: "assistant",
+        isSidechain: false, agentId: null, uuid: null, parentUuid: null,
+        promptId: null, stopReason: "end_turn", toolNames: [], toolAction: null,
+        textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
+      } as TapEvent);
+      expect(actions).toEqual([]);
     });
   });
 
   // ── Bug 006 integration: orphaned subagents + getEffectiveState ──
+
+  // ── Late SubagentSpawn retroactive name patch ──
+
+  describe("late SubagentSpawn retroactive name", () => {
+    it("retroactively patches agent that received 'Agent' fallback", () => {
+      // Sidechain message arrives BEFORE SubagentSpawn (timing race)
+      const addActions = tracker.process(makeSidechainMsg("agent-1"));
+      expect(addActions.find(a => a.type === "add")!.subagent!.description).toBe("Agent");
+
+      // SubagentSpawn arrives late
+      const patchActions = tracker.process(makeSpawn("Explore codebase", "search for files", { subagentType: "Explore", model: "haiku" }));
+      const update = patchActions.find(a => a.type === "update" && a.subagentId === "agent-1");
+      expect(update).toBeDefined();
+      expect(update!.updates!.description).toBe("Explore codebase");
+      expect(update!.updates!.promptText).toBe("search for files");
+      expect(update!.updates!.subagentType).toBe("Explore");
+      expect(update!.updates!.model).toBe("haiku");
+    });
+
+    it("does not retroactively patch when agent already had a name", () => {
+      // Normal flow: spawn arrives first
+      tracker.process(makeSpawn("Named agent", "do stuff"));
+      tracker.process(makeSidechainMsg("agent-1"));
+
+      // Another spawn arrives — no unnamed agent to patch, so it queues normally
+      tracker.process(makeSpawn("Second agent", "more stuff"));
+      const addActions = tracker.process(makeSidechainMsg("agent-2"));
+      expect(addActions.find(a => a.type === "add")!.subagent!.description).toBe("Second agent");
+    });
+
+    it("clears lastUnnamedAgentId after retroactive patch", () => {
+      // First agent gets fallback name
+      tracker.process(makeSidechainMsg("agent-1"));
+      // Late spawn patches it
+      tracker.process(makeSpawn("First agent", "prompt 1"));
+
+      // Second agent also gets fallback (no spawn queued)
+      const addActions = tracker.process(makeSidechainMsg("agent-2"));
+      expect(addActions.find(a => a.type === "add")!.subagent!.description).toBe("Agent");
+    });
+
+    it("clears lastUnnamedAgentId on UserInput", () => {
+      tracker.process(makeSidechainMsg("agent-1")); // gets "Agent" fallback
+      tracker.process({ kind: "UserInput", ts: 10, display: "new prompt", sessionId: "s" } as TapEvent);
+
+      // Late spawn should queue normally, not retroactively patch
+      tracker.process(makeSpawn("Too late", "prompt"));
+      const addActions = tracker.process(makeSidechainMsg("agent-2"));
+      expect(addActions.find(a => a.type === "add")!.subagent!.description).toBe("Too late");
+    });
+
+    it("blocks re-serialization of retroactively consumed spawn", () => {
+      tracker.process(makeSidechainMsg("agent-1")); // gets "Agent" fallback
+      tracker.process(makeSpawn("Patched name", "prompt")); // retroactive patch
+
+      // Re-serialization of the same spawn should be blocked
+      tracker.process(makeSpawn("Patched name", "prompt"));
+      // New agent should get fallback, not the re-serialized spawn
+      const addActions = tracker.process(makeSidechainMsg("agent-2"));
+      expect(addActions.find(a => a.type === "add")!.subagent!.description).toBe("Agent");
+    });
+  });
+
+  // ── UserInput/SlashCommand idle sweep ──
+
+  describe("UserInput idle sweep", () => {
+    it("marks idle agents dead+completed on UserInput", () => {
+      spawnAndActivate(tracker, "agent-1");
+      // Transition to idle
+      tracker.process({
+        kind: "TurnEnd", ts: 5, stopReason: "end_turn", outputTokens: 100,
+      } as TapEvent);
+
+      const actions = tracker.process({
+        kind: "UserInput", ts: 20, display: "next prompt", sessionId: "s",
+      } as TapEvent);
+      const deadUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "dead");
+      expect(deadUpdate).toBeDefined();
+      expect(deadUpdate!.updates!.completed).toBe(true);
+    });
+
+    it("marks active agents idle then dead+completed on UserInput", () => {
+      spawnAndActivate(tracker, "agent-1"); // agent is in toolUse state
+
+      const actions = tracker.process({
+        kind: "UserInput", ts: 20, display: "next prompt", sessionId: "s",
+      } as TapEvent);
+      // markAllActive("idle") fires first, then idle sweep catches them
+      const idleUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "idle");
+      expect(idleUpdate).toBeDefined();
+      const deadUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "dead");
+      expect(deadUpdate).toBeDefined();
+      expect(deadUpdate!.updates!.completed).toBe(true);
+    });
+
+    it("marks idle agents dead+completed on SlashCommand", () => {
+      spawnAndActivate(tracker, "agent-1");
+      tracker.process({
+        kind: "TurnEnd", ts: 5, stopReason: "end_turn", outputTokens: 100,
+      } as TapEvent);
+
+      const actions = tracker.process({
+        kind: "SlashCommand", ts: 20, command: "/help", display: "/help",
+      } as TapEvent);
+      const deadUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "dead");
+      expect(deadUpdate).toBeDefined();
+      expect(deadUpdate!.updates!.completed).toBe(true);
+    });
+  });
 
 
   // ── ToolInput enrichment ──
