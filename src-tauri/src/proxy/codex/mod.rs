@@ -153,37 +153,21 @@ fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
         );
     }
 
-    if data.is_empty() {
-        push_synthetic_model(
-            &mut data,
-            &mut seen_ids,
-            primary,
-            primary,
-            default_context_window,
-        );
-        push_synthetic_model(
-            &mut data,
-            &mut seen_ids,
-            small,
-            small,
-            default_context_window,
-        );
-    } else {
-        push_synthetic_model(
-            &mut data,
-            &mut seen_ids,
-            primary,
-            primary,
-            default_context_window,
-        );
-        push_synthetic_model(
-            &mut data,
-            &mut seen_ids,
-            small,
-            small,
-            default_context_window,
-        );
-    }
+    // Ensure primary and small always appear (deduped by seen_ids).
+    push_synthetic_model(
+        &mut data,
+        &mut seen_ids,
+        primary,
+        primary,
+        default_context_window,
+    );
+    push_synthetic_model(
+        &mut data,
+        &mut seen_ids,
+        small,
+        small,
+        default_context_window,
+    );
 
     let first_id = data
         .first()
