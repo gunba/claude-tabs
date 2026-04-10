@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ModelProvider } from "../../types/session";
+import type { ModelProvider, ProviderModel } from "../../types/session";
 import {
   OPENAI_CODEX_CONTEXT_WINDOW,
   buildOpenAICodexMappings,
@@ -23,6 +23,11 @@ const openAiProvider: ModelProvider = {
   modelMappings: buildOpenAICodexMappings(),
 };
 
+const anthropicCatalog: ProviderModel[] = [
+  { id: "opus[1m]", label: "opus[1m]", family: "opus", contextWindow: 1000000 },
+  { id: "sonnet[1m]", label: "sonnet[1m]", family: "sonnet", contextWindow: 1000000 },
+];
+
 describe("providerLaunch", () => {
   it("resolves OpenAI context from the matched provider mapping", () => {
     expect(getProviderContextWindow(openAiProvider, "haiku")).toBe(OPENAI_CODEX_CONTEXT_WINDOW);
@@ -31,9 +36,19 @@ describe("providerLaunch", () => {
   });
 
   it("promotes OpenAI launch models into a 1m variant for larger provider windows", () => {
-    expect(getLaunchModelForProvider("best", openAiProvider)).toBe("best[1m]");
-    expect(getLaunchModelForProvider("haiku", openAiProvider)).toBe("haiku[1m]");
-    expect(getLaunchModelForProvider("best[1m]", openAiProvider)).toBe("best[1m]");
+    expect(getLaunchModelForProvider("best", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
+    expect(getLaunchModelForProvider("haiku", openAiProvider, anthropicCatalog)).toBe("sonnet[1m]");
+    expect(getLaunchModelForProvider("best[1m]", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
+    expect(getLaunchModelForProvider("gpt-5.4", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
+    expect(getLaunchModelForProvider("gpt-5.4-mini", openAiProvider, anthropicCatalog)).toBe("sonnet[1m]");
+  });
+
+  it("falls back cleanly when the live carrier catalog changes shape", () => {
+    const catalog: ProviderModel[] = [
+      { id: "mythos[1m]", label: "mythos[1m]", family: "mythos", contextWindow: 1000000 },
+    ];
+
+    expect(getLaunchModelForProvider("gpt-5.4", openAiProvider, catalog)).toBe("mythos[1m]");
   });
 
   it("sets the autocompact window env for OpenAI launches", () => {

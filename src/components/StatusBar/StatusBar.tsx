@@ -298,9 +298,6 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
   const activeSession = sessions.find((s) => s.id === activeTabId);
   const [hookCount, setHookCount] = useState(0);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
-  const sidePanel = useSettingsStore((s) => s.sidePanel);
-  const setSidePanel = useSettingsStore((s) => s.setSidePanel);
-  const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
   const devtoolsAvailable = useRuntimeStore((s) => s.observabilityInfo.devtoolsAvailable);
   const openMainDevtools = useRuntimeStore((s) => s.openMainDevtools);
 
@@ -398,15 +395,6 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
 
       {/* Far-right action buttons — always visible */}
       <div className="status-actions">
-        {activeSession && activeSession.state !== "dead" && (
-          <button
-            className={`status-item status-hooks-btn${sidePanel === "activity" ? " status-active-btn" : ""}`}
-            onClick={() => setSidePanel(sidePanel === "activity" ? null : "activity")}
-            title="File activity (Ctrl+Shift+G)"
-          >
-            Activity
-          </button>
-        )}
         {activeSession?.metadata.capturedSystemPrompt && onOpenContextViewer && (
           <button
             className="status-item status-hooks-btn"
@@ -414,15 +402,6 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
             title="View system prompt context"
           >
             Context
-          </button>
-        )}
-        {debugBuild && (
-          <button
-            className={`status-item status-hooks-btn${sidePanel === "debug" ? " status-active-btn" : ""}`}
-            onClick={() => setSidePanel(sidePanel === "debug" ? null : "debug")}
-            title="Observability panel (Ctrl+Shift+D)"
-          >
-            Debug
           </button>
         )}
         {devtoolsAvailable && (

@@ -160,10 +160,6 @@
   color: var(--accent);
 }
 
-.status-active-btn {
-  color: var(--accent-secondary);
-}
-
 .status-inspector-off {
   color: var(--text-muted);
 }

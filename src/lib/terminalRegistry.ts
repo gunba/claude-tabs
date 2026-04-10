@@ -22,6 +22,10 @@ export function registerTerminal(sessionId: string, term: Terminal): void {
   terminals.set(sessionId, term);
 }
 
+export function focusTerminal(sessionId: string): void {
+  terminals.get(sessionId)?.focus();
+}
+
 export function unregisterTerminal(sessionId: string): void {
   terminals.delete(sessionId);
 }

@@ -4,6 +4,7 @@ import {
   unregisterBufferReader,
   getSessionTranscript,
   registerTerminal,
+  focusTerminal,
   unregisterTerminal,
   waitForRender,
   isAltScreen,
@@ -87,6 +88,21 @@ describe("terminalRegistry", () => {
       registerTerminal(SID, term2);
       // Verify the second terminal is active by checking isAltScreen
       expect(isAltScreen(SID)).toBe(false);
+    });
+
+    it("focuses a registered terminal", () => {
+      const focus = vi.fn();
+      const term = {
+        ...mockTerminal(),
+        focus,
+      } as unknown as import("@xterm/xterm").Terminal;
+      registerTerminal(SID, term);
+      focusTerminal(SID);
+      expect(focus).toHaveBeenCalledTimes(1);
+    });
+
+    it("focusing an unregistered terminal does not throw", () => {
+      expect(() => focusTerminal("nonexistent")).not.toThrow();
     });
 
     it("unregistering a non-existent session does not throw", () => {

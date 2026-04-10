@@ -32,14 +32,14 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## PTY Spawn
 
-- [TR-15 L444] Proxy env injection at PTY spawn: when proxyPort is set in settings store, TerminalPanel sets ANTHROPIC_BASE_URL=http://127.0.0.1:{port}/s/{sessionId} and binds the session to its selected providerId so the local proxy can route each Claude Code request through the right provider.
+- [TR-15 L449] Proxy env injection at PTY spawn: when proxyPort is set in settings store, TerminalPanel sets ANTHROPIC_BASE_URL=http://127.0.0.1:{port}/s/{sessionId} and binds the session to its selected providerId so the local proxy can route each Claude Code request through the right provider.
 
 ## Terminal UI
 
-- [TR-05 L590] Hidden tabs use CSS display: none -- never unmount/remount xterm.js (destroys state).
+- [TR-05 L603] Hidden tabs use CSS display: none -- never unmount/remount xterm.js (destroys state).
 
 ## Provider Routing
 Session-bound provider routing, OpenAI Codex provider config, and auth-backed request translation.
 
 - [PR-07 L423] OpenAI Codex launches set a provider-sized Claude Code compact window so 272k-cap providers compact with the same flat reserve instead of the unknown-model 200k fallback.
-- [PR-01 L444] TerminalPanel points Claude at a session-scoped proxy URL (/s/{sessionId}) and binds each session to providerId; the Rust proxy resolves that session-bound provider, applies provider-local modelMappings, and falls back to the default provider when no binding is present.
+- [PR-01 L449] TerminalPanel points Claude at a session-scoped proxy URL (/s/{sessionId}) and binds each session to providerId; the Rust proxy resolves that session-bound provider, applies provider-local modelMappings, and falls back to the default provider when no binding is present.

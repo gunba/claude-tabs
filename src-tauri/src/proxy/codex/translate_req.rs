@@ -27,6 +27,15 @@ fn translate_reasoning(req: &Value) -> Option<Value> {
     None
 }
 
+// [PR-11] Preserve Claude fast-mode intent on the Codex transport by mapping
+// Anthropic's `speed=fast` request flag onto OpenAI's priority service tier.
+fn translate_service_tier(req: &Value) -> Option<&'static str> {
+    match req.get("speed").and_then(|v| v.as_str()) {
+        Some("fast") => Some("priority"),
+        _ => None,
+    }
+}
+
 /// Translate an Anthropic Messages API request body into an OpenAI Codex request body.
 pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, String> {
     let req: Value =
@@ -54,6 +63,9 @@ pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, Stri
 
     if let Some(reasoning) = translate_reasoning(&req) {
         codex_req["reasoning"] = reasoning;
+    }
+    if let Some(service_tier) = translate_service_tier(&req) {
+        codex_req["service_tier"] = json!(service_tier);
     }
 
     // tools
@@ -412,6 +424,23 @@ mod tests {
         assert_eq!(translated["input"][1]["type"], "function_call_output");
         assert_eq!(translated["input"][1]["call_id"], "t1");
         assert_eq!(translated["input"][1]["output"], "file contents");
+    }
+
+    #[test]
+    fn test_fast_mode_maps_to_priority_service_tier() {
+        let body = json!({
+            "model": "claude-opus-4-6",
+            "messages": [
+                {"role": "user", "content": "Hello"}
+            ],
+            "speed": "fast",
+            "stream": true,
+        });
+        let result =
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+        let translated: Value = serde_json::from_slice(&result).unwrap();
+
+        assert_eq!(translated["service_tier"], "priority");
     }
 
     #[test]

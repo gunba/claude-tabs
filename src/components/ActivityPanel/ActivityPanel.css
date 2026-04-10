@@ -6,13 +6,12 @@
 /* -- Panel container -- */
 
 .activity-panel {
-  width: 400px;
-  min-width: 280px;
-  max-width: 55%;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
-  border-left: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -30,24 +29,6 @@
 .activity-panel-title {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-primary);
-}
-
-.activity-panel-spacer {
-  flex: 1;
-}
-
-.activity-panel-close {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.activity-panel-close:hover {
   color: var(--text-primary);
 }
 

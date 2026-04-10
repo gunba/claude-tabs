@@ -3,12 +3,7 @@ import { useSessionStore } from "../../store/sessions";
 import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
 import { dlog, getDebugLog, getDebugLogForSession, getDebugLogGeneration, clearDebugLog, type DebugLogEntry, type DebugLogSource } from "../../lib/debugLog";
-import { IconClose } from "../Icons/Icons";
 import "./DebugPanel.css";
-
-interface DebugPanelProps {
-  onClose: () => void;
-}
 
 const MARKERS = [
   { id: 1, label: "1", color: "var(--accent)" },
@@ -58,8 +53,8 @@ function levelClass(level: string): string {
   return "debug-line";
 }
 
-// [DP-01] Collapsible right-side panel (350px) with session/module filters
-export function DebugPanel({ onClose }: DebugPanelProps) {
+// [DP-01] Debug log view with session/module filters
+export function DebugPanel() {
   const [logs, setLogs] = useState<DebugLogEntry[]>([]);
   const [textFilter, setTextFilter] = useState("");
   const [sessionFilter, setSessionFilter] = useState<string | "all" | "global">("all");
@@ -246,9 +241,6 @@ export function DebugPanel({ onClose }: DebugPanelProps) {
         </button>
         <button className="debug-panel-btn" onClick={handleClear} title="Clear all logs">
           Clear
-        </button>
-        <button className="debug-panel-close" onClick={onClose} title="Close (Esc)">
-          <IconClose size={14} />
         </button>
       </div>
 

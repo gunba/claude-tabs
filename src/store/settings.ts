@@ -114,7 +114,7 @@ interface SettingsState {
   commandBarExpanded: boolean;
   commandRefreshTrigger: number;
   showConfigManager: string | false;
-  sidePanel: "debug" | "activity" | "search" | null;
+  rightPanelTab: "debug" | "activity" | "search";
   replaceSessionId: string | null; // Session to close when launcher launches (Ctrl+Click relaunch)
   pastSessions: PastSession[];
   pastSessionsLoading: boolean;
@@ -146,7 +146,7 @@ interface SettingsState {
   setReplaceSessionId: (id: string | null) => void;
   setShowConfigManager: (show: string | false) => void;
   setCommandBarExpanded: (expanded: boolean) => void;
-  setSidePanel: (panel: "debug" | "activity" | "search" | null) => void;
+  setRightPanelTab: (panel: "debug" | "activity" | "search") => void;
   bootstrapCommandUsage: () => Promise<void>;
   triggerCommandRefresh: () => void;
   setSessionName: (id: string, name: string) => void;
@@ -194,7 +194,7 @@ export const useSettingsStore = create<SettingsState>()(
       commandBarExpanded: false,
       commandRefreshTrigger: 0,
       showConfigManager: false,
-      sidePanel: null,
+      rightPanelTab: "activity",
       replaceSessionId: null,
       pastSessions: [],
       pastSessionsLoading: false,
@@ -336,7 +336,7 @@ export const useSettingsStore = create<SettingsState>()(
       setSlashCommands: (cmds) => set({ slashCommands: cmds }),
       setCommandBarExpanded: (expanded) => set({ commandBarExpanded: expanded }),
       setShowConfigManager: (show) => set({ showConfigManager: show }),
-      setSidePanel: (panel) => set({ sidePanel: panel }),
+      setRightPanelTab: (panel) => set({ rightPanelTab: panel }),
       bootstrapCommandUsage: async () => {
         try {
           dlog("discovery", null, "command-usage bootstrap started", "DEBUG", {

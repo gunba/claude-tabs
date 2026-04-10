@@ -11,6 +11,7 @@ use crate::observability::{
 };
 use crate::session::types::ModelProvider;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 
@@ -88,48 +89,118 @@ fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String 
 
 /// [PR-02] Translate Anthropic-style requests and streaming responses
 /// through the OpenAI Responses API for the OpenAI Codex provider.
-/// Context window sizes for OpenAI models (tokens).
-/// Default is 272k; 1M is opt-in and costs 2x input.
-/// We report the default window for clients that consult `/v1/models`, though
-/// public Claude Code still appears to fall back to static thresholds for
-/// unknown model IDs.
-const GPT_5_4_CONTEXT_WINDOW: u64 = 272_000;
-const GPT_5_4_MINI_CONTEXT_WINDOW: u64 = 272_000;
-const GPT_5_4_MAX_OUTPUT: u64 = 128_000;
-const GPT_5_4_MINI_MAX_OUTPUT: u64 = 128_000;
+const DEFAULT_CODEX_CONTEXT_WINDOW: u64 = 272_000;
+const DEFAULT_CODEX_MAX_OUTPUT: u64 = 128_000;
 
+fn synthetic_codex_context_window(provider: &ModelProvider) -> u64 {
+    provider
+        .known_models
+        .iter()
+        .filter_map(|model| model.context_window)
+        .max()
+        .or_else(|| {
+            provider
+                .model_mappings
+                .iter()
+                .filter_map(|mapping| mapping.context_window)
+                .max()
+        })
+        .unwrap_or(DEFAULT_CODEX_CONTEXT_WINDOW)
+}
+
+fn push_synthetic_model(
+    models: &mut Vec<Value>,
+    seen_ids: &mut HashSet<String>,
+    id: &str,
+    display_name: &str,
+    context_window: u64,
+) {
+    if id.is_empty() || !seen_ids.insert(id.to_string()) {
+        return;
+    }
+
+    models.push(serde_json::json!({
+        "id": id,
+        "type": "model",
+        "display_name": display_name,
+        "created_at": "2025-01-01T00:00:00Z",
+        "max_input_tokens": context_window,
+        "max_tokens": context_window.min(DEFAULT_CODEX_MAX_OUTPUT),
+    }));
+}
+
+/// [PR-12] Synthetic Codex `/v1/models` metadata derives from provider
+/// catalog state so future model additions inherit context data without
+/// hardcoded GPT-family assumptions in the proxy.
 /// Build a synthetic Anthropic `/v1/models` response for the Codex provider.
-/// This preserves model metadata for clients that query `/v1/models`.
 fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
     let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
     let small = provider
         .codex_small_model
         .as_deref()
         .unwrap_or("gpt-5.4-mini");
+    let default_context_window = synthetic_codex_context_window(provider);
+    let mut data = Vec::new();
+    let mut seen_ids = HashSet::new();
 
-    // Build model entries that look like Anthropic's model list response
+    for model in &provider.known_models {
+        push_synthetic_model(
+            &mut data,
+            &mut seen_ids,
+            &model.id,
+            &model.label,
+            model.context_window.unwrap_or(default_context_window),
+        );
+    }
+
+    if data.is_empty() {
+        push_synthetic_model(
+            &mut data,
+            &mut seen_ids,
+            primary,
+            primary,
+            default_context_window,
+        );
+        push_synthetic_model(
+            &mut data,
+            &mut seen_ids,
+            small,
+            small,
+            default_context_window,
+        );
+    } else {
+        push_synthetic_model(
+            &mut data,
+            &mut seen_ids,
+            primary,
+            primary,
+            default_context_window,
+        );
+        push_synthetic_model(
+            &mut data,
+            &mut seen_ids,
+            small,
+            small,
+            default_context_window,
+        );
+    }
+
+    let first_id = data
+        .first()
+        .and_then(|entry| entry.get("id"))
+        .and_then(|value| value.as_str())
+        .unwrap_or(primary);
+    let last_id = data
+        .last()
+        .and_then(|entry| entry.get("id"))
+        .and_then(|value| value.as_str())
+        .unwrap_or(first_id);
+
     let models = serde_json::json!({
-        "data": [
-            {
-                "id": primary,
-                "type": "model",
-                "display_name": primary,
-                "created_at": "2025-01-01T00:00:00Z",
-                "max_input_tokens": GPT_5_4_CONTEXT_WINDOW,
-                "max_tokens": GPT_5_4_MAX_OUTPUT,
-            },
-            {
-                "id": small,
-                "type": "model",
-                "display_name": small,
-                "created_at": "2025-01-01T00:00:00Z",
-                "max_input_tokens": GPT_5_4_MINI_CONTEXT_WINDOW,
-                "max_tokens": GPT_5_4_MINI_MAX_OUTPUT,
-            },
-        ],
+        "data": data,
         "has_more": false,
-        "first_id": primary,
-        "last_id": small,
+        "first_id": first_id,
+        "last_id": last_id,
     });
     serde_json::to_vec(&models).unwrap_or_default()
 }
@@ -139,7 +210,8 @@ fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
 fn codex_traffic_meta(
     provider: &ModelProvider,
     session_scoped: bool,
-    request_model: &Option<String>,
+    client_model: &Option<String>,
+    upstream_request_model: &Option<String>,
     rewrite: &Option<String>,
     codex_model: &str,
     upstream_mode: &str,
@@ -150,7 +222,8 @@ fn codex_traffic_meta(
     let mut translation = json!({
         "proxy": "codex",
         "upstreamMode": upstream_mode,
-        "requestModel": request_model,
+        "clientModel": client_model,
+        "upstreamRequestModel": upstream_request_model,
         "resolvedCodexModel": codex_model,
         "translatedRequestLen": translated_request_len,
         "translatedRequest": serde_json::from_slice::<Value>(translated_request_body)
@@ -171,7 +244,8 @@ fn codex_traffic_meta(
             "providerId": provider.id,
             "provider": provider.name,
             "providerKind": provider.kind,
-            "requestModel": request_model,
+            "clientModel": client_model,
+            "upstreamRequestModel": upstream_request_model,
             "rewrite": rewrite,
             "resolvedCodexModel": codex_model,
         },
@@ -190,7 +264,8 @@ pub async fn handle_request(
     session_id: Option<&str>,
     app: &tauri::AppHandle,
     should_log: bool,
-    orig_model: &Option<String>,
+    client_model: &Option<String>,
+    upstream_request_model: &Option<String>,
     rewrite: &Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Intercept model listing — return synthetic metadata with correct context windows
@@ -260,8 +335,11 @@ pub async fn handle_request(
     };
 
     // Extract model from request and resolve to Codex model
-    let req_model = extract_model_from_body(body);
-    let codex_model = resolve_codex_model(req_model.as_deref(), provider);
+    let req_model = client_model
+        .clone()
+        .or_else(|| extract_model_from_body(body));
+    let routed_model = upstream_request_model.clone().or_else(|| req_model.clone());
+    let codex_model = resolve_codex_model(routed_model.as_deref(), provider);
 
     record_backend_event(
         app,
@@ -271,10 +349,14 @@ pub async fn handle_request(
         "codex.translate_request",
         &format!(
             "Codex: {} -> {}",
-            req_model.as_deref().unwrap_or("(none)"),
+            routed_model.as_deref().unwrap_or("(none)"),
             codex_model
         ),
-        serde_json::json!({ "requestModel": req_model, "codexModel": codex_model }),
+        serde_json::json!({
+            "clientModel": req_model,
+            "upstreamRequestModel": routed_model,
+            "codexModel": codex_model,
+        }),
     );
 
     // Translate request
@@ -328,7 +410,8 @@ pub async fn handle_request(
         "codex.request_prepared",
         "Prepared Codex upstream request",
         serde_json::json!({
-            "requestModel": req_model,
+            "clientModel": req_model,
+            "upstreamRequestModel": routed_model,
             "originalModel": original_model,
             "codexModel": codex_model,
             "rewrite": rewrite,
@@ -370,7 +453,7 @@ pub async fn handle_request(
                     span_start,
                     "POST",
                     "/v1/messages",
-                    orig_model,
+                    client_model,
                     &provider.name,
                     rewrite,
                     &req_body_for_log,
@@ -379,7 +462,8 @@ pub async fn handle_request(
                     Some(codex_traffic_meta(
                         provider,
                         session_id.is_some(),
-                        orig_model,
+                        client_model,
+                        &routed_model,
                         rewrite,
                         &codex_model,
                         upstream_mode,
@@ -424,7 +508,7 @@ pub async fn handle_request(
                 span_start,
                 "POST",
                 "/v1/messages",
-                orig_model,
+                client_model,
                 &provider.name,
                 rewrite,
                 &req_body_for_log,
@@ -433,7 +517,8 @@ pub async fn handle_request(
                 Some(codex_traffic_meta(
                     provider,
                     session_id.is_some(),
-                    orig_model,
+                    client_model,
+                    &routed_model,
                     rewrite,
                     &codex_model,
                     upstream_mode,
@@ -572,7 +657,7 @@ pub async fn handle_request(
                 span_start,
                 "POST",
                 "/v1/messages",
-                orig_model,
+                client_model,
                 &provider.name,
                 rewrite,
                 &req_body_for_log,
@@ -581,7 +666,8 @@ pub async fn handle_request(
                 Some(codex_traffic_meta(
                     provider,
                     session_id.is_some(),
-                    orig_model,
+                    client_model,
+                    &routed_model,
                     rewrite,
                     &codex_model,
                     upstream_mode,
@@ -640,7 +726,7 @@ pub async fn handle_request(
                         span_start,
                         "POST",
                         "/v1/messages",
-                        orig_model,
+                        client_model,
                         &provider.name,
                         rewrite,
                         &req_body_for_log,
@@ -649,7 +735,8 @@ pub async fn handle_request(
                         Some(codex_traffic_meta(
                             provider,
                             session_id.is_some(),
-                            orig_model,
+                            client_model,
+                            &routed_model,
                             rewrite,
                             &codex_model,
                             upstream_mode,
@@ -719,7 +806,7 @@ pub async fn handle_request(
                 span_start,
                 "POST",
                 "/v1/messages",
-                orig_model,
+                client_model,
                 &provider.name,
                 rewrite,
                 &req_body_for_log,
@@ -728,7 +815,8 @@ pub async fn handle_request(
                 Some(codex_traffic_meta(
                     provider,
                     session_id.is_some(),
-                    orig_model,
+                    client_model,
+                    &routed_model,
                     rewrite,
                     &codex_model,
                     upstream_mode,
@@ -918,6 +1006,7 @@ mod tests {
             true,
             &Some("claude-opus-4-6".into()),
             &Some("gpt-5.4".into()),
+            &Some("gpt-5.4".into()),
             "gpt-5.4",
             "streaming",
             translated_request,
@@ -926,6 +1015,8 @@ mod tests {
         );
 
         assert_eq!(meta["translation"]["translatedRequest"]["model"], "gpt-5.4");
+        assert_eq!(meta["route"]["clientModel"], "claude-opus-4-6");
+        assert_eq!(meta["route"]["upstreamRequestModel"], "gpt-5.4");
         assert_eq!(
             meta["translation"]["translatedRequest"]["input"][0]["role"],
             "user"
@@ -950,5 +1041,53 @@ mod tests {
         let user_agent = header_value(&headers, "user-agent").expect("missing user-agent");
         assert!(user_agent.starts_with("codex_cli_rs/"));
         assert!(user_agent.contains("claude-tabs/"));
+    }
+
+    #[test]
+    fn test_synthetic_models_response_uses_provider_known_models() {
+        let provider = ModelProvider {
+            id: "codex".into(),
+            name: "Codex".into(),
+            kind: "openai_codex".into(),
+            predefined: true,
+            model_mappings: vec![],
+            base_url: None,
+            api_key: None,
+            socks5_proxy: None,
+            codex_primary_model: Some("gpt-5.5".into()),
+            codex_small_model: Some("gpt-5.5-mini".into()),
+            known_models: vec![
+                crate::session::types::ProviderModel {
+                    id: "gpt-5.5".into(),
+                    label: "GPT-5.5".into(),
+                    family: Some("codex-primary".into()),
+                    context_window: Some(400_000),
+                    color: None,
+                },
+                crate::session::types::ProviderModel {
+                    id: "gpt-5.5-pro".into(),
+                    label: "GPT-5.5 Pro".into(),
+                    family: Some("codex-pro".into()),
+                    context_window: Some(400_000),
+                    color: None,
+                },
+            ],
+        };
+
+        let body = build_synthetic_models_response(&provider);
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        let data = json["data"].as_array().unwrap();
+
+        assert_eq!(data[0]["id"], "gpt-5.5");
+        assert_eq!(data[0]["display_name"], "GPT-5.5");
+        assert_eq!(data[0]["max_input_tokens"], 400_000);
+        assert_eq!(data[1]["id"], "gpt-5.5-pro");
+        assert_eq!(data[1]["display_name"], "GPT-5.5 Pro");
+        assert!(
+            data.iter().any(|entry| entry["id"] == "gpt-5.5-mini"),
+            "small fallback should still be present when not in known_models"
+        );
+        assert_eq!(json["first_id"], "gpt-5.5");
+        assert_eq!(json["last_id"], "gpt-5.5-mini");
     }
 }

@@ -4,17 +4,13 @@ import { useActivityStore } from "../../store/activity";
 import { useSessionStore } from "../../store/sessions";
 import { ClaudeMascot } from "./ClaudeMascot";
 import type { MascotState } from "./ClaudeMascot";
-import { IconClose, IconFolder, IconDocument } from "../Icons/Icons";
+import { IconFolder, IconDocument } from "../Icons/Icons";
 import { isSubagentActive } from "../../types/session";
 import type { FileActivity, ContextFileEntry } from "../../types/activity";
 import { buildFileTree, flattenTree, allFolderPaths } from "../../lib/fileTree";
 import type { FileTreeNode } from "../../lib/fileTree";
 import { canonicalizePath } from "../../lib/paths";
 import "./ActivityPanel.css";
-
-interface ActivityPanelProps {
-  onClose: () => void;
-}
 
 type ViewMode = "response" | "session";
 
@@ -48,15 +44,11 @@ interface AgentOnFile {
 
 /* -- Empty panel -- */
 
-function EmptyPanel({ onClose, message }: { onClose: () => void; message: string }) {
+function EmptyPanel({ message }: { message: string }) {
   return (
     <div className="activity-panel">
       <div className="activity-panel-header">
         <span className="activity-panel-title">Activity</span>
-        <span className="activity-panel-spacer" />
-        <button className="activity-panel-close" onClick={onClose} title="Close (Esc)">
-          <IconClose size={14} />
-        </button>
       </div>
       <div className="activity-panel-empty">{message}</div>
     </div>
@@ -168,7 +160,7 @@ interface StickyMascot {
 
 /* -- Main panel -- */
 
-export function ActivityPanel({ onClose }: ActivityPanelProps) {
+export function ActivityPanel() {
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const sessions = useSessionStore((s) => s.sessions);
   const storeSubagents = useSessionStore((s) => s.subagents);
@@ -446,8 +438,8 @@ export function ActivityPanel({ onClose }: ActivityPanelProps) {
     invoke("shell_open", { path: filePath }).catch(() => {});
   }, []);
 
-  if (!activeSession) return <EmptyPanel onClose={onClose} message="No active session" />;
-  if (activeSession.state === "dead") return <EmptyPanel onClose={onClose} message="Session ended" />;
+  if (!activeSession) return <EmptyPanel message="No active session" />;
+  if (activeSession.state === "dead") return <EmptyPanel message="Session ended" />;
 
   return (
     <div className="activity-panel">
@@ -467,10 +459,6 @@ export function ActivityPanel({ onClose }: ActivityPanelProps) {
             Session
           </button>
         </div>
-        <span className="activity-panel-spacer" />
-        <button className="activity-panel-close" onClick={onClose} title="Close (Esc)">
-          <IconClose size={14} />
-        </button>
       </div>
 
       <div className="activity-panel-body activity-tree-container" ref={containerRef}>

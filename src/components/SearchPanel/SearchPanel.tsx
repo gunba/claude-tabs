@@ -5,13 +5,8 @@ import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
 import { validateRegex } from "../../lib/searchBuffers";
 import { scrollTuiToText } from "../../lib/tuiScrollSearch";
-import { IconClose } from "../Icons/Icons";
 import { dlog } from "../../lib/debugLog";
 import "./SearchPanel.css";
-
-interface SearchPanelProps {
-  onClose: () => void;
-}
 
 interface JsonlMatch {
   sessionId: string;
@@ -33,7 +28,7 @@ const RESULT_LIMIT = 500;
 const DEBOUNCE_MS = 250;
 const SNIPPET_TRUNCATE = 300;
 
-export function SearchPanel({ onClose }: SearchPanelProps) {
+export function SearchPanel() {
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
@@ -54,9 +49,13 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
 
-  // Stable scope key: only changes when sessions are added/removed
-  const sessionScope = useMemo(
-    () => sessions.filter(s => !s.isMetaAgent).map(s => s.id).join('\0'),
+  // Stable searchable-scope key: changes when sessions are added/removed or
+  // when their search-backed metadata becomes available.
+  const searchableSessionScope = useMemo(
+    () => sessions
+      .filter((s) => !s.isMetaAgent)
+      .map((s) => `${s.id}\0${s.config.sessionId ?? ""}\0${s.config.workingDir ?? ""}`)
+      .join("\u0001"),
     [sessions]
   );
 
@@ -130,7 +129,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       setActiveIndex(-1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, caseSensitive, useRegex, sessionScope]);
+  }, [query, caseSensitive, useRegex, searchableSessionScope]);
 
   // Debounce search on query/options change
   useEffect(() => {
@@ -220,20 +219,22 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
     if (el) el.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
+  const handleClear = useCallback(() => {
+    searchGenRef.current += 1;
+    abortRef.current?.abort();
+    setScrolling(false);
+    setQuery("");
+    setResults([]);
+    setActiveIndex(-1);
+    setRegexError(null);
+    inputRef.current?.focus();
+  }, []);
+
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      if (scrolling) {
-        abortRef.current?.abort();
-        setScrolling(false);
-        return;
-      }
-      if (query) {
-        setQuery("");
-      } else {
-        onClose();
-      }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
+      e.preventDefault();
+      handleClear();
       return;
     }
 
@@ -260,7 +261,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
       }
       return;
     }
-  }, [query, results, activeIndex, navigateToResult, onClose, scrolling]);
+  }, [results, activeIndex, navigateToResult, handleClear]);
 
   // Abort scroll on unmount
   useEffect(() => {
@@ -280,9 +281,6 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
           </span>
         )}
         {scrolling && <span className="search-panel-scrolling">Scrolling...</span>}
-        <button className="search-panel-close" onClick={onClose} title="Close (Esc)">
-          <IconClose size={14} />
-        </button>
       </div>
 
       <div className="search-panel-input-row">
@@ -295,6 +293,15 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
           className={regexError ? "search-input-error" : ""}
           spellCheck={false}
         />
+        <button
+          type="button"
+          className="search-panel-clear"
+          onClick={handleClear}
+          title="Clear search (Ctrl+L)"
+          disabled={!query && !scrolling && !regexError}
+        >
+          Clear
+        </button>
         <button
           className={`search-panel-toggle${caseSensitive ? " active" : ""}`}
           onClick={() => setCaseSensitive((v) => !v)}

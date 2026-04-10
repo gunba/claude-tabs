@@ -25,7 +25,6 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const setActiveTab = useSessionStore((s) => s.setActiveTab);
   const setShowLauncher = useSettingsStore((s) => s.setShowLauncher);
-  const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
   const devtoolsAvailable = useRuntimeStore((s) => s.observabilityInfo.devtoolsAvailable);
   const openMainDevtools = useRuntimeStore((s) => s.openMainDevtools);
 
@@ -61,15 +60,6 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
         onClose();
       },
     }] : []),
-    ...(debugBuild ? [{
-      id: "toggle-debug-log",
-      label: "Toggle Debug Log",
-      description: "Show/hide the debug log panel (Ctrl+Shift+D)",
-      action: () => {
-        onClose();
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "D", ctrlKey: true, shiftKey: true, bubbles: true }));
-      },
-    }] : []),
     ...(devtoolsAvailable ? [{
       id: "open-devtools",
       label: "Open DevTools",
@@ -79,7 +69,9 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
         onClose();
       },
     }] : []),
-    ...sessions.map((s) => ({
+    ...sessions
+      .filter((s) => !s.isMetaAgent && s.state !== "dead")
+      .map((s) => ({
       id: `tab-${s.id}`,
       label: `Switch to: ${s.name}`,
       description: s.config.workingDir,

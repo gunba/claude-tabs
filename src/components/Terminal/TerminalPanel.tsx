@@ -424,7 +424,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         // Claude Code so autocompact tracks the provider window instead of 200k.
         const selectedProviderId = session.config.providerId ?? providerConfig.defaultProviderId;
         const selectedProvider = providerConfig.providers.find((p) => p.id === selectedProviderId) ?? null;
-        const launchModel = getLaunchModelForProvider(session.config.model, selectedProvider);
+        const anthropicProvider = providerConfig.providers.find((p) => p.kind === "anthropic_compatible") ?? null;
+        const launchModel = getLaunchModelForProvider(
+          session.config.model,
+          selectedProvider,
+          anthropicProvider?.knownModels,
+        );
         const launchConfig: SessionConfig = {
           ...session.config,
           model: launchModel,
@@ -445,7 +450,12 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         const { proxyPort } = useSettingsStore.getState();
         if (proxyPort) {
           env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${proxyPort}/s/${session.id}`;
-          invoke("bind_session_provider", { sessionId: session.id, providerId: selectedProviderId }).catch(() => {});
+          invoke("bind_session_provider", {
+            sessionId: session.id,
+            providerId: selectedProviderId,
+            requestModel: session.config.model,
+            launchModel,
+          }).catch(() => {});
         }
         dlog("terminal", session.id, "launching Claude session", "LOG", {
           event: "session.launch",
@@ -565,13 +575,16 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     if (!visible) return;
 
     let cancelled = false;
+    const overlaySelector = ".launcher-overlay, .resume-picker-overlay, .modal-overlay, .palette-overlay, .diff-panel";
+    const interactiveSelector = "button, input, textarea, select, [role=button], [role=tab], a[href], [contenteditable=true]";
+
     const handleFocusOut = () => {
       requestAnimationFrame(() => {
         if (cancelled) return;
-        const active = document.activeElement;
-        if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) return;
-        // Don't reclaim focus if a modal overlay or side panel is open
-        if (document.querySelector('.launcher-overlay, .resume-picker-overlay, .modal-overlay, .palette-overlay, .search-panel, .debug-panel, .diff-panel')) return;
+        const active = document.activeElement as HTMLElement | null;
+        if (document.querySelector(overlaySelector)) return;
+        if (active?.closest(".right-panel") && active.matches(interactiveSelector)) return;
+        if (active?.matches("input, textarea, select, [contenteditable=true]")) return;
         terminal.termRef.current?.focus();
       });
     };

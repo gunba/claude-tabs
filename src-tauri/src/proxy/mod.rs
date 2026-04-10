@@ -28,6 +28,8 @@ pub struct ProxyInner {
     pub traffic_log_files: HashMap<String, std::io::BufWriter<std::fs::File>>,
     pub traffic_log_paths: HashMap<String, std::path::PathBuf>,
     pub session_providers: HashMap<String, String>,
+    pub session_requested_models: HashMap<String, String>,
+    pub session_launch_models: HashMap<String, String>,
     pub codex_auth: codex::auth::CodexAuthState,
     pub codex_client: reqwest::Client,
 }
@@ -46,6 +48,8 @@ impl ProxyState {
             traffic_log_files: HashMap::new(),
             traffic_log_paths: HashMap::new(),
             session_providers: HashMap::new(),
+            session_requested_models: HashMap::new(),
+            session_launch_models: HashMap::new(),
             codex_auth: codex::auth::CodexAuthState::new(
                 dirs::data_local_dir()
                     .unwrap_or_default()
@@ -161,14 +165,22 @@ pub async fn start_api_proxy(
                                         "remoteAddr": addr.to_string(),
                                     }),
                                 );
-                                let (config, clients, default_client, rules, session_providers) = match state.lock() {
-                                    Ok(s) => (s.config.clone(), s.clients.clone(), s.default_client.clone(), s.rules.clone(), s.session_providers.clone()),
+                                let (config, clients, default_client, rules, session_providers, session_requested_models, session_launch_models) = match state.lock() {
+                                    Ok(s) => (
+                                        s.config.clone(),
+                                        s.clients.clone(),
+                                        s.default_client.clone(),
+                                        s.rules.clone(),
+                                        s.session_providers.clone(),
+                                        s.session_requested_models.clone(),
+                                        s.session_launch_models.clone(),
+                                    ),
                                     Err(_) => continue,
                                 };
                                 let a = app_for_loop.clone();
                                 let st = state.clone();
                                 tokio::spawn(async move {
-                                    if let Err(e) = handle_connection(stream, config, clients, default_client, rules, session_providers, a, st).await {
+                                    if let Err(e) = handle_connection(stream, config, clients, default_client, rules, session_providers, session_requested_models, session_launch_models, a, st).await {
                                         log::debug!("proxy connection error: {e}");
                                     }
                                 });
@@ -306,10 +318,29 @@ pub fn update_provider_config(
 pub fn bind_session_provider(
     session_id: String,
     provider_id: String,
+    request_model: Option<String>,
+    launch_model: Option<String>,
     proxy_state: State<'_, ProxyState>,
 ) -> Result<(), String> {
     let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
-    s.session_providers.insert(session_id, provider_id);
+    s.session_providers
+        .insert(session_id.clone(), provider_id);
+    match request_model.filter(|value| !value.is_empty()) {
+        Some(model) => {
+            s.session_requested_models.insert(session_id.clone(), model);
+        }
+        None => {
+            s.session_requested_models.remove(&session_id);
+        }
+    }
+    match launch_model.filter(|value| !value.is_empty()) {
+        Some(model) => {
+            s.session_launch_models.insert(session_id, model);
+        }
+        None => {
+            s.session_launch_models.remove(&session_id);
+        }
+    }
     Ok(())
 }
 
@@ -320,6 +351,8 @@ pub fn unbind_session_provider(
 ) -> Result<(), String> {
     let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
     s.session_providers.remove(&session_id);
+    s.session_requested_models.remove(&session_id);
+    s.session_launch_models.remove(&session_id);
     Ok(())
 }
 
@@ -612,6 +645,61 @@ pub fn stop_traffic_log(
 
 // cleanup_traffic_logs removed — unified cleanup via commands::cleanup_session_data
 
+fn has_1m_suffix(model: &str) -> bool {
+    model.to_ascii_lowercase().contains("[1m]")
+}
+
+fn claude_model_family(model: &str) -> Option<&'static str> {
+    let lower = model.to_ascii_lowercase();
+    if lower.contains("haiku") {
+        Some("haiku")
+    } else if lower.contains("sonnet") {
+        Some("sonnet")
+    } else if lower.contains("best") || lower.contains("opusplan") || lower.contains("opus") {
+        Some("opus")
+    } else {
+        None
+    }
+}
+
+fn matches_bound_launch_model(request_model: Option<&str>, launch_model: Option<&str>) -> bool {
+    let (Some(request_model), Some(launch_model)) = (request_model, launch_model) else {
+        return false;
+    };
+
+    if request_model.eq_ignore_ascii_case(launch_model) {
+        return true;
+    }
+
+    let request_family = claude_model_family(request_model);
+    let launch_family = claude_model_family(launch_model);
+    request_family.is_some()
+        && request_family == launch_family
+        && has_1m_suffix(request_model) == has_1m_suffix(launch_model)
+}
+
+fn resolve_codex_upstream_request_model(
+    session_id: Option<&str>,
+    request_model: &Option<String>,
+    launch_model: &Option<String>,
+    session_requested_models: &HashMap<String, String>,
+) -> Option<String> {
+    let bound_requested_model = session_id.and_then(|sid| session_requested_models.get(sid));
+
+    if request_model.is_none() {
+        return bound_requested_model.cloned();
+    }
+
+    if matches_bound_launch_model(
+        request_model.as_deref(),
+        launch_model.as_deref(),
+    ) {
+        return bound_requested_model.cloned().or_else(|| request_model.clone());
+    }
+
+    request_model.clone()
+}
+
 // ── Connection handler ───────────────────────────────────────────────
 
 async fn handle_connection(
@@ -621,6 +709,8 @@ async fn handle_connection(
     default_client: reqwest::Client,
     rules: Vec<SystemPromptRule>,
     session_providers: HashMap<String, String>,
+    session_requested_models: HashMap<String, String>,
+    session_launch_models: HashMap<String, String>,
     app: tauri::AppHandle,
     proxy_state: Arc<Mutex<ProxyInner>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -675,13 +765,32 @@ async fn handle_connection(
     // Route: look up session's provider, then apply its model mappings
     let model = extract_model(&body);
     let provider = resolve_session_provider(session_id.as_deref(), &session_providers, &config);
+    let bound_launch_model = session_id
+        .as_deref()
+        .and_then(|sid| session_launch_models.get(sid).cloned());
+    // [PR-10] OpenAI Codex sessions keep a client-visible Claude carrier model
+    // for Claude Code while routing upstream with the original requested model.
+    let upstream_request_model = if provider.kind == "openai_codex" {
+        resolve_codex_upstream_request_model(
+            session_id.as_deref(),
+            &model,
+            &bound_launch_model,
+            &session_requested_models,
+        )
+    } else {
+        model.clone()
+    };
 
-    let rewrite = model
+    let rewrite = upstream_request_model
         .as_deref()
         .and_then(|m| apply_model_mappings(m, &provider.model_mappings));
-    let mut final_body = match rewrite.as_deref() {
-        Some(new_model) => rewrite_model_in_body(&body, new_model),
-        None => body.to_vec(),
+    let mut final_body = if provider.kind == "openai_codex" {
+        body.to_vec()
+    } else {
+        match rewrite.as_deref() {
+            Some(new_model) => rewrite_model_in_body(&body, new_model),
+            None => body.to_vec(),
+        }
     };
     if !rules.is_empty() {
         final_body = rewrite_system_prompt_in_body(&final_body, &rules);
@@ -692,6 +801,8 @@ async fn handle_connection(
         "path": path,
         "sessionScoped": session_id.is_some(),
         "requestModel": model,
+        "boundLaunchModel": bound_launch_model,
+        "upstreamRequestModel": upstream_request_model,
         "providerId": provider.id,
         "provider": provider.name,
         "providerKind": provider.kind,
@@ -717,7 +828,8 @@ async fn handle_connection(
     let _ = app.emit(
         "proxy-route",
         serde_json::json!({
-            "model": model.as_deref().unwrap_or("(none)"),
+            "model": upstream_request_model.as_deref().or(model.as_deref()).unwrap_or("(none)"),
+            "clientModel": model.as_deref().unwrap_or("(none)"),
             "provider": provider.name,
             "rewrite": rewrite,
             "path": path,
@@ -738,6 +850,7 @@ async fn handle_connection(
             &app,
             should_log,
             &model,
+            &upstream_request_model,
             &rewrite,
         )
         .await;
@@ -1338,6 +1451,36 @@ mod tests {
         // Bound to nonexistent provider -> falls back to default
         let provider = resolve_session_provider(Some("sess-1"), &sp, &config);
         assert_eq!(provider.id, "anthropic");
+    }
+
+    #[test]
+    fn test_resolve_codex_upstream_request_model_uses_bound_requested_model_for_launch_carrier() {
+        let mut requested = HashMap::new();
+        requested.insert("sess-1".to_string(), "gpt-5.4".to_string());
+
+        let resolved = resolve_codex_upstream_request_model(
+            Some("sess-1"),
+            &Some("claude-opus-4-6[1m]".into()),
+            &Some("opus[1m]".into()),
+            &requested,
+        );
+
+        assert_eq!(resolved, Some("gpt-5.4".into()));
+    }
+
+    #[test]
+    fn test_resolve_codex_upstream_request_model_honors_live_model_switches() {
+        let mut requested = HashMap::new();
+        requested.insert("sess-1".to_string(), "gpt-5.4".to_string());
+
+        let resolved = resolve_codex_upstream_request_model(
+            Some("sess-1"),
+            &Some("claude-haiku-4-5".into()),
+            &Some("opus[1m]".into()),
+            &requested,
+        );
+
+        assert_eq!(resolved, Some("claude-haiku-4-5".into()));
     }
 
     // ── Model mapping tests ─────────────────────────────────────────

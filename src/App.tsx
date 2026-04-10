@@ -13,9 +13,7 @@ import { StatusBar } from "./components/StatusBar/StatusBar";
 import { CommandBar } from "./components/CommandBar/CommandBar";
 import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { ConfigManager } from "./components/ConfigManager/ConfigManager";
-import { DebugPanel } from "./components/DebugPanel/DebugPanel";
-import { ActivityPanel } from "./components/ActivityPanel/ActivityPanel";
-import { SearchPanel } from "./components/SearchPanel/SearchPanel";
+import { RightPanel } from "./components/RightPanel/RightPanel";
 import { ModalOverlay } from "./components/ModalOverlay/ModalOverlay";
 import { ContextViewer } from "./components/ContextViewer/ContextViewer";
 
@@ -29,8 +27,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { killAllActivePtys } from "./lib/ptyProcess";
 import { killPty, writeToPty } from "./lib/ptyRegistry";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
+import { focusTerminal } from "./lib/terminalRegistry";
 import { dlog, flushDebugLog } from "./lib/debugLog";
-import { IconStop, IconClose, IconReturn, IconGear, IconSearch } from "./components/Icons/Icons";
+import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym } from "./lib/paths";
 import type { Session, Subagent } from "./types/session";
 import { isSubagentActive } from "./types/session";
@@ -43,8 +42,8 @@ import "./App.css";
 export default function App() {
   const init = useSessionStore((s) => s.init);
   const loadRuntimeInfo = useRuntimeStore((s) => s.loadRuntimeInfo);
-  const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
   const devtoolsAvailable = useRuntimeStore((s) => s.observabilityInfo.devtoolsAvailable);
+  const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
   const openMainDevtools = useRuntimeStore((s) => s.openMainDevtools);
   const sessions = useSessionStore((s) => s.sessions);
   const initialized = useSessionStore((s) => s.initialized);
@@ -63,8 +62,6 @@ export default function App() {
   const setLastConfig = useSettingsStore((s) => s.setLastConfig);
   const showConfigManager = useSettingsStore((s) => s.showConfigManager);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
-  const sidePanel = useSettingsStore((s) => s.sidePanel);
-  const setSidePanel = useSettingsStore((s) => s.setSidePanel);
   const [showPalette, setShowPalette] = useState(false);
   const [showResumePicker, setShowResumePicker] = useState(false);
   const [showContextViewer, setShowContextViewer] = useState(false);
@@ -241,7 +238,7 @@ export default function App() {
     closeSession(id);
   }, [sessions, closeSession]);
 
-  // Global keyboard shortcuts [KB-01] through [KB-11]
+  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "t") {
@@ -284,41 +281,27 @@ export default function App() {
         setShowConfigManager(showConfigManager ? false : "settings");
       }
 
-      // [DP-02] Ctrl+Shift+D: toggle debug panel
-      if (debugBuild && e.ctrlKey && e.shiftKey && e.key === "D") {
-        e.preventDefault();
-        setSidePanel(sidePanel === "debug" ? null : "debug");
-      }
-
       if (devtoolsAvailable && e.ctrlKey && e.shiftKey && e.key === "I") {
         e.preventDefault();
         openMainDevtools().catch(() => {});
       }
 
-      if (e.ctrlKey && e.shiftKey && e.key === "G") {
-        e.preventDefault();
-        setSidePanel(sidePanel === "activity" ? null : "activity");
-      }
-
-      // [KB-11] Ctrl+Shift+F: cross-session terminal search panel
-      if (e.ctrlKey && e.shiftKey && e.key === "F") {
-        e.preventDefault();
-        setSidePanel(sidePanel === "search" ? null : "search");
-      }
-
-      // [KB-09] Escape dismissal chain: contextMenu -> palette -> sidePanel -> contextViewer -> config -> resume -> launcher -> inspector
+      // [KB-09] Escape dismissal chain: contextMenu -> palette -> contextViewer -> config -> resume -> launcher -> inspector
       if (e.key === "Escape") {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (showPalette) return;
-        if (sidePanel) { setSidePanel(null); return; }
         if (showContextViewer) { setShowContextViewer(false); return; }
         if (showConfigManager) { setShowConfigManager(false); return; }
         if (showResumePicker) { setShowResumePicker(false); return; }
         if (showLauncher) { setShowLauncher(false); return; }
         if (inspectedSubagent) { e.preventDefault(); setInspectedSubagent(null); return; }
-        const el = document.activeElement as HTMLElement;
+        const el = document.activeElement as HTMLElement | null;
         if (el && !el.closest('.xterm')) {
+          e.preventDefault();
           el.blur();
+          if (activeTabId) {
+            requestAnimationFrame(() => focusTerminal(activeTabId));
+          }
         } else if (activeTabId) {
           writeToPty(activeTabId, '\x1b');
         }
@@ -348,7 +331,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, showContextViewer, sidePanel, inspectedSubagent, tabContextMenu, quickLaunch, debugBuild, devtoolsAvailable, openMainDevtools]);
+  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, showContextViewer, inspectedSubagent, tabContextMenu, quickLaunch, devtoolsAvailable, openMainDevtools]);
 
   const regularSessions = useMemo(() => sessions.filter((s) => !s.isMetaAgent), [sessions]);
   const groups = useMemo(() => groupSessionsByDir(regularSessions), [regularSessions]);
@@ -565,16 +548,6 @@ export default function App() {
             ])}
           </div>
           <button
-            className="tab-search"
-            onClick={() => {
-              const store = useSettingsStore.getState();
-              store.setSidePanel(store.sidePanel === "search" ? null : "search");
-            }}
-            title="Search conversations (Ctrl+Shift+F)"
-          >
-            <IconSearch size={16} />
-          </button>
-          <button
             className="tab-resume"
             onClick={() => setShowResumePicker(true)}
             title="Resume session (Ctrl+Shift+R)"
@@ -688,15 +661,7 @@ export default function App() {
             </div>
           )}
         </div>
-        {debugBuild && sidePanel === "debug" && (
-          <DebugPanel onClose={() => setSidePanel(null)} />
-        )}
-        {sidePanel === "activity" && (
-          <ActivityPanel onClose={() => setSidePanel(null)} />
-        )}
-        {sidePanel === "search" && (
-          <SearchPanel onClose={() => setSidePanel(null)} />
-        )}
+        <RightPanel />
       </div>
 
       <CommandBar
