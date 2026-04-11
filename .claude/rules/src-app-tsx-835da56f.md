@@ -43,7 +43,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Dead Session Handling
 
-- [DS-05 L272] Ctrl+Shift+R opens resume picker from any state; ResumePicker detects active dead tab and respawns in place via requestRespawn
+- [DS-05 L272] Ctrl+Shift+R opens resume picker from any state; ResumePicker detects active dead tabs via deadSessionMap and resumes them by calling createSession with the dead tab's config (resumeSession set to the original session ID)
 
 ## Data Flow
 
