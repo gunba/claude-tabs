@@ -251,6 +251,7 @@ pub async fn handle_request(
     client_model: &Option<String>,
     upstream_request_model: &Option<String>,
     rewrite: &Option<String>,
+    compression_enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Intercept model listing — return synthetic metadata with correct context windows
     if method == "GET"
@@ -344,7 +345,7 @@ pub async fn handle_request(
     );
 
     // Translate request
-    let codex_body = match translate_req::translate_request(body, &codex_model) {
+    let codex_body = match translate_req::translate_request(body, &codex_model, compression_enabled) {
         Ok(b) => b,
         Err(e) => {
             record_backend_event(

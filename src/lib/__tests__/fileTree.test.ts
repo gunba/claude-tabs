@@ -14,6 +14,7 @@ function makeActivity(path: string, kind: "read" | "modified" | "created" = "rea
     permissionDenied: false,
     permissionMode: null,
     toolInputData: null,
+    isFolder: false,
   };
 }
 

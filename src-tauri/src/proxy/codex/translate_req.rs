@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
+
+use super::super::compress;
 
 fn map_reasoning_effort(value: &str) -> &'static str {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -37,7 +41,11 @@ fn translate_service_tier(req: &Value) -> Option<&'static str> {
 }
 
 /// Translate an Anthropic Messages API request body into an OpenAI Codex request body.
-pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, String> {
+pub fn translate_request(
+    body: &[u8],
+    codex_model: &str,
+    compression_enabled: bool,
+) -> Result<Vec<u8>, String> {
     let req: Value =
         serde_json::from_slice(body).map_err(|e| format!("Failed to parse request: {e}"))?;
 
@@ -83,7 +91,15 @@ pub fn translate_request(body: &[u8], codex_model: &str) -> Result<Vec<u8>, Stri
 
     // messages → input (each message may produce multiple top-level input items)
     if let Some(messages) = req.get("messages").and_then(|v| v.as_array()) {
-        let input: Vec<Value> = messages.iter().flat_map(translate_message).collect();
+        let tool_map = if compression_enabled {
+            compress::build_tool_id_map(messages)
+        } else {
+            HashMap::new()
+        };
+        let input: Vec<Value> = messages
+            .iter()
+            .flat_map(|msg| translate_message(msg, &tool_map, compression_enabled))
+            .collect();
         codex_req["input"] = json!(input);
     }
 
@@ -152,7 +168,11 @@ fn translate_tool_choice(tc: &Value) -> Value {
 /// must use `output_text`. tool_use and tool_result blocks become separate
 /// top-level items (function_call / function_call_output) because the
 /// Responses API does not allow them inside a message content array.
-fn translate_message(msg: &Value) -> Vec<Value> {
+fn translate_message(
+    msg: &Value,
+    tool_map: &HashMap<String, String>,
+    compression_enabled: bool,
+) -> Vec<Value> {
     let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("user");
     let text_type = message_text_type(role);
 
@@ -206,7 +226,13 @@ fn translate_message(msg: &Value) -> Vec<Value> {
                     .get("tool_use_id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let output = extract_tool_result_text(block);
+                let raw_output = extract_tool_result_text(block);
+                let output = if compression_enabled {
+                    let tool_name = tool_map.get(tool_use_id).map(|s| s.as_str());
+                    compress::compress_tool_result(&raw_output, tool_name)
+                } else {
+                    raw_output
+                };
                 items.push(json!({
                     "type": "function_call_output",
                     "call_id": tool_use_id,
@@ -306,7 +332,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(translated["model"], "gpt-5.4");
         assert_eq!(translated["instructions"], "You are a helpful assistant");
@@ -328,7 +354,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(
@@ -352,7 +378,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(
@@ -372,7 +398,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("instructions").is_none());
@@ -389,7 +415,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(
@@ -414,7 +440,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         // Assistant tool_use → top-level function_call
         assert_eq!(translated["input"][0]["type"], "function_call");
@@ -437,7 +463,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["service_tier"], "priority");
@@ -453,7 +479,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["input"][0]["role"], "assistant");
@@ -477,7 +503,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["input"][0]["role"], "assistant");
@@ -501,7 +527,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(translated["input"][0]["content"][0]["type"], "input_image");
         assert_eq!(
@@ -523,7 +549,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("temperature").is_none());
@@ -541,7 +567,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["reasoning"]["effort"], "medium");
@@ -556,7 +582,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("toolChoice").is_none());
@@ -573,7 +599,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4").unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("max_tokens").is_none());

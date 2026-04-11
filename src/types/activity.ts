@@ -1,4 +1,4 @@
-export type FileChangeKind = "created" | "modified" | "deleted" | "renamed" | "read";
+export type FileChangeKind = "created" | "modified" | "deleted" | "renamed" | "read" | "searched";
 
 export interface FileActivity {
   path: string;
@@ -12,6 +12,8 @@ export interface FileActivity {
   permissionMode: string | null;
   /** For Edit: old_string/new_string from ToolInput. For Write: content from ToolInput. */
   toolInputData: ToolInputDiffData | null;
+  /** True when this activity targets a folder (e.g., Grep/Glob searching a directory). */
+  isFolder: boolean;
 }
 
 /** Data captured from ToolInput events for on-demand diff construction. */
@@ -26,16 +28,6 @@ export interface TurnActivity {
   startedAt: number;
   endedAt: number | null;
   files: FileActivity[];
-  breadcrumbs: ActivityBreadcrumb[];
-}
-
-/** Non-file agent action shown as a contextual annotation in the activity log. */
-export interface ActivityBreadcrumb {
-  timestamp: number;
-  toolName: string;
-  /** Short description: command, pattern, agent description, etc. */
-  summary: string;
-  agentId: string | null;
 }
 
 export interface SessionActivity {
@@ -58,6 +50,7 @@ export interface ActivityStats {
   filesCreated: number;
   filesDeleted: number;
   filesRead: number;
+  filesSearched: number;
 }
 
 export interface ContextFileEntry {
@@ -73,14 +66,14 @@ export function emptySessionActivity(): SessionActivity {
     visitedPaths: new Set(),
     lastUserMessageAt: 0,
     contextFiles: [],
-    stats: { filesModified: 0, filesCreated: 0, filesDeleted: 0, filesRead: 0 },
+    stats: { filesModified: 0, filesCreated: 0, filesDeleted: 0, filesRead: 0, filesSearched: 0 },
     expandedPaths: new Set(),
     viewMode: "response",
   };
 }
 
 export function computeStats(files: Record<string, FileActivity>): ActivityStats {
-  const stats: ActivityStats = { filesModified: 0, filesCreated: 0, filesDeleted: 0, filesRead: 0 };
+  const stats: ActivityStats = { filesModified: 0, filesCreated: 0, filesDeleted: 0, filesRead: 0, filesSearched: 0 };
   for (const f of Object.values(files)) {
     if (f.permissionDenied) continue;
     switch (f.kind) {
@@ -88,6 +81,7 @@ export function computeStats(files: Record<string, FileActivity>): ActivityStats
       case "created": stats.filesCreated++; break;
       case "deleted": stats.filesDeleted++; break;
       case "read": stats.filesRead++; break;
+      case "searched": stats.filesSearched++; break;
     }
   }
   return stats;

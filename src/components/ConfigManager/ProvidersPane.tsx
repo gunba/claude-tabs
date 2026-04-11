@@ -116,6 +116,12 @@ export function ProvidersPane({ visible, onStatus }: ProvidersPaneProps) {
     <div className="providers-pane">
       <div className="providers-section">
         <div className="providers-section-header">
+          <span>Context Compression</span>
+        </div>
+        <CompressionToggle />
+      </div>
+      <div className="providers-section">
+        <div className="providers-section-header">
           <span>Providers</span>
           <button className="providers-add-btn" onClick={addProvider}>+ Add</button>
         </div>
@@ -144,6 +150,32 @@ export function ProvidersPane({ visible, onStatus }: ProvidersPaneProps) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Compression Toggle ──────────────────────────────────────────────────
+
+function CompressionToggle() {
+  const enabled = useSettingsStore((s) => s.compressionEnabled);
+  const setEnabled = useSettingsStore((s) => s.setCompressionEnabled);
+
+  return (
+    <div className="providers-compression-toggle">
+      <label className="providers-toggle-row">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={() => setEnabled(!enabled)}
+        />
+        <span>Compress tool outputs before sending to API</span>
+      </label>
+      <span className="providers-hint">
+        Reduces token usage by normalizing whitespace, stripping ANSI escape codes
+        from terminal output, collapsing repeated file path prefixes in search
+        results, and minifying JSON. Does not modify file reads or edits. Applies
+        to all providers.
+      </span>
     </div>
   );
 }

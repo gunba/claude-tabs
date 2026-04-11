@@ -6,7 +6,6 @@ import type {
   ContextFileEntry,
   FileChangeKind,
   ToolInputDiffData,
-  ActivityBreadcrumb,
   ViewMode,
 } from "../types/activity";
 import { emptySessionActivity, computeStats } from "../types/activity";
@@ -29,6 +28,7 @@ interface ActivityState {
       agentId?: string | null;
       toolName?: string | null;
       isExternal?: boolean;
+      isFolder?: boolean;
       permissionMode?: string | null;
       toolInputData?: ToolInputDiffData | null;
     },
@@ -41,7 +41,6 @@ interface ActivityState {
   toggleExpandedPath: (sessionId: string, path: string) => void;
   mergeExpandedPaths: (sessionId: string, paths: Iterable<string>) => void;
   setViewMode: (sessionId: string, mode: ViewMode) => void;
-  addBreadcrumb: (sessionId: string, crumb: ActivityBreadcrumb) => void;
 }
 
 function ensureSession(
@@ -84,7 +83,7 @@ function recomputeStats(activity: SessionActivity): void {
   const merged: Record<string, FileActivity> = { ...activity.allFiles };
   for (const turn of activity.turns) {
     for (const f of turn.files) {
-      if (f.kind !== "read") {
+      if (f.kind !== "read" && f.kind !== "searched") {
         merged[f.path] = f;
       }
     }
@@ -109,7 +108,6 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         startedAt: Date.now(),
         endedAt: null,
         files: [],
-        breadcrumbs: [],
       });
       evictOldTurns(activity);
       sessions[sessionId] = { ...activity };
@@ -152,21 +150,23 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         agentId: opts?.agentId ?? null,
         toolName: opts?.toolName ?? null,
         timestamp: Date.now(),
-        confirmed: kind === "read",
+        confirmed: kind === "read" || kind === "searched",
         isExternal: opts?.isExternal ?? false,
         permissionDenied: false,
         permissionMode: opts?.permissionMode ?? null,
         toolInputData: opts?.toolInputData ?? null,
+        isFolder: opts?.isFolder ?? false,
       };
       const turn = currentTurn(activity);
       if (turn && turn.endedAt === null) {
         // Deduplicate: update existing entry for same path in current turn
         const existing = turn.files.findIndex((f) => f.path === path);
         if (existing >= 0) {
-          // [AP-03] Kind precedence: created > modified > read; never downgrade created
-          // Keep the more significant kind: created > modified > read
-          // Don't downgrade "created" to "modified" on subsequent Edit/Write
-          if (kind !== "read" || turn.files[existing].kind === "read") {
+          // [AP-03] Kind precedence: created > modified > read > searched; never downgrade
+          // "searched" is lowest: never overwrites any existing kind
+          if (kind === "searched" && turn.files[existing].kind !== "searched") {
+            // Don't downgrade — skip
+          } else if (kind !== "read" || turn.files[existing].kind === "read" || turn.files[existing].kind === "searched") {
             if (turn.files[existing].kind === "created" && kind === "modified") {
               entry.kind = "created";
             }
@@ -176,13 +176,19 @@ export const useActivityStore = create<ActivityState>()((set) => ({
           turn.files.push(entry);
         }
       }
-      // Track in session-wide indices — preserve "created" over "modified"
+      // Track in session-wide indices — preserve "created" over "modified", and any real kind over "searched"
       activity.visitedPaths.add(path);
       const prev = activity.allFiles[path];
       if (prev?.kind === "created" && entry.kind === "modified") {
         entry.kind = "created";
       }
-      activity.allFiles[path] = entry;
+      // Don't downgrade from a real kind to "searched"
+      if (entry.kind === "searched" && prev && prev.kind !== "searched") {
+        // Keep prev in allFiles, but still update agentId/timestamp for mascot tracking
+        activity.allFiles[path] = { ...prev, agentId: entry.agentId, timestamp: entry.timestamp };
+      } else {
+        activity.allFiles[path] = entry;
+      }
       recomputeStats(activity);
       sessions[sessionId] = { ...activity };
       return { sessions };
@@ -339,17 +345,4 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       return { sessions };
     }),
 
-  addBreadcrumb: (sessionId, crumb) =>
-    set((state) => {
-      const sessions = { ...state.sessions };
-      const activity = sessions[sessionId];
-      if (!activity) return state;
-      const turn = currentTurn(activity);
-      if (!turn || turn.endedAt !== null) return state;
-      // Limit breadcrumbs per turn to avoid unbounded growth
-      if (turn.breadcrumbs.length >= 30) return state;
-      turn.breadcrumbs.push(crumb);
-      sessions[sessionId] = { ...activity };
-      return { sessions };
-    }),
 }));

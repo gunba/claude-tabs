@@ -15,6 +15,7 @@ use crate::observability::{
 use crate::session::types::{ModelMapping, ModelProvider, ProviderConfig, SystemPromptRule};
 
 pub mod codex;
+pub mod compress;
 
 // ── Proxy state ──────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ pub struct ProxyInner {
     pub session_launch_models: HashMap<String, String>,
     pub codex_auth: codex::auth::CodexAuthState,
     pub codex_client: reqwest::Client,
+    pub compression_enabled: bool,
 }
 
 pub struct ProxyState(pub Arc<Mutex<ProxyInner>>);
@@ -56,6 +58,7 @@ impl ProxyState {
                     .join("claude-tabs"),
             ),
             codex_client: build_plain_client(),
+            compression_enabled: false,
         })))
     }
 }
@@ -165,7 +168,7 @@ pub async fn start_api_proxy(
                                         "remoteAddr": addr.to_string(),
                                     }),
                                 );
-                                let (config, clients, default_client, rules, session_providers, session_requested_models, session_launch_models) = match state.lock() {
+                                let (config, clients, default_client, rules, session_providers, session_requested_models, session_launch_models, compression_enabled) = match state.lock() {
                                     Ok(s) => (
                                         s.config.clone(),
                                         s.clients.clone(),
@@ -174,13 +177,14 @@ pub async fn start_api_proxy(
                                         s.session_providers.clone(),
                                         s.session_requested_models.clone(),
                                         s.session_launch_models.clone(),
+                                        s.compression_enabled,
                                     ),
                                     Err(_) => continue,
                                 };
                                 let a = app_for_loop.clone();
                                 let st = state.clone();
                                 tokio::spawn(async move {
-                                    if let Err(e) = handle_connection(stream, config, clients, default_client, rules, session_providers, session_requested_models, session_launch_models, a, st).await {
+                                    if let Err(e) = handle_connection(stream, config, clients, default_client, rules, session_providers, session_requested_models, session_launch_models, compression_enabled, a, st).await {
                                         log::debug!("proxy connection error: {e}");
                                     }
                                 });
@@ -509,6 +513,24 @@ pub fn update_system_prompt_rules(
     }
 }
 
+// ── Compression toggle ─────────────────────────────────────────────
+
+#[tauri::command]
+pub fn set_compression_enabled(
+    enabled: bool,
+    proxy_state: State<'_, ProxyState>,
+) -> Result<(), String> {
+    let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    s.compression_enabled = enabled;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_compression_enabled(proxy_state: State<'_, ProxyState>) -> Result<bool, String> {
+    let s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    Ok(s.compression_enabled)
+}
+
 // ── Traffic logging commands ─────────────────────────────────────────
 
 #[tauri::command]
@@ -711,6 +733,7 @@ async fn handle_connection(
     session_providers: HashMap<String, String>,
     session_requested_models: HashMap<String, String>,
     session_launch_models: HashMap<String, String>,
+    compression_enabled: bool,
     app: tauri::AppHandle,
     proxy_state: Arc<Mutex<ProxyInner>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -795,6 +818,14 @@ async fn handle_connection(
     if !rules.is_empty() {
         final_body = rewrite_system_prompt_in_body(&final_body, &rules);
     }
+    // Compress tool_result content (after system prompt rules, before forwarding)
+    let compression_stats = if compression_enabled && provider.kind != "openai_codex" {
+        let (compressed, stats) = compress::compress_tool_results_in_body(&final_body);
+        final_body = compressed;
+        stats
+    } else {
+        compress::CompressionStats::default()
+    };
     let route_event_data = serde_json::json!({
         "method": method,
         "rawPath": raw_path,
@@ -809,6 +840,14 @@ async fn handle_connection(
         "rewrite": rewrite,
         "systemPromptRulesApplied": !rules.is_empty(),
         "shouldLogTraffic": should_log,
+        "compression": {
+            "toolResultsFound": compression_stats.tool_results_found,
+            "toolResultsCompressed": compression_stats.tool_results_compressed,
+            "originalBytes": compression_stats.original_bytes,
+            "compressedBytes": compression_stats.compressed_bytes,
+            "savedBytes": compression_stats.saved_bytes(),
+            "savedPct": (compression_stats.saved_pct() * 10.0).round() / 10.0,
+        },
     });
     let route_traffic_meta = serde_json::json!({
         "route": route_event_data.clone(),
@@ -852,6 +891,7 @@ async fn handle_connection(
             &model,
             &upstream_request_model,
             &rewrite,
+            compression_enabled,
         )
         .await;
     }

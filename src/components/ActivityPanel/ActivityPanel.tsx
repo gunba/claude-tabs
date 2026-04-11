@@ -6,7 +6,7 @@ import { ClaudeMascot } from "./ClaudeMascot";
 import type { MascotState } from "./ClaudeMascot";
 import { IconFolder, IconDocument } from "../Icons/Icons";
 import { isSubagentActive } from "../../types/session";
-import type { FileActivity, ContextFileEntry, ViewMode, ActivityBreadcrumb } from "../../types/activity";
+import type { FileActivity, ContextFileEntry, ViewMode } from "../../types/activity";
 import { buildFileTree, flattenTree, allFolderPaths } from "../../lib/fileTree";
 import type { FileTreeNode } from "../../lib/fileTree";
 import { canonicalizePath } from "../../lib/paths";
@@ -25,24 +25,12 @@ function extractPathFromAction(action: string): string | null {
   return action.slice(colonIdx + 2);
 }
 
-const FILE_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit"]);
-
-function breadcrumbIcon(toolName: string): string {
-  switch (toolName) {
-    case "Bash": return "$";
-    case "Grep": return "?";
-    case "Glob": return "*";
-    case "Agent": return ">";
-    case "WebSearch": return "~";
-    case "WebFetch": return "@";
-    case "LSP": return "#";
-    default: return ">";
-  }
-}
+const FILE_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit", "Grep", "Glob", "LSP"]);
 
 function toolToMascotState(toolName: string): MascotState {
   if (toolName === "Read") return "reading";
   if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") return "writing";
+  if (toolName === "Grep" || toolName === "Glob" || toolName === "LSP") return "searching";
   return "idle";
 }
 
@@ -140,7 +128,10 @@ function FileTreeRow({
     );
   }
 
-  const folderClasses = `file-tree-row file-tree-folder${node.isWorkspaceRoot ? " file-tree-workspace-root" : ""}`;
+  const folderClasses = `file-tree-row file-tree-folder${node.isWorkspaceRoot ? " file-tree-workspace-root" : ""}${node.activity?.kind === "searched" ? " file-tree-searched" : ""}`;
+
+  // Show inline mascot for subagents on searched folders
+  const inlineMascot = showMascotInline && mascotState && primaryMascot;
 
   return (
     <div
@@ -148,14 +139,27 @@ function FileTreeRow({
       style={rowStyle}
       onClick={() => onToggle(node.fullPath)}
       title={node.fullPath}
+      data-path={node.fullPath}
     >
       <span className={`file-tree-chevron${isExpanded ? "" : " collapsed"}`}>
         {"\u25BE"}
       </span>
       <span className="file-tree-icon-slot">
-        <IconFolder size={14} />
+        {inlineMascot ? (
+          <ClaudeMascot
+            state={mascotState!}
+            isSubagent={primaryMascot!.isSubagent}
+            isCompleted={primaryMascot!.isCompleted}
+            size={16}
+          />
+        ) : (
+          <IconFolder size={14} />
+        )}
       </span>
-      <span className="file-tree-name file-tree-foldername">{node.name}</span>
+      <span className={`file-tree-name file-tree-foldername${kindClass}`}>{node.name}</span>
+      {extraAgentCount > 0 && (
+        <span className="file-tree-agent-count">+{extraAgentCount}</span>
+      )}
     </div>
   );
 }
@@ -361,6 +365,7 @@ export function ActivityPanel() {
             permissionDenied: false,
             permissionMode: null,
             toolInputData: null,
+            isFolder: false,
           });
         }
       }
@@ -442,21 +447,6 @@ export function ActivityPanel() {
     invoke("shell_open", { path: filePath }).catch(() => {});
   }, []);
 
-  // Derive breadcrumbs for the current view scope
-  const breadcrumbs = useMemo(() => {
-    if (!activity) return [];
-    const result: ActivityBreadcrumb[] = [];
-    const boundary = mode === "response" ? activity.lastUserMessageAt : 0;
-    for (const turn of activity.turns) {
-      for (const crumb of turn.breadcrumbs) {
-        if (crumb.timestamp >= boundary) {
-          result.push(crumb);
-        }
-      }
-    }
-    return result;
-  }, [activity, mode]);
-
   if (!activeSession) return <EmptyPanel message="No active session" />;
   if (activeSession.state === "dead") return <EmptyPanel message="Session ended" />;
 
@@ -481,7 +471,7 @@ export function ActivityPanel() {
       </div>
 
       <div className="activity-panel-body activity-tree-container" ref={containerRef}>
-        {rows.length === 0 && breadcrumbs.length === 0 ? (
+        {rows.length === 0 ? (
           <div className="activity-panel-empty">
             {mode === "response" ? "No activity yet" : "No files visited"}
           </div>
@@ -508,19 +498,6 @@ export function ActivityPanel() {
                 />
               );
             })}
-            {breadcrumbs.length > 0 && (
-              <div className="activity-breadcrumbs">
-                <div className="activity-breadcrumbs-label">Actions</div>
-                {breadcrumbs.map((crumb, i) => (
-                  <div key={i} className="activity-breadcrumb-row" title={crumb.summary}>
-                    <span className={`activity-breadcrumb-icon activity-breadcrumb-tool-${crumb.toolName.toLowerCase()}`}>
-                      {breadcrumbIcon(crumb.toolName)}
-                    </span>
-                    <span className="activity-breadcrumb-text">{crumb.summary}</span>
-                  </div>
-                ))}
-              </div>
-            )}
             {mascot && (
               <div
                 className="activity-mascot-float"

@@ -187,7 +187,7 @@ function trieToNodes(trie: TrieNode, parentPath: string): FileTreeNode[] {
 
   for (const [name, child] of trie.children) {
     const fullPath = parentPath ? `${parentPath}/${name}` : name;
-    const isFile = child.activity !== null;
+    const isFile = child.activity !== null && !child.activity.isFolder;
 
     const node: FileTreeNode = {
       name,
@@ -230,7 +230,9 @@ function compressTree(nodes: FileTreeNode[]): FileTreeNode[] {
       compressed.length === 1 &&
       !compressed[0].isFile &&
       !compressed[0].isWorkspaceRoot &&
-      !node.isWorkspaceRoot
+      !node.isWorkspaceRoot &&
+      !node.activity &&
+      !compressed[0].activity
     ) {
       const child = compressed[0];
       return {

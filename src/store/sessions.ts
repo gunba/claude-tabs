@@ -150,6 +150,9 @@ export const useSessionStore = create<SessionsState>((set) => ({
             if (rules.length > 0) {
               invoke("update_system_prompt_rules", { rules }).catch(() => {});
             }
+            // Sync compression toggle to proxy
+            const { compressionEnabled } = useSettingsStore.getState();
+            invoke("set_compression_enabled", { enabled: compressionEnabled }).catch(() => {});
             // Listen for routing events from the proxy for debug visibility
             listen<{ model: string; provider: string; rewrite: string | null; path: string }>(
               "proxy-route",

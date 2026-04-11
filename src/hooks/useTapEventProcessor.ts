@@ -17,7 +17,7 @@ import { traceSync } from "../lib/perfTrace";
 import { settledStateManager } from "../lib/settledState";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
-import type { ToolInputDiffData, ActivityBreadcrumb } from "../types/activity";
+import type { ToolInputDiffData } from "../types/activity";
 import { getTapCategoryLabel, getTapCategoryMeta } from "../lib/tapCatalog";
 
 
@@ -46,72 +46,6 @@ function eventDetail(event: TapEvent): string {
     default:
       return "";
   }
-}
-
-/** Truncate a string for breadcrumb display. */
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 1) + "\u2026" : s;
-}
-
-/** Tools that already produce file activity — breadcrumbs for these are lower value. */
-const FILE_ACTIVITY_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit"]);
-
-/** Build an activity breadcrumb from a ToolInput event, or null if not worth logging. */
-function buildBreadcrumb(
-  toolName: string,
-  input: Record<string, unknown>,
-  agentId: string | null,
-): ActivityBreadcrumb | null {
-  // Skip tools that primarily produce file activity (already shown in the tree)
-  if (FILE_ACTIVITY_TOOLS.has(toolName)) return null;
-
-  let summary: string | null = null;
-  switch (toolName) {
-    case "Bash": {
-      const cmd = typeof input.command === "string" ? input.command.trim() : null;
-      if (cmd) summary = "$ " + truncate(cmd, 80);
-      break;
-    }
-    case "Grep": {
-      const pat = typeof input.pattern === "string" ? input.pattern : null;
-      const path = typeof input.path === "string" ? input.path : null;
-      if (pat) summary = "grep " + truncate(pat, 40) + (path ? " in " + truncate(path, 40) : "");
-      break;
-    }
-    case "Glob": {
-      const pat = typeof input.pattern === "string" ? input.pattern : null;
-      if (pat) summary = "glob " + truncate(pat, 60);
-      break;
-    }
-    case "Agent": {
-      const desc = typeof input.description === "string" ? input.description
-        : typeof input.prompt === "string" ? input.prompt
-        : null;
-      if (desc) summary = truncate(desc, 80);
-      break;
-    }
-    case "WebSearch": {
-      const query = typeof input.query === "string" ? input.query : null;
-      if (query) summary = "search: " + truncate(query, 70);
-      break;
-    }
-    case "WebFetch": {
-      const url = typeof input.url === "string" ? input.url : null;
-      if (url) summary = "fetch: " + truncate(url, 70);
-      break;
-    }
-    case "LSP": {
-      const op = typeof input.operation === "string" ? input.operation : null;
-      const fp = typeof input.filePath === "string" ? input.filePath : null;
-      if (op && fp) summary = "lsp " + op + " " + truncate(fp, 50);
-      break;
-    }
-    default:
-      return null;
-  }
-
-  if (!summary) return null;
-  return { timestamp: Date.now(), toolName, summary, agentId };
 }
 
 // [SI-13] Event priority: runs reduceTapEvent which enforces sticky actionNeeded guard
@@ -349,6 +283,69 @@ export function useTapEventProcessor(
             }
           }
 
+          // Grep — track searched file or folder
+          if (event.toolName === "Grep") {
+            const rawGrepPath = typeof event.input.path === "string" ? event.input.path : null;
+            if (rawGrepPath) {
+              const grepPath = canonicalizePath(rawGrepPath);
+              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+              const workDir = session?.config.workingDir ?? "";
+              const isExternal = workDir ? !normalizePath(grepPath).startsWith(workDir) : false;
+              const lastSegment = grepPath.split("/").pop() ?? "";
+              const looksLikeFile = lastSegment.includes(".") && !lastSegment.startsWith(".");
+              activityStore.addFileActivity(sid, grepPath, "searched", {
+                agentId,
+                toolName: "Grep",
+                isExternal,
+                isFolder: !looksLikeFile,
+              });
+            } else {
+              // No path = searching project root
+              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+              const workDir = session?.config.workingDir ?? "";
+              if (workDir) {
+                activityStore.addFileActivity(sid, canonicalizePath(workDir), "searched", {
+                  agentId,
+                  toolName: "Grep",
+                  isFolder: true,
+                });
+              }
+            }
+          }
+
+          // Glob — always targets a folder
+          if (event.toolName === "Glob") {
+            const rawGlobPath = typeof event.input.path === "string" ? event.input.path : null;
+            const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+            const workDir = session?.config.workingDir ?? "";
+            const targetPath = rawGlobPath ? canonicalizePath(rawGlobPath) : (workDir ? canonicalizePath(workDir) : null);
+            if (targetPath) {
+              const isExternal = workDir ? !normalizePath(targetPath).startsWith(workDir) : false;
+              activityStore.addFileActivity(sid, targetPath, "searched", {
+                agentId,
+                toolName: "Glob",
+                isExternal,
+                isFolder: true,
+              });
+            }
+          }
+
+          // LSP — always targets a file (uses camelCase filePath, not snake_case file_path)
+          if (event.toolName === "LSP") {
+            const rawLspPath = typeof event.input.filePath === "string" ? event.input.filePath : null;
+            if (rawLspPath) {
+              const lspPath = canonicalizePath(rawLspPath);
+              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+              const workDir = session?.config.workingDir ?? "";
+              const isExternal = workDir ? !normalizePath(lspPath).startsWith(workDir) : false;
+              activityStore.addFileActivity(sid, lspPath, "searched", {
+                agentId,
+                toolName: "LSP",
+                isExternal,
+              });
+            }
+          }
+
           // Bash file tracking — heuristic extraction from command strings
           if (event.toolName === "Bash" && typeof event.input.command === "string") {
             const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
@@ -363,12 +360,6 @@ export function useTapEventProcessor(
                 isExternal: isExt,
               });
             }
-          }
-
-          // Activity breadcrumbs — log non-file tool invocations as contextual annotations
-          const crumb = buildBreadcrumb(event.toolName, event.input, agentId);
-          if (crumb) {
-            activityStore.addBreadcrumb(sid, crumb);
           }
         }
 

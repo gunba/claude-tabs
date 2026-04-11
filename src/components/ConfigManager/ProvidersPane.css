@@ -342,3 +342,36 @@
   color: var(--text-muted);
   margin: 2px 0 0;
 }
+
+/* Compression toggle */
+
+.providers-compression-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+}
+
+.providers-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.providers-toggle-row input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.providers-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  padding-left: 20px;
+}

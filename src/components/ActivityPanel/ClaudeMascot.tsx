@@ -1,6 +1,6 @@
 import mascotSrc from "../../assets/claude-mascot.png";
 
-export type MascotState = "reading" | "writing" | "moving" | "idle";
+export type MascotState = "reading" | "writing" | "moving" | "idle" | "searching";
 
 interface ClaudeMascotProps {
   state: MascotState;
@@ -12,6 +12,7 @@ interface ClaudeMascotProps {
 const OVERLAY: Record<MascotState, string | null> = {
   reading: "\uD83D\uDC41",  // eye
   writing: "\u270F",         // pencil
+  searching: "\uD83D\uDD0D", // magnifying glass
   moving: null,
   idle: null,
 };

@@ -175,6 +175,15 @@
 .file-tree-kind-modified { color: var(--warning) !important; }
 .file-tree-kind-deleted  { color: var(--error) !important; opacity: 0.7; text-decoration: line-through; }
 .file-tree-kind-read     { color: var(--text-secondary) !important; }
+.file-tree-kind-searched { color: var(--info) !important; }
+
+/* Searched folder: color the icon + name blue */
+.file-tree-folder.file-tree-searched .file-tree-foldername {
+  color: var(--info);
+}
+.file-tree-folder.file-tree-searched .file-tree-icon-slot {
+  color: var(--info);
+}
 
 
 /* -- Floating mascot for travel animation -- */
@@ -201,57 +210,6 @@
   font-size: 11px;
   text-align: center;
   padding: 24px 12px;
-}
-
-/* -- Breadcrumbs (non-file agent actions) -- */
-
-.activity-breadcrumbs {
-  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-  margin-top: 4px;
-  padding-top: 2px;
-}
-
-.activity-breadcrumbs-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  padding: 2px 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.activity-breadcrumb-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  min-height: 18px;
-  line-height: 1.2;
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
-.activity-breadcrumb-row:hover {
-  background: color-mix(in srgb, var(--text-primary) 5%, var(--term-bg));
-}
-
-.activity-breadcrumb-icon {
-  width: 14px;
-  flex-shrink: 0;
-  text-align: center;
-  font-weight: 600;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.activity-breadcrumb-tool-bash .activity-breadcrumb-icon { color: var(--accent); }
-
-.activity-breadcrumb-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ============================================================
@@ -285,7 +243,8 @@
 
 /* Reading and writing: unified rocking motion anchored at left edge */
 .claude-mascot-reading .claude-mascot-img,
-.claude-mascot-writing .claude-mascot-img {
+.claude-mascot-writing .claude-mascot-img,
+.claude-mascot-searching .claude-mascot-img {
   animation: mascot-rock 0.4s ease-in-out infinite alternate;
   transform-origin: left center;
 }

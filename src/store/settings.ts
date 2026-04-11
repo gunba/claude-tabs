@@ -128,6 +128,7 @@ interface SettingsState {
   systemPromptRules: SystemPromptRule[];
   modelRegistry: Record<string, ModelRegistryEntry>;
   recordingConfig: RecordingConfig;
+  compressionEnabled: boolean;
 
   // Actions
   addRecentDir: (dir: string) => void;
@@ -168,6 +169,7 @@ interface SettingsState {
   reorderSystemPromptRules: (id: string, direction: -1 | 1) => void;
   updateModelRegistry: (entry: ModelRegistryEntry) => void;
   setRecordingConfig: (config: Partial<RecordingConfig>) => void;
+  setCompressionEnabled: (enabled: boolean) => void;
   toggleNoisyEventKind: (kind: string) => void;
 }
 
@@ -208,6 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
       systemPromptRules: [],
       modelRegistry: {},
       recordingConfig: DEFAULT_RECORDING_CONFIG,
+      compressionEnabled: false,
 
       addRecentDir: (dir) =>
         set((s) => {
@@ -628,6 +631,11 @@ export const useSettingsStore = create<SettingsState>()(
         recordingConfig: { ...s.recordingConfig, ...config },
       })),
 
+      setCompressionEnabled: (enabled) => {
+        set({ compressionEnabled: enabled });
+        invoke("set_compression_enabled", { enabled }).catch(() => {});
+      },
+
       toggleNoisyEventKind: (kind) => set((s) => {
         const current = s.recordingConfig.noisyEventKinds;
         const next = current.includes(kind)
@@ -638,7 +646,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 13,
+      version: 14,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -793,6 +801,9 @@ export const useSettingsStore = create<SettingsState>()(
             }
           }
         }
+        if (version < 14) {
+          if (state.compressionEnabled === undefined) state.compressionEnabled = false;
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -818,6 +829,7 @@ export const useSettingsStore = create<SettingsState>()(
         systemPromptRules: state.systemPromptRules,
         modelRegistry: state.modelRegistry,
         recordingConfig: state.recordingConfig,
+        compressionEnabled: state.compressionEnabled,
       }),
     }
   )
