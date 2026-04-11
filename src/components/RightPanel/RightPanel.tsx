@@ -10,9 +10,9 @@ import "./RightPanel.css";
 type RightPanelTab = "activity" | "search" | "debug";
 
 const BASE_TABS = [
-  { id: "activity" as const, label: "Activity", icon: <IconFolder size={12} /> },
-  { id: "search" as const, label: "Search", icon: <IconSearch size={12} /> },
-  { id: "debug" as const, label: "Debug Log", icon: <IconTerminal size={12} /> },
+  { id: "activity" as const, label: "Activity", icon: <IconFolder size={13} /> },
+  { id: "search" as const, label: "Search", icon: <IconSearch size={13} /> },
+  { id: "debug" as const, label: "Debug Log", icon: <IconTerminal size={13} /> },
 ];
 
 export function RightPanel() {
