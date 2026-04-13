@@ -181,11 +181,11 @@ describe("scopePath", () => {
 
   describe("skills tab", () => {
     it("user scope", () => {
-      expect(scopePath("user", dir, "skills")).toBe("~/.claude/commands/");
+      expect(scopePath("user", dir, "skills")).toBe("~/.claude/{commands,skills}/");
     });
 
     it("project scope", () => {
-      expect(scopePath("project", dir, "skills")).toBe(`${dir}/.claude/commands/`);
+      expect(scopePath("project", dir, "skills")).toBe(`${dir}/.claude/{commands,skills}/`);
     });
   });
 

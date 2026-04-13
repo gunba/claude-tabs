@@ -639,7 +639,8 @@ export const useSettingsStore = create<SettingsState>()(
         invoke("set_compression_enabled", { enabled }).catch(() => {});
       },
 
-      setActivityViewMode: (mode) => set({ activityViewMode: mode }),
+      // [RI-02] activityViewMode is global persisted setting in useSettingsStore, not per-session
+  setActivityViewMode: (mode) => set({ activityViewMode: mode }),
 
       toggleNoisyEventKind: (kind) => set((s) => {
         const current = s.recordingConfig.noisyEventKinds;

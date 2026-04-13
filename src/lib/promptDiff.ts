@@ -188,7 +188,7 @@ function groupHunks(diff: DiffLine[]): Hunk[] {
  * Generate SystemPromptRules from the diff between original and edited text.
  * Deduplicates against existingRules in two ways:
  *  - Exact pattern equality (cheap structural check).
- *  - Effect equivalence: skip a hunk if applying the enabled existing rules
+ *  - [CM-29] Effect equivalence: skip a hunk if applying the enabled existing rules
  *    to its deleted text already produces the hunk's added text. This
  *    handles the common case where the diff baseline is the raw observed
  *    prompt and existing rules already account for some of the changes.

@@ -316,6 +316,7 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       return { sessions };
     }),
 
+  // [AS-02] mergeExpandedPaths auto-expands only folders not in seenFolderPaths; preserves user collapses
   mergeExpandedPaths: (sessionId, paths) =>
     set((state) => {
       const sessions = { ...state.sessions };

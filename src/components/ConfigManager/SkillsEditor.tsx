@@ -27,6 +27,7 @@ function parseKey(key: string): { kind: Kind; name: string } | null {
 const NEW_COMMAND = "__new_command__";
 const NEW_SKILL = "__new_skill__";
 
+// [CM-30] SkillsEditor lists commands (.claude/commands/) and skills (.claude/skills/) merged via list_skills (kind tag)
 export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps) {
   const [entries, setEntries] = useState<AgentFile[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
