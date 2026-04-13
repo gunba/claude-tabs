@@ -31,7 +31,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "mcp", label: "MCP", icon: <IconServer size={11} /> },
   { id: "agents", label: "Agents", icon: <IconBot size={11} /> },
   { id: "prompts", label: "Prompts", icon: <IconDocument size={11} /> },
-  { id: "skills", label: "Skills", icon: <IconSkill size={11} /> },
+  { id: "skills", label: "Skills & Commands", icon: <IconSkill size={11} /> },
   { id: "providers", label: "Providers", icon: <IconLightning size={11} /> },
   { id: "recording", label: "Observability", icon: <IconCircleFilled size={11} /> },
 ];

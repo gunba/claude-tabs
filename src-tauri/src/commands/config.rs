@@ -207,18 +207,22 @@ fn resolve_config_path(
             }
         }
         _ if file_type.starts_with("skill:") || file_type.starts_with("skill-delete:") => {
-            let name = file_type.split_once(':').map(|(_, n)| n).unwrap_or("");
+            // Format: "skill:<kind>:<name>" or "skill-delete:<kind>:<name>"
+            // <kind> is "command" or "skill".
+            let rest = file_type.split_once(':').map(|(_, r)| r).unwrap_or("");
+            let (kind, name) = rest
+                .split_once(':')
+                .ok_or_else(|| format!("Invalid file_type '{}': expected '<prefix>:<kind>:<name>'", file_type))?;
             validate_md_file_name(name)?;
-            match scope {
-                "user" => Ok(home
-                    .join(".claude")
-                    .join("commands")
-                    .join(format!("{}.md", name))),
-                "project" => Ok(std::path::Path::new(working_dir)
-                    .join(".claude")
-                    .join("commands")
-                    .join(format!("{}.md", name))),
-                _ => Err("Invalid scope".into()),
+            let claude_dir = match scope {
+                "user" => home.join(".claude"),
+                "project" => std::path::Path::new(working_dir).join(".claude"),
+                _ => return Err("Invalid scope".into()),
+            };
+            match kind {
+                "command" => Ok(claude_dir.join("commands").join(format!("{}.md", name))),
+                "skill" => Ok(claude_dir.join("skills").join(name).join("SKILL.md")),
+                other => Err(format!("Invalid kind '{}': expected 'command' or 'skill'", other)),
             }
         }
         _ => Err(format!("Unknown file_type: {}", file_type)),
@@ -253,8 +257,22 @@ pub fn write_config_file(
     // Handle agent/skill deletion
     if file_type.starts_with("agent-delete:") || file_type.starts_with("skill-delete:") {
         let path = resolve_config_path(&scope, &working_dir, &file_type)?;
-        if path.exists() {
-            std::fs::remove_file(&path).map_err(|e| format!("Failed to delete: {}", e))?;
+        // Skills resolve to <skill-dir>/SKILL.md; remove the enclosing directory so we don't
+        // leave an empty husk behind. Commands and agents are single .md files.
+        let target = if file_type.starts_with("skill-delete:skill:") {
+            path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+        } else {
+            path
+        };
+        let result = if target.is_dir() {
+            std::fs::remove_dir_all(&target)
+        } else {
+            std::fs::remove_file(&target)
+        };
+        if let Err(e) = result {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(format!("Failed to delete {}: {}", target.display(), e));
+            }
         }
         return Ok(());
     }
@@ -379,7 +397,47 @@ pub fn list_agents(
     Ok(files)
 }
 
+/// List skill directories (subdirectories containing SKILL.md), returning sorted [{name, path}].
+fn list_skill_dirs(dir: &std::path::Path) -> Vec<serde_json::Value> {
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut skills = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let skill_md = path.join("SKILL.md");
+            if !skill_md.is_file() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            if name.is_empty() {
+                continue;
+            }
+            skills.push(serde_json::json!({
+                "name": name,
+                "path": skill_md.to_string_lossy().to_string(),
+            }));
+        }
+    }
+    skills.sort_by(|a, b| {
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
+    });
+    skills
+}
+
 /// List skill/command definition files based on scope.
+/// Returns entries from both `.claude/commands/` (kind=command) and `.claude/skills/` (kind=skill).
 #[tauri::command]
 pub fn list_skills(
     app: AppHandle,
@@ -387,27 +445,42 @@ pub fn list_skills(
     working_dir: String,
 ) -> Result<Vec<serde_json::Value>, String> {
     let home = dirs::home_dir().ok_or("No home dir")?;
-    let dir = match scope.as_str() {
-        "user" => home.join(".claude").join("commands"),
-        "project" => std::path::Path::new(&working_dir)
-            .join(".claude")
-            .join("commands"),
+    let claude_dir = match scope.as_str() {
+        "user" => home.join(".claude"),
+        "project" => std::path::Path::new(&working_dir).join(".claude"),
         _ => return Err("Invalid scope".into()),
     };
-    let files = list_md_in_dir(&dir);
+    let commands_dir = claude_dir.join("commands");
+    let skills_dir = claude_dir.join("skills");
+
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    for mut entry in list_md_in_dir(&commands_dir) {
+        entry["kind"] = serde_json::Value::String("command".into());
+        entries.push(entry);
+    }
+    for mut entry in list_skill_dirs(&skills_dir) {
+        entry["kind"] = serde_json::Value::String("skill".into());
+        entries.push(entry);
+    }
+
     log_discovery(
         &app,
         "discovery.skill_files_loaded",
-        "Skill definitions listed",
+        "Skill and command definitions listed",
         json!({
             "scope": scope,
             "workingDir": working_dir,
-            "dir": dir.to_string_lossy().to_string(),
-            "count": files.len(),
-            "names": files.iter().filter_map(|file| file["name"].as_str()).collect::<Vec<_>>(),
+            "commandsDir": commands_dir.to_string_lossy().to_string(),
+            "skillsDir": skills_dir.to_string_lossy().to_string(),
+            "count": entries.len(),
+            "names": entries.iter()
+                .map(|e| format!("{}:{}",
+                    e["kind"].as_str().unwrap_or(""),
+                    e["name"].as_str().unwrap_or("")))
+                .collect::<Vec<_>>(),
         }),
     );
-    Ok(files)
+    Ok(entries)
 }
 
 // [RC-20] Hardcoded DNS resolution of api.anthropic.com, 5s timeout, no user input
@@ -440,4 +513,84 @@ pub async fn resolve_api_host(app: AppHandle) -> Result<String, String> {
         }),
     );
     Ok(resolved)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_skill_command_user_scope() {
+        let path = resolve_config_path("user", "", "skill:command:foo").unwrap();
+        let s = path.to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/.claude/commands/foo.md"), "got {}", s);
+    }
+
+    #[test]
+    fn resolve_skill_skill_user_scope() {
+        let path = resolve_config_path("user", "", "skill:skill:my-skill").unwrap();
+        let s = path.to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/.claude/skills/my-skill/SKILL.md"), "got {}", s);
+    }
+
+    #[test]
+    fn resolve_skill_command_project_scope() {
+        let path = resolve_config_path("project", "/tmp/proj", "skill:command:bar").unwrap();
+        let s = path.to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/tmp/proj/.claude/commands/bar.md"), "got {}", s);
+    }
+
+    #[test]
+    fn resolve_skill_delete_skill() {
+        let path = resolve_config_path("project", "/tmp/proj", "skill-delete:skill:s1").unwrap();
+        let s = path.to_string_lossy().replace('\\', "/");
+        assert!(s.ends_with("/tmp/proj/.claude/skills/s1/SKILL.md"), "got {}", s);
+    }
+
+    #[test]
+    fn resolve_skill_invalid_kind() {
+        let err = resolve_config_path("user", "", "skill:bogus:foo").unwrap_err();
+        assert!(err.contains("Invalid kind"), "got {}", err);
+    }
+
+    #[test]
+    fn resolve_skill_missing_kind() {
+        // Old format ("skill:foo") should be rejected now.
+        let err = resolve_config_path("user", "", "skill:foo").unwrap_err();
+        assert!(err.contains("Invalid kind") || err.contains("expected"), "got {}", err);
+    }
+
+    #[test]
+    fn resolve_skill_unsafe_name() {
+        let err = resolve_config_path("user", "", "skill:command:../etc").unwrap_err();
+        assert!(err.contains("Invalid name"), "got {}", err);
+    }
+
+    #[test]
+    fn list_skill_dirs_finds_subdirs_with_skill_md() {
+        let tmp = std::env::temp_dir().join(format!("ct_test_{}", std::process::id()));
+        let skills_root = tmp.join("skills");
+        std::fs::create_dir_all(skills_root.join("alpha")).unwrap();
+        std::fs::create_dir_all(skills_root.join("beta")).unwrap();
+        std::fs::create_dir_all(skills_root.join("no-skill-md")).unwrap();
+        std::fs::write(skills_root.join("alpha").join("SKILL.md"), "x").unwrap();
+        std::fs::write(skills_root.join("beta").join("SKILL.md"), "y").unwrap();
+        // no-skill-md has no SKILL.md so should be skipped
+
+        let result = list_skill_dirs(&skills_root);
+        let names: Vec<&str> = result.iter().filter_map(|v| v["name"].as_str()).collect();
+        assert_eq!(names, vec!["alpha", "beta"]);
+        for v in &result {
+            let p = v["path"].as_str().unwrap();
+            assert!(p.ends_with("SKILL.md"), "path should be SKILL.md: {}", p);
+        }
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn list_skill_dirs_missing_dir_returns_empty() {
+        let missing = std::env::temp_dir().join(format!("ct_no_such_{}", std::process::id()));
+        assert!(list_skill_dirs(&missing).is_empty());
+    }
 }

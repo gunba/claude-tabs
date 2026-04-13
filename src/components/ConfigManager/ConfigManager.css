@@ -497,6 +497,25 @@
   line-height: 1.4;
 }
 
+.config-md-editor-kind {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 1.4;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.config-md-editor-kind-command {
+  background: color-mix(in srgb, var(--accent-secondary, #6aa3ff) 18%, transparent);
+  color: var(--accent-secondary, #6aa3ff);
+}
+.config-md-editor-kind-skill {
+  background: color-mix(in srgb, var(--accent-tertiary, #b48aff) 18%, transparent);
+  color: var(--accent-tertiary, #b48aff);
+}
+
 
 .config-save-btn {
   background: var(--accent-bg);

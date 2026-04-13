@@ -8,6 +8,9 @@ export type ClaudeMdType = "claudemd-root" | "claudemd-local" | "claudemd-user";
 export interface AgentFile {
   name: string;
   path: string;
+  /** Set by `list_skills` to distinguish `.claude/commands/*.md` (`command`)
+   * from `.claude/skills/<dir>/SKILL.md` (`skill`). Unset for plain agents. */
+  kind?: "command" | "skill";
 }
 
 export interface StatusMessage {
