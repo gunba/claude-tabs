@@ -36,8 +36,8 @@ export function scopePath(scope: PaneComponentProps["scope"], dir: string, tabId
       if (scope === "user") return "~/.claude/agents/";
       return `${d}/.claude/agents/`;
     case "skills":
-      if (scope === "user") return "~/.claude/commands/";
-      return `${d}/.claude/commands/`;
+      if (scope === "user") return "~/.claude/{commands,skills}/";
+      return `${d}/.claude/{commands,skills}/`;
   }
 }
 

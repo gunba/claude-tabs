@@ -1,158 +1,220 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../store/settings";
 import { dlog } from "../../lib/debugLog";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 
+type Kind = "command" | "skill";
+
+function entryKind(entry: AgentFile): Kind {
+  return (entry.kind ?? "command") as Kind;
+}
+
+/** Stable list-key encoding: "command:<name>" or "skill:<name>". */
+function entryKey(kind: Kind, name: string): string {
+  return `${kind}:${name}`;
+}
+
+function parseKey(key: string): { kind: Kind; name: string } | null {
+  const idx = key.indexOf(":");
+  if (idx <= 0) return null;
+  const kind = key.slice(0, idx);
+  if (kind !== "command" && kind !== "skill") return null;
+  return { kind, name: key.slice(idx + 1) };
+}
+
+const NEW_COMMAND = "__new_command__";
+const NEW_SKILL = "__new_skill__";
+
 export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps) {
-  const [skills, setSkills] = useState<AgentFile[]>([]);
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
+  const [entries, setEntries] = useState<AgentFile[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [newSkillName, setNewSkillName] = useState("");
+  const [newName, setNewName] = useState("");
 
   const commandUsage = useSettingsStore((s) => s.commandUsage);
 
   const workingDir = scope === "user" ? "" : projectDir;
 
-  const loadSkills = useCallback(async () => {
+  const loadEntries = useCallback(async () => {
     try {
       const result = await invoke<AgentFile[]>("list_skills", { scope, workingDir });
-      setSkills(result);
+      setEntries(result);
     } catch (err) {
       dlog("config", null, `list_skills failed: ${err}`, "ERR");
-      setSkills([]);
+      setEntries([]);
     }
     setLoading(false);
   }, [scope, workingDir]);
 
-  useEffect(() => {
-    loadSkills();
-  }, [loadSkills]);
+  useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  // Auto-select first skill or new-skill mode
+  // Auto-select first entry or new-command mode (commands first since they're simpler).
   useEffect(() => {
-    if (!loading && selectedSkill === null) {
-      setSelectedSkill(skills.length > 0 ? skills[0].name : "__new__");
+    if (!loading && selected === null) {
+      if (entries.length > 0) {
+        const first = entries[0];
+        setSelected(entryKey(entryKind(first), first.name));
+      } else {
+        setSelected(NEW_COMMAND);
+      }
     }
-  }, [loading, skills, selectedSkill]);
+  }, [loading, entries, selected]);
 
-  // Load selected skill content (with cancellation to prevent stale writes on rapid selection)
+  const isNew = selected === NEW_COMMAND || selected === NEW_SKILL;
+  const newKind: Kind = selected === NEW_SKILL ? "skill" : "command";
+
+  // Load selected file content (with cancellation to prevent stale writes on rapid selection).
   useEffect(() => {
-    if (!selectedSkill || selectedSkill === "__new__") {
+    if (!selected || isNew) {
       setContent("");
       setSavedContent("");
       return;
     }
-    const skill = skills.find((s) => s.name === selectedSkill);
-    if (!skill) return;
+    const parsed = parseKey(selected);
+    if (!parsed) return;
+    const exists = entries.some((e) => e.name === parsed.name && entryKind(e) === parsed.kind);
+    if (!exists) return;
 
     let cancelled = false;
     invoke<string>("read_config_file", {
       scope,
       workingDir,
-      fileType: `skill:${skill.name}`,
+      fileType: `skill:${parsed.kind}:${parsed.name}`,
     }).then((result) => {
       if (!cancelled) { setContent(result); setSavedContent(result); }
     }).catch((err) => {
-      dlog("config", null, `read skill failed: ${err}`, "ERR");
+      dlog("config", null, `read ${parsed.kind} failed: ${err}`, "ERR");
       if (!cancelled) { setContent(""); setSavedContent(""); }
     });
     return () => { cancelled = true; };
-  }, [selectedSkill, skills, scope, workingDir]);
+  }, [selected, isNew, entries, scope, workingDir]);
 
   const handleSave = useCallback(async () => {
-    if (!selectedSkill || selectedSkill === "__new__") return;
+    if (!selected || isNew) return;
+    const parsed = parseKey(selected);
+    if (!parsed) return;
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
-        fileType: `skill:${selectedSkill}`,
+        fileType: `skill:${parsed.kind}:${parsed.name}`,
         content,
       });
       setSavedContent(content);
-      onStatus({ text: "Skill saved", type: "success" });
+      onStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} saved`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
       useSettingsStore.getState().triggerCommandRefresh();
     } catch (err) {
-      dlog("config", null, `save skill failed: ${err}`, "ERR");
+      dlog("config", null, `save ${parsed.kind} failed: ${err}`, "ERR");
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [selectedSkill, scope, workingDir, content, onStatus]);
+  }, [selected, isNew, scope, workingDir, content, onStatus]);
 
   const handleCreate = useCallback(async () => {
-    const name = newSkillName.trim().replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
+    const name = newName.trim().replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
     if (!name) return;
-    if (skills.some((s) => s.name === name)) {
-      onStatus({ text: `Skill "${name}" already exists`, type: "error" });
+    if (entries.some((e) => e.name === name && entryKind(e) === newKind)) {
+      onStatus({ text: `${newKind === "skill" ? "Skill" : "Command"} "${name}" already exists`, type: "error" });
       return;
     }
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
-        fileType: `skill:${name}`,
+        fileType: `skill:${newKind}:${name}`,
         content,
       });
-      setNewSkillName("");
-      await loadSkills();
-      setSelectedSkill(name);
+      setNewName("");
+      await loadEntries();
+      setSelected(entryKey(newKind, name));
       setSavedContent(content);
-      onStatus({ text: `Skill "${name}" created`, type: "success" });
+      onStatus({ text: `${newKind === "skill" ? "Skill" : "Command"} "${name}" created`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
       useSettingsStore.getState().triggerCommandRefresh();
     } catch (err) {
-      dlog("config", null, `create skill failed: ${err}`, "ERR");
+      dlog("config", null, `create ${newKind} failed: ${err}`, "ERR");
       onStatus({ text: `Create failed: ${err}`, type: "error" });
     }
-  }, [newSkillName, scope, workingDir, content, skills, loadSkills, onStatus]);
+  }, [newName, newKind, scope, workingDir, content, entries, loadEntries, onStatus]);
 
   const handleDelete = useCallback(async () => {
-    if (!selectedSkill || selectedSkill === "__new__") return;
+    if (!selected || isNew) return;
+    const parsed = parseKey(selected);
+    if (!parsed) return;
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
-        fileType: `skill-delete:${selectedSkill}`,
+        fileType: `skill-delete:${parsed.kind}:${parsed.name}`,
         content: "",
       });
-      setSelectedSkill(null);
-      await loadSkills();
-      onStatus({ text: `Skill "${selectedSkill}" deleted`, type: "success" });
+      setSelected(null);
+      await loadEntries();
+      onStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} "${parsed.name}" deleted`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
       useSettingsStore.getState().triggerCommandRefresh();
     } catch (err) {
-      dlog("config", null, `delete skill failed: ${err}`, "ERR");
+      dlog("config", null, `delete failed: ${err}`, "ERR");
       onStatus({ text: `Delete failed: ${err}`, type: "error" });
     }
-  }, [selectedSkill, scope, workingDir, loadSkills, onStatus]);
+  }, [selected, isNew, scope, workingDir, loadEntries, onStatus]);
 
-  const isNew = selectedSkill === "__new__";
-  const dirty = isNew ? newSkillName.trim() !== "" && content !== "" : content !== savedContent;
+  const dirty = isNew ? newName.trim() !== "" && content !== "" : content !== savedContent;
+
+  // Group entries: commands first, then skills.
+  const grouped = useMemo(() => {
+    const commands = entries.filter((e) => entryKind(e) === "command");
+    const skills = entries.filter((e) => entryKind(e) === "skill");
+    return { commands, skills };
+  }, [entries]);
 
   if (loading) return <div className="config-md-hint">Loading...</div>;
+
+  const renderItem = (entry: AgentFile) => {
+    const kind = entryKind(entry);
+    const key = entryKey(kind, entry.name);
+    const usage = commandUsage[`/${entry.name}`] || 0;
+    return (
+      <button
+        key={key}
+        className={`config-md-editor-item${selected === key ? " active" : ""}`}
+        onClick={() => setSelected(key)}
+        title={kind === "skill" ? "Skill (.claude/skills/)" : "Command (.claude/commands/)"}
+      >
+        <span className={`config-md-editor-kind config-md-editor-kind-${kind}`}>
+          {kind === "skill" ? "skill" : "cmd"}
+        </span>
+        /{entry.name}
+        {usage > 0 && <span className="config-md-editor-usage">{usage}</span>}
+      </button>
+    );
+  };
+
+  const selectedParsed = selected && !isNew ? parseKey(selected) : null;
+  const selectedLabel = selectedParsed
+    ? selectedParsed.kind === "skill"
+      ? `${selectedParsed.name}/SKILL.md`
+      : `${selectedParsed.name}.md`
+    : "";
 
   return (
     <div className="config-md-editor">
       <div className="config-md-editor-list">
-        {skills.map((skill) => {
-          const usage = commandUsage[`/${skill.name}`] || 0;
-          return (
-            <button
-              key={skill.name}
-              className={`config-md-editor-item${selectedSkill === skill.name ? " active" : ""}`}
-              onClick={() => setSelectedSkill(skill.name)}
-            >
-              /{skill.name}
-              {usage > 0 && <span className="config-md-editor-usage">{usage}</span>}
-            </button>
-          );
-        })}
+        {grouped.commands.map(renderItem)}
+        {grouped.skills.map(renderItem)}
         <button
-          className={`config-md-editor-item config-md-editor-new${isNew ? " active" : ""}`}
-          onClick={() => { setSelectedSkill("__new__"); setNewSkillName(""); setContent(""); }}
+          className={`config-md-editor-item config-md-editor-new${selected === NEW_COMMAND ? " active" : ""}`}
+          onClick={() => { setSelected(NEW_COMMAND); setNewName(""); setContent(""); }}
+        >
+          + new command
+        </button>
+        <button
+          className={`config-md-editor-item config-md-editor-new${selected === NEW_SKILL ? " active" : ""}`}
+          onClick={() => { setSelected(NEW_SKILL); setNewName(""); setContent(""); }}
         >
           + new skill
         </button>
@@ -163,9 +225,9 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
           {isNew ? (
             <input
               className="config-input config-md-editor-name-input"
-              value={newSkillName}
-              onChange={(e) => setNewSkillName(e.target.value)}
-              placeholder="skill-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={newKind === "skill" ? "skill-name" : "command-name"}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && dirty) handleCreate();
                 if (e.key === "Escape") e.stopPropagation();
@@ -173,7 +235,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
               autoFocus
             />
           ) : (
-            <span className="config-md-editor-name">/{selectedSkill}.md</span>
+            <span className="config-md-editor-name">/{selectedLabel}</span>
           )}
           <div className="config-md-editor-actions">
             <button
@@ -192,7 +254,11 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
           className="pane-textarea pane-textarea-md"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder={isNew ? "Skill prompt content... (use $ARGUMENTS for user input)" : ""}
+          placeholder={isNew
+            ? newKind === "skill"
+              ? "SKILL.md content... (frontmatter --- name: ... description: ... --- then body)"
+              : "Command prompt content... (use $ARGUMENTS for user input)"
+            : ""}
           spellCheck={false}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === "s") {
