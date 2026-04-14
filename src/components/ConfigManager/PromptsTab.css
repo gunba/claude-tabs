@@ -268,11 +268,6 @@
   border-color: var(--accent);
 }
 
-.prompts-textarea[readonly] {
-  cursor: default;
-  opacity: 0.85;
-}
-
 .prompts-textarea::-webkit-scrollbar { width: 5px; }
 .prompts-textarea::-webkit-scrollbar-track { background: transparent; }
 .prompts-textarea::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
@@ -570,4 +565,5 @@
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+  flex-shrink: 0;
 }

@@ -188,7 +188,7 @@ function RuleCardExpanded({
   );
 }
 
-// [CM-28] PromptsTab splits My Prompts, Observed Prompts, and Rules into separate subtabs; the observed editor is always editable and generates rules (with conflict removal) on demand.
+// [CM-28] PromptsTab splits My Prompts, Observed Prompts, and Rules into separate subtabs; observed pane is a single always-editable textarea with observedBaseline tracking; RulePreview pane replaces it during pending-rules preview.
 const SUB_TABS: { value: "prompts" | "observed" | "rules"; label: string }[] = [
   { value: "prompts", label: "My Prompts" },
   { value: "observed", label: "Observed Prompts" },
@@ -224,6 +224,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
 
   // Observed prompt edit state
   const [observedEditText, setObservedEditText] = useState("");
+  const [observedBaseline, setObservedBaseline] = useState("");
   const [pendingRules, setPendingRules] = useState<GeneratedChangeset | null>(null);
 
   // Collapse expanded rule on tab switch
@@ -248,6 +249,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
     setPendingRules(null);
     if (!selectedObservedPromptId) {
       setObservedEditText("");
+      setObservedBaseline("");
     }
   }, [selectedObservedPromptId]);
 
@@ -277,7 +279,17 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
     return applyRulesToText(rawText, enabledRules);
   }, [systemPromptRules]);
 
-  const observedEdited = !!selectedObservedPromptId && observedEditText !== rulesAppliedText;
+  // Reseed textarea when rules change out from under the user, but only if they haven't typed anything different from the last seeded baseline (and no preview is open).
+  useEffect(() => {
+    if (!selectedObservedPromptId) return;
+    if (pendingRules) return;
+    if (observedEditText !== observedBaseline) return;
+    if (rulesAppliedText === observedBaseline) return;
+    setObservedEditText(rulesAppliedText);
+    setObservedBaseline(rulesAppliedText);
+  }, [rulesAppliedText, selectedObservedPromptId, pendingRules, observedEditText, observedBaseline]);
+
+  const observedEdited = !!selectedObservedPromptId && observedEditText !== observedBaseline;
 
   // ── Saved prompt handlers ──────────────────────────────────────────
 
@@ -360,10 +372,11 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
     const parts: string[] = [];
     if (addCount > 0) parts.push(`${addCount} rule${addCount !== 1 ? "s" : ""} added`);
     if (delCount > 0) parts.push(`${delCount} rule${delCount !== 1 ? "s" : ""} removed`);
+    setObservedBaseline(observedEditText);
     setPendingRules(null);
     onStatus({ type: "success", text: parts.join(", ") });
     setTimeout(() => onStatus(null), 3000);
-  }, [pendingRules, onStatus]);
+  }, [pendingRules, observedEditText, onStatus]);
 
   // Ctrl+S for saved prompts only
   useEffect(() => {
@@ -472,7 +485,9 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
                     onClick={() => {
                       if (p.id === selectedObservedPromptId) return;
                       setSelectedObservedPromptId(p.id);
-                      setObservedEditText(computeAppliedText(p.text));
+                      const applied = computeAppliedText(p.text);
+                      setObservedEditText(applied);
+                      setObservedBaseline(applied);
                       setPendingRules(null);
                     }}
                   >
