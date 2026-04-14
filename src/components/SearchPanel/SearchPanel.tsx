@@ -277,7 +277,6 @@ export function SearchPanel() {
   return (
     <div className="search-panel" onKeyDown={handleKeyDown}>
       <div className="search-panel-header">
-        <span className="search-panel-title">Search</span>
         {results.length > 0 && (
           <span className="search-panel-count">
             {results.length >= RESULT_LIMIT ? `${RESULT_LIMIT}+` : results.length}

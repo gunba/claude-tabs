@@ -275,11 +275,6 @@ export function useTapEventProcessor(
                 isExternal,
               });
             }
-
-            // Expand watcher for external paths
-            if (isExternal) {
-              invoke("add_watch_path", { sessionId: sid, path: filePath }).catch(() => {});
-            }
           }
 
           // Grep — track searched file or folder
@@ -554,11 +549,32 @@ export function useTapEventProcessor(
 
     const unsub = tapEventBus.subscribe(sessionId, handleEvent);
 
-    // End activity turns on settled-idle (accounts for subagent completion + hysteresis)
+    // End activity turns on settled-idle (accounts for subagent completion + hysteresis).
+    // Also snapshot git-reported uncommitted changes: any tracked-file change TAP didn't
+    // explicitly report (bash side-effects, external edits) lands in the activity store.
+    // Silent no-op outside a git repo.
     const unsubSettled = settledStateManager.subscribe(
       (settledSid, kind) => {
         if (settledSid === sessionId && kind === "idle") {
-          useActivityStore.getState().endTurn(sessionId);
+          const activityStore = useActivityStore.getState();
+          activityStore.endTurn(sessionId);
+          const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
+          const cwd = session?.config.workingDir;
+          if (cwd) {
+            invoke<Array<{ path: string; kind: "created" | "modified" | "deleted" }>>(
+              "git_list_changes",
+              { workingDir: cwd },
+            ).then((changes) => {
+              for (const change of changes) {
+                activityStore.addFileActivity(
+                  sessionId,
+                  canonicalizePath(change.path),
+                  change.kind,
+                  { isExternal: true },
+                );
+              }
+            }).catch(() => {});
+          }
         }
       },
       () => {},

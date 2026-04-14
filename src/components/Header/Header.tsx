@@ -3,13 +3,26 @@ import { useSettingsStore } from "../../store/settings";
 import { useVersionStore } from "../../store/version";
 import "./Header.css";
 
-// [VA-02] Header (Linux custom titlebar): app version + CLI version display with window controls
+// [VA-02] Header (Linux custom titlebar): app version + CLI version display with window controls.
+// data-tauri-drag-region alone is unreliable on Wayland (KDE/GNOME); an explicit startDragging()
+// on left-mousedown outside the controls cluster is the workaround.
 export function Header() {
   const appVersion = useVersionStore((s) => s.appVersion);
   const cliVersion = useSettingsStore((s) => s.cliVersion);
 
+  const handleMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest(".app-header-controls")) return;
+    getCurrentWindow().startDragging().catch(() => {});
+  };
+
   return (
-    <header className="app-header" data-tauri-drag-region>
+    <header
+      className="app-header"
+      data-tauri-drag-region
+      onMouseDown={handleMouseDown}
+    >
       <div className="app-header-title">
         <span className="app-header-name">
           Claude Tabs{appVersion ? ` v${appVersion}` : ""}
@@ -21,7 +34,7 @@ export function Header() {
           </>
         )}
       </div>
-      <div className="app-header-controls" data-tauri-drag-region="false">
+      <div className="app-header-controls">
         <button
           type="button"
           className="app-header-btn"

@@ -12,7 +12,6 @@ import { traceSync } from "../lib/perfTrace";
 
 const MAX_TURNS = 50;
 const MAX_ALL_FILES = 500;
-const CONFIRM_WINDOW_MS = 2000;
 
 interface ActivityState {
   sessions: Record<string, SessionActivity>;
@@ -32,7 +31,6 @@ interface ActivityState {
       toolInputData?: ToolInputDiffData | null;
     },
   ) => void;
-  confirmFileChange: (sessionId: string, path: string) => void;
   markPermissionDenied: (sessionId: string, path: string) => void;
   markUserMessage: (sessionId: string) => void;
   addContextFile: (sessionId: string, entry: ContextFileEntry) => void;
@@ -149,7 +147,7 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         agentId: opts?.agentId ?? null,
         toolName: opts?.toolName ?? null,
         timestamp: Date.now(),
-        confirmed: kind === "read" || kind === "searched",
+        confirmed: true,
         isExternal: opts?.isExternal ?? false,
         permissionDenied: false,
         permissionMode: opts?.permissionMode ?? null,
@@ -203,35 +201,6 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         agentId: opts?.agentId ?? null,
         isExternal: opts?.isExternal ?? false,
       },
-    })),
-
-  confirmFileChange: (sessionId, path) =>
-    set((state) => traceSync("activity.confirm_file_change", () => {
-      const sessions = { ...state.sessions };
-      const activity = sessions[sessionId];
-      if (!activity) return state;
-      const turn = currentTurn(activity);
-      if (!turn) return state;
-
-      // Find unconfirmed entry in current turn within the confirmation window
-      const now = Date.now();
-      const idx = turn.files.findIndex(
-        (f) =>
-          f.path === path &&
-          !f.confirmed &&
-          now - f.timestamp < CONFIRM_WINDOW_MS,
-      );
-      if (idx >= 0) {
-        turn.files[idx] = { ...turn.files[idx], confirmed: true };
-      }
-      sessions[sessionId] = { ...activity };
-      return { sessions };
-    }, {
-      module: "activity",
-      sessionId,
-      event: "activity.confirm_file_change",
-      warnAboveMs: 8,
-      data: { path },
     })),
 
   markPermissionDenied: (sessionId, path) =>

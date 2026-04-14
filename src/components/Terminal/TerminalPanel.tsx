@@ -11,7 +11,6 @@ import { useTapPipeline } from "../../hooks/useTapPipeline";
 import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
 import { registerPtyWriter, unregisterPtyWriter, registerPtyKill, unregisterPtyKill, registerPtyHandleId, unregisterPtyHandleId, writeToPty } from "../../lib/ptyRegistry";
 import { registerBufferReader, unregisterBufferReader, registerTerminal, unregisterTerminal } from "../../lib/terminalRegistry";
-import { useFileWatcher } from "../../hooks/useFileWatcher";
 import { useSettingsStore } from "../../store/settings";
 import { useRuntimeStore } from "../../store/runtime";
 import { normalizePath } from "../../lib/paths";
@@ -132,12 +131,6 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     session.state !== "dead" ? session.id : null
   );
 
-  // Filesystem watcher: kernel-level file change detection for activity panel
-  useFileWatcher(
-    session.state !== "dead" ? session.id : null,
-    session.config.workingDir ?? null,
-    session.state,
-  );
 
   // Register inspector disconnect/reconnect callbacks for external debugger support
   useEffect(() => {

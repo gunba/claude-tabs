@@ -1,6 +1,5 @@
 mod commands;
 pub mod discovery;
-mod file_watcher;
 mod observability;
 mod path_utils;
 mod proxy;
@@ -13,7 +12,6 @@ use std::sync::{Arc, Mutex};
 
 use tauri::Manager;
 
-use file_watcher::FileWatcherState;
 use observability::record_backend_event;
 use proxy::ProxyState;
 use session::SessionManager;
@@ -172,7 +170,6 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(TapServerState::new())))
         .manage(pty::PtyState::default())
         .manage(ProxyState::new())
-        .manage(FileWatcherState::new())
         .invoke_handler(tauri::generate_handler![
             commands::create_session,
             commands::close_session,
@@ -227,9 +224,7 @@ pub fn run() {
             commands::resolve_api_host,
             commands::dir_exists,
             commands::git_repo_check,
-            commands::start_file_watcher,
-            commands::stop_file_watcher,
-            commands::add_watch_path,
+            commands::git_list_changes,
             commands::compute_file_diff,
             commands::read_file_for_snapshot,
             commands::get_build_info,
@@ -290,9 +285,6 @@ pub fn run() {
                     }
                     s.port = None;
                 }
-                // Stop all file watchers
-                let fw_state = app_handle.state::<FileWatcherState>();
-                fw_state.stop_all();
                 // Stop all TCP tap server threads
                 let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
                 if let Ok(mut s) = tap_state.lock() {
