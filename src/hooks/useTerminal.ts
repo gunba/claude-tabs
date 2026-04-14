@@ -2,6 +2,9 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import { getTerminalTheme } from "../lib/theme";
 import { dlog } from "../lib/debugLog";
@@ -64,6 +67,9 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
   const [termGeneration, setTermGeneration] = useState(0);
 
   const webglRef = useRef<WebglAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
+  const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
 
   // [DF-10] FitAddon.fit() is called bare (no try/catch) so resize errors propagate to the caller.
   const fit = useCallback(() => {
@@ -129,6 +135,52 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
       // WebGL not available — canvas fallback is automatic
       dlog("terminal", sessionIdRef.current, "webgl renderer unavailable; using canvas fallback", "DEBUG", {
         event: "terminal.webgl_unavailable",
+        data: {},
+      });
+    }
+
+    try {
+      const search = new SearchAddon();
+      term.loadAddon(search);
+      searchAddonRef.current = search;
+      dlog("terminal", sessionIdRef.current, "search addon enabled", "DEBUG", {
+        event: "terminal.search_addon_enabled",
+        data: {},
+      });
+    } catch {
+      dlog("terminal", sessionIdRef.current, "search addon unavailable", "DEBUG", {
+        event: "terminal.search_addon_unavailable",
+        data: {},
+      });
+    }
+
+    try {
+      const webLinks = new WebLinksAddon();
+      term.loadAddon(webLinks);
+      webLinksAddonRef.current = webLinks;
+      dlog("terminal", sessionIdRef.current, "web-links addon enabled", "DEBUG", {
+        event: "terminal.web_links_enabled",
+        data: {},
+      });
+    } catch {
+      dlog("terminal", sessionIdRef.current, "web-links addon unavailable", "DEBUG", {
+        event: "terminal.web_links_unavailable",
+        data: {},
+      });
+    }
+
+    try {
+      const unicode11 = new Unicode11Addon();
+      term.loadAddon(unicode11);
+      term.unicode.activeVersion = "11";
+      unicode11AddonRef.current = unicode11;
+      dlog("terminal", sessionIdRef.current, "unicode11 addon enabled", "DEBUG", {
+        event: "terminal.unicode11_enabled",
+        data: {},
+      });
+    } catch {
+      dlog("terminal", sessionIdRef.current, "unicode11 addon unavailable", "DEBUG", {
+        event: "terminal.unicode11_unavailable",
         data: {},
       });
     }
@@ -397,6 +449,12 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
       lifecycleDisposables.forEach((d) => d.dispose());
       webglRef.current?.dispose();
       webglRef.current = null;
+      searchAddonRef.current?.dispose();
+      searchAddonRef.current = null;
+      webLinksAddonRef.current?.dispose();
+      webLinksAddonRef.current = null;
+      unicode11AddonRef.current?.dispose();
+      unicode11AddonRef.current = null;
       term?.dispose();
       if (termRef.current === term) termRef.current = null;
       if (fitAddon && fitRef.current === fitAddon) fitRef.current = null;
