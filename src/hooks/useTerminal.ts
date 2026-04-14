@@ -61,29 +61,26 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
 
   const webglRef = useRef<WebglAddon | null>(null);
 
+  // [DF-10] FitAddon.fit() is called bare (no try/catch) so resize errors propagate to the caller.
   const fit = useCallback(() => {
     return traceSync("terminal.fit_apply", () => {
       if (!attachedRef.current) return false;
-      try {
-        const f = fitRef.current;
-        const term = termRef.current;
-        if (!f || !term) return false;
-        const before = { cols: term.cols, rows: term.rows };
-        f.fit();
-        const after = { cols: term.cols, rows: term.rows };
-        dlog("terminal", sessionIdRef.current, "terminal fit", "DEBUG", {
-          event: "terminal.fit",
-          data: {
-            before,
-            after,
-          },
-        });
-        const isReady = after.cols > 0 && after.rows > 0;
-        setReady(isReady);
-        return isReady;
-      } catch {
-        return false;
-      }
+      const f = fitRef.current;
+      const term = termRef.current;
+      if (!f || !term) return false;
+      const before = { cols: term.cols, rows: term.rows };
+      f.fit();
+      const after = { cols: term.cols, rows: term.rows };
+      dlog("terminal", sessionIdRef.current, "terminal fit", "DEBUG", {
+        event: "terminal.fit",
+        data: {
+          before,
+          after,
+        },
+      });
+      const isReady = after.cols > 0 && after.rows > 0;
+      setReady(isReady);
+      return isReady;
     }, {
       module: "terminal",
       sessionId: sessionIdRef.current,

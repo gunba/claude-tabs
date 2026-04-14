@@ -5,7 +5,7 @@
 /// calling thread is replicated, leaving Tokio workers dead with inconsistent
 /// mutex/allocator state.
 use std::io::{self, Read, Write};
-use std::os::fd::{FromRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -74,9 +74,25 @@ impl UnixPty {
         }
     }
 
-    /// Kill the child process.
+    // [PT-20] Process-group kill: SIGKILL to -pgid tears down the whole group;
+    // ESRCH is Ok since the goal (no live processes) is already met.
+    /// Kill the entire process group of the child.
+    /// pre_exec runs setsid(), so child.id() is the session/process-group id.
+    /// Targeting the negative PID cleans up grandchildren (tools spawned by the
+    /// CLI) that inherited the session — ConPTY tears down its tree on the
+    /// Windows side; this matches that semantic. ESRCH (whole group already
+    /// gone) is treated as success since the goal — no live processes — is met.
     pub fn kill(&mut self) -> Result<(), String> {
-        self.child.kill().map_err(|e| e.to_string())
+        let pgid = self.child.id() as i32;
+        let ret = unsafe { libc::kill(-pgid, libc::SIGKILL) };
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::ESRCH) {
+                return Ok(());
+            }
+            return Err(format!("kill SIGKILL pgid={} failed: {}", pgid, err));
+        }
+        Ok(())
     }
 
     /// Wait for the child to exit (blocking). Returns exit code.
@@ -99,8 +115,10 @@ impl Drop for UnixPty {
     }
 }
 
-/// Create an openpty pair, returning (master_fd, slave_fd).
-fn openpty_pair(cols: u16, rows: u16) -> Result<(RawFd, RawFd), String> {
+// [PT-21] OwnedFd RAII: openpty_pair returns OwnedFd pair; spawn() wraps each dup in OwnedFd;
+// master transferred to UnixPty only after cmd.spawn() succeeds.
+/// Create an openpty pair, returning RAII-owned fds that close on drop.
+fn openpty_pair(cols: u16, rows: u16) -> Result<(OwnedFd, OwnedFd), String> {
     let mut master: RawFd = -1;
     let mut slave: RawFd = -1;
     let ws = libc::winsize {
@@ -119,10 +137,12 @@ fn openpty_pair(cols: u16, rows: u16) -> Result<(RawFd, RawFd), String> {
         )
     };
     if ret < 0 {
-        Err(format!("openpty failed: {}", io::Error::last_os_error()))
-    } else {
-        Ok((master, slave))
+        return Err(format!("openpty failed: {}", io::Error::last_os_error()));
     }
+    // SAFETY: openpty returned success; fds are valid and exclusively owned.
+    let master = unsafe { OwnedFd::from_raw_fd(master) };
+    let slave = unsafe { OwnedFd::from_raw_fd(slave) };
+    Ok((master, slave))
 }
 
 /// Result of a successful PTY spawn.
@@ -142,45 +162,51 @@ pub fn spawn(
     cwd: Option<&str>,
     env: &std::collections::BTreeMap<String, String>,
 ) -> Result<SpawnResult, String> {
-    // 1. Create PTY pair
+    // RAII pair: any early return closes both fds via OwnedFd Drop.
     let (master, slave) = openpty_pair(cols, rows)?;
 
-    // 2. Dup slave fd for stdout/stderr -- from_raw_fd takes ownership,
-    //    so each of stdin/stdout/stderr needs its own fd.
-    let slave_stdout = unsafe { libc::dup(slave) };
-    let slave_stderr = unsafe { libc::dup(slave) };
-    if slave_stdout < 0 || slave_stderr < 0 {
-        unsafe {
-            libc::close(slave);
-            libc::close(master);
-            if slave_stdout >= 0 {
-                libc::close(slave_stdout);
-            }
-            if slave_stderr >= 0 {
-                libc::close(slave_stderr);
-            }
-        }
+    // Dup slave for stdout/stderr — Stdio::from_raw_fd consumes one fd each,
+    // so stdin/stdout/stderr need three distinct fds. Wrapping each dup in
+    // OwnedFd ensures partial-success on the second dup still cleans up the
+    // first.
+    let slave_stdout_raw = unsafe { libc::dup(slave.as_raw_fd()) };
+    if slave_stdout_raw < 0 {
         return Err(format!(
-            "dup slave fd failed: {}",
+            "dup slave fd (stdout) failed: {}",
             io::Error::last_os_error()
         ));
     }
+    let slave_stdout = unsafe { OwnedFd::from_raw_fd(slave_stdout_raw) };
+    let slave_stderr_raw = unsafe { libc::dup(slave.as_raw_fd()) };
+    if slave_stderr_raw < 0 {
+        return Err(format!(
+            "dup slave fd (stderr) failed: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    let slave_stderr = unsafe { OwnedFd::from_raw_fd(slave_stderr_raw) };
 
-    // 3. Spawn child using Command + pre_exec (safe in multi-threaded process)
+    // Spawn child using Command + pre_exec (safe in multi-threaded process).
+    // If cmd.spawn() fails, the Stdio objects drop and close the parent's
+    // copies of the slave fds — no leak.
     let child = unsafe {
         let mut cmd = Command::new(file);
         cmd.args(args);
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
         }
+        // [PT-19] TERM/COLORTERM defaults injected before caller env so caller wins on conflict.
+        // Default to a color-capable terminal type for color-aware CLIs.
+        // Caller env (frontend) wins because it runs after.
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
         for (k, v) in env {
             cmd.env(k, v);
         }
 
-        // Each Stdio::from_raw_fd takes ownership of a unique fd
-        cmd.stdin(Stdio::from_raw_fd(slave));
-        cmd.stdout(Stdio::from_raw_fd(slave_stdout));
-        cmd.stderr(Stdio::from_raw_fd(slave_stderr));
+        cmd.stdin(Stdio::from_raw_fd(slave.into_raw_fd()));
+        cmd.stdout(Stdio::from_raw_fd(slave_stdout.into_raw_fd()));
+        cmd.stderr(Stdio::from_raw_fd(slave_stderr.into_raw_fd()));
 
         cmd.pre_exec(move || {
             // Create new session and set controlling terminal
@@ -195,16 +221,17 @@ pub fn spawn(
 
         cmd.spawn().map_err(|e| e.to_string())?
     };
-    // Command::spawn transferred ownership of all three slave fds via from_raw_fd.
-    // They are closed after the child's dup2 calls.
 
     let pid = child.id();
 
-    // 4. Create writer (shares master fd -- NOT owned, UnixPty owns it)
-    let writer = FdWriter(master);
+    // Transfer master ownership into UnixPty's manual-Drop slot. FdWriter and
+    // FdReader carry copies of the int but do not own — UnixPty.Drop is sole
+    // closer to keep the existing single-owner pattern.
+    let master_fd = master.into_raw_fd();
+    let writer = FdWriter(master_fd);
 
     // [PT-15] Background reader thread: OS thread reads PTY fd (8 KiB) into sync_channel(64)
-    let reader_fd = master;
+    let reader_fd = master_fd;
     let (output_tx, output_rx) = mpsc::sync_channel::<Vec<u8>>(64);
     std::thread::spawn(move || {
         let mut reader = FdReader(reader_fd);
@@ -217,19 +244,15 @@ pub fn spawn(
                         break;
                     }
                 }
-                Err(e) => {
-                    // EIO is expected when child exits (master read after slave close)
-                    if e.raw_os_error() == Some(libc::EIO) {
-                        break;
-                    }
-                    break;
-                }
+                // EIO on master read is the normal EOF signal once the slave
+                // end closes; any other read error also terminates the reader.
+                Err(_) => break,
             }
         }
     });
 
     let pty = UnixPty {
-        master_fd: master,
+        master_fd,
         child,
     };
 

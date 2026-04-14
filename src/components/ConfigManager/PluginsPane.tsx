@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { formatTokenCount } from "../../lib/claude";
 import type { StatusMessage } from "../../lib/settingsSchema";
+import { Dropdown } from "../Dropdown/Dropdown";
 import "./PluginsPane.css";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -219,15 +220,17 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
       {/* Scope filter */}
       {!error && (
         <div className="plugins-marketplace-controls">
-          <select
+          <Dropdown
             className="config-select"
             value={scopeFilter}
-            onChange={(e) => setScopeFilter(e.target.value as "all" | "user" | "project")}
-          >
-            <option value="all">All scopes</option>
-            <option value="user">User scope</option>
-            <option value="project">Project scope</option>
-          </select>
+            onChange={(v) => setScopeFilter(v as "all" | "user" | "project")}
+            ariaLabel="Plugin scope"
+            options={[
+              { value: "all", label: "All scopes" },
+              { value: "user", label: "User scope" },
+              { value: "project", label: "Project scope" },
+            ]}
+          />
         </div>
       )}
 
@@ -311,14 +314,16 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
               onChange={(e) => setSearchFilter(e.target.value)}
               placeholder="Filter plugins..."
             />
-            <select
+            <Dropdown
               className="config-select"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortBy)}
-            >
-              <option value="downloads">Most popular</option>
-              <option value="name">A-Z</option>
-            </select>
+              onChange={(v) => setSortBy(v as SortBy)}
+              ariaLabel="Sort plugins by"
+              options={[
+                { value: "downloads", label: "Most popular" },
+                { value: "name", label: "A-Z" },
+              ]}
+            />
           </div>
 
           {filteredAvailable.length > 0 ? (

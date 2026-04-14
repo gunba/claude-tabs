@@ -7,6 +7,7 @@ import type { ModelProvider, ModelMapping, ProviderConfig, ProviderModel } from 
 import { DEFAULT_CLAUDE_MAPPINGS } from "../../types/session";
 import { parseSocks5Url, buildSocks5Url } from "../../lib/socks5Url";
 import type { Socks5Parts } from "../../lib/socks5Url";
+import { Dropdown } from "../Dropdown/Dropdown";
 import "./ProvidersPane.css";
 
 interface ProvidersPaneProps {
@@ -421,20 +422,33 @@ function Socks5Fieldset({ url, onCommit }: { url: string | null | undefined; onC
 
   const update = (patch: Partial<Socks5Parts>) => setFields((f) => ({ ...f, ...patch }));
 
-  const commit = () => {
-    const assembled = buildSocks5Url(fields);
+  const commitFields = (currentFields: Socks5Parts) => {
+    const assembled = buildSocks5Url(currentFields);
     // Only propagate if the value actually changed
     if (assembled !== (url ?? null)) onCommit(assembled);
   };
+
+  const commit = () => commitFields(fields);
 
   return (
     <div className="socks5-fieldset">
       <div className="socks5-row">
         <span className="socks5-label">SOCKS5</span>
-        <select value={fields.protocol} onChange={(e) => { update({ protocol: e.target.value as Socks5Parts["protocol"] }); }} onBlur={commit}>
-          <option value="socks5h">socks5h://</option>
-          <option value="socks5">socks5://</option>
-        </select>
+        <Dropdown
+          className="config-select"
+          value={fields.protocol}
+          onChange={(v) => {
+            const protocol = v as Socks5Parts["protocol"];
+            const next = { ...fields, protocol };
+            setFields(next);
+            commitFields(next);
+          }}
+          ariaLabel="SOCKS5 protocol"
+          options={[
+            { value: "socks5h", label: "socks5h://" },
+            { value: "socks5", label: "socks5://" },
+          ]}
+        />
         <input type="text" value={fields.host} onChange={(e) => update({ host: e.target.value })} onBlur={commit} placeholder="host" />
         <span className="socks5-colon">:</span>
         <input type="text" className="socks5-port" value={fields.port} onChange={(e) => update({ port: e.target.value })} onBlur={commit} placeholder="port" inputMode="numeric" />

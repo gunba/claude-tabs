@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Dropdown } from "../Dropdown/Dropdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import "./McpPane.css";
 
@@ -292,15 +293,17 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
 
           <div className="mcp-form-row">
             <span className="mcp-form-label">Transport</span>
-            <select
+            <Dropdown
               className="mcp-form-select"
               value={form.transport}
-              onChange={(e) => setForm((f) => ({ ...f, transport: e.target.value as Transport }))}
-            >
-              <option value="stdio">stdio</option>
-              <option value="sse">sse</option>
-              <option value="http">http</option>
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, transport: v as Transport }))}
+              ariaLabel="MCP transport"
+              options={[
+                { value: "stdio", label: "stdio" },
+                { value: "sse", label: "sse" },
+                { value: "http", label: "http" },
+              ]}
+            />
           </div>
 
           {form.transport === "stdio" && (

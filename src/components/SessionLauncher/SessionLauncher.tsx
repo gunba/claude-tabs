@@ -15,6 +15,7 @@ import {
 } from "../../types/session";
 import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, IconSkull, IconBulldozer, IconDocument } from "../Icons/Icons";
 import { PillGroup } from "../PillGroup/PillGroup";
+import { Dropdown } from "../Dropdown/Dropdown";
 import "./SessionLauncher.css";
 
 // ── Option definitions ──────────────────────────────────────────────
@@ -507,59 +508,48 @@ export function SessionLauncher() {
         <div className={`launcher-pills-section${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
           <div className="launcher-pills-row">
             {showProviderSelector && (
-              <select
+              <Dropdown
                 className="launcher-select"
                 value={config.providerId ?? providerConfig.defaultProviderId}
-                onChange={(e) => handleProviderChange(e.target.value || null)}
+                onChange={(v) => handleProviderChange(v || null)}
                 disabled={isNonSessionCommand}
-              >
-                {providerConfig.providers.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+                ariaLabel="Provider"
+                options={providerConfig.providers.map((p) => ({ value: p.id, label: p.name }))}
+              />
             )}
             <span className="launcher-pill-icon" title="Model"><IconModelDiamond size={13} /></span>
-            <select
+            <Dropdown
               className="launcher-select"
               value={config.model ?? ""}
-              onChange={(e) => handleModelSelect(e.target.value)}
+              onChange={handleModelSelect}
               disabled={isNonSessionCommand}
-            >
-              <option value="">default</option>
-              {modelOptions.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+              ariaLabel="Model"
+              options={[{ value: "", label: "default" }, ...modelOptions.map((m) => ({ value: m.value, label: m.label }))]}
+            />
             <span className="launcher-pill-icon" title="Effort"><IconLightning size={13} /></span>
-            <select
+            <Dropdown
               className="launcher-select"
               value={config.effort ?? ""}
-              onChange={(e) => handleEffortSelect(e.target.value)}
+              onChange={handleEffortSelect}
               disabled={isNonSessionCommand}
-            >
-              <option value="">default</option>
-              {effortOptions.map((e) => (
-                <option key={e.value} value={e.value}>{e.label}</option>
-              ))}
-            </select>
+              ariaLabel="Effort"
+              options={[{ value: "", label: "default" }, ...effortOptions.map((e) => ({ value: e.value, label: e.label }))]}
+            />
 
             <div className="launcher-prompt-group">
               {savedPrompts.length > 0 ? (
                 <>
                   <span className="launcher-pill-icon" title="System Prompt"><IconDocument size={13} /></span>
                   <div className="launcher-prompt-slot">
-                    <select
+                    <Dropdown
                       className="launcher-select launcher-prompt-select"
                       value={selectedPromptId}
-                      onChange={(e) => setSelectedPromptId(e.target.value)}
+                      onChange={setSelectedPromptId}
                       disabled={isNonSessionCommand}
                       title="System prompt"
-                    >
-                      <option value="">Default Prompt</option>
-                      {savedPrompts.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
+                      ariaLabel="System Prompt"
+                      options={[{ value: "", label: "Default Prompt" }, ...savedPrompts.map((p) => ({ value: p.id, label: p.name }))]}
+                    />
                     {selectedPromptId && (
                       <button
                         className={`launcher-toggle-pill launcher-prompt-mode${promptMode === "append" ? " launcher-toggle-pill-on" : ""}`}

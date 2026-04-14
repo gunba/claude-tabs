@@ -13,6 +13,7 @@ import { AgentEditor } from "./AgentEditor";
 import { PromptsTab } from "./PromptsTab";
 import { SkillsEditor } from "./SkillsEditor";
 import { ProvidersPane } from "./ProvidersPane";
+import { Dropdown } from "../Dropdown/Dropdown";
 import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconLightning, IconBraces, IconClose, IconCircleFilled, IconServer } from "../Icons/Icons";
 import { RecordingPane } from "./RecordingPane";
 import { parseWorktreePath } from "../../lib/paths";
@@ -123,15 +124,13 @@ export function ConfigManager() {
         <div className="config-header-right">
           {/* Project dir selector — only when multiple dirs exist */}
           {projectDirs.length > 1 && (
-            <select
+            <Dropdown
               className="config-select config-project-select"
               value={projectDir}
-              onChange={(e) => setProjectDir(e.target.value)}
-            >
-              {projectDirs.map((dir) => (
-                <option key={dir} value={dir}>{dir}</option>
-              ))}
-            </select>
+              onChange={setProjectDir}
+              ariaLabel="Project directory"
+              options={projectDirs.map((dir) => ({ value: dir, label: dir }))}
+            />
           )}
           <button className="config-close" onClick={onClose} title="Close (Esc)">
             <IconClose size={14} />

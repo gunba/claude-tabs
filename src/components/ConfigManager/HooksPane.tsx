@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../../store/sessions";
+import { Dropdown } from "../Dropdown/Dropdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import "./HooksPane.css";
 
@@ -248,16 +249,16 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
 
           <div className="hooks-pane-form-row">
             <span className="hooks-pane-form-label">Event</span>
-            <select
+            <Dropdown
               className="hooks-pane-form-select"
               value={isCustomEvent ? "__custom__" : form.eventName}
-              onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value === "__custom__" ? "" : e.target.value }))}
-            >
-              {HOOK_EVENTS.map((ev) => (
-                <option key={ev.name} value={ev.name}>{ev.name}</option>
-              ))}
-              <option value="__custom__">Custom...</option>
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, eventName: v === "__custom__" ? "" : v }))}
+              ariaLabel="Hook event"
+              options={[
+                ...HOOK_EVENTS.map((ev) => ({ value: ev.name, label: ev.name })),
+                { value: "__custom__", label: "Custom..." },
+              ]}
+            />
             {isCustomEvent && (
               <input
                 className="hooks-pane-form-input"
@@ -294,13 +295,13 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
 
           <div className="hooks-pane-form-row">
             <span className="hooks-pane-form-label">Type</span>
-            <select
+            <Dropdown
               className="hooks-pane-form-select"
               value={form.type}
-              onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-            >
-              {HOOK_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, type: v }))}
+              ariaLabel="Hook type"
+              options={HOOK_TYPES.map((t) => ({ value: t, label: t }))}
+            />
           </div>
 
           <div className="hooks-pane-form-row">
