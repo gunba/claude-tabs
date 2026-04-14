@@ -54,26 +54,28 @@ pub struct UnixPty {
     child: Child,
 }
 
-impl UnixPty {
-    /// Resize the PTY.
-    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
-        let ws = libc::winsize {
-            ws_row: rows,
-            ws_col: cols,
-            ws_xpixel: 0,
-            ws_ypixel: 0,
-        };
-        let ret = unsafe { libc::ioctl(self.master_fd, libc::TIOCSWINSZ, &ws) };
-        if ret < 0 {
-            Err(format!(
-                "ioctl TIOCSWINSZ failed: {}",
-                io::Error::last_os_error()
-            ))
-        } else {
-            Ok(())
-        }
+/// Resize the PTY by writing TIOCSWINSZ directly to the master fd.
+/// Standalone so callers don't need to hold the UnixPty mutex (which
+/// pty_exitstatus holds for the whole session lifetime via wait()).
+pub fn resize_fd(master_fd: RawFd, cols: u16, rows: u16) -> Result<(), String> {
+    let ws = libc::winsize {
+        ws_row: rows,
+        ws_col: cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    let ret = unsafe { libc::ioctl(master_fd, libc::TIOCSWINSZ, &ws) };
+    if ret < 0 {
+        Err(format!(
+            "ioctl TIOCSWINSZ failed: {}",
+            io::Error::last_os_error()
+        ))
+    } else {
+        Ok(())
     }
+}
 
+impl UnixPty {
     // [PT-20] Process-group kill: SIGKILL to -pgid tears down the whole group;
     // ESRCH is Ok since the goal (no live processes) is already met.
     /// Kill the entire process group of the child.
@@ -151,6 +153,9 @@ pub struct SpawnResult {
     pub writer: FdWriter,
     pub output_rx: mpsc::Receiver<Vec<u8>>,
     pub process_id: u32,
+    /// Duplicate of the master fd for lock-free ioctl (resize) paths.
+    /// UnixPty remains the sole owner that closes on Drop.
+    pub master_fd: RawFd,
 }
 
 /// Spawn a process attached to a new PTY.
@@ -279,5 +284,6 @@ pub fn spawn(
         writer,
         output_rx,
         process_id: pid,
+        master_fd,
     })
 }

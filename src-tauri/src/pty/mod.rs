@@ -35,6 +35,10 @@ struct Session {
     conpty: conpty::ConPtyHandle,
     #[cfg(unix)]
     pty: std::sync::Mutex<unix::UnixPty>,
+    /// Duplicate of the master fd on Unix for lock-free resize. UnixPty
+    /// owns the fd lifecycle; this copy must not be closed here.
+    #[cfg(unix)]
+    master_fd: std::os::fd::RawFd,
 
     writer: Mutex<Box<dyn std::io::Write + Send>>,
     output_rx: Mutex<std::sync::mpsc::Receiver<Vec<u8>>>,
@@ -82,11 +86,16 @@ pub async fn pty_spawn(
 
     let handler = state.session_id.fetch_add(1, Ordering::Relaxed);
 
+    #[cfg(unix)]
+    let master_fd = result.master_fd;
+
     let session = Arc::new(Session {
         #[cfg(windows)]
         conpty: result.handle,
         #[cfg(unix)]
         pty: std::sync::Mutex::new(result.pty),
+        #[cfg(unix)]
+        master_fd,
 
         writer: Mutex::new(Box::new(result.writer)),
         output_rx: Mutex::new(result.output_rx),
@@ -188,8 +197,11 @@ pub async fn pty_resize(
     #[cfg(windows)]
     session.conpty.resize(cols, rows)?;
 
+    // [PT-24] Lock-free on Unix: pty_exitstatus holds session.pty's std::sync::Mutex
+    // for the whole session lifetime via child.wait(), so resize cannot take that
+    // lock. The master fd is safe to ioctl concurrently.
     #[cfg(unix)]
-    session.pty.lock().unwrap().resize(cols, rows)?;
+    unix::resize_fd(session.master_fd, cols, rows)?;
 
     Ok(())
 }
