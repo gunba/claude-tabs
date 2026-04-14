@@ -198,7 +198,15 @@ pub fn spawn(
         // [PT-19] TERM/COLORTERM defaults injected before caller env so caller wins on conflict.
         // Default to a color-capable terminal type for color-aware CLIs.
         // Caller env (frontend) wins because it runs after.
-        cmd.env("TERM", "xterm-256color");
+        // [PT-23] Advertise as xterm-ghostty so Claude Code's
+        // isSynchronizedOutputSupported() (env-sniff on TERM / TERM_PROGRAM)
+        // returns true and its TUI wraps frames in BSU/ESU. xterm.js 6.0
+        // handles DEC 2026 correctly; without sync output the TUI emits raw
+        // incremental patches and keystrokes queue up one-behind (next input
+        // flushes the previous render). ghostty's terminfo is xterm-compatible
+        // so this is safe across color/mouse/key sequences.
+        cmd.env("TERM", "xterm-ghostty");
+        cmd.env("TERM_PROGRAM", "ghostty");
         cmd.env("COLORTERM", "truecolor");
         for (k, v) in env {
             cmd.env(k, v);
