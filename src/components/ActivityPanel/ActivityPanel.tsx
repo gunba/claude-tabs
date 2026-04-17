@@ -182,6 +182,7 @@ function FileTreeRow({
 /* -- Sticky mascot state -- */
 
 interface StickyMascot {
+  tabId: string;
   path: string;
   state: MascotState;
   isSubagent: boolean;
@@ -426,7 +427,7 @@ export function ActivityPanel() {
 
   // Update floating mascot position: driven by active tool call OR persisted from activity data
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !activeTabId) return;
 
     // Determine target: active tool call takes priority, then last-touched file from activity
     const target = primaryActive
@@ -455,13 +456,14 @@ export function ActivityPanel() {
     const scrollTop = containerRef.current.scrollTop;
 
     setMascot({
+      tabId: activeTabId,
       path: target.path,
       state: target.state,
       isSubagent: false,
       top: rowRect.top - containerRect.top + scrollTop + rowRect.height / 2 - 8,
       left: 8 + (depth - 1) * INDENT_STEP,
     });
-  }, [primaryActive, lastMainAgentFile, depthByPath, rows]);
+  }, [activeTabId, primaryActive, lastMainAgentFile, depthByPath, rows]);
 
   const toggleFolder = useCallback((path: string) => {
     if (activeTabId) activityStore().toggleExpandedPath(activeTabId, path);
@@ -487,8 +489,10 @@ export function ActivityPanel() {
             {rows.map((row) => {
               const agents = activeAgentFiles.get(row.node.fullPath) ?? [];
               // Only show inline mascot for subagent files — the floating mascot handles
-              // main agent files (including the sticky idle state between actions)
-              const isFloatingTarget = mascot?.path === row.node.fullPath;
+              // main agent files (including the sticky idle state between actions).
+              // Ignore mascot state from a previous tab (stale until the effect re-runs).
+              const currentMascot = mascot?.tabId === activeTabId ? mascot : null;
+              const isFloatingTarget = currentMascot?.path === row.node.fullPath;
               const subagentOnly = agents.filter((a) => a.isSubagent);
 
               return (
@@ -506,7 +510,7 @@ export function ActivityPanel() {
                 />
               );
             })}
-            {mascot && (
+            {mascot && mascot.tabId === activeTabId && (
               <div
                 className="activity-mascot-float"
                 style={{ top: mascot.top, left: mascot.left }}
