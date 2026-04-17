@@ -309,6 +309,7 @@ export const ANTHROPIC_EFFORTS: ProviderEffort[] = [
   { value: "low",    label: "low" },
   { value: "medium", label: "medium" },
   { value: "high",   label: "high" },
+  { value: "xhigh",  label: "xhigh" },
   { value: "max",    label: "max" },
 ];
 

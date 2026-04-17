@@ -114,6 +114,7 @@ export function modelColor(model: string | null): string {
 export function effortColor(effort: string | null): string {
   switch (effort) {
     case "high": return "var(--rarity-epic)";
+    case "xhigh":
     case "max": return "var(--rarity-legendary)";
     default: return "var(--text-muted)";
   }

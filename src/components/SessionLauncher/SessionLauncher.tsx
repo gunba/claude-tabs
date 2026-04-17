@@ -206,13 +206,12 @@ export function SessionLauncher() {
     return models.map((m) => ({ value: m.id, label: m.id }));
   }, [selectedProvider, providerConfig.providers]);
 
-  const effortOptions = useMemo(() =>
-    ANTHROPIC_EFFORTS.map((e) => ({
-      value: e.value,
-      label: e.value === "max" && selectedProvider?.kind === "openai_codex" ? "xhigh" : e.label,
-    })),
-    [selectedProvider?.kind]
-  );
+  const effortOptions = useMemo(() => {
+    const isCodex = selectedProvider?.kind === "openai_codex";
+    return ANTHROPIC_EFFORTS
+      .filter((e) => !(isCodex && e.value === "max"))
+      .map((e) => ({ value: e.value, label: e.label }));
+  }, [selectedProvider?.kind]);
 
   const handleModelSelect = useCallback((value: string) => {
     updateConfig("model", value || null);
