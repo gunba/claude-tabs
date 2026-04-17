@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../store/settings";
 import { PillGroup } from "../PillGroup/PillGroup";
 import { IconClose } from "../Icons/Icons";
@@ -221,6 +222,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
   // Rules sub-tab state
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [selectedObservedPromptId, setSelectedObservedPromptId] = useState<string | null>(null);
+  const [ruleMatchCounts, setRuleMatchCounts] = useState<Record<string, number>>({});
 
   // Observed prompt edit state
   const [observedEditText, setObservedEditText] = useState("");
@@ -229,6 +231,19 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
 
   // Collapse expanded rule on tab switch
   useEffect(() => { setExpandedRuleId(null); }, [activeSubTab]);
+
+  useEffect(() => {
+    if (activeSubTab !== "rules") return;
+    let cancelled = false;
+    const fetch = () => {
+      invoke<Record<string, number>>("get_rule_match_counts")
+        .then((counts) => { if (!cancelled) setRuleMatchCounts(counts); })
+        .catch(() => {});
+    };
+    fetch();
+    const id = window.setInterval(fetch, 2000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [activeSubTab]);
 
   // Load saved prompt into editor
   useEffect(() => {
@@ -597,6 +612,17 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
                             {info.displayRight}
                           </span>
                         </div>
+                      );
+                    })()}
+                    {(() => {
+                      const count = ruleMatchCounts[rule.id] ?? 0;
+                      return (
+                        <span
+                          className={`prompts-rule-match-count${count === 0 ? " prompts-rule-match-count-zero" : ""}`}
+                          title={count === 0 ? "This rule has not matched any request this session" : `Matched ${count} request${count === 1 ? "" : "s"} this session`}
+                        >
+                          {count === 0 ? "never fired" : `${count} match${count === 1 ? "" : "es"}`}
+                        </span>
                       );
                     })()}
                     <div className="prompts-rule-card-actions">

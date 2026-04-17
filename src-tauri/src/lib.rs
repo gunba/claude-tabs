@@ -246,6 +246,7 @@ pub fn run() {
             proxy::codex_logout,
             proxy::codex_auth_status,
             proxy::update_system_prompt_rules,
+            proxy::get_rule_match_counts,
             proxy::set_compression_enabled,
             proxy::get_compression_enabled,
             proxy::start_traffic_log,

@@ -34,6 +34,7 @@ pub struct ProxyInner {
     pub codex_auth: codex::auth::CodexAuthState,
     pub codex_client: reqwest::Client,
     pub compression_enabled: bool,
+    pub rule_match_counts: HashMap<String, u64>,
 }
 
 pub struct ProxyState(pub Arc<Mutex<ProxyInner>>);
@@ -59,6 +60,7 @@ impl ProxyState {
             ),
             codex_client: build_plain_client(),
             compression_enabled: false,
+            rule_match_counts: HashMap::new(),
         })))
     }
 }
@@ -471,6 +473,9 @@ pub fn update_system_prompt_rules(
             }
         }
         let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+        let active_ids: std::collections::HashSet<String> =
+            rules.iter().map(|r| r.id.clone()).collect();
+        s.rule_match_counts.retain(|id, _| active_ids.contains(id));
         s.rules = rules;
         Ok(())
     })();
@@ -511,6 +516,16 @@ pub fn update_system_prompt_rules(
             Err(err)
         }
     }
+}
+
+// ── Rule match counts ──────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_rule_match_counts(
+    proxy_state: State<'_, ProxyState>,
+) -> Result<HashMap<String, u64>, String> {
+    let s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+    Ok(s.rule_match_counts.clone())
 }
 
 // ── Compression toggle ─────────────────────────────────────────────
@@ -816,7 +831,15 @@ async fn handle_connection(
         }
     };
     if !rules.is_empty() {
-        final_body = rewrite_system_prompt_in_body(&final_body, &rules);
+        let (rewritten, matched_ids) = rewrite_system_prompt_in_body(&final_body, &rules);
+        final_body = rewritten;
+        if !matched_ids.is_empty() {
+            if let Ok(mut s) = proxy_state.lock() {
+                for id in &matched_ids {
+                    *s.rule_match_counts.entry(id.clone()).or_insert(0) += 1;
+                }
+            }
+        }
     }
     // Compress tool_result content (after system prompt rules, before forwarding)
     let compression_stats = if compression_enabled && provider.kind != "openai_codex" {
@@ -1264,30 +1287,43 @@ fn rewrite_model_in_body(body: &[u8], new_model: &str) -> Vec<u8> {
     }
 }
 
-fn rewrite_system_prompt_in_body(body: &[u8], rules: &[SystemPromptRule]) -> Vec<u8> {
+fn rewrite_system_prompt_in_body(body: &[u8], rules: &[SystemPromptRule]) -> (Vec<u8>, Vec<String>) {
     let enabled: Vec<&SystemPromptRule> = rules
         .iter()
         .filter(|r| r.enabled && !r.pattern.is_empty())
         .collect();
     if enabled.is_empty() {
-        return body.to_vec();
+        return (body.to_vec(), Vec::new());
     }
     let mut json = match serde_json::from_slice::<serde_json::Value>(body) {
         Ok(j) => j,
-        Err(_) => return body.to_vec(),
+        Err(_) => return (body.to_vec(), Vec::new()),
     };
     let system = match json.get_mut("system") {
         Some(s) => s,
-        None => return serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec()),
+        None => {
+            return (
+                serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec()),
+                Vec::new(),
+            );
+        }
     };
-    apply_rules_to_system_value(system, &enabled);
-    serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec())
+    let mut matched: Vec<String> = Vec::new();
+    apply_rules_to_system_value(system, &enabled, &mut matched);
+    (
+        serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec()),
+        matched,
+    )
 }
 
-fn apply_rules_to_system_value(system: &mut serde_json::Value, rules: &[&SystemPromptRule]) {
+fn apply_rules_to_system_value(
+    system: &mut serde_json::Value,
+    rules: &[&SystemPromptRule],
+    matched: &mut Vec<String>,
+) {
     match system {
         serde_json::Value::String(s) => {
-            *s = apply_rules_to_text(s, rules);
+            *s = apply_rules_to_text(s, rules, matched);
         }
         serde_json::Value::Array(arr) => {
             for item in arr.iter_mut() {
@@ -1295,7 +1331,7 @@ fn apply_rules_to_system_value(system: &mut serde_json::Value, rules: &[&SystemP
                     if obj.get("type").and_then(|v| v.as_str()) == Some("text") {
                         if let Some(text_val) = obj.get_mut("text") {
                             if let serde_json::Value::String(ref mut s) = text_val {
-                                *s = apply_rules_to_text(s, rules);
+                                *s = apply_rules_to_text(s, rules, matched);
                             }
                         }
                     }
@@ -1306,7 +1342,11 @@ fn apply_rules_to_system_value(system: &mut serde_json::Value, rules: &[&SystemP
     }
 }
 
-fn apply_rules_to_text(text: &str, rules: &[&SystemPromptRule]) -> String {
+fn apply_rules_to_text(
+    text: &str,
+    rules: &[&SystemPromptRule],
+    matched: &mut Vec<String>,
+) -> String {
     let mut result = text.to_string();
     for rule in rules {
         let inline_flags: String = rule.flags.chars().filter(|c| *c != 'g').collect();
@@ -1316,7 +1356,13 @@ fn apply_rules_to_text(text: &str, rules: &[&SystemPromptRule]) -> String {
             format!("(?{}){}", inline_flags, rule.pattern)
         };
         if let Ok(re) = regex::Regex::new(&pattern) {
-            result = re.replace_all(&result, &rule.replacement).into_owned();
+            let replaced = re.replace_all(&result, &rule.replacement).into_owned();
+            if replaced != result {
+                if !matched.contains(&rule.id) {
+                    matched.push(rule.id.clone());
+                }
+                result = replaced;
+            }
         }
     }
     result
@@ -1750,7 +1796,7 @@ mod tests {
     fn test_rewrite_system_prompt_string() {
         let body = r#"{"model":"claude-opus-4-6","system":"You are Claude, a helpful assistant.","messages":[]}"#;
         let rules = vec![make_rule("rename", "Claude", "Assistant", "g", true)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["system"], "You are Assistant, a helpful assistant.");
         assert_eq!(json["model"], "claude-opus-4-6");
@@ -1760,7 +1806,7 @@ mod tests {
     fn test_rewrite_system_prompt_array() {
         let body = r#"{"model":"test","system":[{"type":"text","text":"You are Claude."},{"type":"text","text":"Be helpful."}],"messages":[]}"#;
         let rules = vec![make_rule("rename", "Claude", "Assistant", "g", true)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         let sys = json["system"].as_array().unwrap();
         assert_eq!(sys[0]["text"], "You are Assistant.");
@@ -1774,7 +1820,7 @@ mod tests {
             make_rule("r1", "Hello", "Hi", "g", true),
             make_rule("r2", "world", "earth", "g", true),
         ];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["system"], "Hi earth");
     }
@@ -1783,7 +1829,7 @@ mod tests {
     fn test_rewrite_system_prompt_disabled_rule_skipped() {
         let body = r#"{"system":"Hello Claude","messages":[]}"#;
         let rules = vec![make_rule("off", "Claude", "Assistant", "g", false)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["system"], "Hello Claude");
     }
@@ -1791,7 +1837,7 @@ mod tests {
     #[test]
     fn test_rewrite_system_prompt_empty_rules() {
         let body = r#"{"system":"Hello","messages":[]}"#;
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &[]);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &[]);
         assert_eq!(result, body.as_bytes());
     }
 
@@ -1799,7 +1845,7 @@ mod tests {
     fn test_rewrite_system_prompt_no_system_field() {
         let body = r#"{"model":"test","messages":[]}"#;
         let rules = vec![make_rule("r", "x", "y", "g", true)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert!(json.get("system").is_none());
         assert_eq!(json["model"], "test");
@@ -1809,7 +1855,7 @@ mod tests {
     fn test_rewrite_system_prompt_invalid_json() {
         let body = b"not json";
         let rules = vec![make_rule("r", "x", "y", "g", true)];
-        let result = rewrite_system_prompt_in_body(body, &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body, &rules);
         assert_eq!(result, body);
     }
 
@@ -1817,7 +1863,7 @@ mod tests {
     fn test_rewrite_system_prompt_case_insensitive() {
         let body = r#"{"system":"CLAUDE claude Claude","messages":[]}"#;
         let rules = vec![make_rule("ci", "claude", "Assistant", "gi", true)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["system"], "Assistant Assistant Assistant");
     }
@@ -1826,7 +1872,7 @@ mod tests {
     fn test_rewrite_system_prompt_capture_groups() {
         let body = r#"{"system":"Use (tools) wisely","messages":[]}"#;
         let rules = vec![make_rule("cg", r#"\((\w+)\)"#, "[$1]", "g", true)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["system"], "Use [tools] wisely");
     }
@@ -1835,8 +1881,28 @@ mod tests {
     fn test_rewrite_system_prompt_empty_pattern_skipped() {
         let body = r#"{"system":"Hello","messages":[]}"#;
         let rules = vec![make_rule("empty", "", "x", "g", true)];
-        let result = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let (result, _matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["system"], "Hello");
+    }
+
+    #[test]
+    fn test_rewrite_system_prompt_reports_matched_ids() {
+        let body = r#"{"system":"Hello world","messages":[]}"#;
+        let rules = vec![
+            make_rule("hit", "Hello", "Hi", "g", true),
+            make_rule("miss", "nope", "x", "g", true),
+            make_rule("hit2", "world", "earth", "g", true),
+        ];
+        let (_result, matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        assert_eq!(matched, vec!["rule-hit".to_string(), "rule-hit2".to_string()]);
+    }
+
+    #[test]
+    fn test_rewrite_system_prompt_matched_ids_deduped_across_array() {
+        let body = r#"{"system":[{"type":"text","text":"Hello Claude"},{"type":"text","text":"Goodbye Claude"}],"messages":[]}"#;
+        let rules = vec![make_rule("r", "Claude", "Assistant", "g", true)];
+        let (_result, matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        assert_eq!(matched, vec!["rule-r".to_string()]);
     }
 }

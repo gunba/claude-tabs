@@ -405,6 +405,20 @@
   margin-left: auto;
 }
 
+.prompts-rule-match-count {
+  flex-shrink: 0;
+  margin-left: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, rgba(255, 255, 255, 0.55));
+  white-space: nowrap;
+}
+
+.prompts-rule-match-count-zero {
+  opacity: 0.55;
+  font-style: italic;
+}
+
 .prompts-rule-card-body {
   display: flex;
   flex-direction: column;
