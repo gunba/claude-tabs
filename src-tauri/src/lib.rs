@@ -6,6 +6,7 @@ mod proxy;
 mod pty;
 mod session;
 mod tap_server;
+pub mod tracer;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -225,7 +226,6 @@ pub fn run() {
             commands::resolve_api_host,
             commands::dir_exists,
             commands::git_repo_check,
-            commands::git_list_changes,
             commands::compute_file_diff,
             commands::read_file_for_snapshot,
             commands::get_build_info,

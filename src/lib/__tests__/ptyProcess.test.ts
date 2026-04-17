@@ -108,6 +108,7 @@ describe("spawnPty — spawn args and returned object", () => {
     const spawnCall = mockInvoke.mock.calls.find(([cmd]) => cmd === "pty_spawn");
     expect(spawnCall).toBeDefined();
     expect(spawnCall![1]).toEqual({
+      sessionId: null,
       file: "bash",
       args: ["-l"],
       cols: 80,
@@ -128,6 +129,7 @@ describe("spawnPty — spawn args and returned object", () => {
 
     const spawnCall = mockInvoke.mock.calls.find(([cmd]) => cmd === "pty_spawn");
     expect(spawnCall![1]).toEqual({
+      sessionId: null,
       file: "bash",
       args: [],
       cols: 120,

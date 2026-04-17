@@ -45,6 +45,14 @@ struct Session {
     cols: AtomicU16,
     rows: AtomicU16,
     process_id: u32,
+    /// Windows-only process-tree tracer. On Unix the tracer is owned by
+    /// UnixPty itself (ptrace thread-affinity requires it to be the
+    /// same thread that forked). On Windows the tracer is attached
+    /// post-spawn via DebugActiveProcess and lives alongside the
+    /// conpty handle.
+    #[cfg(windows)]
+    #[allow(dead_code)]
+    tracer: Option<crate::tracer::TracerHandle>,
 }
 
 // ── Commands ─────────────────────────────────────────────────────────
@@ -52,6 +60,7 @@ struct Session {
 #[tauri::command]
 pub async fn pty_spawn(
     app: tauri::AppHandle,
+    session_id: Option<String>,
     file: String,
     args: Vec<String>,
     cols: u16,
@@ -82,12 +91,37 @@ pub async fn pty_spawn(
     let result = conpty::spawn(&file, &args, cols, rows, cwd.as_deref(), &env)?;
 
     #[cfg(unix)]
-    let result = unix::spawn(&file, &args, cols, rows, cwd.as_deref(), &env)?;
+    let result = unix::spawn(
+        app.clone(),
+        session_id.clone().unwrap_or_else(|| format!("pty-{}", std::process::id())),
+        &file,
+        &args,
+        cols,
+        rows,
+        cwd.as_deref(),
+        &env,
+    )?;
 
     let handler = state.session_id.fetch_add(1, Ordering::Relaxed);
 
     #[cfg(unix)]
     let master_fd = result.master_fd;
+
+    // Windows-only: attach tracer post-spawn (Unix tracer is owned by
+    // UnixPty, installed during spawn because of ptrace thread-affinity).
+    #[cfg(windows)]
+    let tracer = match crate::tracer::attach(
+        app.clone(),
+        session_id.clone().unwrap_or_else(|| format!("pty-{}", result.process_id)),
+        result.process_id,
+        cwd.clone(),
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            log::warn!("tracer: attach failed for pid={}: {}", result.process_id, e);
+            None
+        }
+    };
 
     let session = Arc::new(Session {
         #[cfg(windows)]
@@ -102,6 +136,8 @@ pub async fn pty_spawn(
         cols: AtomicU16::new(cols),
         rows: AtomicU16::new(rows),
         process_id: result.process_id,
+        #[cfg(windows)]
+        tracer,
     });
 
     state.sessions.write().await.insert(handler, session);

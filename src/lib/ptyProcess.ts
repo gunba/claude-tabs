@@ -70,6 +70,7 @@ export async function spawnPty(
     },
   });
   const pid: number = await invoke("pty_spawn", {
+    sessionId,
     file,
     args,
     cols: options.cols ?? 80,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useSessionStore } from "../store/sessions";
 import { useActivityStore } from "../store/activity";
 import { tapEventBus } from "../lib/tapEventBus";
@@ -7,7 +8,6 @@ import { reduceTapEvent } from "../lib/tapStateReducer";
 import { TapMetadataAccumulator } from "../lib/tapMetadataAccumulator";
 import { TapSubagentTracker } from "../lib/tapSubagentTracker";
 import { normalizePath, canonicalizePath } from "../lib/paths";
-import { parseBashFileOps } from "../lib/bashFileParser";
 import { getResumeId, resolveModelFamily } from "../lib/claude";
 import { buildSubagentTabs } from "../lib/contextProjection";
 import { useSettingsStore } from "../store/settings";
@@ -17,8 +17,50 @@ import { traceSync } from "../lib/perfTrace";
 import { settledStateManager } from "../lib/settledState";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
-import type { ToolInputDiffData } from "../types/activity";
+import type { ToolInputDiffData, FileChangeKind, ProcessInfo } from "../types/activity";
 import { getTapCategoryLabel, getTapCategoryMeta } from "../lib/tapCatalog";
+
+/** Payload of a `tracer://fs-event` emit from the Rust process-tree tracer. */
+interface TracerFsEvent {
+  tabId: string;
+  op:
+    | "read"
+    | "write"
+    | "create"
+    | "delete"
+    | "mkdir"
+    | "rmdir"
+    | "truncate"
+    | "chmod"
+    | "symlink"
+    | { rename: { from: string } };
+  path: string;
+  pid: number;
+  ppid: number;
+  processChain: ProcessInfo[];
+  timestampMs: number;
+}
+
+function tracerOpToKind(op: TracerFsEvent["op"]): FileChangeKind {
+  if (typeof op === "object" && "rename" in op) return "renamed";
+  switch (op) {
+    case "read":
+      return "read";
+    case "write":
+    case "truncate":
+    case "chmod":
+      return "modified";
+    case "create":
+    case "mkdir":
+    case "symlink":
+      return "created";
+    case "delete":
+    case "rmdir":
+      return "deleted";
+    default:
+      return "modified";
+  }
+}
 
 
 /** Return discriminating fields for key event types (for debug logs). */
@@ -340,21 +382,11 @@ export function useTapEventProcessor(
             }
           }
 
-          // Bash file tracking — heuristic extraction from command strings
-          if (event.toolName === "Bash" && typeof event.input.command === "string") {
-            const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-            const bashWorkDir = session?.config.workingDir ?? "";
-            const bashOps = parseBashFileOps(event.input.command, bashWorkDir);
-            for (const op of bashOps) {
-              const bashPath = canonicalizePath(op.path);
-              const isExt = bashWorkDir ? !normalizePath(bashPath).startsWith(bashWorkDir) : false;
-              activityStore.addFileActivity(sid, bashPath, op.kind, {
-                agentId,
-                toolName: "Bash",
-                isExternal: isExt,
-              });
-            }
-          }
+          // Bash file tracking is now handled by the process-tree tracer
+          // (src-tauri/src/tracer/*), which observes kernel syscalls on
+          // Claude and every descendant. See the tracer://fs-event listener
+          // below. The old bashFileParser heuristic has been removed —
+          // kernel-observed events are ground truth, not a regex guess.
         }
 
         if (event.kind === "PermissionRejected") {
@@ -549,43 +581,63 @@ export function useTapEventProcessor(
 
     const unsub = tapEventBus.subscribe(sessionId, handleEvent);
 
-    // [AS-03] Passive git change detection on settled-idle: endTurn then git_list_changes;
-    // fenceTurnCount guards against merging into a new turn that started mid-scan.
-    // End activity turns on settled-idle (accounts for subagent completion + hysteresis).
-    // Also snapshot git-reported uncommitted changes: any tracked-file change TAP didn't
-    // explicitly report (bash side-effects, external edits) lands in the activity store.
-    // Silent no-op outside a git repo. We guard the post-invoke merge against a new turn
-    // starting mid-scan — if the user responds before git returns, discard the snapshot.
+    // [AS-03] End activity turns on settled-idle — still needed for
+    // the UI's Response mode boundary and stats recomputation. The
+    // settled-idle git_list_changes snapshot has been removed; file
+    // events now stream in real time via the process-tree tracer
+    // (src-tauri/src/tracer/*) → tracer://fs-event listener below.
     const unsubSettled = settledStateManager.subscribe(
       (settledSid, kind) => {
         if (settledSid === sessionId && kind === "idle") {
-          const activityStore = useActivityStore.getState();
-          activityStore.endTurn(sessionId);
-          const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
-          const cwd = session?.config.workingDir;
-          if (!cwd) return;
-          const fenceTurnCount = activityStore.sessions[sessionId]?.turns.length ?? 0;
-          invoke<Array<{ path: string; kind: "created" | "modified" | "deleted" }>>(
-            "git_list_changes",
-            { workingDir: cwd },
-          ).then((changes) => {
-            const store = useActivityStore.getState();
-            if ((store.sessions[sessionId]?.turns.length ?? 0) !== fenceTurnCount) return;
-            for (const change of changes) {
-              const canonical = canonicalizePath(change.path);
-              store.addFileActivity(sessionId, canonical, change.kind, {
-                isExternal: !canonical.startsWith(canonicalizePath(cwd)),
-              });
-            }
-          }).catch(() => {});
+          useActivityStore.getState().endTurn(sessionId);
         }
       },
       () => {},
     );
 
+    // [AS-05] Tracer event bridge. Rust emits one FsEvent per
+    // kernel-observed file syscall; the envelope carries tabId so we
+    // only ingest events for this session. Dedup against TAP-sourced
+    // activities happens inside addFileActivityFromTracer.
+    let unsubTracer: UnlistenFn | null = null;
+    listen<TracerFsEvent>("tracer://fs-event", (payload) => {
+      const ev = payload.payload;
+      if (ev.tabId !== sessionId) return;
+      const sess = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
+      const workDir = sess?.config.workingDir ?? "";
+      const canonical = canonicalizePath(ev.path);
+      const isExternal = workDir ? !normalizePath(canonical).startsWith(normalizePath(workDir)) : false;
+      useActivityStore.getState().addFileActivityFromTracer(
+        sessionId,
+        canonical,
+        tracerOpToKind(ev.op),
+        ev.processChain,
+        isExternal,
+      );
+      if (typeof ev.op === "object" && "rename" in ev.op) {
+        // Rename also implies deletion of the source path. Emit a
+        // matching "deleted" event so the activity tree reflects both
+        // sides of the rename, keyed to the same process chain.
+        const fromCanonical = canonicalizePath(ev.op.rename.from);
+        const fromIsExternal = workDir
+          ? !normalizePath(fromCanonical).startsWith(normalizePath(workDir))
+          : false;
+        useActivityStore.getState().addFileActivityFromTracer(
+          sessionId,
+          fromCanonical,
+          "deleted",
+          ev.processChain,
+          fromIsExternal,
+        );
+      }
+    }).then((u) => {
+      unsubTracer = u;
+    });
+
     return () => {
       unsub();
       unsubSettled();
+      unsubTracer?.();
       metaAcc.reset();
       subTracker.reset();
       metaAccRef.current = null;

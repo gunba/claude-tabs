@@ -6,12 +6,19 @@ import type {
   ContextFileEntry,
   FileChangeKind,
   ToolInputDiffData,
+  ProcessInfo,
 } from "../types/activity";
 import { emptySessionActivity, computeStats } from "../types/activity";
 import { traceSync } from "../lib/perfTrace";
 
 const MAX_TURNS = 50;
 const MAX_ALL_FILES = 500;
+/** [AS-04] Dedup window: tracer events arriving within this many ms of a
+ *  TAP-sourced activity for the same path+kind are treated as duplicates
+ *  and dropped. TAP fires on tool_input (before syscall); tracer fires on
+ *  the kernel stop a few ms later. Anything slower than this is a real
+ *  second event. */
+const TRACER_DEDUP_MS = 200;
 
 interface ActivityState {
   sessions: Record<string, SessionActivity>;
@@ -29,7 +36,19 @@ interface ActivityState {
       isFolder?: boolean;
       permissionMode?: string | null;
       toolInputData?: ToolInputDiffData | null;
+      processChain?: ProcessInfo[];
     },
+  ) => void;
+  /** Ingest a kernel-observed filesystem event from the process-tree
+   *  tracer. Deduplicates against a TAP-sourced activity for the same
+   *  path+kind within TRACER_DEDUP_MS — TAP wins (richer metadata like
+   *  toolInputData). Otherwise behaves like addFileActivity. */
+  addFileActivityFromTracer: (
+    sessionId: string,
+    path: string,
+    kind: FileChangeKind,
+    processChain: ProcessInfo[],
+    isExternal: boolean,
   ) => void;
   markPermissionDenied: (sessionId: string, path: string) => void;
   markUserMessage: (sessionId: string) => void;
@@ -153,6 +172,7 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         permissionMode: opts?.permissionMode ?? null,
         toolInputData: opts?.toolInputData ?? null,
         isFolder: opts?.isFolder ?? false,
+        processChain: opts?.processChain,
       };
       const turn = currentTurn(activity);
       if (turn && turn.endedAt === null) {
@@ -201,6 +221,82 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         agentId: opts?.agentId ?? null,
         isExternal: opts?.isExternal ?? false,
       },
+    })),
+
+  // [AS-04] Tracer ingestion: drops events that duplicate a TAP-sourced
+  // activity within TRACER_DEDUP_MS (TAP wins — it carries toolInputData
+  // diffs). Otherwise adds with processChain populated so the UI can show
+  // "bash → python → ripgrep touched foo.rs" ancestry.
+  addFileActivityFromTracer: (sessionId, path, kind, processChain, isExternal) =>
+    set((state) => traceSync("activity.add_file_tracer", () => {
+      const activity = state.sessions[sessionId];
+      if (activity) {
+        const prev = activity.allFiles[path];
+        if (prev && prev.kind === kind && Date.now() - prev.timestamp < TRACER_DEDUP_MS) {
+          // TAP already recorded this — keep its richer metadata, just
+          // attach the processChain since TAP doesn't have one.
+          if (!prev.processChain) {
+            const sessions = { ...state.sessions };
+            const updated = { ...activity };
+            updated.allFiles = { ...activity.allFiles, [path]: { ...prev, processChain } };
+            sessions[sessionId] = updated;
+            return { sessions };
+          }
+          return state;
+        }
+      }
+
+      const sessions = { ...state.sessions };
+      const session = ensureSession(sessions, sessionId);
+      const entry: FileActivity = {
+        path,
+        kind,
+        agentId: null,
+        toolName: null,
+        timestamp: Date.now(),
+        confirmed: true,
+        isExternal,
+        permissionDenied: false,
+        permissionMode: null,
+        toolInputData: null,
+        isFolder: false,
+        processChain,
+      };
+      const turn = currentTurn(session);
+      if (turn && turn.endedAt === null) {
+        const existingIdx = turn.files.findIndex((f) => f.path === path);
+        if (existingIdx >= 0) {
+          if (kind === "searched" && turn.files[existingIdx].kind !== "searched") {
+            // skip downgrade
+          } else if (kind !== "read" || turn.files[existingIdx].kind === "read" || turn.files[existingIdx].kind === "searched") {
+            if (turn.files[existingIdx].kind === "created" && kind === "modified") {
+              entry.kind = "created";
+            }
+            turn.files[existingIdx] = entry;
+          }
+        } else {
+          turn.files.push(entry);
+        }
+      }
+      session.visitedPaths.add(path);
+      const prev = session.allFiles[path];
+      if (prev?.kind === "created" && entry.kind === "modified") {
+        entry.kind = "created";
+      }
+      if (entry.kind === "searched" && prev && prev.kind !== "searched") {
+        session.allFiles[path] = { ...prev, processChain, timestamp: entry.timestamp };
+      } else {
+        session.allFiles[path] = entry;
+      }
+      recomputeStats(session);
+      sessions[sessionId] = { ...session };
+      return { sessions };
+    }, {
+      module: "activity",
+      sessionId,
+      event: "activity.add_file_tracer",
+      warnAboveMs: 8,
+      data: { path, kind, isExternal, chainDepth: processChain.length },
     })),
 
   markPermissionDenied: (sessionId, path) =>
