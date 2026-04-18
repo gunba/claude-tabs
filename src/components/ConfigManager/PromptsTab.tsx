@@ -99,6 +99,23 @@ function RulePreview({
   );
 }
 
+function RuleMatchCount({ count }: { count: number }) {
+  const never = count === 0;
+  const suffix = count === 1 ? "" : "es";
+  return (
+    <span
+      className={`prompts-rule-match-count${never ? " prompts-rule-match-count-zero" : ""}`}
+      title={
+        never
+          ? "This rule has not matched any request this session"
+          : `Matched ${count} request${count === 1 ? "" : "s"} this session`
+      }
+    >
+      {never ? "never fired" : `${count} match${suffix}`}
+    </span>
+  );
+}
+
 /** Expanded editing area for a single rule card. Local state, save-on-demand. */
 function RuleCardExpanded({
   rule,
@@ -614,17 +631,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
                         </div>
                       );
                     })()}
-                    {(() => {
-                      const count = ruleMatchCounts[rule.id] ?? 0;
-                      return (
-                        <span
-                          className={`prompts-rule-match-count${count === 0 ? " prompts-rule-match-count-zero" : ""}`}
-                          title={count === 0 ? "This rule has not matched any request this session" : `Matched ${count} request${count === 1 ? "" : "s"} this session`}
-                        >
-                          {count === 0 ? "never fired" : `${count} match${count === 1 ? "" : "es"}`}
-                        </span>
-                      );
-                    })()}
+                    <RuleMatchCount count={ruleMatchCounts[rule.id] ?? 0} />
                     <div className="prompts-rule-card-actions">
                       <button
                         className="prompts-rule-arrow-btn"

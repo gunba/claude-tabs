@@ -405,8 +405,12 @@ fn attach_process(state: &mut TracerState, pid: u32) -> Result<(), String> {
             std::io::Error::last_os_error()
         ));
     }
-    // process_handle comes from CREATE_PROCESS_DEBUG_EVENT later; for
-    // now record a placeholder so the sweep knows we're attaching.
+    // process_handle is filled in when CREATE_PROCESS_DEBUG_EVENT for this
+    // pid arrives (Windows synthesizes it right after DebugActiveProcess).
+    // Until then `process_handle` stays null and any event that requires it
+    // — e.g. build_event's ReadProcessMemory calls — short-circuits. In
+    // practice the window is well under a millisecond; events arriving in
+    // that gap are silently dropped rather than read with an invalid handle.
     state.attached.insert(
         pid,
         AttachedProcess {
@@ -1016,23 +1020,7 @@ fn read_mem(hprocess: HANDLE, addr: u64, dst: &mut [u8]) -> Option<()> {
 
 // ── Process tree bookkeeping ────────────────────────────────────────────
 
-#[derive(Clone, Debug)]
-struct ProcessNode {
-    pid: u32,
-    ppid: u32,
-    exe: String,
-    argv: Vec<String>,
-}
-
-impl ProcessNode {
-    fn to_info(&self) -> ProcessInfo {
-        ProcessInfo {
-            pid: self.pid,
-            exe: self.exe.clone(),
-            argv: self.argv.clone(),
-        }
-    }
-}
+use super::chain::{build_chain, ProcessNode};
 
 fn record_process_node(state: &mut TracerState, pid: u32) {
     if state.nodes.contains_key(&pid) {
@@ -1083,30 +1071,6 @@ fn snapshot_all_processes() -> Result<Vec<(u32, u32, String)>, String> {
 fn wide_to_string(wide: &[u16]) -> String {
     let len = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
     String::from_utf16_lossy(&wide[..len])
-}
-
-fn build_chain(
-    pid: u32,
-    root_pid: u32,
-    nodes: &HashMap<u32, ProcessNode>,
-) -> Vec<ProcessInfo> {
-    let mut chain = Vec::new();
-    let mut cur = pid;
-    let mut guard = 0;
-    while cur != root_pid && guard < 32 {
-        guard += 1;
-        match nodes.get(&cur) {
-            Some(n) => {
-                chain.push(n.to_info());
-                if n.ppid == 0 || n.ppid == cur {
-                    break;
-                }
-                cur = n.ppid;
-            }
-            None => break,
-        }
-    }
-    chain
 }
 
 /// Discover newly-spawned descendants of root_pid and attach to them.

@@ -600,6 +600,7 @@ export function useTapEventProcessor(
     // only ingest events for this session. Dedup against TAP-sourced
     // activities happens inside addFileActivityFromTracer.
     let unsubTracer: UnlistenFn | null = null;
+    let tracerCancelled = false;
     listen<TracerFsEvent>("tracer://fs-event", (payload) => {
       const ev = payload.payload;
       if (ev.tabId !== sessionId) return;
@@ -631,12 +632,17 @@ export function useTapEventProcessor(
         );
       }
     }).then((u) => {
-      unsubTracer = u;
+      // Unmount may race with listen() promise resolution. If cleanup
+      // already ran, release the subscription immediately so nothing
+      // leaks past the session's lifetime.
+      if (tracerCancelled) u();
+      else unsubTracer = u;
     });
 
     return () => {
       unsub();
       unsubSettled();
+      tracerCancelled = true;
       unsubTracer?.();
       metaAcc.reset();
       subTracker.reset();

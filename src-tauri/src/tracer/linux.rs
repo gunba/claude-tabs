@@ -46,7 +46,8 @@ use seccompiler::{
 };
 use tauri::{AppHandle, Emitter};
 
-use super::event::{now_ms, FsEvent, FsOp, ProcessInfo};
+use super::chain::{build_chain, ProcessNode};
+use super::event::{now_ms, FsEvent, FsOp};
 use super::{is_noise, TracerBackend, FS_EVENT};
 
 // ── seccomp filter construction (once per process) ───────────────────────
@@ -218,17 +219,57 @@ pub fn install_in_pre_exec() -> std::io::Result<()> {
 
 // ── Tracer thread ────────────────────────────────────────────────────────
 
+use std::sync::atomic::AtomicI32;
+
 pub struct LinuxTracer {
     shutdown: Arc<AtomicBool>,
+    /// Linux TID (as returned by `gettid(2)`) of the tracer thread,
+    /// published before entering the main loop. `detach()` uses it to
+    /// wake the blocking `waitpid` via `tgkill(SIGUSR1)`. Zero until
+    /// the tracer thread stores its own tid.
+    tracer_tid: Arc<AtomicI32>,
 }
 
 impl TracerBackend for LinuxTracer {
     fn detach(&self) {
         self.shutdown.store(true, Ordering::Release);
-        // Ptrace detaches implicitly when the tracer thread exits. The
-        // waitpid loop in the tracer thread polls `shutdown` on each
-        // iteration with a short `WNOHANG` fallback. See `tracer_loop`.
+        let tid = self.tracer_tid.load(Ordering::Acquire);
+        if tid != 0 {
+            // Deliver SIGUSR1 to the specific tracer thread. The handler
+            // is a no-op installed with SA_RESTART off, so the blocking
+            // waitpid returns EINTR and the loop re-checks `shutdown`.
+            // tgkill targets the thread directly; process-wide kill()
+            // would hit any blocking call in any thread.
+            unsafe {
+                libc::syscall(
+                    libc::SYS_tgkill,
+                    libc::getpid(),
+                    tid,
+                    libc::SIGUSR1,
+                );
+            }
+        }
     }
+}
+
+/// Install a no-op SIGUSR1 handler once per process. SA_RESTART is left
+/// off so a tracer thread blocked in `waitpid` wakes with EINTR when
+/// `detach()` sends SIGUSR1. Default disposition of SIGUSR1 is Term —
+/// without this, the signal would kill the whole app.
+fn install_sigusr1_handler_once() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigusr1_noop as *const () as libc::sighandler_t;
+        sa.sa_flags = 0;
+        libc::sigemptyset(&mut sa.sa_mask);
+        libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
+    });
+}
+
+extern "C" fn sigusr1_noop(_: libc::c_int) {
+    // Body intentionally empty. Presence of a user handler is what the
+    // kernel checks to interrupt blocking syscalls with EINTR.
 }
 
 /// Event emission callback used by [`tracer_loop`]. Boxed so the event
@@ -275,18 +316,26 @@ pub fn sink_from_app(app: AppHandle) -> EventSink {
 pub fn spawn_with_tracer(
     mut cmd: std::process::Command,
     tab_id: String,
-    working_dir: Option<String>,
     sink: EventSink,
     exit_tx: std::sync::mpsc::Sender<u32>,
 ) -> Result<(u32, LinuxTracer), String> {
     use std::sync::mpsc;
+    install_sigusr1_handler_once();
+
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<u32, String>>(1);
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();
+    let tracer_tid = Arc::new(AtomicI32::new(0));
+    let tracer_tid_clone = tracer_tid.clone();
 
     thread::Builder::new()
         .name(format!("tracer-{}", tab_id))
         .spawn(move || {
+            // Publish this thread's tid so `LinuxTracer::detach` can
+            // interrupt the blocking waitpid via tgkill(SIGUSR1).
+            let tid = unsafe { libc::syscall(libc::SYS_gettid) as i32 };
+            tracer_tid_clone.store(tid, Ordering::Release);
+
             // Fork + exec happens on THIS thread — it is the tracer of
             // record for all ptrace operations on the tracee.
             let child = match cmd.spawn() {
@@ -324,7 +373,6 @@ pub fn spawn_with_tracer(
                 sink,
                 tab_id,
                 pid,
-                working_dir,
                 shutdown_clone,
                 Some(exit_tx),
             );
@@ -334,20 +382,20 @@ pub fn spawn_with_tracer(
     let pid = ready_rx
         .recv_timeout(std::time::Duration::from_secs(10))
         .map_err(|_| "tracer: spawn thread timed out".to_string())??;
-    Ok((pid, LinuxTracer { shutdown }))
+    Ok((pid, LinuxTracer { shutdown, tracer_tid }))
 }
 
 /// Block until the TRACEME'd child reaches its post-execve SIGTRAP stop.
+/// Pure blocking `waitpid` — no WNOHANG, no polling. Unexpected stop
+/// signals (SIGSTOP from a concurrent job-control or profiler, etc.)
+/// are forwarded via PTRACE_CONT and the wait continues for the real
+/// SIGTRAP. Early exit is surfaced as an error.
 fn wait_for_traceme_stop(pid: u32) -> Result<(), String> {
-    let mut status: libc::c_int = 0;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
+        let mut status: libc::c_int = 0;
         let ret = unsafe {
-            libc::waitpid(pid as libc::pid_t, &mut status, libc::__WALL | libc::WNOHANG)
+            libc::waitpid(pid as libc::pid_t, &mut status, libc::__WALL)
         };
-        if ret == pid as libc::pid_t && libc::WIFSTOPPED(status) {
-            return Ok(());
-        }
         if ret < 0 {
             let err = std::io::Error::last_os_error();
             if err.raw_os_error() == Some(libc::EINTR) {
@@ -355,13 +403,31 @@ fn wait_for_traceme_stop(pid: u32) -> Result<(), String> {
             }
             return Err(format!("waitpid failed: {}", err));
         }
-        if std::time::Instant::now() > deadline {
+        if ret != pid as libc::pid_t {
+            continue;
+        }
+        if libc::WIFEXITED(status) || libc::WIFSIGNALED(status) {
             return Err(format!(
-                "timed out waiting for TRACEME stop on pid={}",
-                pid
+                "child pid={} exited before TRACEME stop (status=0x{:x})",
+                pid, status
             ));
         }
-        thread::sleep(std::time::Duration::from_millis(2));
+        if !libc::WIFSTOPPED(status) {
+            continue;
+        }
+        if libc::WSTOPSIG(status) == libc::SIGTRAP {
+            return Ok(());
+        }
+        // Unexpected stop signal — pass it through so the tracee's own
+        // handlers run, then keep waiting for the real TRACEME SIGTRAP.
+        unsafe {
+            libc::ptrace(
+                PTRACE_CONT,
+                pid as libc::pid_t,
+                0 as libc::c_long,
+                libc::WSTOPSIG(status) as libc::c_long,
+            );
+        }
     }
 }
 
@@ -397,6 +463,7 @@ fn set_trace_options(pid: u32) -> Result<(), String> {
 const PTRACE_TRACEME: libc::c_uint = 0;
 const PTRACE_CONT: libc::c_uint = 7;
 const PTRACE_DETACH: libc::c_uint = 17;
+#[cfg(target_arch = "x86_64")]
 const PTRACE_GETREGS: libc::c_uint = 12;
 const PTRACE_SETOPTIONS: libc::c_uint = 0x4200;
 const PTRACE_GETEVENTMSG: libc::c_uint = 0x4201;
@@ -428,35 +495,20 @@ const AT_FDCWD: i32 = -100;
 // ── Process node bookkeeping ─────────────────────────────────────────────
 // [PO-04] ProcessNode map: live (pid -> ProcessNode) for ancestry chain construction; EXEC refreshes, EXIT prunes
 
-#[derive(Clone, Debug)]
-struct ProcessNode {
-    pid: u32,
-    ppid: u32,
-    exe: String,
-    argv: Vec<String>,
-}
-
-impl ProcessNode {
-    fn from_proc(pid: u32, fallback_ppid: u32) -> Self {
-        let exe = std::fs::read_link(format!("/proc/{}/exe", pid))
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let argv = read_cmdline(pid);
-        let ppid = read_ppid(pid).unwrap_or(fallback_ppid);
-        ProcessNode {
-            pid,
-            ppid,
-            exe,
-            argv,
-        }
-    }
-
-    fn to_info(&self) -> ProcessInfo {
-        ProcessInfo {
-            pid: self.pid,
-            exe: self.exe.clone(),
-            argv: self.argv.clone(),
-        }
+/// Linux-specific constructor for `ProcessNode`. Reads exe, argv, and
+/// ppid from /proc/<pid>/. Falls back to the caller-provided ppid when
+/// /proc/<pid>/stat is unreadable (race against process exit).
+fn node_from_proc(pid: u32, fallback_ppid: u32) -> ProcessNode {
+    let exe = std::fs::read_link(format!("/proc/{}/exe", pid))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let argv = read_cmdline(pid);
+    let ppid = read_ppid(pid).unwrap_or(fallback_ppid);
+    ProcessNode {
+        pid,
+        ppid,
+        exe,
+        argv,
     }
 }
 
@@ -488,12 +540,11 @@ fn tracer_loop(
     sink: EventSink,
     tab_id: String,
     root_pid: u32,
-    _working_dir: Option<String>,
     shutdown: Arc<AtomicBool>,
     exit_tx: Option<std::sync::mpsc::Sender<u32>>,
 ) {
     let mut nodes: HashMap<u32, ProcessNode> = HashMap::new();
-    nodes.insert(root_pid, ProcessNode::from_proc(root_pid, 0));
+    nodes.insert(root_pid, node_from_proc(root_pid, 0));
     log::debug!(
         "tracer[{}]: loop started, root_pid={}",
         tab_id, root_pid
@@ -505,32 +556,32 @@ fn tracer_loop(
     // hook point for future close-based write confirmation.
 
     loop {
-        if shutdown.load(Ordering::Acquire) {
-            // Detach the root; descendants auto-detach when the tracer
-            // thread exits. PTRACE_DETACH on a running process is a no-op
-            // error tolerant path.
-            let _ = unsafe {
-                libc::ptrace(PTRACE_DETACH, root_pid as libc::pid_t, 0, 0)
-            };
-            return;
-        }
-
         let mut status: libc::c_int = 0;
         let pid = unsafe {
-            libc::waitpid(-1, &mut status, libc::__WALL | libc::WNOHANG)
+            libc::waitpid(-1, &mut status, libc::__WALL)
         };
 
-        if pid == 0 {
-            thread::sleep(std::time::Duration::from_millis(5));
-            continue;
-        }
         if pid < 0 {
             let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EINTR) {
+                // Either LinuxTracer::detach sent SIGUSR1, or an
+                // unrelated async signal landed. Check shutdown.
+                if shutdown.load(Ordering::Acquire) {
+                    // Per ptrace(2), any descendants still attached to
+                    // this tracer receive SIGKILL when the tracer
+                    // thread exits — they are not cleanly auto-detached.
+                    // The PTY's kill(-pgid, SIGKILL) has normally torn
+                    // them down before Drop arrives here, so this
+                    // ptrace call is an idempotent cleanup.
+                    let _ = unsafe {
+                        libc::ptrace(PTRACE_DETACH, root_pid as libc::pid_t, 0, 0)
+                    };
+                    return;
+                }
+                continue;
+            }
             if err.raw_os_error() == Some(libc::ECHILD) {
                 return;
-            }
-            if err.raw_os_error() == Some(libc::EINTR) {
-                continue;
             }
             log::warn!("tracer: waitpid failed: {}", err);
             return;
@@ -596,14 +647,14 @@ fn handle_stop(
                 }
                 if child_pid > 0 {
                     let cpid = child_pid as u32;
-                    let node = ProcessNode::from_proc(cpid, pid);
+                    let node = node_from_proc(cpid, pid);
                     nodes.insert(cpid, node);
                 }
             }
             PTRACE_EVENT_EXEC => {
                 // Argv / exe change across exec — refresh from /proc.
                 if let Some(node) = nodes.get_mut(&pid) {
-                    *node = ProcessNode::from_proc(pid, node.ppid);
+                    *node = node_from_proc(pid, node.ppid);
                 }
             }
             PTRACE_EVENT_STOP => {
@@ -658,7 +709,7 @@ fn on_seccomp(
     // mutable one).
     let ppid = nodes
         .entry(pid)
-        .or_insert_with(|| ProcessNode::from_proc(pid, 0))
+        .or_insert_with(|| node_from_proc(pid, 0))
         .ppid;
 
     let process_chain = build_chain(pid, root_pid, nodes);
@@ -674,30 +725,6 @@ fn on_seccomp(
     };
 
     sink(&fs_event);
-}
-
-fn build_chain(
-    pid: u32,
-    root_pid: u32,
-    nodes: &HashMap<u32, ProcessNode>,
-) -> Vec<ProcessInfo> {
-    let mut chain = Vec::new();
-    let mut cur = pid;
-    let mut guard = 0;
-    while cur != root_pid && guard < 32 {
-        guard += 1;
-        match nodes.get(&cur) {
-            Some(n) => {
-                chain.push(n.to_info());
-                if n.ppid == 0 || n.ppid == cur {
-                    break;
-                }
-                cur = n.ppid;
-            }
-            None => break,
-        }
-    }
-    chain
 }
 
 // ── Classified syscall event ─────────────────────────────────────────────
@@ -860,6 +887,10 @@ fn classify_syscall(pid: u32, syscall: i64, regs: &UserRegs) -> Option<SyscallEv
             })
         }
         s if is_syscall(s, "fchmodat") => {
+            // We report the pathname argument as given to the syscall.
+            // AT_SYMLINK_NOFOLLOW (arg3) controls whether the kernel
+            // resolves the final symlink — either way our path stays
+            // the same string; there's no "target path" to expose.
             let path = read_path_at(pid, arg0 as i32, arg1)?;
             Some(SyscallEvent {
                 op: FsOp::Chmod,

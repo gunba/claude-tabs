@@ -268,7 +268,6 @@ pub fn spawn(
     let (pid, tracer_handle) = crate::tracer::linux::spawn_with_tracer(
         cmd,
         tab_id,
-        cwd.map(|s| s.to_string()),
         sink,
         exit_tx,
     )?;

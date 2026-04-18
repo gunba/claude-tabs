@@ -50,7 +50,6 @@ fn tracer_observes_cat_openat_of_target_file() {
     let (_pid, handle) = spawn_with_tracer(
         cmd,
         "test-tab".to_string(),
-        None,
         Box::new(move |ev| {
             events_sink.lock().unwrap().push(ev.clone());
         }),
@@ -115,7 +114,6 @@ fn tracer_delivers_root_pid_exit_code() {
     let (_pid, _handle) = spawn_with_tracer(
         cmd,
         "exit-test".to_string(),
-        None,
         Box::new(|_ev| {}),
         exit_tx,
     )

@@ -31,6 +31,7 @@
 /// frontend `useTapEventProcessor.ts` subscribes and calls
 /// `activityStore.addFileActivityFromTracer(tabId, event)`.
 pub mod event;
+mod chain;
 
 #[allow(unused_imports)]
 pub use event::{now_ms, FsEvent, FsOp, ProcessInfo};
@@ -112,6 +113,14 @@ const NOISE_FRAGMENTS: &[&str] = &[
     "/sys/",
     "/dev/",
     "/run/",
+    // Linux IPC / X11 / lock files in /tmp. Real user files under /tmp
+    // (e.g. /tmp/scratch.txt) still pass; only the dot-prefixed sockets
+    // and locks the desktop session litters the dir with are dropped.
+    "/tmp/.X11-unix/",
+    "/tmp/.ICE-unix/",
+    "/tmp/.XIM-unix/",
+    "/tmp/.font-unix/",
+    "/tmp/.Test-unix/",
     // Common cache / VCS internals (cross-platform after normalization)
     "/.cache/",
     "/node_modules/.cache/",
@@ -170,5 +179,11 @@ mod tests {
         assert!(!is_noise("/home/x/project/src/main.rs"));
         assert!(!is_noise("/tmp/scratch.txt"));
         assert!(!is_noise(r"C:\Users\x\project\src\main.rs"));
+    }
+
+    #[test]
+    fn noise_filter_drops_tmp_ipc_sockets() {
+        assert!(is_noise("/tmp/.X11-unix/X0"));
+        assert!(is_noise("/tmp/.ICE-unix/1234"));
     }
 }

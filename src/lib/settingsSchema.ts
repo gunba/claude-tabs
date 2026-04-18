@@ -155,7 +155,10 @@ export function parseJsonSchema(schema: JsonSchema): SettingField[] {
   return fields;
 }
 
-// [CM-33] Boolean setting default is true: defaultForType() returns true for boolean fields so 'Add' inserts opt-in values
+// [CM-33] Boolean default is the INVERSE of the CLI's default. When the user
+// clicks "Add" on a setting they almost always want to change it — re-asserting
+// the existing default is a no-op. Most Claude Code boolean flags default to
+// false, so inserting `true` here represents the likely user intent.
 /** Get default value for a setting type */
 export function defaultForType(field: SettingField): any {
   if (field.choices && field.choices.length > 0) return field.choices[0];
