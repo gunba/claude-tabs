@@ -231,13 +231,21 @@ export const useActivityStore = create<ActivityState>()((set) => ({
   addFileActivityFromTracer: (sessionId, path, kind, processChain, isExternal) =>
     set((state) => traceSync("activity.add_file_tracer", () => {
       const activity = state.sessions[sessionId];
-      // [AS-06] Strict turn gate: the Rust tracer streams every kernel
-      // file syscall in real time, including during session boot before
-      // the first TurnStart and in the window after endTurn fires on
-      // settled-idle. Those events are not part of any conversation
-      // turn, so drop them entirely rather than polluting allFiles.
+      // [AS-06] Strict turn + user-message gate: the Rust tracer streams
+      // every kernel file syscall in real time. Synthetic TurnStart
+      // events fire at session boot (before the user has typed anything)
+      // so checking only "is a turn open" lets Claude's boot-time file
+      // reads (/, /bin, library loads, config reads) pollute
+      // session.allFiles and visitedPaths. Require BOTH an open turn
+      // AND that the user has actually sent at least one message —
+      // matches the Response-mode boundary at ActivityPanel.tsx:362.
       const openTurn = activity ? currentTurn(activity) : undefined;
-      if (!activity || !openTurn || openTurn.endedAt !== null) {
+      if (
+        !activity
+        || !openTurn
+        || openTurn.endedAt !== null
+        || activity.lastUserMessageAt === 0
+      ) {
         return state;
       }
       const prevDedup = activity.allFiles[path];

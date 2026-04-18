@@ -36,6 +36,7 @@ describe("activity store tracer dedup", () => {
       sessions: { [SESSION]: emptySessionActivity() },
     });
     useActivityStore.getState().startTurn(SESSION, "turn-1");
+    useActivityStore.getState().markUserMessage(SESSION);
   });
 
   afterEach(() => {
@@ -136,6 +137,7 @@ describe("activity store tracer turn gate", () => {
       sessions: { [SESSION]: emptySessionActivity() },
     });
     useActivityStore.getState().startTurn(SESSION, "turn-1");
+    useActivityStore.getState().markUserMessage(SESSION);
     useActivityStore.getState().endTurn(SESSION);
 
     useActivityStore
@@ -153,6 +155,7 @@ describe("activity store tracer turn gate", () => {
       sessions: { [SESSION]: emptySessionActivity() },
     });
     useActivityStore.getState().startTurn(SESSION, "turn-1");
+    useActivityStore.getState().markUserMessage(SESSION);
 
     useActivityStore
       .getState()
@@ -161,5 +164,27 @@ describe("activity store tracer turn gate", () => {
     const session = useActivityStore.getState().sessions[SESSION];
     expect(session.allFiles["/p/active.ts"]?.kind).toBe("modified");
     expect(session.turns[0].files.some((f) => f.path === "/p/active.ts")).toBe(true);
+  });
+
+  it("discards tracer events during synthetic boot turn before any user message", () => {
+    useActivityStore.setState({
+      sessions: { [SESSION]: emptySessionActivity() },
+    });
+    // Synthetic TurnStart fires at session boot — turn is open but
+    // lastUserMessageAt is still 0. Claude's boot-time file reads
+    // (/bin, /etc, library loads) must not enter session activity.
+    useActivityStore.getState().startTurn(SESSION, "boot-turn");
+
+    useActivityStore
+      .getState()
+      .addFileActivityFromTracer(SESSION, "/bin", "read", chain(), true);
+    useActivityStore
+      .getState()
+      .addFileActivityFromTracer(SESSION, "/usr/lib/libc.so.6", "read", chain(), true);
+
+    const session = useActivityStore.getState().sessions[SESSION];
+    expect(session.allFiles["/bin"]).toBeUndefined();
+    expect(session.allFiles["/usr/lib/libc.so.6"]).toBeUndefined();
+    expect(session.visitedPaths.size).toBe(0);
   });
 });

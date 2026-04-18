@@ -604,6 +604,21 @@ export function useTapEventProcessor(
     listen<TracerFsEvent>("tracer://fs-event", (payload) => {
       const ev = payload.payload;
       if (ev.tabId !== sessionId) return;
+      // [AS-07] Early drop before traceSync. Claude Code walks the
+      // entire workspace at boot (looking for .claude, CLAUDE.md, etc.)
+      // and can emit 70k+ tracer events in the first 5 seconds. Each
+      // call into addFileActivityFromTracer would otherwise pay the
+      // full traceSync cost (performance.now, span creation, dlog
+      // JSON serialize, observability.jsonl append) even though the
+      // store-side gate drops the event. Checking lastUserMessageAt
+      // here keeps those events out of the observability pipeline and
+      // off the React thread entirely, which is the difference
+      // between an immediately-usable prompt and multi-second input
+      // lag after Claude Code has booted.
+      const activity = useActivityStore.getState().sessions[sessionId];
+      if (!activity || activity.lastUserMessageAt === 0) return;
+      const currentTurn = activity.turns[activity.turns.length - 1];
+      if (!currentTurn || currentTurn.endedAt !== null) return;
       const sess = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
       const workDir = sess?.config.workingDir ?? "";
       const canonical = canonicalizePath(ev.path);
