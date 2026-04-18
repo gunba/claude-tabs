@@ -320,41 +320,62 @@ pub fn spawn_with_tracer(
     exit_tx: std::sync::mpsc::Sender<u32>,
 ) -> Result<(u32, LinuxTracer), String> {
     use std::sync::mpsc;
+    let t0 = std::time::Instant::now();
+    log::debug!("tracer[{tab_id}]: spawn_with_tracer begin");
     install_sigusr1_handler_once();
+    log::debug!(
+        "tracer[{tab_id}]: sigusr1 handler installed (+{}ms)",
+        t0.elapsed().as_millis()
+    );
 
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<u32, String>>(1);
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = shutdown.clone();
     let tracer_tid = Arc::new(AtomicI32::new(0));
     let tracer_tid_clone = tracer_tid.clone();
+    let tab_id_thread = tab_id.clone();
 
     thread::Builder::new()
         .name(format!("tracer-{}", tab_id))
         .spawn(move || {
+            let t = std::time::Instant::now();
+            let tab = &tab_id_thread;
             // Publish this thread's tid so `LinuxTracer::detach` can
             // interrupt the blocking waitpid via tgkill(SIGUSR1).
             let tid = unsafe { libc::syscall(libc::SYS_gettid) as i32 };
             tracer_tid_clone.store(tid, Ordering::Release);
+            log::debug!("tracer[{tab}]: thread tid={tid} entering spawn");
 
             // Fork + exec happens on THIS thread — it is the tracer of
             // record for all ptrace operations on the tracee.
             let child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(e) => {
+                    log::warn!("tracer[{tab}]: cmd.spawn() failed: {e}");
                     let _ = ready_tx.send(Err(format!("spawn failed: {}", e)));
                     return;
                 }
             };
             let pid = child.id();
+            log::debug!(
+                "tracer[{tab}]: forked pid={pid} (+{}ms)",
+                t.elapsed().as_millis()
+            );
             // Leak the Child so stdlib doesn't reap or waitpid on drop —
             // the tracer thread owns reaping via waitpid in the loop.
             std::mem::forget(child);
 
             if let Err(e) = wait_for_traceme_stop(pid) {
+                log::warn!("tracer[{tab}]: wait_for_traceme_stop pid={pid} failed: {e}");
                 let _ = ready_tx.send(Err(e));
                 return;
             }
+            log::debug!(
+                "tracer[{tab}]: post-execve SIGTRAP observed pid={pid} (+{}ms)",
+                t.elapsed().as_millis()
+            );
             if let Err(e) = set_trace_options(pid) {
+                log::warn!("tracer[{tab}]: set_trace_options pid={pid} failed: {e}");
                 let _ = ready_tx.send(Err(e));
                 return;
             }
@@ -362,16 +383,22 @@ pub fn spawn_with_tracer(
                 libc::ptrace(PTRACE_CONT, pid as libc::pid_t, 0, 0)
             };
             if cont < 0 {
+                let err = std::io::Error::last_os_error();
+                log::warn!("tracer[{tab}]: initial PTRACE_CONT pid={pid} failed: {err}");
                 let _ = ready_tx.send(Err(format!(
                     "initial PTRACE_CONT failed: {}",
-                    std::io::Error::last_os_error()
+                    err
                 )));
                 return;
             }
+            log::debug!(
+                "tracer[{tab}]: ready signal sent pid={pid} (+{}ms)",
+                t.elapsed().as_millis()
+            );
             let _ = ready_tx.send(Ok(pid));
             tracer_loop(
                 sink,
-                tab_id,
+                tab_id_thread,
                 pid,
                 shutdown_clone,
                 Some(exit_tx),
@@ -381,7 +408,12 @@ pub fn spawn_with_tracer(
 
     let pid = ready_rx
         .recv_timeout(std::time::Duration::from_secs(10))
-        .map_err(|_| "tracer: spawn thread timed out".to_string())??;
+        .map_err(|_| {
+            log::warn!(
+                "tracer[{tab_id}]: recv_timeout after 10s — spawn thread did not signal ready"
+            );
+            "tracer: spawn thread timed out".to_string()
+        })??;
     Ok((pid, LinuxTracer { shutdown, tracer_tid }))
 }
 
@@ -468,10 +500,10 @@ const PTRACE_GETREGS: libc::c_uint = 12;
 const PTRACE_SETOPTIONS: libc::c_uint = 0x4200;
 const PTRACE_GETEVENTMSG: libc::c_uint = 0x4201;
 
-const PTRACE_O_TRACEFORK: libc::c_int = 1 << 2;
-const PTRACE_O_TRACEVFORK: libc::c_int = 1 << 3;
-const PTRACE_O_TRACECLONE: libc::c_int = 1 << 4;
-const PTRACE_O_TRACEEXEC: libc::c_int = 1 << 5;
+const PTRACE_O_TRACEFORK: libc::c_int = 1 << 1;
+const PTRACE_O_TRACEVFORK: libc::c_int = 1 << 2;
+const PTRACE_O_TRACECLONE: libc::c_int = 1 << 3;
+const PTRACE_O_TRACEEXEC: libc::c_int = 1 << 4;
 const PTRACE_O_TRACEEXIT: libc::c_int = 1 << 6;
 const PTRACE_O_TRACESECCOMP: libc::c_int = 1 << 7;
 
@@ -689,6 +721,19 @@ fn on_seccomp(
     root_pid: u32,
     nodes: &mut HashMap<u32, ProcessNode>,
 ) {
+    // [PO-06] Scope: the tracer emits events only for subprocesses Claude
+    // spawns (bash, grep, python, etc.). The root process's own file
+    // I/O (Bun's dynamic linker loads, runtime config reads, plugin
+    // JSON parsing, Read/Edit/Write tool calls issued in-process) is
+    // captured by the TAP event stream — see the PO-03 dedup rule.
+    // Emitting here would duplicate TAP-sourced activity and flood the
+    // frontend with Bun's internal startup syscalls (~450k events
+    // observed on one tab boot). PTRACE_CONT is still issued by
+    // handle_stop after we return, so the tracee resumes normally.
+    if pid == root_pid {
+        return;
+    }
+
     let regs = match read_regs(pid) {
         Some(r) => r,
         None => return,
