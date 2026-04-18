@@ -15,6 +15,22 @@ crate-type = ["lib", "cdylib", "staticlib"]
 name = "discover_audit"
 path = "src/bin/discover_audit.rs"
 
+# Tauri's `custom-protocol` feature selects whether the WebView loads
+# from the bundled `frontendDist` (production, via tauri://localhost)
+# or from `devUrl` (http://localhost:1420 — Vite dev server). Tauri's
+# CLI sets this feature automatically for `tauri build`, and explicitly
+# drops it for `tauri dev` via --no-default-features. But when someone
+# runs `cargo build` / `cargo test` directly (which happens whenever
+# integration tests compile), the feature is absent and the binary
+# comes out in dev mode — if Vite isn't running, the window shows
+# "Connection refused". Making it a default feature here means every
+# cargo-direct build produces a standalone prod-mode binary. Tauri's
+# CLI still overrides correctly because `tauri dev` passes
+# --no-default-features.
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
