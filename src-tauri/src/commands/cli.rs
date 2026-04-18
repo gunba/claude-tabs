@@ -145,18 +145,82 @@ fn run_claude_cli(args: &[&str], label: &str) -> Result<String, String> {
     let cli_path = detect_claude_cli_sync()?;
     let mut cmd = std::process::Command::new(&cli_path);
     cmd.args(args);
+    // [PL-ENV] Strip Bun/Node debugger/inspector env so child CLIs
+    // don't race on inspector ports.
+    cmd.env_remove("BUN_INSPECT");
+    cmd.env_remove("BUN_INSPECT_NOTIFY");
+    cmd.env_remove("BUN_INSPECT_CONNECT_TO");
+    cmd.env_remove("NODE_OPTIONS");
+    cmd.env_remove("NODE_INSPECT");
+    cmd.env_remove("NODE_INSPECT_BRK");
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    let output = cmd
-        .output()
+
+    // [RC-20] Redirect stdout to a temp file instead of a pipe. The
+    // Claude Code CLI (Bun runtime) has a stdout flush-on-exit race
+    // that only fires when stdout is a pipe: process.exit() terminates
+    // before the buffered write drains, silently truncating output at
+    // 4KB page boundaries. Verified reproducible from plain shell —
+    // `claude plugin list --available --json | wc -c` returns varying
+    // counts (32k / 49k / 71k), while the same command redirected to
+    // a file (`> out.json`) returns 71k consistently. Windows is
+    // unaffected. Using a file FD avoids the pipe path entirely and
+    // preserves all output. Stderr stays on a pipe so we can surface
+    // errors; stderr volume is small and never hits the buffering race.
+    let stdout_path = std::env::temp_dir().join(format!(
+        "claude-tabs-cli-{}-{}.out",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let stdout_file = std::fs::File::create(&stdout_path)
+        .map_err(|e| format!("{}: create stdout tempfile: {}", label, e))?;
+    cmd.stdout(stdout_file);
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to run {}: {}", label, e))?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let stderr_bytes = child
+        .stderr
+        .take()
+        .map(|mut s| {
+            let mut buf = Vec::new();
+            use std::io::Read;
+            let _ = s.read_to_end(&mut buf);
+            buf
+        })
+        .unwrap_or_default();
+    let status = child
+        .wait()
+        .map_err(|e| format!("Failed to wait for {}: {}", label, e))?;
+    let stdout_bytes = std::fs::read(&stdout_path).unwrap_or_default();
+    let _ = std::fs::remove_file(&stdout_path);
+
+    log::info!(
+        "{}: exit_status={:?} stdout_bytes={} stderr_bytes={} success={}",
+        label,
+        status.code(),
+        stdout_bytes.len(),
+        stderr_bytes.len(),
+        status.success()
+    );
+    if !stderr_bytes.is_empty() {
+        log::info!(
+            "{}: stderr_head={:?}",
+            label,
+            String::from_utf8_lossy(&stderr_bytes).chars().take(400).collect::<String>()
+        );
+    }
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout_bytes).trim().to_string())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
         Err(format!(
             "{} failed: {}",
             label,
@@ -653,10 +717,20 @@ fn scan_command_usage_sync() -> Result<std::collections::HashMap<String, u64>, S
 #[tauri::command]
 pub async fn plugin_list() -> Result<String, String> {
     tokio::task::spawn_blocking(|| {
-        run_claude_cli(
+        let result = run_claude_cli(
             &["plugin", "list", "--available", "--json"],
             "claude plugin list",
-        )
+        );
+        // [PL-DIAG] Save raw output for inspection so we can see whether
+        // truncation happens in Rust capture or Tauri IPC.
+        if let Ok(ref s) = result {
+            let _ = std::fs::write("/tmp/plugin_list_raw.json", s.as_bytes());
+            log::info!(
+                "plugin_list: Rust-side captured {} bytes (saved to /tmp/plugin_list_raw.json)",
+                s.len()
+            );
+        }
+        result
     })
     .await
     .map_err(|e| e.to_string())?

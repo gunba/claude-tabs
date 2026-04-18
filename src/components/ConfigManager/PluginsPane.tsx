@@ -116,7 +116,18 @@ export function PluginsTab({ visible, projectDir: _projectDir, onStatus }: Plugi
   const loadPlugins = useCallback(async () => {
     try {
       const raw = await invoke<string>("plugin_list");
-      const result: PluginListResult = raw ? JSON.parse(raw) : {};
+      let result: PluginListResult;
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch (parseErr) {
+        console.error("[plugin_list] JSON.parse failed", {
+          bytes: raw?.length ?? 0,
+          head: raw?.slice(0, 200),
+          tail: raw?.slice(-200),
+          error: String(parseErr),
+        });
+        throw parseErr;
+      }
       setInstalled(result.installed || []);
       setAvailable(result.available || []);
       setError(null);
