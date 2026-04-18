@@ -231,20 +231,27 @@ export const useActivityStore = create<ActivityState>()((set) => ({
   addFileActivityFromTracer: (sessionId, path, kind, processChain, isExternal) =>
     set((state) => traceSync("activity.add_file_tracer", () => {
       const activity = state.sessions[sessionId];
-      if (activity) {
-        const prev = activity.allFiles[path];
-        if (prev && prev.kind === kind && Date.now() - prev.timestamp < TRACER_DEDUP_MS) {
-          // TAP already recorded this — keep its richer metadata, just
-          // attach the processChain since TAP doesn't have one.
-          if (!prev.processChain) {
-            const sessions = { ...state.sessions };
-            const updated = { ...activity };
-            updated.allFiles = { ...activity.allFiles, [path]: { ...prev, processChain } };
-            sessions[sessionId] = updated;
-            return { sessions };
-          }
-          return state;
+      // [AS-06] Strict turn gate: the Rust tracer streams every kernel
+      // file syscall in real time, including during session boot before
+      // the first TurnStart and in the window after endTurn fires on
+      // settled-idle. Those events are not part of any conversation
+      // turn, so drop them entirely rather than polluting allFiles.
+      const openTurn = activity ? currentTurn(activity) : undefined;
+      if (!activity || !openTurn || openTurn.endedAt !== null) {
+        return state;
+      }
+      const prevDedup = activity.allFiles[path];
+      if (prevDedup && prevDedup.kind === kind && Date.now() - prevDedup.timestamp < TRACER_DEDUP_MS) {
+        // TAP already recorded this — keep its richer metadata, just
+        // attach the processChain since TAP doesn't have one.
+        if (!prevDedup.processChain) {
+          const sessions = { ...state.sessions };
+          const updated = { ...activity };
+          updated.allFiles = { ...activity.allFiles, [path]: { ...prevDedup, processChain } };
+          sessions[sessionId] = updated;
+          return { sessions };
         }
+        return state;
       }
 
       const sessions = { ...state.sessions };

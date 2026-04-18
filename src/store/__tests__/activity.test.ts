@@ -105,3 +105,61 @@ describe("activity store tracer dedup", () => {
     expect(entry.toolName).toBeNull();
   });
 });
+
+describe("activity store tracer turn gate", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-18T00:00:00Z"));
+    resetStore();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("discards tracer events when no turn has started (session boot)", () => {
+    useActivityStore.setState({
+      sessions: { [SESSION]: emptySessionActivity() },
+    });
+
+    useActivityStore
+      .getState()
+      .addFileActivityFromTracer(SESSION, "/p/boot.ts", "read", chain(), false);
+
+    const session = useActivityStore.getState().sessions[SESSION];
+    expect(session.allFiles["/p/boot.ts"]).toBeUndefined();
+    expect(session.visitedPaths.has("/p/boot.ts")).toBe(false);
+  });
+
+  it("discards tracer events fired after the turn ended", () => {
+    useActivityStore.setState({
+      sessions: { [SESSION]: emptySessionActivity() },
+    });
+    useActivityStore.getState().startTurn(SESSION, "turn-1");
+    useActivityStore.getState().endTurn(SESSION);
+
+    useActivityStore
+      .getState()
+      .addFileActivityFromTracer(SESSION, "/p/late.ts", "modified", chain(), false);
+
+    const session = useActivityStore.getState().sessions[SESSION];
+    expect(session.allFiles["/p/late.ts"]).toBeUndefined();
+    const turn = session.turns[0];
+    expect(turn.files.find((f) => f.path === "/p/late.ts")).toBeUndefined();
+  });
+
+  it("records tracer events while a turn is open", () => {
+    useActivityStore.setState({
+      sessions: { [SESSION]: emptySessionActivity() },
+    });
+    useActivityStore.getState().startTurn(SESSION, "turn-1");
+
+    useActivityStore
+      .getState()
+      .addFileActivityFromTracer(SESSION, "/p/active.ts", "modified", chain(), false);
+
+    const session = useActivityStore.getState().sessions[SESSION];
+    expect(session.allFiles["/p/active.ts"]?.kind).toBe("modified");
+    expect(session.turns[0].files.some((f) => f.path === "/p/active.ts")).toBe(true);
+  });
+});
