@@ -174,12 +174,24 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         }
         // Deduplicate: update existing entry for same path in current turn
         if (existing >= 0) {
+          const existingEntry = turn.files[existing];
           // [AP-03] Kind precedence: created > modified > read > searched; never downgrade
           // "searched" is lowest: never overwrites any existing kind
-          if (kind === "searched" && turn.files[existing].kind !== "searched") {
+          if (kind === "searched" && existingEntry.kind !== "searched") {
             // Don't downgrade — skip
-          } else if (kind !== "read" || turn.files[existing].kind === "read" || turn.files[existing].kind === "searched") {
-            if (turn.files[existing].kind === "created" && kind === "modified") {
+          } else if (
+            // [AP-06] Searched agentId precedence: main agent (agentId=null)
+            // already recorded wins over a subagent searching the same path.
+            // Without this, a subagent search would overwrite the main agent's
+            // turn entry and repaint the folder with the subagent's color.
+            kind === "searched" &&
+            existingEntry.kind === "searched" &&
+            existingEntry.agentId == null &&
+            entry.agentId != null
+          ) {
+            // Skip — keep main agent entry
+          } else if (kind !== "read" || existingEntry.kind === "read" || existingEntry.kind === "searched") {
+            if (existingEntry.kind === "created" && kind === "modified") {
               entry.kind = "created";
             }
             turn.files[existing] = entry;
@@ -198,6 +210,16 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       if (entry.kind === "searched" && prev && prev.kind !== "searched") {
         // Keep prev in allFiles, but still update agentId/timestamp for mascot tracking
         activity.allFiles[path] = { ...prev, agentId: entry.agentId, timestamp: entry.timestamp };
+      } else if (
+        // [AP-06] Main agent (agentId=null) searched entry wins over a
+        // subagent searching the same path. Applies equally to allFiles
+        // so that the folder keeps the main agent's color.
+        entry.kind === "searched" &&
+        prev?.kind === "searched" &&
+        prev.agentId == null &&
+        entry.agentId != null
+      ) {
+        // Skip — keep main agent entry
       } else {
         activity.allFiles[path] = entry;
       }
