@@ -30,7 +30,7 @@ const FILE_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit", "Grep", "Gl
 
 function toolToMascotState(toolName: string): MascotState {
   if (toolName === "Read") return "reading";
-  if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit") return "writing";
+  if (toolName === "Write" || toolName === "Edit" || toolName === "NotebookEdit" || toolName === "Bash") return "writing";
   if (toolName === "Grep" || toolName === "Glob" || toolName === "LSP") return "searching";
   return "idle";
 }

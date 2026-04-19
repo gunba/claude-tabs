@@ -16,7 +16,8 @@ import { traceSync } from "../lib/perfTrace";
 import { settledStateManager } from "../lib/settledState";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
-import type { ToolInputDiffData } from "../types/activity";
+import type { ToolInputDiffData, FileChangeKind } from "../types/activity";
+import { parseBashFiles } from "../lib/bashFileParser";
 import { getTapCategoryLabel, getTapCategoryMeta } from "../lib/tapCatalog";
 
 /** Return discriminating fields for key event types (for debug logs). */
@@ -43,6 +44,70 @@ function eventDetail(event: TapEvent): string {
       return ` ${event.command}`;
     default:
       return "";
+  }
+}
+
+// Module-scope cache: per-workingDir result of git_repo_check, so we don't re-shell
+// for every settled-idle on the same directory.
+const gitRepoCache = new Map<string, boolean>();
+
+interface GitChange { path: string; status: string }
+interface PathStatus { path: string; exists: boolean; isDir: boolean }
+
+async function isGitRepo(workDir: string): Promise<boolean> {
+  if (gitRepoCache.has(workDir)) return gitRepoCache.get(workDir)!;
+  try {
+    const isRepo = await invoke<boolean>("git_repo_check", { workingDir: workDir });
+    gitRepoCache.set(workDir, isRepo);
+    return isRepo;
+  } catch {
+    gitRepoCache.set(workDir, false);
+    return false;
+  }
+}
+
+function gitStatusToKind(status: string): FileChangeKind {
+  if (status === "D") return "deleted";
+  if (status === "A" || status === "?") return "created";
+  return "modified";
+}
+
+async function runGitScanAndValidate(sid: string): Promise<void> {
+  const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+  const workDir = session?.config.workingDir ?? "";
+  const activityStore = useActivityStore.getState();
+
+  if (workDir && (await isGitRepo(workDir))) {
+    try {
+      const changes = await invoke<GitChange[]>("git_list_changes", { workingDir: workDir });
+      const known = activityStore.sessions[sid]?.visitedPaths ?? new Set<string>();
+      for (const change of changes) {
+        const canonical = canonicalizePath(change.path);
+        if (known.has(canonical)) continue;
+        activityStore.addFileActivity(sid, canonical, gitStatusToKind(change.status), {
+          agentId: null,
+          toolName: "git",
+          isExternal: false,
+        });
+      }
+    } catch (err) {
+      dlog("tap", sid, `git_list_changes failed: ${err}`, "DEBUG");
+    }
+  }
+
+  const activity = useActivityStore.getState().sessions[sid];
+  if (!activity) return;
+  const paths = new Set<string>();
+  for (const f of Object.values(activity.allFiles)) paths.add(f.path);
+  if (activity.turns.length > 0) {
+    for (const f of activity.turns[activity.turns.length - 1].files) paths.add(f.path);
+  }
+  if (paths.size === 0) return;
+  try {
+    const results = await invoke<PathStatus[]>("paths_exist", { paths: [...paths] });
+    activityStore.confirmEntries(sid, results);
+  } catch (err) {
+    dlog("tap", sid, `paths_exist failed: ${err}`, "DEBUG");
   }
 }
 
@@ -338,9 +403,28 @@ export function useTapEventProcessor(
             }
           }
 
-          // Bash file tracking is unimplemented — the syscall tracer that
-          // previously observed file ops by Claude's descendants has been
-          // removed, and the old bashFileParser heuristic is not coming back.
+          // Bash — extract file ops by tokenizing the command string with shell-quote
+          // and walking a small registry (rm/mv/cp/touch/mkdir/tee/redirects). This
+          // is heuristic: subshells, var expansion, and globs are not handled. Path
+          // existence is verified by the settled-idle validator before the entries
+          // are surfaced as confirmed.
+          if (event.toolName === "Bash") {
+            const cmd = typeof event.input.command === "string" ? event.input.command : "";
+            if (cmd) {
+              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+              const workDir = session?.config.workingDir ?? "";
+              const ops = parseBashFiles(cmd, workDir);
+              for (const op of ops) {
+                const isExternal = workDir ? !normalizePath(op.path).startsWith(workDir) : false;
+                activityStore.addFileActivity(sid, op.path, op.kind, {
+                  agentId,
+                  toolName: "Bash",
+                  isExternal,
+                  isFolder: op.isFolder ?? false,
+                });
+              }
+            }
+          }
         }
 
         if (event.kind === "PermissionRejected") {
@@ -537,10 +621,14 @@ export function useTapEventProcessor(
 
     // [AS-03] End activity turns on settled-idle — still needed for
     // the UI's Response mode boundary and stats recomputation.
+    // After endTurn, scan git for external changes (covers Bash mutations and
+    // out-of-process edits we couldn't see) then validate every path against
+    // the filesystem to drop false positives.
     const unsubSettled = settledStateManager.subscribe(
       (settledSid, kind) => {
         if (settledSid === sessionId && kind === "idle") {
           useActivityStore.getState().endTurn(sessionId);
+          void runGitScanAndValidate(sessionId);
         }
       },
       () => {},

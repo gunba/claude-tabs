@@ -38,6 +38,10 @@ interface ActivityState {
   clearAgentSearchActivity: (sessionId: string, agentId: string) => void;
   toggleExpandedPath: (sessionId: string, path: string) => void;
   mergeExpandedPaths: (sessionId: string, paths: Iterable<string>) => void;
+  confirmEntries: (
+    sessionId: string,
+    results: { path: string; exists: boolean; isDir: boolean }[],
+  ) => void;
 }
 
 function ensureSession(
@@ -156,8 +160,19 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       };
       const turn = currentTurn(activity);
       if (turn && turn.endedAt === null) {
-        // Deduplicate: update existing entry for same path in current turn
         const existing = turn.files.findIndex((f) => f.path === path);
+        // Same-turn create+delete suppression: a file added then removed in the
+        // same response is noise — drop both the existing turn entry and any
+        // session-wide trace of the path.
+        if (kind === "deleted" && existing >= 0 && turn.files[existing].kind === "created") {
+          turn.files.splice(existing, 1);
+          delete activity.allFiles[path];
+          activity.visitedPaths.delete(path);
+          recomputeStats(activity);
+          sessions[sessionId] = { ...activity };
+          return { sessions };
+        }
+        // Deduplicate: update existing entry for same path in current turn
         if (existing >= 0) {
           // [AP-03] Kind precedence: created > modified > read > searched; never downgrade
           // "searched" is lowest: never overwrites any existing kind
@@ -353,5 +368,80 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       };
       return { sessions };
     }),
+
+  // Drop entries whose existence on disk contradicts their recorded kind.
+  // For created/modified/read/searched: the path must exist.
+  // For deleted: the path must NOT exist.
+  // Surviving entries get confirmed=true and isFolder updated from the stat.
+  confirmEntries: (sessionId, results) =>
+    set((state) => traceSync("activity.confirm_entries", () => {
+      const activity = state.sessions[sessionId];
+      if (!activity) return state;
+      const statusByPath = new Map(results.map((r) => [r.path, r]));
+
+      const isValid = (kind: FileChangeKind, exists: boolean): boolean =>
+        kind === "deleted" ? !exists : exists;
+
+      let changed = false;
+      const nextTurns: TurnActivity[] = [];
+      for (const turn of activity.turns) {
+        const filtered: FileActivity[] = [];
+        for (const f of turn.files) {
+          const status = statusByPath.get(f.path);
+          if (!status) {
+            filtered.push(f);
+            continue;
+          }
+          if (!isValid(f.kind, status.exists)) {
+            changed = true;
+            continue;
+          }
+          if (!f.confirmed || f.isFolder !== status.isDir) {
+            filtered.push({ ...f, confirmed: true, isFolder: status.isDir });
+            changed = true;
+          } else {
+            filtered.push(f);
+          }
+        }
+        nextTurns.push(filtered.length === turn.files.length ? turn : { ...turn, files: filtered });
+      }
+
+      const nextAllFiles: Record<string, FileActivity> = {};
+      const nextVisited = new Set(activity.visitedPaths);
+      for (const [p, f] of Object.entries(activity.allFiles)) {
+        const status = statusByPath.get(p);
+        if (!status) {
+          nextAllFiles[p] = f;
+          continue;
+        }
+        if (!isValid(f.kind, status.exists)) {
+          nextVisited.delete(p);
+          changed = true;
+          continue;
+        }
+        if (!f.confirmed || f.isFolder !== status.isDir) {
+          nextAllFiles[p] = { ...f, confirmed: true, isFolder: status.isDir };
+          changed = true;
+        } else {
+          nextAllFiles[p] = f;
+        }
+      }
+
+      if (!changed) return state;
+      const nextActivity: SessionActivity = {
+        ...activity,
+        turns: nextTurns,
+        allFiles: nextAllFiles,
+        visitedPaths: nextVisited,
+      };
+      recomputeStats(nextActivity);
+      return { sessions: { ...state.sessions, [sessionId]: nextActivity } };
+    }, {
+      module: "activity",
+      sessionId,
+      event: "activity.confirm_entries",
+      warnAboveMs: 12,
+      data: { count: results.length },
+    })),
 
 }));

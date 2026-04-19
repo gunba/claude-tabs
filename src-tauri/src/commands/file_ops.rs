@@ -3,6 +3,39 @@ use tauri::AppHandle;
 
 const MAX_SNAPSHOT_BYTES: usize = 500 * 1024;
 
+#[derive(serde::Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PathStatus {
+    pub path: String,
+    pub exists: bool,
+    pub is_dir: bool,
+}
+
+/// Stat a batch of paths in parallel via spawn_blocking.
+/// Returns one entry per input path in the same order.
+#[tauri::command]
+pub async fn paths_exist(paths: Vec<String>) -> Vec<PathStatus> {
+    tokio::task::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .map(|p| match std::fs::metadata(&p) {
+                Ok(meta) => PathStatus {
+                    path: p,
+                    exists: true,
+                    is_dir: meta.is_dir(),
+                },
+                Err(_) => PathStatus {
+                    path: p,
+                    exists: false,
+                    is_dir: false,
+                },
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
 #[tauri::command]
 pub async fn compute_file_diff(
     file_path: String,
