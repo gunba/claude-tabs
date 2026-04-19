@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useActivityStore } from "../../store/activity";
 import { useSessionStore } from "../../store/sessions";
-import { useSettingsStore } from "../../store/settings";
 import { ClaudeMascot } from "./ClaudeMascot";
 import type { MascotState } from "./ClaudeMascot";
 import { IconFolder, IconDocument } from "../Icons/Icons";
@@ -192,7 +191,7 @@ interface StickyMascot {
 
 /* -- Main panel -- */
 
-export function ActivityPanel() {
+export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const sessions = useSessionStore((s) => s.sessions);
   const storeSubagents = useSessionStore((s) => s.subagents);
@@ -201,8 +200,7 @@ export function ActivityPanel() {
   const activity = useActivityStore((s) => activeTabId ? s.sessions[activeTabId] ?? null : null);
   const activityStore = useActivityStore.getState;
 
-  // Store-backed view mode (global setting) and expanded paths (per-session, persist across tab switches)
-  const mode = useSettingsStore((s) => s.activityViewMode);
+  // Per-session expanded paths persist across tab switches
   const expandedPaths: Set<string> = activity?.expandedPaths ?? emptySet;
 
   // Floating/sticky mascot

@@ -315,6 +315,26 @@ export function IconSearch(props: IconProps) {
   );
 }
 
+/** Speech bubble with bottom-left tail — response (current agent reply) */
+export function IconResponse(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2 4a1.5 1.5 0 011.5-1.5h9A1.5 1.5 0 0114 4v6a1.5 1.5 0 01-1.5 1.5H6l-3 2.5V11.5H3.5A1.5 1.5 0 012 10z" />
+    </Icon>
+  );
+}
+
+/** Three stacked horizontal lines — session (full history list) */
+export function IconSession(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="3" y1="4.5" x2="13" y2="4.5" />
+      <line x1="3" y1="8" x2="13" y2="8" />
+      <line x1="3" y1="11.5" x2="13" y2="11.5" />
+    </Icon>
+  );
+}
+
 /** Counterclockwise circular arrow — reset */
 export function IconReset(props: IconProps) {
   return (

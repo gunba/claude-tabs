@@ -114,7 +114,7 @@ interface SettingsState {
   commandBarExpanded: boolean;
   commandRefreshTrigger: number;
   showConfigManager: string | false;
-  rightPanelTab: "debug" | "activity" | "search";
+  rightPanelTab: "debug" | "response" | "session" | "search";
   replaceSessionId: string | null; // Session to close when launcher launches (Ctrl+Click relaunch)
   pastSessions: PastSession[];
   pastSessionsLoading: boolean;
@@ -129,7 +129,6 @@ interface SettingsState {
   modelRegistry: Record<string, ModelRegistryEntry>;
   recordingConfig: RecordingConfig;
   compressionEnabled: boolean;
-  activityViewMode: "response" | "session";
 
   // Actions
   addRecentDir: (dir: string) => void;
@@ -148,7 +147,7 @@ interface SettingsState {
   setReplaceSessionId: (id: string | null) => void;
   setShowConfigManager: (show: string | false) => void;
   setCommandBarExpanded: (expanded: boolean) => void;
-  setRightPanelTab: (panel: "debug" | "activity" | "search") => void;
+  setRightPanelTab: (panel: "debug" | "response" | "session" | "search") => void;
   bootstrapCommandUsage: () => Promise<void>;
   triggerCommandRefresh: () => void;
   setSessionName: (id: string, name: string) => void;
@@ -171,7 +170,6 @@ interface SettingsState {
   updateModelRegistry: (entry: ModelRegistryEntry) => void;
   setRecordingConfig: (config: Partial<RecordingConfig>) => void;
   setCompressionEnabled: (enabled: boolean) => void;
-  setActivityViewMode: (mode: "response" | "session") => void;
   toggleNoisyEventKind: (kind: string) => void;
 }
 
@@ -198,7 +196,7 @@ export const useSettingsStore = create<SettingsState>()(
       commandBarExpanded: false,
       commandRefreshTrigger: 0,
       showConfigManager: false,
-      rightPanelTab: "activity",
+      rightPanelTab: "response",
       replaceSessionId: null,
       pastSessions: [],
       pastSessionsLoading: false,
@@ -213,7 +211,6 @@ export const useSettingsStore = create<SettingsState>()(
       modelRegistry: {},
       recordingConfig: DEFAULT_RECORDING_CONFIG,
       compressionEnabled: false,
-      activityViewMode: "response",
 
       addRecentDir: (dir) =>
         set((s) => {
@@ -639,9 +636,6 @@ export const useSettingsStore = create<SettingsState>()(
         invoke("set_compression_enabled", { enabled }).catch(() => {});
       },
 
-      // [RI-02] activityViewMode is global persisted setting in useSettingsStore, not per-session
-  setActivityViewMode: (mode) => set({ activityViewMode: mode }),
-
       toggleNoisyEventKind: (kind) => set((s) => {
         const current = s.recordingConfig.noisyEventKinds;
         const next = current.includes(kind)
@@ -652,7 +646,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 14,
+      version: 15,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -810,6 +804,11 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 14) {
           if (state.compressionEnabled === undefined) state.compressionEnabled = false;
         }
+        if (version < 15) {
+          // activityViewMode was promoted to a top-level tab (rightPanelTab "response"|"session").
+          // rightPanelTab is transient (not persisted), so only clean up the stale key.
+          delete state.activityViewMode;
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -836,7 +835,6 @@ export const useSettingsStore = create<SettingsState>()(
         modelRegistry: state.modelRegistry,
         recordingConfig: state.recordingConfig,
         compressionEnabled: state.compressionEnabled,
-        activityViewMode: state.activityViewMode,
       }),
     }
   )

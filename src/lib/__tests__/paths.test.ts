@@ -476,16 +476,26 @@ describe("groupSessionsByDir", () => {
   });
 
   it("groups worktree sessions with their project root", () => {
-    const sessions = [
-      mkSession("root", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs"),
-      mkSession("wt1", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs\\.claude\\worktrees\\gentle-wandering-dongarra"),
-      mkSession("wt2", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs\\.claude\\worktrees\\sorted-marinating-dove"),
-    ];
+    const sessions = IS_WINDOWS
+      ? [
+          mkSession("root", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs"),
+          mkSession("wt1", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs\\.claude\\worktrees\\gentle-wandering-dongarra"),
+          mkSession("wt2", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs\\.claude\\worktrees\\sorted-marinating-dove"),
+        ]
+      : [
+          mkSession("root", "/home/jordan/PycharmProjects/claude_tabs"),
+          mkSession("wt1", "/home/jordan/PycharmProjects/claude_tabs/.claude/worktrees/gentle-wandering-dongarra"),
+          mkSession("wt2", "/home/jordan/PycharmProjects/claude_tabs/.claude/worktrees/sorted-marinating-dove"),
+        ];
     const groups = groupSessionsByDir(sessions);
     expect(groups).toHaveLength(1);
     expect(groups[0].sessions.map((s) => s.id)).toEqual(["root", "wt1", "wt2"]);
     expect(groups[0].label).toBe("claude_tabs");
-    expect(groups[0].key).toBe("C:\\Users\\jorda\\PycharmProjects\\claude_tabs");
+    expect(groups[0].key).toBe(
+      IS_WINDOWS
+        ? "C:\\Users\\jorda\\PycharmProjects\\claude_tabs"
+        : "/home/jordan/PycharmProjects/claude_tabs",
+    );
   });
 });
 
