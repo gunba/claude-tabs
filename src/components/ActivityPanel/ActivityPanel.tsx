@@ -131,17 +131,18 @@ function FileTreeRow({
     );
   }
 
-  // [AP-06] Folder searched-color: main agent (agentId null) always wins; subagents only while in active set
+  // [AP-06] Folder searched-color: main agent (agentId null) always wins; subagents only while in active set.
+  // Workspace root never takes the searched overlay — its accent color identifies the workspace
+  // and must win over any search activity (the `.file-tree-searched` rule has higher CSS specificity
+  // than `.file-tree-workspace-root`, so leaving the class on would repaint the workspace root blue).
   const searchedAgentId =
     node.activity?.kind === "searched" ? node.activity.agentId : undefined;
-  // Main agent always wins (agentId null/undefined); subagents only retain the
-  // searched class while they remain in the active subagent list.
   const searchedAgentStillActive =
     searchedAgentId === null || searchedAgentId === undefined
       ? true
       : activeSubagentIds.has(searchedAgentId);
   const showSearched =
-    node.activity?.kind === "searched" && searchedAgentStillActive;
+    node.activity?.kind === "searched" && searchedAgentStillActive && !node.isWorkspaceRoot;
   const folderClasses = `file-tree-row file-tree-folder${node.isWorkspaceRoot ? " file-tree-workspace-root" : ""}${showSearched ? " file-tree-searched" : ""}`;
 
   // Show inline mascot for subagents on searched folders

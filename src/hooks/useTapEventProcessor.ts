@@ -6,7 +6,7 @@ import { tapEventBus } from "../lib/tapEventBus";
 import { reduceTapEvent } from "../lib/tapStateReducer";
 import { TapMetadataAccumulator } from "../lib/tapMetadataAccumulator";
 import { TapSubagentTracker } from "../lib/tapSubagentTracker";
-import { normalizePath, canonicalizePath } from "../lib/paths";
+import { normalizePath, canonicalizePath, parseWorktreePath } from "../lib/paths";
 import { getResumeId, resolveModelFamily } from "../lib/claude";
 import { buildSubagentTabs } from "../lib/contextProjection";
 import { useSettingsStore } from "../store/settings";
@@ -158,12 +158,23 @@ export function useTapEventProcessor(
     setClaudeSessionId(null);
     setUserPrompt(null);
 
-    const updateCwdIfChanged = (cwd: string) => {
+    const updateCwdIfChanged = (cwd: string, opts?: { fromWorktreeEvent?: boolean }) => {
       const normalized = normalizePath(cwd);
       const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
-      if (session && normalized !== session.config.workingDir) {
-        updateConfig(sessionId, { workingDir: normalized });
+      if (!session || normalized === session.config.workingDir) return;
+      // [SI-20] Anchor runtime cwd drift to launchWorkingDir. ConversationMessage and
+      // SessionRegistration carry a cwd field that, in practice, can drift to a
+      // sub-directory after plan-mode forks, subagent re-serialization, or other
+      // transient states. Only accept drift when (a) it's an explicit worktree event,
+      // (b) the new cwd matches launchWorkingDir, or (c) it parses as a worktree path
+      // (covers user-initiated `claude -w` toggles).
+      const launch = normalizePath(session.config.launchWorkingDir || session.config.workingDir);
+      const isWorktreePath = parseWorktreePath(normalized) !== null;
+      if (!opts?.fromWorktreeEvent && normalized !== launch && !isWorktreePath) {
+        dlog("tap", sessionId, `cwd update rejected: ${normalized} != launch ${launch}`, "DEBUG");
+        return;
       }
+      updateConfig(sessionId, { workingDir: normalized });
     };
 
     const handleEvent = (event: TapEvent) => {
@@ -588,13 +599,13 @@ export function useTapEventProcessor(
       // WorktreeState: authoritative worktree path from CLI
       if (event.kind === "WorktreeState" && event.worktreePath) {
         if (!suppressSubagentWorktreeEvent) {
-          updateCwdIfChanged(event.worktreePath);
+          updateCwdIfChanged(event.worktreePath, { fromWorktreeEvent: true });
         }
       }
       // WorktreeCleared: restore original working directory
       if (event.kind === "WorktreeCleared" && worktreeExitCwd) {
         if (!suppressSubagentWorktreeEvent) {
-          updateCwdIfChanged(worktreeExitCwd);
+          updateCwdIfChanged(worktreeExitCwd, { fromWorktreeEvent: true });
         }
       }
 
