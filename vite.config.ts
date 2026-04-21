@@ -27,6 +27,7 @@ export default defineConfig(async () => ({
     },
   },
   build: {
+    minify: "terser",
     rollupOptions: {},
   },
 }));
