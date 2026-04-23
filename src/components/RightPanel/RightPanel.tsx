@@ -4,15 +4,17 @@ import { useRuntimeStore } from "../../store/runtime";
 import { ActivityPanel } from "../ActivityPanel/ActivityPanel";
 import { SearchPanel } from "../SearchPanel/SearchPanel";
 import { DebugPanel } from "../DebugPanel/DebugPanel";
-import { IconResponse, IconSearch, IconSession, IconTerminal } from "../Icons/Icons";
+import { NotesPanel } from "../NotesPanel/NotesPanel";
+import { IconNotes, IconResponse, IconSearch, IconSession, IconTerminal } from "../Icons/Icons";
 import "./RightPanel.css";
 
-type RightPanelTab = "search" | "response" | "session" | "debug";
+type RightPanelTab = "search" | "response" | "session" | "notes" | "debug";
 
 const BASE_TABS = [
   { id: "search" as const, label: "Search", icon: <IconSearch size={13} /> },
   { id: "response" as const, label: "Response", icon: <IconResponse size={13} /> },
   { id: "session" as const, label: "Session", icon: <IconSession size={13} /> },
+  { id: "notes" as const, label: "Notes", icon: <IconNotes size={13} /> },
   { id: "debug" as const, label: "Debug Log", icon: <IconTerminal size={13} /> },
 ];
 
@@ -58,6 +60,7 @@ export function RightPanel() {
       <div className="right-panel-content">
         {activeTab === "response" && <ActivityPanel mode="response" />}
         {activeTab === "session" && <ActivityPanel mode="session" />}
+        {activeTab === "notes" && <NotesPanel />}
         {activeTab === "search" && <SearchPanel />}
         {activeTab === "debug" && debugBuild && <DebugPanel />}
       </div>

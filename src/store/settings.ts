@@ -114,7 +114,7 @@ interface SettingsState {
   commandBarExpanded: boolean;
   commandRefreshTrigger: number;
   showConfigManager: string | false;
-  rightPanelTab: "debug" | "response" | "session" | "search";
+  rightPanelTab: "debug" | "response" | "session" | "notes" | "search";
   replaceSessionId: string | null; // Session to close when launcher launches (Ctrl+Click relaunch)
   pastSessions: PastSession[];
   pastSessionsLoading: boolean;
@@ -147,7 +147,7 @@ interface SettingsState {
   setReplaceSessionId: (id: string | null) => void;
   setShowConfigManager: (show: string | false) => void;
   setCommandBarExpanded: (expanded: boolean) => void;
-  setRightPanelTab: (panel: "debug" | "response" | "session" | "search") => void;
+  setRightPanelTab: (panel: "debug" | "response" | "session" | "notes" | "search") => void;
   bootstrapCommandUsage: () => Promise<void>;
   triggerCommandRefresh: () => void;
   setSessionName: (id: string, name: string) => void;

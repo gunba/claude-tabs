@@ -139,6 +139,8 @@ export interface SessionMetadata {
     worktreeName: string;
     worktreeBranch: string;
   } | null;
+  /** User-authored scratchpad scoped to this session. Persists across app restarts via sessions.json. */
+  notes?: string;
   // [SI-25] Flattened Status hook snapshot captured from the TAP pipeline.
   statusLine: {
     cliVersion: string;

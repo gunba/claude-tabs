@@ -335,6 +335,18 @@ export function IconSession(props: IconProps) {
   );
 }
 
+/** Note card with a folded corner — scratchpad */
+export function IconNotes(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 2.5h7L13 5.5v8a1 1 0 01-1 1H3a1 1 0 01-1-1v-10a1 1 0 011-1z" />
+      <path d="M10 2.5V5a0.5 0.5 0 00.5.5H13" />
+      <line x1="5" y1="8" x2="10.5" y2="8" />
+      <line x1="5" y1="10.5" x2="9" y2="10.5" />
+    </Icon>
+  );
+}
+
 /** Counterclockwise circular arrow — reset */
 export function IconReset(props: IconProps) {
   return (
