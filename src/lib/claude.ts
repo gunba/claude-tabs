@@ -251,25 +251,29 @@ export function forceSessionColor(sessionId: string, colorIndex: number): void {
   colorAssignments.set(sessionId, colorIndex % SESSION_COLORS.length);
 }
 
-/** [CB-12] Compute heat level (0-4) for command frequency (WoW rarity). Thresholds: 0.20, 0.50, 0.80. */
-export function computeHeatLevel(count: number, maxCount: number): 0 | 1 | 2 | 3 | 4 {
-  if (count <= 0 || maxCount <= 0) return 0;
-  const ratio = count / maxCount;
-  if (ratio < 0.20) return 1;
-  if (ratio < 0.50) return 2;
-  if (ratio < 0.80) return 3;
-  return 4;
+/** [CB-12] Compute heat level (0-4) for command frequency (WoW rarity).
+ * Rank-based quartiles over used commands; unused = common.
+ *   count == 0           -> 0 (common/white)
+ *   top 25% of used      -> 4 (legendary/orange)
+ *   next 25%             -> 3 (epic/purple)
+ *   next 25%             -> 2 (rare/blue)
+ *   bottom 25%           -> 1 (uncommon/green)
+ * rank is 0-indexed from the top of the usage-sorted list (0 = most used).
+ * totalUsed is the number of commands with count > 0.
+ */
+export function computeHeatLevel(count: number, rank: number, totalUsed: number): 0 | 1 | 2 | 3 | 4 {
+  if (count <= 0 || totalUsed <= 0) return 0;
+  if (totalUsed === 1) return 4;
+  const percentile = rank / (totalUsed - 1);
+  if (percentile < 0.25) return 4;
+  if (percentile < 0.50) return 3;
+  if (percentile < 0.75) return 2;
+  return 1;
 }
 
-/** [CB-10] CSS class for heat level -- green, blue, purple, orange (WoW rarity). */
+/** [CB-10] CSS class for heat level -- white, green, blue, purple, orange (WoW rarity). */
 export function heatClassName(level: 0 | 1 | 2 | 3 | 4): string {
-  switch (level) {
-    case 1: return "heat-1";
-    case 2: return "heat-2";
-    case 3: return "heat-3";
-    case 4: return "heat-4";
-    default: return "";
-  }
+  return `heat-${level}`;
 }
 
 /** Format token count compactly: 0, 42, 2.3K, 36K, 1.2M */

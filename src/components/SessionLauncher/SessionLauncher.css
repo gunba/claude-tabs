@@ -376,7 +376,11 @@
   color: var(--accent-secondary);
 }
 
-/* ── Heat gradient: WoW rarity (Uncommon → Rare → Epic → Legendary) ── */
+/* ── Heat gradient: WoW rarity (Common → Uncommon → Rare → Epic → Legendary) ── */
+
+.launcher-cli-pill-cmd.heat-0 {
+  color: var(--rarity-common);
+}
 
 .launcher-cli-pill-cmd.heat-1 {
   color: color-mix(in srgb, var(--rarity-uncommon) 50%, var(--text-muted));

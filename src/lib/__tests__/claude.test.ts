@@ -127,78 +127,61 @@ describe("formatTokenCount", () => {
   });
 });
 
-describe("computeHeatLevel (WoW rarity: 0-4)", () => {
-  it("returns 0 for zero count", () => {
-    expect(computeHeatLevel(0, 10)).toBe(0);
+describe("computeHeatLevel (WoW rarity: 0-4, rank-based)", () => {
+  it("returns 0 (common) for zero count", () => {
+    expect(computeHeatLevel(0, 0, 5)).toBe(0);
   });
 
-  it("returns 0 when maxCount is 0", () => {
-    expect(computeHeatLevel(5, 0)).toBe(0);
+  it("returns 0 (common) when totalUsed is 0", () => {
+    expect(computeHeatLevel(0, 0, 0)).toBe(0);
   });
 
-  it("returns 1 (Uncommon) for <20%", () => {
-    expect(computeHeatLevel(1, 10)).toBe(1);
+  it("returns 0 (common) for negative count", () => {
+    expect(computeHeatLevel(-1, 0, 5)).toBe(0);
   });
 
-  it("returns 2 (Rare) for 20%-49%", () => {
-    expect(computeHeatLevel(2, 10)).toBe(2);
-    expect(computeHeatLevel(4, 10)).toBe(2);
+  it("returns 4 (legendary) when only one command is used", () => {
+    expect(computeHeatLevel(1, 0, 1)).toBe(4);
   });
 
-  it("returns 3 (Epic) for 50%-79%", () => {
-    expect(computeHeatLevel(5, 10)).toBe(3);
-    expect(computeHeatLevel(7, 10)).toBe(3);
+  it("splits 8 used commands into 2+2+2+2 across tiers", () => {
+    // rank 0..1 -> legendary, 2..3 -> epic, 4..5 -> rare, 6..7 -> uncommon
+    expect(computeHeatLevel(100, 0, 8)).toBe(4);
+    expect(computeHeatLevel(50, 1, 8)).toBe(4);
+    expect(computeHeatLevel(30, 2, 8)).toBe(3);
+    expect(computeHeatLevel(20, 3, 8)).toBe(3);
+    expect(computeHeatLevel(10, 4, 8)).toBe(2);
+    expect(computeHeatLevel(5, 5, 8)).toBe(2);
+    expect(computeHeatLevel(2, 6, 8)).toBe(1);
+    expect(computeHeatLevel(1, 7, 8)).toBe(1);
   });
 
-  it("returns 4 (Legendary) for >=80%", () => {
-    expect(computeHeatLevel(8, 10)).toBe(4);
-    expect(computeHeatLevel(10, 10)).toBe(4);
+  it("places top rank in legendary, bottom rank in uncommon for 4 used", () => {
+    expect(computeHeatLevel(10, 0, 4)).toBe(4);
+    expect(computeHeatLevel(5, 1, 4)).toBe(3);
+    expect(computeHeatLevel(2, 2, 4)).toBe(2);
+    expect(computeHeatLevel(1, 3, 4)).toBe(1);
   });
 
-  it("returns 4 when count equals maxCount", () => {
-    expect(computeHeatLevel(1, 1)).toBe(4);
-  });
-
-  it("returns 0 for negative count", () => {
-    expect(computeHeatLevel(-1, 10)).toBe(0);
-  });
-
-  it("returns 0 for negative maxCount", () => {
-    expect(computeHeatLevel(5, -1)).toBe(0);
-  });
-
-  it("returns 4 when count exceeds maxCount", () => {
-    expect(computeHeatLevel(15, 10)).toBe(4);
-  });
-
-  it("boundary: exactly 20% returns 2", () => {
-    expect(computeHeatLevel(20, 100)).toBe(2);
-  });
-
-  it("boundary: just below 20% returns 1", () => {
-    expect(computeHeatLevel(19, 100)).toBe(1);
-  });
-
-  it("boundary: exactly 50% returns 3", () => {
-    expect(computeHeatLevel(50, 100)).toBe(3);
-  });
-
-  it("boundary: just below 50% returns 2", () => {
-    expect(computeHeatLevel(49, 100)).toBe(2);
-  });
-
-  it("boundary: exactly 80% returns 4", () => {
-    expect(computeHeatLevel(80, 100)).toBe(4);
-  });
-
-  it("boundary: just below 80% returns 3", () => {
-    expect(computeHeatLevel(79, 100)).toBe(3);
+  it("guarantees epic tier appears in skewed power-law usage", () => {
+    // Real-world skew: /r=500, /j=50, /b=10, /x=3, /y=1 — old ratio-based impl
+    // would put everything except /r into uncommon. Rank-based spreads them out.
+    const levels = [
+      computeHeatLevel(500, 0, 5),
+      computeHeatLevel(50, 1, 5),
+      computeHeatLevel(10, 2, 5),
+      computeHeatLevel(3, 3, 5),
+      computeHeatLevel(1, 4, 5),
+    ];
+    expect(levels).toContain(4); // legendary
+    expect(levels).toContain(3); // epic
+    expect(levels).toContain(1); // uncommon
   });
 });
 
 describe("heatClassName", () => {
-  it("returns empty string for level 0", () => {
-    expect(heatClassName(0)).toBe("");
+  it("returns heat-0 for level 0 (Common)", () => {
+    expect(heatClassName(0)).toBe("heat-0");
   });
 
   it("returns heat-1 for level 1 (Uncommon)", () => {

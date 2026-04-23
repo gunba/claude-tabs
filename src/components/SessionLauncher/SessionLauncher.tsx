@@ -264,8 +264,8 @@ export function SessionLauncher() {
     });
   }, [cliCapabilities.commands, commandUsage]);
 
-  const cliCommandMaxCount = useMemo(() => {
-    return Math.max(...sortedCliCommands.map((c) => commandUsage[c.name] || 0), 0);
+  const cliUsedCommandCount = useMemo(() => {
+    return sortedCliCommands.reduce((n, c) => n + ((commandUsage[c.name] || 0) > 0 ? 1 : 0), 0);
   }, [sortedCliCommands, commandUsage]);
 
   // Extract extra flags from the command line (anything the user typed beyond
@@ -672,12 +672,12 @@ export function SessionLauncher() {
                       {opt.flag}
                     </button>
                   ))}
-                  {sortedCliCommands.map((cmd) => {
-                    const heatClass = heatClassName(computeHeatLevel(commandUsage[cmd.name] || 0, cliCommandMaxCount));
+                  {sortedCliCommands.map((cmd, idx) => {
+                    const heatClass = heatClassName(computeHeatLevel(commandUsage[cmd.name] || 0, idx, cliUsedCommandCount));
                     return (
                       <button
                         key={cmd.name}
-                        className={`launcher-cli-pill launcher-cli-pill-cmd${heatClass ? ` ${heatClass}` : ""}`}
+                        className={`launcher-cli-pill launcher-cli-pill-cmd ${heatClass}`}
                         onClick={() => setCommandLine((prev) => {
                           // [SL-16] Subcommand toggle: clicking a subcommand replaces command line with `claude <cmd>`; clicking again resets to generated command
                           const base = buildFullCommand(config);

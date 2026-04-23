@@ -143,6 +143,7 @@ export function applyTheme(theme: Theme): void {
   root.style.setProperty("--font-mono", "'Pragmasevka', 'Roboto Mono', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', monospace");
 
   // [CB-12] Rarity CSS variables (WoW item quality — fixed cross-theme)
+  root.style.setProperty("--rarity-common", "#ffffff");
   root.style.setProperty("--rarity-uncommon", "#1eff00");
   root.style.setProperty("--rarity-rare", "#0070dd");
   root.style.setProperty("--rarity-epic", "#a335ee");

@@ -53,9 +53,8 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
     });
   }, [slashCommands, commandUsage]);
 
-  const maxCount = useMemo(() => {
-    if (sortedCommands.length === 0) return 0;
-    return Math.max(...sortedCommands.map((c) => commandUsage[c.cmd] || 0), 0);
+  const usedCommandCount = useMemo(() => {
+    return sortedCommands.reduce((n, c) => n + ((commandUsage[c.cmd] || 0) > 0 ? 1 : 0), 0);
   }, [sortedCommands, commandUsage]);
 
   const handleClick = useCallback(
@@ -111,13 +110,13 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
           {discovering ? (
             <span className="command-bar-discovering">Discovering commands...</span>
           ) : (
-            sortedCommands.map((cmd) => {
+            sortedCommands.map((cmd, idx) => {
               const usageCount = commandUsage[cmd.cmd] || 0;
-              const heatClass = heatClassName(computeHeatLevel(usageCount, maxCount));
+              const heatClass = heatClassName(computeHeatLevel(usageCount, idx, usedCommandCount));
               return (
                 <button
                   key={cmd.cmd}
-                  className={`command-btn${heatClass ? ` ${heatClass}` : ""}`}
+                  className={`command-btn ${heatClass}`}
                   onClick={(e) => handleClick(cmd.cmd, e)}
                   title={ctrlHeld ? `Ctrl+Click: Send "${cmd.cmd}"` : `Click: Type "${cmd.cmd}" into terminal\n${cmd.desc}`}
                   type="button"
