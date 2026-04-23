@@ -72,17 +72,9 @@ export function NotesPanel() {
 
   const sendAll = useCallback(() => {
     if (!activeTabId) return;
-    const text = notes;
-    if (text.length === 0) return;
-    const ok = writeToPty(activeTabId, text + "\r");
-    if (!ok) return;
-    // Conversation notes are outbox-style and clear after sending.
-    // Project notes are reference material — keep them so they can be reused.
-    if (subTab === "conversation") {
-      commitNotes("");
-      setHasSelection(false);
-    }
-  }, [activeTabId, notes, subTab, commitNotes]);
+    if (notes.length === 0) return;
+    writeToPty(activeTabId, notes + "\r");
+  }, [activeTabId, notes]);
 
   const sendSelected = useCallback(() => {
     if (!activeTabId) return;
@@ -93,13 +85,8 @@ export function NotesPanel() {
     if (start === end) return;
     const fragment = notes.slice(start, end);
     if (fragment.length === 0) return;
-    const ok = writeToPty(activeTabId, fragment + "\r");
-    if (!ok) return;
-    if (subTab === "conversation") {
-      commitNotes(notes.slice(0, start) + notes.slice(end));
-      setHasSelection(false);
-    }
-  }, [activeTabId, notes, subTab, commitNotes]);
+    writeToPty(activeTabId, fragment + "\r");
+  }, [activeTabId, notes]);
 
   const subTabs: Array<{ id: SubTab; label: string }> = [
     { id: "conversation", label: "Conversation" },
@@ -134,8 +121,8 @@ export function NotesPanel() {
 
   const placeholder =
     subTab === "conversation"
-      ? "Notes for this conversation. Sent notes are removed from the buffer."
-      : "Notes for this project (shared across all sessions in this workspace). Reference material — sending keeps them intact.";
+      ? "Notes for this conversation."
+      : "Notes for this project (shared across all sessions in this workspace).";
 
   return (
     <div className="notes-panel">
