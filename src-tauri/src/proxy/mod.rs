@@ -1543,7 +1543,7 @@ mod tests {
     #[test]
     fn test_resolve_codex_upstream_request_model_uses_bound_requested_model_for_launch_carrier() {
         let mut requested = HashMap::new();
-        requested.insert("sess-1".to_string(), "gpt-5.4".to_string());
+        requested.insert("sess-1".to_string(), "gpt-5.5".to_string());
 
         let resolved = resolve_codex_upstream_request_model(
             Some("sess-1"),
@@ -1552,13 +1552,13 @@ mod tests {
             &requested,
         );
 
-        assert_eq!(resolved, Some("gpt-5.4".into()));
+        assert_eq!(resolved, Some("gpt-5.5".into()));
     }
 
     #[test]
     fn test_resolve_codex_upstream_request_model_honors_live_model_switches() {
         let mut requested = HashMap::new();
-        requested.insert("sess-1".to_string(), "gpt-5.4".to_string());
+        requested.insert("sess-1".to_string(), "gpt-5.5".to_string());
 
         let resolved = resolve_codex_upstream_request_model(
             Some("sess-1"),
@@ -1694,7 +1694,7 @@ mod tests {
             "/v1/messages",
             &Some("claude-opus-4-6".into()),
             "Codex",
-            &Some("gpt-5.4".into()),
+            &Some("gpt-5.5".into()),
             &Some(br#"{"model":"claude-opus-4-6"}"#.to_vec()),
             200,
             br#"{"type":"message"}"#,
@@ -1716,7 +1716,7 @@ mod tests {
         assert_eq!(entry["route"]["providerId"], "openai-codex");
         assert_eq!(entry["translation"]["upstreamMode"], "streaming");
         assert_eq!(entry["translation"]["summary"]["upstreamToolCallCount"], 3);
-        assert_eq!(entry["rewrite"], "gpt-5.4");
+        assert_eq!(entry["rewrite"], "gpt-5.5");
     }
 
     // ── SOCKS5 client builder tests ──────────────────────────────────

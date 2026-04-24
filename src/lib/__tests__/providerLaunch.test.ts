@@ -17,8 +17,8 @@ const openAiProvider: ModelProvider = {
   name: "OpenAI",
   kind: "openai_codex",
   predefined: true,
-  codexPrimaryModel: "gpt-5.4",
-  codexSmallModel: "gpt-5.4-mini",
+  codexPrimaryModel: "gpt-5.5",
+  codexSmallModel: "gpt-5.5-mini",
   knownModels: buildOpenAICodexModels(),
   modelMappings: buildOpenAICodexMappings(),
 };
@@ -39,8 +39,8 @@ describe("providerLaunch", () => {
     expect(getLaunchModelForProvider("best", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
     expect(getLaunchModelForProvider("haiku", openAiProvider, anthropicCatalog)).toBe("sonnet[1m]");
     expect(getLaunchModelForProvider("best[1m]", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
-    expect(getLaunchModelForProvider("gpt-5.4", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
-    expect(getLaunchModelForProvider("gpt-5.4-mini", openAiProvider, anthropicCatalog)).toBe("sonnet[1m]");
+    expect(getLaunchModelForProvider("gpt-5.5", openAiProvider, anthropicCatalog)).toBe("opus[1m]");
+    expect(getLaunchModelForProvider("gpt-5.5-mini", openAiProvider, anthropicCatalog)).toBe("sonnet[1m]");
   });
 
   it("falls back cleanly when the live carrier catalog changes shape", () => {
@@ -48,7 +48,7 @@ describe("providerLaunch", () => {
       { id: "mythos[1m]", label: "mythos[1m]", family: "mythos", contextWindow: 1000000 },
     ];
 
-    expect(getLaunchModelForProvider("gpt-5.4", openAiProvider, catalog)).toBe("mythos[1m]");
+    expect(getLaunchModelForProvider("gpt-5.5", openAiProvider, catalog)).toBe("mythos[1m]");
   });
 
   it("sets the autocompact window env for OpenAI launches", () => {

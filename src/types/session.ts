@@ -260,8 +260,8 @@ export interface ModelMapping {
 }
 
 export interface ProviderModel {
-  id: string;            // model identifier sent to CLI/API (e.g., "opus", "gpt-5.4")
-  label: string;         // display name (e.g., "Opus", "GPT-5.4")
+  id: string;            // model identifier sent to CLI/API (e.g., "opus", "gpt-5.5")
+  label: string;         // display name (e.g., "Opus", "GPT-5.5")
   family?: string;       // grouping key for matching registry [1m] variants
   contextWindow?: number; // default context window in tokens
   color?: string;        // optional UI color
@@ -328,8 +328,8 @@ export const DEFAULT_CLAUDE_MAPPINGS: ModelMapping[] = [
 // [PR-02] OpenAI Codex provider metadata ships with canonical 272k-cap model
 // definitions plus short-alias and Claude-family mappings for default config.
 export const OPENAI_CODEX_CONTEXT_WINDOW = 272000;
-export const OPENAI_CODEX_PRIMARY_MODEL = "gpt-5.4";
-export const OPENAI_CODEX_SMALL_MODEL = "gpt-5.4-mini";
+export const OPENAI_CODEX_PRIMARY_MODEL = "gpt-5.5";
+export const OPENAI_CODEX_SMALL_MODEL = "gpt-5.5-mini";
 
 export function buildOpenAICodexModels(
   primaryModel = OPENAI_CODEX_PRIMARY_MODEL,

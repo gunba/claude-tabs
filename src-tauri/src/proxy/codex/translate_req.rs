@@ -332,9 +332,9 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
-        assert_eq!(translated["model"], "gpt-5.4");
+        assert_eq!(translated["model"], "gpt-5.5");
         assert_eq!(translated["instructions"], "You are a helpful assistant");
         assert_eq!(translated["stream"], true);
         assert!(translated.get("max_tokens").is_none());
@@ -354,7 +354,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(
@@ -378,7 +378,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(
@@ -398,7 +398,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("instructions").is_none());
@@ -415,7 +415,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(
@@ -440,7 +440,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         // Assistant tool_use → top-level function_call
         assert_eq!(translated["input"][0]["type"], "function_call");
@@ -463,7 +463,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["service_tier"], "priority");
@@ -479,7 +479,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["input"][0]["role"], "assistant");
@@ -503,7 +503,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["input"][0]["role"], "assistant");
@@ -527,7 +527,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(translated["input"][0]["content"][0]["type"], "input_image");
         assert_eq!(
@@ -549,7 +549,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("temperature").is_none());
@@ -567,7 +567,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert_eq!(translated["reasoning"]["effort"], "medium");
@@ -582,7 +582,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("toolChoice").is_none());
@@ -599,7 +599,7 @@ mod tests {
             "stream": true,
         });
         let result =
-            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.4", false).unwrap();
+            translate_request(serde_json::to_vec(&body).unwrap().as_slice(), "gpt-5.5", false).unwrap();
         let translated: Value = serde_json::from_slice(&result).unwrap();
 
         assert!(translated.get("max_tokens").is_none());

@@ -45,11 +45,11 @@ fn codex_identity_headers(session_id: Option<&str>) -> Vec<(&'static str, String
 /// OpenAI Codex model before the upstream request is built.
 /// Resolve the Codex model name from the request model and provider config.
 fn resolve_codex_model(model: Option<&str>, provider: &ModelProvider) -> String {
-    let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
+    let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.5");
     let small = provider
         .codex_small_model
         .as_deref()
-        .unwrap_or("gpt-5.4-mini");
+        .unwrap_or("gpt-5.5-mini");
 
     let model = match model {
         Some(m) => m,
@@ -134,11 +134,11 @@ fn push_synthetic_model(
 /// hardcoded GPT-family assumptions in the proxy.
 /// Build a synthetic Anthropic `/v1/models` response for the Codex provider.
 fn build_synthetic_models_response(provider: &ModelProvider) -> Vec<u8> {
-    let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.4");
+    let primary = provider.codex_primary_model.as_deref().unwrap_or("gpt-5.5");
     let small = provider
         .codex_small_model
         .as_deref()
-        .unwrap_or("gpt-5.4-mini");
+        .unwrap_or("gpt-5.5-mini");
     let default_context_window = synthetic_codex_context_window(provider);
     let mut data = Vec::new();
     let mut seen_ids = HashSet::new();
@@ -318,6 +318,33 @@ pub async fn handle_request(
             return Ok(());
         }
     };
+
+    // Claude Code periodically pings /v1/messages with a minimal
+    // {max_tokens:1, messages:[{role:"user", content:"quota"}]} body to verify
+    // auth/quota is live. Auth is already verified above, so short-circuit a
+    // canned 200 without hitting upstream (the Codex backend would 400 on the
+    // missing `instructions` field and it wastes tokens regardless).
+    if is_quota_probe(body) {
+        let probe_streaming = serde_json::from_slice::<serde_json::Value>(body)
+            .ok()
+            .and_then(|v| v.get("stream").and_then(|s| s.as_bool()))
+            .unwrap_or(true);
+        let probe_model = client_model
+            .clone()
+            .or_else(|| extract_model_from_body(body))
+            .unwrap_or_else(|| "claude-opus-4-6".to_string());
+        record_backend_event(
+            app,
+            "DEBUG",
+            "proxy",
+            session_id,
+            "codex.quota_probe",
+            "Short-circuited Claude Code quota probe",
+            serde_json::json!({ "streaming": probe_streaming, "model": probe_model }),
+        );
+        let _ = send_quota_probe_response(tcp_stream, probe_streaming, &probe_model).await;
+        return Ok(());
+    }
 
     // Extract model from request and resolve to Codex model
     let req_model = client_model
@@ -532,7 +559,7 @@ pub async fn handle_request(
             &format!("Codex API {status}"),
             serde_json::json!({ "status": status, "body": body }),
         );
-        send_error(tcp_stream, status, &format!("Codex API error: {body}")).await;
+        send_codex_upstream_error(tcp_stream, status, &body, is_streaming).await;
         return Ok(());
     }
 
@@ -860,6 +887,90 @@ async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) 
     let _ = stream.flush().await;
 }
 
+// When the Anthropic client requested SSE (`stream:true`), deliver upstream
+// failures as an Anthropic-shaped `event: error` frame on a 200 OK SSE stream
+// instead of a plain JSON error body the client's SSE parser cannot consume.
+async fn send_codex_upstream_error(
+    stream: &mut tokio::net::TcpStream,
+    status: u16,
+    body: &str,
+    is_streaming: bool,
+) {
+    if !is_streaming {
+        send_error(stream, status, &format!("Codex API error: {body}")).await;
+        return;
+    }
+    let resp_headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n";
+    let payload = serde_json::json!({
+        "type": "error",
+        "error": { "type": "api_error", "message": format!("Codex API error: {body}") }
+    })
+    .to_string();
+    let frame = format!("event: error\ndata: {payload}\n\n");
+    let _ = stream.write_all(resp_headers.as_bytes()).await;
+    let _ = stream.write_all(frame.as_bytes()).await;
+    let _ = stream.flush().await;
+}
+
+fn is_quota_probe(body: &[u8]) -> bool {
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return false;
+    };
+    if v.get("max_tokens").and_then(|m| m.as_u64()) != Some(1) {
+        return false;
+    }
+    let Some(messages) = v.get("messages").and_then(|m| m.as_array()) else {
+        return false;
+    };
+    if messages.len() != 1 {
+        return false;
+    }
+    let msg = &messages[0];
+    if msg.get("role").and_then(|r| r.as_str()) != Some("user") {
+        return false;
+    }
+    msg.get("content").and_then(|c| c.as_str()) == Some("quota")
+}
+
+async fn send_quota_probe_response(
+    tcp: &mut tokio::net::TcpStream,
+    is_streaming: bool,
+    original_model: &str,
+) -> std::io::Result<()> {
+    let message = serde_json::json!({
+        "id": "msg_quota_probe",
+        "type": "message",
+        "role": "assistant",
+        "model": original_model,
+        "content": [],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "usage": { "input_tokens": 0, "output_tokens": 0 },
+    });
+    if is_streaming {
+        let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n";
+        tcp.write_all(headers.as_bytes()).await?;
+        let start = serde_json::json!({ "type": "message_start", "message": message });
+        let delta = serde_json::json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+            "usage": { "output_tokens": 0 },
+        });
+        let stop = serde_json::json!({ "type": "message_stop" });
+        tcp.write_all(&stream::format_sse_event("message_start", &start)).await?;
+        tcp.write_all(&stream::format_sse_event("message_delta", &delta)).await?;
+        tcp.write_all(&stream::format_sse_event("message_stop", &stop)).await?;
+    } else {
+        let body = message.to_string();
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len(),
+        );
+        tcp.write_all(resp.as_bytes()).await?;
+    }
+    tcp.flush().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -881,17 +992,17 @@ mod tests {
             base_url: None,
             api_key: None,
             socks5_proxy: None,
-            codex_primary_model: Some("gpt-5.4".into()),
-            codex_small_model: Some("gpt-5.4-mini".into()),
+            codex_primary_model: Some("gpt-5.5".into()),
+            codex_small_model: Some("gpt-5.5-mini".into()),
             known_models: Vec::new(),
         };
         assert_eq!(
             resolve_codex_model(Some("claude-haiku-4-5"), &provider),
-            "gpt-5.4-mini"
+            "gpt-5.5-mini"
         );
         assert_eq!(
             resolve_codex_model(Some("haiku"), &provider),
-            "gpt-5.4-mini"
+            "gpt-5.5-mini"
         );
     }
 
@@ -906,18 +1017,18 @@ mod tests {
             base_url: None,
             api_key: None,
             socks5_proxy: None,
-            codex_primary_model: Some("gpt-5.4".into()),
-            codex_small_model: Some("gpt-5.4-mini".into()),
+            codex_primary_model: Some("gpt-5.5".into()),
+            codex_small_model: Some("gpt-5.5-mini".into()),
             known_models: Vec::new(),
         };
         assert_eq!(
             resolve_codex_model(Some("claude-opus-4-6"), &provider),
-            "gpt-5.4"
+            "gpt-5.5"
         );
-        assert_eq!(resolve_codex_model(Some("opus"), &provider), "gpt-5.4");
-        assert_eq!(resolve_codex_model(Some("best"), &provider), "gpt-5.4");
-        assert_eq!(resolve_codex_model(Some("opusplan"), &provider), "gpt-5.4");
-        assert_eq!(resolve_codex_model(Some("sonnet"), &provider), "gpt-5.4");
+        assert_eq!(resolve_codex_model(Some("opus"), &provider), "gpt-5.5");
+        assert_eq!(resolve_codex_model(Some("best"), &provider), "gpt-5.5");
+        assert_eq!(resolve_codex_model(Some("opusplan"), &provider), "gpt-5.5");
+        assert_eq!(resolve_codex_model(Some("sonnet"), &provider), "gpt-5.5");
     }
 
     #[test]
@@ -931,11 +1042,11 @@ mod tests {
             base_url: None,
             api_key: None,
             socks5_proxy: None,
-            codex_primary_model: Some("gpt-5.4".into()),
-            codex_small_model: Some("gpt-5.4-mini".into()),
+            codex_primary_model: Some("gpt-5.5".into()),
+            codex_small_model: Some("gpt-5.5-mini".into()),
             known_models: Vec::new(),
         };
-        assert_eq!(resolve_codex_model(Some("gpt-5.4"), &provider), "gpt-5.4");
+        assert_eq!(resolve_codex_model(Some("gpt-5.5"), &provider), "gpt-5.5");
     }
 
     #[test]
@@ -949,22 +1060,22 @@ mod tests {
             base_url: None,
             api_key: None,
             socks5_proxy: None,
-            codex_primary_model: Some("gpt-5.4".into()),
-            codex_small_model: Some("gpt-5.4-mini".into()),
+            codex_primary_model: Some("gpt-5.5".into()),
+            codex_small_model: Some("gpt-5.5-mini".into()),
             known_models: Vec::new(),
         };
         assert_eq!(
             resolve_codex_model(Some("claude-opus-4-6[1m]"), &provider),
-            "gpt-5.4"
+            "gpt-5.5"
         );
         assert_eq!(
             resolve_codex_model(Some("claude-haiku-4-5[1m]"), &provider),
-            "gpt-5.4-mini"
+            "gpt-5.5-mini"
         );
-        assert_eq!(resolve_codex_model(Some("best[1m]"), &provider), "gpt-5.4");
+        assert_eq!(resolve_codex_model(Some("best[1m]"), &provider), "gpt-5.5");
         assert_eq!(
             resolve_codex_model(Some("opusplan[1m]"), &provider),
-            "gpt-5.4"
+            "gpt-5.5"
         );
     }
 
@@ -979,29 +1090,29 @@ mod tests {
             base_url: None,
             api_key: None,
             socks5_proxy: None,
-            codex_primary_model: Some("gpt-5.4".into()),
-            codex_small_model: Some("gpt-5.4-mini".into()),
+            codex_primary_model: Some("gpt-5.5".into()),
+            codex_small_model: Some("gpt-5.5-mini".into()),
             known_models: Vec::new(),
         };
 
-        let translated_request = br#"{"model":"gpt-5.4","input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}]}"#;
+        let translated_request = br#"{"model":"gpt-5.5","input":[{"role":"user","content":[{"type":"input_text","text":"hello"}]}]}"#;
 
         let meta = codex_traffic_meta(
             &provider,
             true,
             &Some("claude-opus-4-6".into()),
-            &Some("gpt-5.4".into()),
-            &Some("gpt-5.4".into()),
-            "gpt-5.4",
+            &Some("gpt-5.5".into()),
+            &Some("gpt-5.5".into()),
+            "gpt-5.5",
             "streaming",
             translated_request,
             translated_request.len(),
             None,
         );
 
-        assert_eq!(meta["translation"]["translatedRequest"]["model"], "gpt-5.4");
+        assert_eq!(meta["translation"]["translatedRequest"]["model"], "gpt-5.5");
         assert_eq!(meta["route"]["clientModel"], "claude-opus-4-6");
-        assert_eq!(meta["route"]["upstreamRequestModel"], "gpt-5.4");
+        assert_eq!(meta["route"]["upstreamRequestModel"], "gpt-5.5");
         assert_eq!(
             meta["translation"]["translatedRequest"]["input"][0]["role"],
             "user"
@@ -1074,5 +1185,40 @@ mod tests {
         );
         assert_eq!(json["first_id"], "gpt-5.5");
         assert_eq!(json["last_id"], "gpt-5.5-mini");
+    }
+
+    #[test]
+    fn test_is_quota_probe_matches_claude_code_shape() {
+        let body = br#"{"max_tokens":1,"messages":[{"content":"quota","role":"user"}],"model":"claude-haiku-4-5-20251001"}"#;
+        assert!(is_quota_probe(body));
+    }
+
+    #[test]
+    fn test_is_quota_probe_rejects_real_user_message() {
+        let body = br#"{"max_tokens":4096,"messages":[{"content":"quota","role":"user"}],"model":"claude-opus-4-6"}"#;
+        assert!(!is_quota_probe(body));
+    }
+
+    #[test]
+    fn test_is_quota_probe_rejects_different_content() {
+        let body = br#"{"max_tokens":1,"messages":[{"content":"hello","role":"user"}],"model":"claude-haiku-4-5"}"#;
+        assert!(!is_quota_probe(body));
+    }
+
+    #[test]
+    fn test_is_quota_probe_rejects_multi_message() {
+        let body = br#"{"max_tokens":1,"messages":[{"content":"quota","role":"user"},{"content":"more","role":"user"}],"model":"claude-haiku-4-5"}"#;
+        assert!(!is_quota_probe(body));
+    }
+
+    #[test]
+    fn test_is_quota_probe_rejects_assistant_role() {
+        let body = br#"{"max_tokens":1,"messages":[{"content":"quota","role":"assistant"}],"model":"claude-haiku-4-5"}"#;
+        assert!(!is_quota_probe(body));
+    }
+
+    #[test]
+    fn test_is_quota_probe_rejects_malformed_json() {
+        assert!(!is_quota_probe(b"not json"));
     }
 }
