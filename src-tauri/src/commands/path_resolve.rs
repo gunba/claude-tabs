@@ -234,6 +234,7 @@ fn resolve_candidate(
 /// that misses, search a TTL-cached file index rooted at cwd. Returns one
 /// entry per input candidate in input order; `absPath` is None when no
 /// unambiguous match is found.
+// [RT-03] resolve_paths: literal + TTL-cached subtree index (60s), WalkBuilder respects gitignore + extra ignored dirs
 #[tauri::command]
 pub async fn resolve_paths(cwd: Option<String>, candidates: Vec<String>) -> Vec<ResolvedPath> {
     tokio::task::spawn_blocking(move || {

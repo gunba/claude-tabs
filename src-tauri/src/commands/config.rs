@@ -520,6 +520,7 @@ fn extract_mcp_servers(data: &serde_json::Value, scope: &str, working_dir: &str)
     }
 }
 
+// [RT-02] read_mcp_servers / write_mcp_servers read/write MCP server configs from ~/.claude.json
 /// Read MCP servers from `~/.claude.json`.
 /// - user scope: top-level `mcpServers`
 /// - project scope: `projects[<working_dir>].mcpServers`

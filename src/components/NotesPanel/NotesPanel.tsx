@@ -5,6 +5,7 @@ import { writeToPty } from "../../lib/ptyRegistry";
 import { abbreviatePath, normalizePath, parseWorktreePath } from "../../lib/paths";
 import "./NotesPanel.css";
 
+// [NP-01] Per-session notes: Conversation (session metadata) + Project (workspaceNotes store) subtabs. Send-all/Send-selected write to PTY. Buffer not cleared after send.
 type SubTab = "conversation" | "project";
 
 function deriveWorkspace(workingDir: string | undefined) {

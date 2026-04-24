@@ -319,7 +319,7 @@ pub async fn handle_request(
         }
     };
 
-    // Claude Code periodically pings /v1/messages with a minimal
+    // [PR-14] Claude Code periodically pings /v1/messages with a minimal
     // {max_tokens:1, messages:[{role:"user", content:"quota"}]} body to verify
     // auth/quota is live. Auth is already verified above, so short-circuit a
     // canned 200 without hitting upstream (the Codex backend would 400 on the
@@ -887,6 +887,7 @@ async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) 
     let _ = stream.flush().await;
 }
 
+// [PR-15] Codex SSE 4xx framing: deliver upstream errors as Anthropic event:error on SSE 200 when client requested streaming
 // When the Anthropic client requested SSE (`stream:true`), deliver upstream
 // failures as an Anthropic-shaped `event: error` frame on a 200 OK SSE stream
 // instead of a plain JSON error body the client's SSE parser cannot consume.
@@ -912,6 +913,7 @@ async fn send_codex_upstream_error(
     let _ = stream.flush().await;
 }
 
+// [PR-14] is_quota_probe: short-circuits Claude Code's {max_tokens:1, messages:[{role:user, content:quota}]} auth probe
 fn is_quota_probe(body: &[u8]) -> bool {
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
         return false;

@@ -10,4 +10,4 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 ## Provider Routing
 Session-bound provider routing, OpenAI Codex provider config, and auth-backed request translation.
 
-- [PR-04 L196] Codex proxy shaping normalizes short Claude aliases like best, opusplan, sonnet, and haiku to the correct OpenAI primary or small model, and clamps oversized Read.limit tool calls before execution while recording adjusted tool-call IDs and counts in translation summaries.
+- [PR-04 L196] Codex proxy shaping normalizes short Claude aliases best, opusplan, sonnet, opus, and haiku (and any model starting with 'claude') to the configured primary or small OpenAI Codex model (default: gpt-5.5 / gpt-5.5-mini). Strips [1m] context suffix and ANSI bracket codes before matching. Non-Claude model strings pass through unchanged. source: src-tauri/src/proxy/codex/mod.rs:L44

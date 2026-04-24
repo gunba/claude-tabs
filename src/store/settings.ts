@@ -824,6 +824,7 @@ export const useSettingsStore = create<SettingsState>()(
           // rightPanelTab is transient (not persisted), so only clean up the stale key.
           delete state.activityViewMode;
         }
+        // [NP-02] v16 migration backfills workspaceNotes as {} for older persisted states
         if (version < 16) {
           if (!state.workspaceNotes) state.workspaceNotes = {};
         }
