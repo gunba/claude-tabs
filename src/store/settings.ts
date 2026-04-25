@@ -445,6 +445,7 @@ export const useSettingsStore = create<SettingsState>()(
       cacheSessionConfig: (id, config) =>
         set((s) => {
           const partial: Partial<SessionConfig> = {
+            cli: config.cli === "codex" ? config.cli : undefined,
             model: config.model,
             permissionMode: config.permissionMode,
             dangerouslySkipPermissions: config.dangerouslySkipPermissions,

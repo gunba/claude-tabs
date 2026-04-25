@@ -6,7 +6,8 @@ import { useSettingsStore } from "../../store/settings";
 import { dlog } from "../../lib/debugLog";
 import type { CliOption, CliCommand } from "../../store/settings";
 import { dirToTabName, computeHeatLevel, heatClassName } from "../../lib/claude";
-import { parseWorktreePath, normalizePath } from "../../lib/paths";
+import { normalizePath, parseWorktreePath } from "../../lib/paths";
+import { buildInitialLauncherConfig } from "../../lib/sessionLauncherConfig";
 import {
   type SessionConfig,
   type PermissionMode,
@@ -55,32 +56,20 @@ export function SessionLauncher() {
   const createSession = useSessionStore((s) => s.createSession);
   const claudePath = useSessionStore((s) => s.claudePath);
   const codexPath = useSessionStore((s) => s.codexPath);
-  const { recentDirs, lastConfig, savedDefaults, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
+  const { recentDirs, lastConfig, savedDefaults, workspaceDefaults, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
     useSettingsStore();
   const cliCapabilitiesByCli = useSettingsStore((s) => s.cliCapabilitiesByCli);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
 
-  // When resuming, use session-specific settings from lastConfig (set by handleConfigure);
-  // otherwise savedDefaults (explicit "Save defaults") takes priority over lastConfig.
-  // Layer workspace-specific defaults on top when available for the resolved workingDir.
-  const defaults = lastConfig.resumeSession ? lastConfig : (savedDefaults ?? lastConfig);
-  const wsInitKey = (() => {
-    const wt = parseWorktreePath(defaults.workingDir);
-    return normalizePath(wt ? wt.projectRoot : defaults.workingDir).toLowerCase();
-  })();
-  const wsInitDefaults = wsInitKey ? useSettingsStore.getState().workspaceDefaults[wsInitKey] : undefined;
-  const [config, setConfig] = useState<SessionConfig>({
-    ...DEFAULT_SESSION_CONFIG,
-    ...defaults,
-    ...(wsInitDefaults ?? {}),
-    workingDir: defaults.workingDir,
-    continueSession: false,
-    sessionId: null,
-    runMode: false,
-    forkSession: false,
-  });
+  // Resume launches use the session-specific config from lastConfig.
+  // Fresh launches can layer workspace defaults over saved/global defaults.
+  const [config, setConfig] = useState<SessionConfig>(() => buildInitialLauncherConfig({
+    lastConfig,
+    savedDefaults,
+    workspaceDefaults,
+  }));
   const isUtilityRef = useRef(false);
   const mountedRef = useRef(false);
   const [showCliOptions, setShowCliOptions] = useState(true);

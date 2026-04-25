@@ -425,3 +425,42 @@ describe("setSavedDefaults with workspaceDefaults", () => {
     expect(saved.forkSession).toBe(false);
   });
 });
+
+describe("cacheSessionConfig", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ sessionConfigs: {} });
+  });
+
+  const makeConfig = (overrides: Record<string, unknown> = {}) => ({
+    workingDir: "/projects/myapp",
+    model: "gpt-5.5",
+    permissionMode: "default" as const,
+    dangerouslySkipPermissions: false,
+    systemPrompt: null,
+    appendSystemPrompt: null,
+    allowedTools: [] as string[],
+    disallowedTools: [] as string[],
+    additionalDirs: [] as string[],
+    mcpConfig: null,
+    agent: null,
+    effort: null,
+    verbose: false,
+    debug: false,
+    maxBudget: null,
+    resumeSession: null,
+    forkSession: false,
+    continueSession: false,
+    projectDir: false,
+    extraFlags: null,
+    sessionId: null,
+    runMode: false,
+    cli: "codex" as const,
+    ...overrides,
+  });
+
+  it("keeps Codex CLI identity for resume picker fallbacks", () => {
+    useSettingsStore.getState().cacheSessionConfig("codex-session-id", makeConfig());
+
+    expect(useSettingsStore.getState().sessionConfigs["codex-session-id"].cli).toBe("codex");
+  });
+});
