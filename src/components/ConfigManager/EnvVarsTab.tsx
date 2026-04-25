@@ -6,6 +6,7 @@ import { formatScopePath } from "../../lib/paths";
 import { useSettingsStore } from "../../store/settings";
 import { highlightJson } from "./SettingsPane";
 import { EnvVarsReference } from "./EnvVarsReference";
+import { replaceTextareaValue } from "../../lib/domEdit";
 import type { StatusMessage } from "../../lib/settingsSchema";
 
 type Scope = PaneComponentProps["scope"];
@@ -112,10 +113,12 @@ function EnvPane({ scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEd
   const [text, setText] = useState("{}");
   const [saved, setSaved] = useState("{}");
   const [loading, setLoading] = useState(true);
+  const [seedKey, setSeedKey] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
   const load = useCallback(async () => {
+    let formatted = "{}";
     try {
       const result = await invoke<string>("read_config_file", {
         scope,
@@ -126,13 +129,13 @@ function EnvPane({ scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEd
       const env = (settings.env && typeof settings.env === "object" && !Array.isArray(settings.env))
         ? settings.env as Record<string, unknown>
         : {};
-      const formatted = JSON.stringify(env, null, 2);
-      setText(formatted);
-      setSaved(formatted);
+      formatted = JSON.stringify(env, null, 2);
     } catch {
-      setText("{}");
-      setSaved("{}");
+      formatted = "{}";
     }
+    setText(formatted);
+    setSaved(formatted);
+    setSeedKey((k) => k + 1);
     setLoading(false);
   }, [scope, projectDir]);
 
@@ -148,16 +151,20 @@ function EnvPane({ scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEd
 
   useEffect(() => { onEnvKeysChange?.(envKeys); }, [envKeys, onEnvKeysChange]);
 
+  // Insert via execCommand so the change becomes one undoable step rather than
+  // wiping the native undo stack. Read from the DOM (not state) for freshness.
   const handleInsert = useCallback((name: string) => {
-    setText((prev) => {
-      try {
-        const obj = JSON.parse(prev) as Record<string, string>;
-        if (name in obj) return prev;
-        return JSON.stringify({ ...obj, [name]: "" }, null, 2);
-      } catch {
-        return prev;
-      }
-    });
+    const el = textareaRef.current;
+    if (!el) return;
+    let next: string | null = null;
+    try {
+      const obj = JSON.parse(el.value) as Record<string, string>;
+      if (name in obj) return;
+      next = JSON.stringify({ ...obj, [name]: "" }, null, 2);
+    } catch {
+      return;
+    }
+    if (next != null) replaceTextareaValue(el, next);
   }, []);
 
   useEffect(() => {
@@ -166,9 +173,10 @@ function EnvPane({ scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEd
   }, [handleInsert, insertRef]);
 
   const handleSave = useCallback(async () => {
+    const value = textareaRef.current?.value ?? text;
     let newEnv: Record<string, unknown>;
     try {
-      newEnv = JSON.parse(text) as Record<string, unknown>;
+      newEnv = JSON.parse(value) as Record<string, unknown>;
     } catch (err) {
       onStatus({ text: `Invalid JSON: ${err}`, type: "error" });
       return;
@@ -188,7 +196,7 @@ function EnvPane({ scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEd
         fileType: "settings",
         content,
       });
-      setSaved(text);
+      setSaved(value);
       onStatus({ text: "Env vars saved", type: "success" });
       setTimeout(() => onStatus(null), 2000);
     } catch (err) {
@@ -217,10 +225,14 @@ function EnvPane({ scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEd
           dangerouslySetInnerHTML={{ __html: highlightJson(text) + "\n" }}
         />
         <textarea
+          // Remount on each successful load so `defaultValue` reseeds. Mid-edit
+          // the textarea owns its value and undo stack; React mirrors via
+          // onInput so the overlay and validation stay in sync.
+          key={seedKey}
           ref={textareaRef}
           className="pane-textarea sh-textarea"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          defaultValue={text}
+          onInput={(e) => setText(e.currentTarget.value)}
           spellCheck={false}
           onScroll={syncScroll}
           onKeyDown={(e) => {

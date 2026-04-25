@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { useSettingsStore } from "../../store/settings";
+import { replaceTextareaValue } from "../../lib/domEdit";
 import {
   buildSettingsSchema,
   groupByCategory,
@@ -223,6 +224,7 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(true);
+  const [seedKey, setSeedKey] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -263,31 +265,32 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
   }, [cli, text, schema]);
 
   const load = useCallback(async () => {
+    let formatted: string;
     try {
       const result = await invoke<string>("read_config_file", {
         scope,
         workingDir: scope === "user" ? "" : projectDir,
         fileType: cli === "codex" ? "codex-config" : "settings",
       });
-      const formatted = cli === "codex"
+      formatted = cli === "codex"
         ? result
         : result ? JSON.stringify(JSON.parse(result), null, 2) : "{}";
-      setText(formatted);
-      setSaved(formatted);
     } catch {
-      const empty = cli === "codex" ? "" : "{}";
-      setText(empty);
-      setSaved(empty);
+      formatted = cli === "codex" ? "" : "{}";
     }
+    setText(formatted);
+    setSaved(formatted);
+    setSeedKey((k) => k + 1);
     setLoading(false);
   }, [scope, projectDir, cli]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSave = useCallback(async () => {
+    const value = textareaRef.current?.value ?? text;
     if (cli === "claude") {
       try {
-        JSON.parse(text); // validate
+        JSON.parse(value); // validate
       } catch (err) {
         onStatus({ text: `Invalid JSON: ${err}`, type: "error" });
         return;
@@ -298,9 +301,9 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
         scope,
         workingDir: scope === "user" ? "" : projectDir,
         fileType: cli === "codex" ? "codex-config" : "settings",
-        content: text,
+        content: value,
       });
-      setSaved(text);
+      setSaved(value);
       onStatus({ text: cli === "codex" ? "Codex config saved" : "Settings saved", type: "success" });
       setTimeout(() => onStatus(null), 2000);
     } catch (err) {
@@ -308,8 +311,21 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
     }
   }, [cli, text, scope, projectDir, onStatus]);
 
+  // Insert reformats the entire JSON document. We replace the textarea value
+  // through the browser's edit history (execCommand) so the change is a single
+  // undoable step that doesn't reset the native undo stack — and we read the
+  // current value off the DOM (not React state) to avoid acting on stale data.
   const handleInsert = useCallback((key: string, value: unknown) => {
-    setText((prev) => insertIntoJson(prev, key, value));
+    const el = textareaRef.current;
+    if (!el) return;
+    const newJson = (() => {
+      try {
+        return insertIntoJson(el.value, key, value);
+      } catch {
+        return el.value;
+      }
+    })();
+    replaceTextareaValue(el, newJson);
   }, []);
 
   // Report current keys to parent
@@ -368,10 +384,14 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
           />
         )}
         <textarea
+          // Remount on each successful load (or scope change) so `defaultValue`
+          // reseeds. The browser owns the textarea's value and undo stack
+          // mid-edit; React mirrors via onInput for the overlay/validation.
+          key={seedKey}
           ref={textareaRef}
           className={cli === "codex" ? "pane-textarea" : "pane-textarea sh-textarea"}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          defaultValue={text}
+          onInput={(e) => setText(e.currentTarget.value)}
           spellCheck={false}
           placeholder={cli === "codex" ? "No config.toml found - type TOML to create" : undefined}
           onScroll={syncScroll}

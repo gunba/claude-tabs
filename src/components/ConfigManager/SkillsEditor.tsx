@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../store/settings";
 import { dlog } from "../../lib/debugLog";
+import { insertTextAtCursor } from "../../lib/domEdit";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 
@@ -35,6 +36,8 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
   const [savedContent, setSavedContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
+  const [seedKey, setSeedKey] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const commandUsage = useSettingsStore((s) => s.commandUsage);
 
@@ -69,10 +72,14 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
   const newKind: Kind = cli === "codex" || selected === NEW_SKILL ? "skill" : "command";
 
   // Load selected file content (with cancellation to prevent stale writes on rapid selection).
+  // On every state transition (new entry, load complete, error) we bump seedKey
+  // so the textarea remounts and `defaultValue` reseeds while keeping the
+  // browser's native undo stack intact mid-edit.
   useEffect(() => {
     if (!selected || isNew) {
       setContent("");
       setSavedContent("");
+      setSeedKey((k) => k + 1);
       return;
     }
     const parsed = parseKey(selected);
@@ -86,10 +93,16 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
       workingDir,
       fileType: cli === "codex" ? `codex-skill:${parsed.name}` : `skill:${parsed.kind}:${parsed.name}`,
     }).then((result) => {
-      if (!cancelled) { setContent(result); setSavedContent(result); }
+      if (cancelled) return;
+      setContent(result);
+      setSavedContent(result);
+      setSeedKey((k) => k + 1);
     }).catch((err) => {
       dlog("config", null, `read ${parsed.kind} failed: ${err}`, "ERR");
-      if (!cancelled) { setContent(""); setSavedContent(""); }
+      if (cancelled) return;
+      setContent("");
+      setSavedContent("");
+      setSeedKey((k) => k + 1);
     });
     return () => { cancelled = true; };
   }, [selected, isNew, entries, scope, workingDir, cli]);
@@ -98,14 +111,15 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
     if (!selected || isNew) return;
     const parsed = parseKey(selected);
     if (!parsed) return;
+    const value = textareaRef.current?.value ?? content;
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
         fileType: cli === "codex" ? `codex-skill:${parsed.name}` : `skill:${parsed.kind}:${parsed.name}`,
-        content,
+        content: value,
       });
-      setSavedContent(content);
+      setSavedContent(value);
       onStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} saved`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
       useSettingsStore.getState().triggerCommandRefresh();
@@ -122,17 +136,18 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
       onStatus({ text: `${newKind === "skill" ? "Skill" : "Command"} "${name}" already exists`, type: "error" });
       return;
     }
+    const value = textareaRef.current?.value ?? content;
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
         fileType: cli === "codex" ? `codex-skill:${name}` : `skill:${newKind}:${name}`,
-        content,
+        content: value,
       });
       setNewName("");
       await loadEntries();
       setSelected(entryKey(newKind, name));
-      setSavedContent(content);
+      setSavedContent(value);
       onStatus({ text: `${newKind === "skill" ? "Skill" : "Command"} "${name}" created`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
       useSettingsStore.getState().triggerCommandRefresh();
@@ -210,14 +225,14 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
         {cli === "claude" && (
           <button
             className={`config-md-editor-item config-md-editor-new${selected === NEW_COMMAND ? " active" : ""}`}
-            onClick={() => { setSelected(NEW_COMMAND); setNewName(""); setContent(""); }}
+            onClick={() => { setSelected(NEW_COMMAND); setNewName(""); }}
           >
             + new command
           </button>
         )}
         <button
           className={`config-md-editor-item config-md-editor-new${selected === NEW_SKILL ? " active" : ""}`}
-          onClick={() => { setSelected(NEW_SKILL); setNewName(""); setContent(""); }}
+          onClick={() => { setSelected(NEW_SKILL); setNewName(""); }}
         >
           + new skill
         </button>
@@ -254,9 +269,14 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
           </div>
         </div>
         <textarea
+          // Remount when seedKey changes (selection/load/error transitions)
+          // so `defaultValue` reseeds without React writing into a mounted
+          // textarea (which would clear the native undo stack).
+          key={seedKey}
+          ref={textareaRef}
           className="pane-textarea pane-textarea-md"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
+          defaultValue={content}
+          onInput={(e) => setContent(e.currentTarget.value)}
           placeholder={isNew
             ? newKind === "skill"
               ? "SKILL.md content... (frontmatter --- name: ... description: ... --- then body)"
@@ -270,11 +290,7 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
             }
             if (e.key === "Tab") {
               e.preventDefault();
-              const ta = e.currentTarget;
-              const start = ta.selectionStart;
-              const end = ta.selectionEnd;
-              setContent((prev) => prev.slice(0, start) + "  " + prev.slice(end));
-              setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
+              insertTextAtCursor(e.currentTarget, "  ");
             }
           }}
         />

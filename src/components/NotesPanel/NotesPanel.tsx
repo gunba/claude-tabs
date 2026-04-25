@@ -35,13 +35,19 @@ export function NotesPanel() {
   const [subTab, setSubTab] = useState<SubTab>("conversation");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
-
-  // Selection offsets become meaningless when the underlying buffer changes.
-  useEffect(() => {
-    setHasSelection(false);
-  }, [activeTabId, subTab, wsKey]);
+  const [hasContent, setHasContent] = useState(false);
 
   const notes = subTab === "conversation" ? conversationNotes : projectNotes;
+
+  // Source change (subtab/session/workspace) reseeds derived state. `notes` is
+  // intentionally excluded from deps — it also changes on every keystroke, and
+  // resetting selection mid-typing would be wrong. handleInput keeps
+  // hasContent in sync between source changes.
+  useEffect(() => {
+    setHasSelection(false);
+    setHasContent(notes.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, subTab, wsKey]);
 
   const commitNotes = useCallback(
     (value: string) => {
@@ -63,9 +69,14 @@ export function NotesPanel() {
     setHasSelection(el.selectionStart !== el.selectionEnd);
   }, []);
 
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      commitNotes(e.target.value);
+  // Uncontrolled textarea: `defaultValue` seeds it on mount, the browser owns
+  // the value (and the undo stack) thereafter. We mirror to the store on every
+  // input but never write back into the DOM.
+  const handleInput = useCallback(
+    (e: React.FormEvent<HTMLTextAreaElement>) => {
+      const value = e.currentTarget.value;
+      commitNotes(value);
+      setHasContent(value.length > 0);
       refreshSelection();
     },
     [commitNotes, refreshSelection],
@@ -73,8 +84,10 @@ export function NotesPanel() {
 
   const sendAll = useCallback(() => {
     if (!activeTabId) return;
-    if (notes.length === 0) return;
-    writeToPty(activeTabId, notes + "\r");
+    const el = textareaRef.current;
+    const value = el ? el.value : notes;
+    if (value.length === 0) return;
+    writeToPty(activeTabId, value + "\r");
   }, [activeTabId, notes]);
 
   const sendSelected = useCallback(() => {
@@ -84,10 +97,10 @@ export function NotesPanel() {
     const start = el.selectionStart;
     const end = el.selectionEnd;
     if (start === end) return;
-    const fragment = notes.slice(start, end);
+    const fragment = el.value.slice(start, end);
     if (fragment.length === 0) return;
     writeToPty(activeTabId, fragment + "\r");
-  }, [activeTabId, notes]);
+  }, [activeTabId]);
 
   const subTabs: Array<{ id: SubTab; label: string }> = [
     { id: "conversation", label: "Conversation" },
@@ -117,7 +130,7 @@ export function NotesPanel() {
   }
 
   const projectDisabled = subTab === "project" && !wsKey;
-  const canSendAll = notes.length > 0 && !projectDisabled;
+  const canSendAll = hasContent && !projectDisabled;
   const canSendSelected = hasSelection && !projectDisabled;
 
   const placeholder =
@@ -147,10 +160,14 @@ export function NotesPanel() {
         </div>
       )}
       <textarea
+        // Remount when the underlying buffer changes so `defaultValue`
+        // reseeds. While mounted, the browser owns the textarea's value and
+        // its undo stack.
+        key={`${subTab}|${activeTabId}|${wsKey}`}
         ref={textareaRef}
         className="notes-panel-textarea"
-        value={notes}
-        onChange={handleChange}
+        defaultValue={notes}
+        onInput={handleInput}
         onSelect={refreshSelection}
         onKeyUp={refreshSelection}
         onMouseUp={refreshSelection}

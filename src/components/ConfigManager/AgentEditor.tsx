@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { insertTextAtCursor } from "../../lib/domEdit";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 
@@ -11,6 +12,8 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
   const [savedContent, setSavedContent] = useState("");
   const [loading, setLoading] = useState(true);
   const [newAgentName, setNewAgentName] = useState("");
+  const [seedKey, setSeedKey] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const workingDir = scope === "user" ? "" : projectDir;
 
@@ -35,11 +38,15 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
     }
   }, [loading, agents, selectedAgent]);
 
-  // Load selected agent content (with cancellation to prevent stale writes on rapid selection)
+  // Load selected agent content (with cancellation to prevent stale writes on rapid selection).
+  // Bumping seedKey on every transition forces the uncontrolled textarea to
+  // remount with a fresh `defaultValue`, preserving the native undo stack
+  // mid-edit while still reseeding when selection/load completes.
   useEffect(() => {
     if (!selectedAgent || selectedAgent === "__new__") {
       setContent("");
       setSavedContent("");
+      setSeedKey((k) => k + 1);
       return;
     }
     const agent = agents.find((a) => a.name === selectedAgent);
@@ -51,23 +58,30 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
       workingDir,
       fileType: `agent:${agent.name}`,
     }).then((result) => {
-      if (!cancelled) { setContent(result); setSavedContent(result); }
+      if (cancelled) return;
+      setContent(result);
+      setSavedContent(result);
+      setSeedKey((k) => k + 1);
     }).catch(() => {
-      if (!cancelled) { setContent(""); setSavedContent(""); }
+      if (cancelled) return;
+      setContent("");
+      setSavedContent("");
+      setSeedKey((k) => k + 1);
     });
     return () => { cancelled = true; };
   }, [selectedAgent, agents, scope, workingDir]);
 
   const handleSave = useCallback(async () => {
     if (!selectedAgent || selectedAgent === "__new__") return;
+    const value = textareaRef.current?.value ?? content;
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
         fileType: `agent:${selectedAgent}`,
-        content,
+        content: value,
       });
-      setSavedContent(content);
+      setSavedContent(value);
       onStatus({ text: "Agent saved", type: "success" });
       setTimeout(() => onStatus(null), 2000);
     } catch (err) {
@@ -82,17 +96,18 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
       onStatus({ text: `Agent "${name}" already exists`, type: "error" });
       return;
     }
+    const value = textareaRef.current?.value ?? content;
     try {
       await invoke("write_config_file", {
         scope,
         workingDir,
         fileType: `agent:${name}`,
-        content,
+        content: value,
       });
       setNewAgentName("");
       await loadAgents();
       setSelectedAgent(name);
-      setSavedContent(content);
+      setSavedContent(value);
       onStatus({ text: `Agent "${name}" created`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
     } catch (err) {
@@ -137,7 +152,7 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
         ))}
         <button
           className={`config-md-editor-item config-md-editor-new${isNew ? " active" : ""}`}
-          onClick={() => { setSelectedAgent("__new__"); setNewAgentName(""); setContent(""); }}
+          onClick={() => { setSelectedAgent("__new__"); setNewAgentName(""); }}
         >
           + new agent
         </button>
@@ -174,9 +189,13 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
           </div>
         </div>
         <textarea
+          // Remount when seedKey changes so `defaultValue` reseeds without
+          // React writing into a mounted textarea (which clears native undo).
+          key={seedKey}
+          ref={textareaRef}
           className="pane-textarea pane-textarea-md"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
+          defaultValue={content}
+          onInput={(e) => setContent(e.currentTarget.value)}
           placeholder={isNew ? "Agent prompt content..." : ""}
           spellCheck={false}
           onKeyDown={(e) => {
@@ -186,11 +205,7 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
             }
             if (e.key === "Tab") {
               e.preventDefault();
-              const ta = e.currentTarget;
-              const start = ta.selectionStart;
-              const end = ta.selectionEnd;
-              setContent((prev) => prev.slice(0, start) + "  " + prev.slice(end));
-              setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
+              insertTextAtCursor(e.currentTarget, "  ");
             }
           }}
         />

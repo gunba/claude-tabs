@@ -156,9 +156,13 @@ function RuleCardExpanded({
       <label className="prompts-rule-field">
         <span className="prompts-rule-label">Name</span>
         <input
+          // Uncontrolled: defaultValue seeds on mount, onInput keeps local
+          // state in sync without React writing back to the DOM (which would
+          // wipe native undo). RuleCardExpanded only mounts when a rule
+          // expands, so the rule prop is the seed.
           className="prompts-rule-input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          defaultValue={rule.name}
+          onInput={(e) => setName(e.currentTarget.value)}
           placeholder="Rule name"
           spellCheck={false}
         />
@@ -167,8 +171,8 @@ function RuleCardExpanded({
         <span className="prompts-rule-label">Pattern</span>
         <input
           className={`prompts-rule-input${patternError ? " prompts-rule-input-error" : ""}`}
-          value={pattern}
-          onChange={(e) => setPattern(e.target.value)}
+          defaultValue={rule.pattern}
+          onInput={(e) => setPattern(e.currentTarget.value)}
           placeholder="Regex pattern (e.g. Claude)"
           spellCheck={false}
         />
@@ -178,8 +182,8 @@ function RuleCardExpanded({
         <span className="prompts-rule-label">Replacement</span>
         <input
           className="prompts-rule-input"
-          value={replacement}
-          onChange={(e) => setReplacement(e.target.value)}
+          defaultValue={rule.replacement}
+          onInput={(e) => setReplacement(e.currentTarget.value)}
           placeholder="Replacement text (e.g. Assistant, supports $1)"
           spellCheck={false}
         />
@@ -189,8 +193,8 @@ function RuleCardExpanded({
           <span className="prompts-rule-label">Flags</span>
           <input
             className="prompts-rule-input prompts-rule-flags-input"
-            value={flags}
-            onChange={(e) => setFlags(e.target.value)}
+            defaultValue={rule.flags}
+            onInput={(e) => setFlags(e.currentTarget.value)}
             placeholder="g"
             spellCheck={false}
           />
@@ -234,7 +238,14 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
   const [editName, setEditName] = useState("");
   const [editText, setEditText] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [savedSeedKey, setSavedSeedKey] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Mirror editText/editName into refs so the seed-on-prompt-change effect can
+  // compare against the live values without re-running on every keystroke.
+  const editTextRef = useRef("");
+  editTextRef.current = editText;
+  const editNameRef = useRef("");
+  editNameRef.current = editName;
 
   // Rules sub-tab state
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
@@ -245,6 +256,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
   const [observedEditText, setObservedEditText] = useState("");
   const [observedBaseline, setObservedBaseline] = useState("");
   const [pendingRules, setPendingRules] = useState<GeneratedChangeset | null>(null);
+  const [observedSeedKey, setObservedSeedKey] = useState(0);
 
   // Collapse expanded rule on tab switch
   useEffect(() => { setExpandedRuleId(null); }, [activeSubTab]);
@@ -262,15 +274,28 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
     return () => { cancelled = true; window.clearInterval(id); };
   }, [activeSubTab]);
 
-  // Load saved prompt into editor
+  // Load saved prompt into editor. We only reseed (bump seedKey + remount the
+  // inputs) when the underlying values genuinely differ from what's currently
+  // being edited — that way an after-save savedPrompts update doesn't tear
+  // down the inputs and wipe their native undo stack.
   useEffect(() => {
     if (!selectedSavedPromptId) {
-      setEditName(""); setEditText(""); setDirty(false);
+      setEditName("");
+      setEditText("");
+      setDirty(false);
+      setSavedSeedKey((k) => k + 1);
       return;
     }
     const prompt = savedPrompts.find((p) => p.id === selectedSavedPromptId);
     if (prompt) {
-      setEditName(prompt.name); setEditText(prompt.text); setDirty(false);
+      const needsReseed =
+        prompt.text !== editTextRef.current || prompt.name !== editNameRef.current;
+      if (needsReseed) {
+        setEditName(prompt.name);
+        setEditText(prompt.text);
+        setSavedSeedKey((k) => k + 1);
+      }
+      setDirty(false);
     } else {
       setSelectedSavedPromptId(null);
     }
@@ -319,6 +344,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
     if (rulesAppliedText === observedBaseline) return;
     setObservedEditText(rulesAppliedText);
     setObservedBaseline(rulesAppliedText);
+    setObservedSeedKey((k) => k + 1);
   }, [rulesAppliedText, selectedObservedPromptId, pendingRules, observedEditText, observedBaseline]);
 
   const observedEdited = !!selectedObservedPromptId && observedEditText !== observedBaseline;
@@ -463,9 +489,14 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
               <>
                 <div className="prompts-editor-header">
                   <input
+                    // Uncontrolled: defaultValue + onInput. Remount via the
+                    // savedSeedKey when an external selection / external edit
+                    // changes the seed value, so the browser's undo stack is
+                    // never wiped by a React-driven value reset.
+                    key={`name-${savedSeedKey}`}
                     className="prompts-name-input"
-                    value={editName}
-                    onChange={(e) => { setEditName(e.target.value); setDirty(true); }}
+                    defaultValue={editName}
+                    onInput={(e) => { setEditName(e.currentTarget.value); setDirty(true); }}
                     placeholder="Prompt name"
                     spellCheck={false}
                   />
@@ -479,9 +510,10 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
                   </div>
                 </div>
                 <textarea
+                  key={`text-${savedSeedKey}`}
                   className="prompts-textarea"
-                  value={editText}
-                  onChange={(e) => { setEditText(e.target.value); setDirty(true); }}
+                  defaultValue={editText}
+                  onInput={(e) => { setEditText(e.currentTarget.value); setDirty(true); }}
                   ref={textareaRef}
                   placeholder="Enter your system prompt..."
                   spellCheck={false}
@@ -520,6 +552,7 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
                       const applied = computeAppliedText(p.text);
                       setObservedEditText(applied);
                       setObservedBaseline(applied);
+                      setObservedSeedKey((k) => k + 1);
                       setPendingRules(null);
                     }}
                   >
@@ -558,9 +591,13 @@ export function PromptsTab({ onStatus }: PromptsTabProps) {
                     />
                   ) : (
                     <textarea
+                      // Remount when observedSeedKey bumps (sidebar click,
+                      // rule-driven reseed). Mid-edit the textarea owns its
+                      // value and the native undo stack.
+                      key={observedSeedKey}
                       className="prompts-textarea"
-                      value={observedEditText}
-                      onChange={(e) => setObservedEditText(e.target.value)}
+                      defaultValue={observedEditText}
+                      onInput={(e) => setObservedEditText(e.currentTarget.value)}
                       spellCheck={false}
                     />
                   )}

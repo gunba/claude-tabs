@@ -127,6 +127,7 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
   const [editing, setEditing] = useState<FlatServer | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
+  const [formSeedKey, setFormSeedKey] = useState(0);
 
   const workingDir = scope === "user" ? "" : projectDir;
 
@@ -201,12 +202,20 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
     setEditing(flat);
     setForm(serverToForm(flat.name, flat.server));
     setShowForm(true);
+    setFormSeedKey((k) => k + 1);
   }, []);
 
   const handleCancel = useCallback(() => {
     setShowForm(false);
     setEditing(null);
     setForm({ ...EMPTY_FORM });
+  }, []);
+
+  const handleAdd = useCallback(() => {
+    setEditing(null);
+    setForm({ ...EMPTY_FORM });
+    setShowForm(true);
+    setFormSeedKey((k) => k + 1);
   }, []);
 
   const flatServers: FlatServer[] = Object.entries(servers).map(([name, server]) => ({ name, server }));
@@ -266,7 +275,7 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
       </div>
 
       {!showForm && (
-        <button className="mcp-pane-add" onClick={() => { setEditing(null); setForm({ ...EMPTY_FORM }); setShowForm(true); }}>
+        <button className="mcp-pane-add" onClick={handleAdd}>
           + Add Server
         </button>
       )}
@@ -278,9 +287,13 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
           <div className="mcp-form-row">
             <span className="mcp-form-label">Name</span>
             <input
+              // Uncontrolled: defaultValue + onInput keeps state in sync, while
+              // a fresh formSeedKey on Add/Edit/transport-change forces remount
+              // so defaultValue actually reseeds.
+              key={`name-${formSeedKey}`}
               className="mcp-form-input"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              defaultValue={form.name}
+              onInput={(e) => setForm((f) => ({ ...f, name: e.currentTarget.value }))}
               placeholder="server-name"
             />
             {form.name.trim() && form.name.trim() in servers && form.name.trim() !== editing?.name && (
@@ -313,9 +326,10 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
               <div className="mcp-form-row">
                 <span className="mcp-form-label">Command</span>
                 <input
+                  key={`command-${formSeedKey}`}
                   className="mcp-form-input"
-                  value={form.command}
-                  onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
+                  defaultValue={form.command}
+                  onInput={(e) => setForm((f) => ({ ...f, command: e.currentTarget.value }))}
                   placeholder="python"
                 />
               </div>
@@ -323,9 +337,10 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
               <div className="mcp-form-row mcp-form-row-top">
                 <span className="mcp-form-label">Args</span>
                 <textarea
+                  key={`args-${formSeedKey}`}
                   className="mcp-form-textarea"
-                  value={form.args}
-                  onChange={(e) => setForm((f) => ({ ...f, args: e.target.value }))}
+                  defaultValue={form.args}
+                  onInput={(e) => setForm((f) => ({ ...f, args: e.currentTarget.value }))}
                   placeholder={"one arg per line\nserver.py\n--port\n8080"}
                   rows={3}
                 />
@@ -334,9 +349,10 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
               <div className="mcp-form-row mcp-form-row-top">
                 <span className="mcp-form-label">Env</span>
                 <textarea
+                  key={`env-${formSeedKey}`}
                   className="mcp-form-textarea"
-                  value={form.envText}
-                  onChange={(e) => setForm((f) => ({ ...f, envText: e.target.value }))}
+                  defaultValue={form.envText}
+                  onInput={(e) => setForm((f) => ({ ...f, envText: e.currentTarget.value }))}
                   placeholder={"KEY=VALUE per line\nAPI_KEY=abc123"}
                   rows={2}
                 />
@@ -349,9 +365,10 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
               <div className="mcp-form-row">
                 <span className="mcp-form-label">URL</span>
                 <input
+                  key={`url-${formSeedKey}`}
                   className="mcp-form-input"
-                  value={form.url}
-                  onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                  defaultValue={form.url}
+                  onInput={(e) => setForm((f) => ({ ...f, url: e.currentTarget.value }))}
                   placeholder={cli === "codex" ? "https://mcp.example.com/mcp" : "https://mcp.example.com/sse"}
                 />
               </div>
@@ -359,9 +376,10 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
               <div className="mcp-form-row mcp-form-row-top">
                 <span className="mcp-form-label">Headers</span>
                 <textarea
+                  key={`headers-${formSeedKey}`}
                   className="mcp-form-textarea"
-                  value={form.headerText}
-                  onChange={(e) => setForm((f) => ({ ...f, headerText: e.target.value }))}
+                  defaultValue={form.headerText}
+                  onInput={(e) => setForm((f) => ({ ...f, headerText: e.currentTarget.value }))}
                   placeholder={"KEY=VALUE per line\nAuthorization=Bearer ${TOKEN}"}
                   rows={2}
                 />
