@@ -2,7 +2,7 @@
 
 Date: 2026-04-02
 
-Analysis of Claude Code source (`C:\Users\jorda\PycharmProjects\claude_code`) versus Claude Tabs tap implementation (`src/lib/inspectorHooks.ts`) to identify unhooked globals that could provide additional data.
+Analysis of Claude Code source (`C:\Users\jorda\PycharmProjects\claude_code`) versus Code Tabs tap implementation (`src/lib/inspectorHooks.ts`) to identify unhooked globals that could provide additional data.
 
 ---
 

@@ -12,7 +12,7 @@ vi.mock("../../lib/paths", () => ({
 
 // Mock sessions store (settings imports it)
 vi.mock("../sessions", () => ({
-  useSessionStore: { getState: () => ({ claudePath: null }) },
+  useSessionStore: { getState: () => ({ claudePath: null, codexPath: null }) },
 }));
 
 // Mock theme (used by useTerminal)

@@ -77,6 +77,38 @@ describe("TapMetadataAccumulator", () => {
     expect(diff2?.outputTokens).toBe(800); // 500 + 300
   });
 
+  it("updates session totals and context debug from Codex token_count", () => {
+    const acc = new TapMetadataAccumulator();
+    const diff = acc.process({
+      kind: "CodexTokenCount", ts: 0,
+      totalInputTokens: 1000,
+      cachedInputTokens: 700,
+      outputTokens: 80,
+      reasoningOutputTokens: 20,
+      totalTokens: 1080,
+      lastInputTokens: 300,
+      lastCachedInputTokens: 250,
+      lastOutputTokens: 10,
+      lastReasoningOutputTokens: 5,
+      lastTotalTokens: 310,
+      contextWindow: 258400,
+      primaryUsedPercent: 3,
+      primaryResetsAt: 1777138874,
+      secondaryUsedPercent: 24,
+      secondaryResetsAt: 1777602653,
+    });
+    expect(diff?.inputTokens).toBe(1000);
+    expect(diff?.outputTokens).toBe(80);
+    expect(diff?.contextDebug).toMatchObject({
+      inputTokens: 50,
+      cacheRead: 250,
+      totalContextTokens: 300,
+      source: "codexTokenCount",
+    });
+    expect(diff?.fiveHourPercent).toBe(3);
+    expect(diff?.sevenDayPercent).toBe(24);
+  });
+
   it("sets runtimeModel from TurnStart", () => {
     const acc = new TapMetadataAccumulator();
     const diff = acc.process({

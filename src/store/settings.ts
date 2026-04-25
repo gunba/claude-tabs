@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
-import type { LaunchPreset, SessionConfig, PastSession, SystemPromptRule } from "../types/session";
+import type { LaunchPreset, SessionConfig, PastSession, SystemPromptRule, CliKind } from "../types/session";
 import { DEFAULT_SESSION_CONFIG } from "../types/session";
 import { normalizePath, parseWorktreePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
@@ -71,6 +71,14 @@ export interface CliCapabilities {
   commands: CliCommand[];
 }
 
+const EMPTY_CLI_CAPABILITIES: CliCapabilities = {
+  models: [],
+  permissionModes: [],
+  flags: [],
+  options: [],
+  commands: [],
+};
+
 export interface SlashCommand {
   cmd: string;
   desc: string;
@@ -96,12 +104,16 @@ interface SettingsState {
   launcherGeneration: number;
   themeName: string;
   notificationsEnabled: boolean;
+  cliVersions: Record<CliKind, string | null>;
+  previousCliVersions: Record<CliKind, string | null>;
   cliVersion: string | null;
   previousCliVersion: string | null;
+  cliCapabilitiesByCli: Record<CliKind, CliCapabilities>;
   cliCapabilities: CliCapabilities;
   binarySettingsSchema: BinarySettingField[]; // [CM-10] Cached in localStorage to avoid re-scanning on startup
   settingsJsonSchema: JsonSchema | null;
   knownEnvVars: EnvVarEntry[];
+  slashCommandsByCli: Record<CliKind, SlashCommand[]>;
   slashCommands: SlashCommand[];
 
   commandUsage: Record<string, number>;
@@ -134,8 +146,10 @@ interface SettingsState {
   setShowLauncher: (show: boolean) => void;
   setThemeName: (name: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
+  setCliCapabilitiesForCli: (cli: CliKind, version: string | null, capabilities: CliCapabilities) => void;
   setCliCapabilities: (version: string, capabilities: CliCapabilities) => void;
   recordCommandUsage: (command: string) => void;
+  setSlashCommandsForCli: (cli: CliKind, cmds: SlashCommand[]) => void;
   setSlashCommands: (cmds: SlashCommand[]) => void;
   setReplaceSessionId: (id: string | null) => void;
   setShowConfigManager: (show: string | false) => void;
@@ -177,12 +191,19 @@ export const useSettingsStore = create<SettingsState>()(
       launcherGeneration: 0,
       themeName: "Claude",
       notificationsEnabled: true,
+      cliVersions: { claude: null, codex: null },
+      previousCliVersions: { claude: null, codex: null },
       cliVersion: null,
       previousCliVersion: null,
-      cliCapabilities: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
+      cliCapabilitiesByCli: {
+        claude: EMPTY_CLI_CAPABILITIES,
+        codex: EMPTY_CLI_CAPABILITIES,
+      },
+      cliCapabilities: EMPTY_CLI_CAPABILITIES,
       binarySettingsSchema: [],
       settingsJsonSchema: null,
       knownEnvVars: [],
+      slashCommandsByCli: { claude: [], codex: [] },
       slashCommands: [],
       commandUsage: {},
       commandBarExpanded: false,
@@ -272,6 +293,7 @@ export const useSettingsStore = create<SettingsState>()(
         const wsKey = normalizePath(wt ? wt.projectRoot : config.workingDir).toLowerCase();
 
         const wsDefaults: Partial<SessionConfig> = {
+          cli: stripped.cli,
           model: stripped.model,
           permissionMode: stripped.permissionMode,
           dangerouslySkipPermissions: stripped.dangerouslySkipPermissions,
@@ -318,12 +340,36 @@ export const useSettingsStore = create<SettingsState>()(
 
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
 
+// [PE-01] cliCapabilitiesByCli, slashCommandsByCli, cliVersions per CliKind; v17 migration backfills from legacy fields; setCliCapabilitiesForCli mirrors Claude into legacy fields; setSlashCommandsForCli rebuilds merged slashCommands
+      setCliCapabilitiesForCli: (cli, version, capabilities) =>
+        set((s) => {
+          const cliVersions = { ...s.cliVersions, [cli]: version };
+          const previousCliVersions = {
+            ...s.previousCliVersions,
+            [cli]: s.cliVersions[cli],
+          };
+          const cliCapabilitiesByCli = {
+            ...s.cliCapabilitiesByCli,
+            [cli]: capabilities,
+          };
+          return {
+            cliVersions,
+            previousCliVersions,
+            cliCapabilitiesByCli,
+            // Back-compat for older call sites: keep Claude mirrored into the
+            // legacy single-CLI fields until each consumer has moved over.
+            ...(cli === "claude"
+              ? {
+                  previousCliVersion: s.cliVersion,
+                  cliVersion: version,
+                  cliCapabilities: capabilities,
+                }
+              : {}),
+          };
+        }),
+
       setCliCapabilities: (version, capabilities) =>
-        set((s) => ({
-          previousCliVersion: s.cliVersion,
-          cliVersion: version,
-          cliCapabilities: capabilities,
-        })),
+        get().setCliCapabilitiesForCli("claude", version, capabilities),
 
       recordCommandUsage: (command) =>
         set((s) => {
@@ -336,7 +382,22 @@ export const useSettingsStore = create<SettingsState>()(
           };
         }),
 
-      setSlashCommands: (cmds) => set({ slashCommands: cmds }),
+      setSlashCommandsForCli: (cli, cmds) =>
+        set((s) => {
+          const slashCommandsByCli = { ...s.slashCommandsByCli, [cli]: cmds };
+          const merged = [
+            ...slashCommandsByCli.claude,
+            ...slashCommandsByCli.codex,
+          ];
+          return {
+            slashCommandsByCli,
+            slashCommands: merged,
+          };
+        }),
+      setSlashCommands: (cmds) => set((s) => ({
+        slashCommands: cmds,
+        slashCommandsByCli: { ...s.slashCommandsByCli, claude: cmds },
+      })),
       setCommandBarExpanded: (expanded) => set({ commandBarExpanded: expanded }),
       setShowConfigManager: (show) => set({ showConfigManager: show }),
       setRightPanelTab: (panel) => set({ rightPanelTab: panel }),
@@ -639,7 +700,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 16,
+      version: 17,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -726,6 +787,32 @@ export const useSettingsStore = create<SettingsState>()(
         if (version < 16) {
           if (!state.workspaceNotes) state.workspaceNotes = {};
         }
+        // v17: split formerly global CLI state into first-party Claude/Codex maps.
+        if (version < 17) {
+          const legacyVersion = (state.cliVersion as string | null | undefined) ?? null;
+          const legacyPrevious = (state.previousCliVersion as string | null | undefined) ?? null;
+          const legacyCapabilities = (state.cliCapabilities as CliCapabilities | undefined) ?? EMPTY_CLI_CAPABILITIES;
+          const legacySlashCommands = (state.slashCommands as SlashCommand[] | undefined) ?? [];
+          if (!state.cliVersions) state.cliVersions = { claude: legacyVersion, codex: null };
+          if (!state.previousCliVersions) state.previousCliVersions = { claude: legacyPrevious, codex: null };
+          if (!state.cliCapabilitiesByCli) {
+            state.cliCapabilitiesByCli = {
+              claude: legacyCapabilities,
+              codex: EMPTY_CLI_CAPABILITIES,
+            };
+          }
+          if (!state.slashCommandsByCli) state.slashCommandsByCli = { claude: legacySlashCommands, codex: [] };
+          const lastConfig = state.lastConfig as Partial<SessionConfig> | undefined;
+          if (lastConfig && !lastConfig.cli) lastConfig.cli = "claude";
+          const savedDefaults = state.savedDefaults as Partial<SessionConfig> | undefined;
+          if (savedDefaults && !savedDefaults.cli) savedDefaults.cli = "claude";
+          const workspaceDefaults = state.workspaceDefaults as Record<string, Partial<SessionConfig>> | undefined;
+          if (workspaceDefaults) {
+            for (const ws of Object.values(workspaceDefaults)) {
+              if (!ws.cli) ws.cli = "claude";
+            }
+          }
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -738,11 +825,15 @@ export const useSettingsStore = create<SettingsState>()(
         workspaceNotes: state.workspaceNotes,
         themeName: state.themeName,
         notificationsEnabled: state.notificationsEnabled,
+        cliVersions: state.cliVersions,
+        previousCliVersions: state.previousCliVersions,
         cliVersion: state.cliVersion,
         previousCliVersion: state.previousCliVersion,
+        cliCapabilitiesByCli: state.cliCapabilitiesByCli,
         cliCapabilities: state.cliCapabilities,
         binarySettingsSchema: state.binarySettingsSchema,
         settingsJsonSchema: state.settingsJsonSchema,
+        slashCommandsByCli: state.slashCommandsByCli,
         commandUsage: state.commandUsage,
         commandBarExpanded: state.commandBarExpanded,
         sessionNames: state.sessionNames,

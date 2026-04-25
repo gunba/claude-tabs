@@ -189,6 +189,25 @@ describe("scopePath", () => {
     });
   });
 
+  describe("codex paths", () => {
+    it("settings/hooks/mcp use config.toml", () => {
+      expect(scopePath("user", dir, "settings", "codex")).toBe("~/.codex/config.toml");
+      expect(scopePath("project", dir, "hooks", "codex")).toBe(`${dir}/.codex/config.toml`);
+      expect(scopePath("project", dir, "mcp", "codex")).toBe(`${dir}/.codex/config.toml`);
+    });
+
+    it("instructions use AGENTS.md", () => {
+      expect(scopePath("user", dir, "claudemd", "codex")).toBe("~/.codex/AGENTS.md");
+      expect(scopePath("project", dir, "claudemd", "codex")).toBe(`${dir}/AGENTS.md`);
+      expect(scopePath("project-local", dir, "claudemd", "codex")).toBe(`${dir}/AGENTS.local.md`);
+    });
+
+    it("skills use .agents skills directories", () => {
+      expect(scopePath("user", dir, "skills", "codex")).toBe("~/.agents/skills/");
+      expect(scopePath("project", dir, "skills", "codex")).toBe(`${dir}/.agents/skills/`);
+    });
+  });
+
   describe("empty dir fallback", () => {
     it("falls back to '.' when dir is empty", () => {
       expect(scopePath("project", "", "settings")).toBe("./.claude/settings.json");
@@ -218,6 +237,15 @@ describe("parseWorktreePath", () => {
 
   it("detects a worktree path with forward slashes", () => {
     const result = parseWorktreePath("C:/Users/jorda/Projects/my-app/.claude/worktrees/fix-bug");
+    expect(result).toEqual({
+      projectName: "my-app",
+      worktreeName: "fix-bug",
+      projectRoot: "C:/Users/jorda/Projects/my-app",
+    });
+  });
+
+  it("detects the claude-tabs-owned worktree directory", () => {
+    const result = parseWorktreePath("C:/Users/jorda/Projects/my-app/.claude_tabs/worktrees/fix-bug");
     expect(result).toEqual({
       projectName: "my-app",
       worktreeName: "fix-bug",

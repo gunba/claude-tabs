@@ -66,7 +66,7 @@ export interface SessionMetadata {
     cacheCreation: number;
     totalContextTokens: number;
     model: string | null;
-    source: "statusLine" | "turnStart";
+    source: "statusLine" | "turnStart" | "codexTokenCount";
   } | null;
   durationSecs: number;
   currentAction: string | null;

@@ -127,13 +127,14 @@ export default function App() {
 
   // Dynamic window title with version info
   const appVersion = useVersionStore((s) => s.appVersion);
-  const cliVersion = useSettingsStore((s) => s.cliVersion);
+  const cliVersions = useSettingsStore((s) => s.cliVersions);
   useEffect(() => {
-    const parts = ["Claude Tabs"];
+    const parts = ["Code Tabs"];
     if (appVersion) parts[0] += ` v${appVersion}`;
-    if (cliVersion) parts.push(`CLI ${cliVersion}`);
+    parts.push(`Claude ${cliVersions.claude ?? "not installed"}`);
+    parts.push(`Codex ${cliVersions.codex ?? "not installed"}`);
     getCurrentWindow().setTitle(parts.join(" · ")).catch(() => {});
-  }, [appVersion, cliVersion]);
+  }, [appVersion, cliVersions]);
 
   // [PL-01] Linux custom titlebar: tauri.conf.json sets decorations:false globally so non-KDE
   // Wayland compositors honor it at window creation. Non-Linux re-enables native decorations
@@ -161,6 +162,18 @@ export default function App() {
     }
     // [RS-04] One-shot flags cleared: resumeSession, continueSession never persist in lastConfig
     const cleanConfig = { ...defaults, resumeSession: null, continueSession: false, sessionId: null, runMode: false };
+    const { claudePath, codexPath } = useSessionStore.getState();
+    const installedCli = [
+      ...(claudePath ? ["claude" as const] : []),
+      ...(codexPath ? ["codex" as const] : []),
+    ];
+    if (installedCli.length === 0) {
+      setShowLauncher(true);
+      return;
+    }
+    if (!installedCli.includes(cleanConfig.cli)) {
+      cleanConfig.cli = installedCli[0];
+    }
     const name = dirToTabName(cleanConfig.workingDir);
     useSettingsStore.getState().addRecentDir(cleanConfig.workingDir);
     useSettingsStore.getState().setLastConfig(cleanConfig);
@@ -513,7 +526,12 @@ export default function App() {
                 >
                   <span className={`tab-dot state-${getEffectiveState(session.state, subs)}${inspectorOffSessions.has(session.id) ? " inspector-off" : ""}`} />
                   <span className="tab-label">
-                    <span className="tab-name">{fullName}</span>
+                    <span className="tab-title-line">
+                      <span className={`tab-cli-badge tab-cli-badge-${session.config.cli}`} title={session.config.cli === "codex" ? "Codex" : "Claude Code"}>
+                        {session.config.cli === "codex" ? "Codex" : "Claude"}
+                      </span>
+                      <span className="tab-name">{fullName}</span>
+                    </span>
                     {activity && (
                       <span className="tab-activity" style={{ color: activityColor }}>
                         {activity}

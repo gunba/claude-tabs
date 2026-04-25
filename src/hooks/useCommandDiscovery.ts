@@ -19,6 +19,7 @@ function mergeCommands(...lists: SlashCommand[][]): SlashCommand[] {
   return Array.from(map.values());
 }
 
+// [PI-01] useCommandDiscovery: setSlashCommandsForCli('claude'|'codex') per-CLI palettes; Claude gated on claudePath; Codex gated on codexPath (discover_codex_slash_commands + discover_codex_skills)
 async function discover() {
   trace("commandDiscovery: start");
   const sessions = useSessionStore.getState().sessions;
@@ -31,14 +32,16 @@ async function discover() {
   ];
 
   const claudePath = useSessionStore.getState().claudePath;
+  const codexPath = useSessionStore.getState().codexPath;
   dlog("discovery", null, "slash command discovery started", "LOG", {
     event: "discovery.slash_commands_started",
     data: {
       claudePath,
+      codexPath,
       projectDirs,
     },
   });
-  const builtinPromise = traceAsync("commandDiscovery: discover_builtin_commands", () =>
+  const builtinPromise = claudePath ? traceAsync("commandDiscovery: discover_builtin_commands", () =>
     invoke<Array<{ cmd: string; desc: string }>>("discover_builtin_commands", { cliPath: claudePath })
   , {
     module: "discovery",
@@ -60,9 +63,9 @@ async function discover() {
       data: { error: String(err) },
     });
     return [] as Array<{ cmd: string; desc: string }>;
-  });
+  }) : Promise.resolve([] as Array<{ cmd: string; desc: string }>);
 
-  const pluginPromise = traceAsync("commandDiscovery: discover_plugin_commands", () =>
+  const pluginPromise = claudePath ? traceAsync("commandDiscovery: discover_plugin_commands", () =>
     invoke<Array<{ cmd: string; desc: string }>>("discover_plugin_commands", { extraDirs: projectDirs })
   , {
     module: "discovery",
@@ -88,11 +91,11 @@ async function discover() {
       },
     });
     return [] as Array<{ cmd: string; desc: string }>;
-  });
+  }) : Promise.resolve([] as Array<{ cmd: string; desc: string }>);
 
   // Fallback: parse --help output for slash commands when binary scan fails
   // (binary may not exist on machines without admin or on first install)
-  const helpPromise = traceAsync("commandDiscovery: get_cli_help", () =>
+  const helpPromise = claudePath ? traceAsync("commandDiscovery: get_cli_help", () =>
     invoke<string>("get_cli_help")
   , {
     module: "discovery",
@@ -121,51 +124,49 @@ async function discover() {
       data: { error: String(err) },
     });
     return [] as Array<{ cmd: string; desc: string }>;
-  });
+  }) : Promise.resolve([] as Array<{ cmd: string; desc: string }>);
 
   const [builtins, plugins, helpCmds] = await Promise.all([builtinPromise, pluginPromise, helpPromise]);
 
   const toSlash = (arr: Array<{ cmd: string; desc: string }>): SlashCommand[] =>
     arr.filter((c) => typeof c.cmd === "string" && c.cmd.startsWith("/"));
 
-  // Merge all sources — binary scan has best descriptions, --help is fallback.
-  let merged = mergeCommands(toSlash(builtins), toSlash(helpCmds), toSlash(plugins));
+  // Claude: binary scan has best descriptions, --help is fallback, plugins add user/project commands.
+  const claudeMerged = mergeCommands(toSlash(builtins), toSlash(helpCmds), toSlash(plugins));
+  useSettingsStore.getState().setSlashCommandsForCli("claude", claudeMerged);
 
-  // Codex slash commands + Codex skills join the same merged pool so a
-  // user on a Codex tab sees them in the palette. The active session's
-  // CLI determines which subset the palette shows (filtered downstream).
-  try {
-    const codexBuiltins = await invoke<Array<{ cmd: string; desc: string }>>(
-      "discover_codex_slash_commands"
-    );
-    const codexSkills = await invoke<Array<{ cmd: string; desc: string }>>(
-      "discover_codex_skills",
-      { extraDirs: projectDirs }
-    );
-    merged = mergeCommands(merged, toSlash(codexBuiltins), toSlash(codexSkills));
-    dlog("discovery", null, "codex commands merged into palette", "LOG", {
-      event: "discovery.codex_commands_merged",
-      data: {
-        codexBuiltinCount: codexBuiltins.length,
-        codexSkillCount: codexSkills.length,
-      },
-    });
-  } catch (err) {
-    dlog("discovery", null, `codex command discovery failed: ${err}`, "DEBUG", {
-      event: "discovery.codex_commands_failed",
-      data: { error: String(err) },
-    });
+  let codexBuiltins: Array<{ cmd: string; desc: string }> = [];
+  let codexSkills: Array<{ cmd: string; desc: string }> = [];
+  if (codexPath) {
+    try {
+      [codexBuiltins, codexSkills] = await Promise.all([
+        invoke<Array<{ cmd: string; desc: string }>>("discover_codex_slash_commands"),
+        invoke<Array<{ cmd: string; desc: string }>>("discover_codex_skills", { extraDirs: projectDirs }),
+      ]);
+    } catch (err) {
+      dlog("discovery", null, `codex command discovery failed: ${err}`, "DEBUG", {
+        event: "discovery.codex_commands_failed",
+        data: { error: String(err) },
+      });
+    }
   }
+  const codexMerged = mergeCommands(toSlash(codexBuiltins), toSlash(codexSkills));
+  useSettingsStore.getState().setSlashCommandsForCli("codex", codexMerged);
 
-  useSettingsStore.getState().setSlashCommands(merged);
   dlog("discovery", null, "slash command discovery merged", "LOG", {
     event: "discovery.slash_commands_merged",
     data: {
+      claudePath,
+      codexPath,
       builtinCount: builtins.length,
       helpCount: helpCmds.length,
       pluginCount: plugins.length,
-      mergedCount: merged.length,
-      commands: merged.map((command) => command.cmd),
+      codexBuiltinCount: codexBuiltins.length,
+      codexSkillCount: codexSkills.length,
+      claudeMergedCount: claudeMerged.length,
+      codexMergedCount: codexMerged.length,
+      claudeCommands: claudeMerged.map((command) => command.cmd),
+      codexCommands: codexMerged.map((command) => command.cmd),
     },
   });
 
@@ -183,7 +184,7 @@ export function useCommandDiscovery(): void {
   // Active sessions in "starting" state mean the Claude process is still booting;
   // heavy I/O from binary scanning and subprocess spawns would compete with it.
   const ready = useSessionStore((s) => {
-    if (!s.claudePath) return false;
+    if (!s.claudePath && !s.codexPath) return false;
     // No active sessions → no contention; otherwise wait for at least one past startup
     return s.sessions.every((sess) => sess.state === "dead")
       || s.sessions.some((sess) => sess.state !== "dead" && sess.state !== "starting");

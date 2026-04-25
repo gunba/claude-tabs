@@ -198,6 +198,45 @@ export interface SessionResume extends TapEventBase {
   kind: "SessionResume";
 }
 
+// ── Codex rollout events ──
+
+export interface CodexTurnContext extends TapEventBase {
+  kind: "CodexTurnContext";
+  cwd: string;
+  model: string;
+  effort: string | null;
+  approvalPolicy: string | null;
+  sandboxMode: string | null;
+}
+
+export interface CodexTokenCount extends TapEventBase {
+  kind: "CodexTokenCount";
+  totalInputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  lastInputTokens: number;
+  lastCachedInputTokens: number;
+  lastOutputTokens: number;
+  lastReasoningOutputTokens: number;
+  lastTotalTokens: number;
+  contextWindow: number;
+  primaryUsedPercent: number | null;
+  primaryResetsAt: number | null;
+  secondaryUsedPercent: number | null;
+  secondaryResetsAt: number | null;
+}
+
+export interface CodexToolCallComplete extends TapEventBase {
+  kind: "CodexToolCallComplete";
+  callId: string;
+  outputSizeBytes: number;
+  durationMs: number | null;
+  exitCode: number | null;
+  error: string | null;
+}
+
 // ── Fetch events ──
 
 export interface ApiFetch extends TapEventBase {
@@ -623,6 +662,10 @@ export type TapEvent =
   | UserInterruption
   | SlashCommand
   | SessionResume
+  // Codex rollout events
+  | CodexTurnContext
+  | CodexTokenCount
+  | CodexToolCallComplete
   // Fetch
   | ApiFetch
   | HttpPing

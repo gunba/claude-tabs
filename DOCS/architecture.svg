@@ -22,10 +22,10 @@
   <!-- Title -->
   <text x="740" y="30" fill="#e6edf3" font-size="18" font-weight="700"
         font-family="'JetBrains Mono','Cascadia Code','Fira Code',monospace"
-        text-anchor="middle">Claude Tabs</text>
+        text-anchor="middle">Code Tabs</text>
   <text x="740" y="48" fill="#8b949e" font-size="11"
         font-family="'JetBrains Mono','Cascadia Code','Fira Code',monospace"
-        text-anchor="middle">React UI ↔ Tauri IPC ↔ Rust ↔ ConPTY ↔ Claude CLI</text>
+        text-anchor="middle">React UI ↔ Tauri IPC ↔ Rust ↔ ConPTY ↔ Claude/Codex CLI</text>
 
   <!-- Layer labels -->
   <text x="16" y="89" fill="#484f58" font-size="9"

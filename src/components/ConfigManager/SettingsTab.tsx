@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { SettingsPane } from "./SettingsPane";
 import { scopePath, SCOPES } from "./ThreePaneEditor";
 import type { PaneComponentProps } from "./ThreePaneEditor";
+import type { CliKind } from "../../types/session";
 import { formatScopePath } from "../../lib/paths";
 import { useSettingsStore } from "../../store/settings";
 import {
@@ -24,12 +25,13 @@ const TYPE_BADGE_CLASS: Record<string, string> = {
 
 interface SettingsTabProps {
   projectDir: string;
+  cli: CliKind;
   onStatus: (msg: StatusMessage | null) => void;
 }
 
 // [CM-24] Unified Settings Reference: full-width panel, categorized grid, type badges, click-to-insert
 // [CM-06] Per-scope JSON settings editors with dirty tracking and Save per pane
-export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
+export function SettingsTab({ projectDir, cli, onStatus }: SettingsTabProps) {
   const [activeScope, setActiveScope] = useState<Scope>("user");
   const [scopeKeys, setScopeKeys] = useState<Record<Scope, Set<string>>>({
     user: new Set(),
@@ -65,26 +67,32 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
     [],
   );
 
-  const { cliCapabilities, binarySettingsSchema, settingsJsonSchema } = useSettingsStore();
+  const { cliCapabilitiesByCli, binarySettingsSchema, settingsJsonSchema } = useSettingsStore();
+  const cliCapabilities = cliCapabilitiesByCli[cli] ?? { models: [], permissionModes: [], flags: [], options: [], commands: [] };
   const schema = useMemo(
-    () => buildSettingsSchema(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema),
-    [cliCapabilities.options, binarySettingsSchema, settingsJsonSchema],
+    () => cli === "claude" ? buildSettingsSchema(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema) : [],
+    [cli, cliCapabilities.options, binarySettingsSchema, settingsJsonSchema],
   );
+  const visibleScopes = cli === "codex" ? SCOPES.filter((s) => s.value !== "project-local") : SCOPES;
+  useEffect(() => {
+    if (cli === "codex" && activeScope === "project-local") setActiveScope("project");
+  }, [cli, activeScope]);
 
   return (
     <div className="settings-tab">
-      <div className="three-pane-grid">
-        {SCOPES.map(({ value, label, colorVar, icon }) => (
+      <div className="three-pane-grid" style={{ gridTemplateColumns: `repeat(${visibleScopes.length}, 1fr)` }}>
+        {visibleScopes.map(({ value, label, colorVar, icon }) => (
           <div key={value} className="three-pane-column" style={{ "--scope-color": colorVar } as React.CSSProperties}>
             <div className="three-pane-header">
               <span className="three-pane-icon" style={{ color: colorVar }}>{icon}</span>
               <span className="three-pane-label">{label}</span>
-              <span className="three-pane-path">{formatScopePath(scopePath(value, projectDir, "settings"))}</span>
+              <span className="three-pane-path">{formatScopePath(scopePath(value, projectDir, "settings", cli))}</span>
             </div>
             <div className="three-pane-body">
               <SettingsPane
                 scope={value}
                 projectDir={projectDir}
+                cli={cli}
                 onStatus={onStatus}
                 hideReference
                 onKeysChange={makeKeysHandler(value)}
@@ -96,7 +104,7 @@ export function SettingsTab({ projectDir, onStatus }: SettingsTabProps) {
         ))}
       </div>
 
-      {schema.length > 0 && (
+      {cli === "claude" && schema.length > 0 && (
         <>
           <div className="settings-search-bar">
             <input

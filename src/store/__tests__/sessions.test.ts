@@ -32,6 +32,7 @@ function resetStore() {
     sessions: [],
     activeTabId: null,
     claudePath: null,
+    codexPath: null,
     initialized: false,
     subagents: new Map(),
     skillInvocations: new Map(),

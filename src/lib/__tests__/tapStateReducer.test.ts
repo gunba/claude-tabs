@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { reduceTapEvent, reduceTapBatch } from "../tapStateReducer";
+import { classifyTapEntry } from "../tapClassifier";
 import type { TapEvent } from "../../types/tapEvents";
 import type { SessionState } from "../../types/session";
 
@@ -55,6 +56,34 @@ describe("reduceTapEvent", () => {
 
   it("ToolCallStart → thinking (still streaming)", () => {
     expect(reduceTapEvent("thinking", { kind: "ToolCallStart", ts: 0, index: 1, toolName: "Bash", toolId: "t1" })).toBe("thinking");
+  });
+
+  it("Codex tool call start → toolUse", () => {
+    expect(reduceTapEvent("thinking", {
+      kind: "ToolCallStart", ts: 0, cat: "codex-tool-call-start",
+      index: 0, toolName: "Bash", toolId: "call_1",
+    })).toBe("toolUse");
+  });
+
+  it("classifyTapEntry → reduceTapEvent end-to-end: codex-tool-call-start → toolUse", () => {
+    // Guards against regressions where the classifier returns a ToolCallStart
+    // without `cat`, which would silently route Codex tool calls through the
+    // Claude default branch and stay at "thinking".
+    const classified = classifyTapEntry({
+      ts: 0,
+      cat: "codex-tool-call-start",
+      name: "shell",
+      callId: "call_1",
+    });
+    expect(classified).not.toBeNull();
+    expect(reduceTapEvent("thinking", classified!)).toBe("toolUse");
+  });
+
+  it("Codex tool completion → thinking", () => {
+    expect(reduceTapEvent("toolUse", {
+      kind: "CodexToolCallComplete", ts: 0,
+      callId: "call_1", outputSizeBytes: 10, durationMs: 120, exitCode: 0, error: null,
+    })).toBe("thinking");
   });
 
   it("ToolCallStart ExitPlanMode → actionNeeded", () => {

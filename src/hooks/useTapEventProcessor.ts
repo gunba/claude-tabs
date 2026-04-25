@@ -72,6 +72,24 @@ function gitStatusToKind(status: string): FileChangeKind {
   return "modified";
 }
 
+// [CP-01] parseApplyPatchFiles: parses '*** (Add|Update|Delete) File: ...' markers from apply_patch input; feeds activityStore.addFileActivity per matched path
+function parseApplyPatchFiles(patch: string, workDir: string): Array<{ path: string; kind: FileChangeKind }> {
+  const files: Array<{ path: string; kind: FileChangeKind }> = [];
+  for (const line of patch.split(/\r?\n/)) {
+    const match = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
+    if (!match) continue;
+    const rawPath = match[2].trim();
+    const absolute =
+      /^[A-Za-z]:[\\/]/.test(rawPath) || rawPath.startsWith("/") || rawPath.startsWith("~");
+    const path = absolute || !workDir ? rawPath : `${workDir.replace(/[\\/]+$/, "")}/${rawPath}`;
+    files.push({
+      path: canonicalizePath(path),
+      kind: match[1] === "Add" ? "created" : match[1] === "Delete" ? "deleted" : "modified",
+    });
+  }
+  return files;
+}
+
 async function runGitScanAndValidate(sid: string): Promise<void> {
   const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
   const workDir = session?.config.workingDir ?? "";
@@ -351,6 +369,22 @@ export function useTapEventProcessor(
             }
           }
 
+          if (event.toolName === "apply_patch") {
+            const patch = typeof event.input.patch === "string" ? event.input.patch : "";
+            if (patch) {
+              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+              const workDir = session?.config.workingDir ?? "";
+              for (const file of parseApplyPatchFiles(patch, workDir)) {
+                const isExternal = workDir ? !normalizePath(file.path).startsWith(workDir) : false;
+                activityStore.addFileActivity(sid, file.path, file.kind, {
+                  agentId,
+                  toolName: "apply_patch",
+                  isExternal,
+                });
+              }
+            }
+          }
+
           // Grep — track searched file or folder
           if (event.toolName === "Grep") {
             const rawGrepPath = typeof event.input.path === "string" ? event.input.path : null;
@@ -566,6 +600,9 @@ export function useTapEventProcessor(
       if (event.kind === "EffortLevel") {
         updateConfig(sid, { effort: event.level });
       }
+      if (event.kind === "CodexTurnContext" && event.effort) {
+        updateConfig(sid, { effort: event.effort });
+      }
 
       // ModeChange → reactive permission icon
       if (event.kind === "ModeChange") {
@@ -595,6 +632,9 @@ export function useTapEventProcessor(
         } else {
           dlog("tap", sid, `SessionRegistration cwd(${event.cwd}) suppressed — subagent in flight`, "DEBUG");
         }
+      }
+      if (event.kind === "CodexTurnContext" && event.cwd) {
+        updateCwdIfChanged(event.cwd);
       }
       // WorktreeState: authoritative worktree path from CLI
       if (event.kind === "WorktreeState" && event.worktreePath) {

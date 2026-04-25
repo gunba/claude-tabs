@@ -25,6 +25,7 @@ export class TapMetadataAccumulator {
   private lastCacheRead = 0;
   private lastTurnInputTokens = 0;
   private lastCacheCreation = 0;
+  private contextDebugSource: "turnStart" | "codexTokenCount" = "turnStart";
   // API region + request ID
   private apiRegion: string | null = null;
   private lastRequestId: string | null = null;
@@ -128,6 +129,7 @@ export class TapMetadataAccumulator {
           this.lastCacheRead = event.cacheRead;
           this.lastTurnInputTokens = event.inputTokens;
           this.lastCacheCreation = event.cacheCreation;
+          this.contextDebugSource = "turnStart";
           this.hookStatus = null;
           this.activeSubprocess = null;
           this.lastToolDurationMs = null;
@@ -138,6 +140,26 @@ export class TapMetadataAccumulator {
           this.hookTelemetry = null;
         }
         break;
+
+      case "CodexTurnContext":
+        if (event.model) this.runtimeModel = event.model;
+        if (event.effort) this.effortLevel = event.effort;
+        break;
+
+      // [CA-01] CodexTokenCount: total input/output, last-turn delta, primary/secondary rate limits, contextDebugSource='codexTokenCount'
+      case "CodexTokenCount": {
+        this.inputTokens = event.totalInputTokens;
+        this.outputTokens = event.outputTokens;
+        this.lastTurnInputTokens = Math.max(0, event.lastInputTokens - event.lastCachedInputTokens);
+        this.lastCacheRead = event.lastCachedInputTokens;
+        this.lastCacheCreation = 0;
+        this.contextDebugSource = "codexTokenCount";
+        if (event.primaryUsedPercent != null) this.fiveHourPercent = event.primaryUsedPercent;
+        if (event.primaryResetsAt != null) this.fiveHourResetsAt = event.primaryResetsAt;
+        if (event.secondaryUsedPercent != null) this.sevenDayPercent = event.secondaryUsedPercent;
+        if (event.secondaryResetsAt != null) this.sevenDayResetsAt = event.secondaryResetsAt;
+        break;
+      }
 
       case "ToolCallStart":
         if (this.sidechainActive) break;
@@ -160,6 +182,18 @@ export class TapMetadataAccumulator {
         }
         break;
       }
+
+      case "CodexToolCallComplete":
+        if (this.sidechainActive) break;
+        this.lastToolDurationMs = event.durationMs;
+        this.lastToolResultSize = event.outputSizeBytes;
+        this.lastToolError = event.error;
+        this.currentToolName = null;
+        this.currentAction = null;
+        if (event.error) {
+          this.hookStatus = "Error: " + event.error.slice(0, 60);
+        }
+        break;
 
       case "UserInput":
       case "SlashCommand":
@@ -482,7 +516,7 @@ export class TapMetadataAccumulator {
           cacheCreation: this.lastCacheCreation,
           totalContextTokens: contextTokens,
           model: this.runtimeModel,
-          source: "turnStart" as const,
+          source: this.contextDebugSource,
         }
       : null;
 
@@ -572,6 +606,7 @@ export class TapMetadataAccumulator {
     this.lastCacheRead = 0;
     this.lastTurnInputTokens = 0;
     this.lastCacheCreation = 0;
+    this.contextDebugSource = "turnStart";
     this.apiRegion = null;
     this.lastRequestId = null;
     this.systemPromptLength = 0;

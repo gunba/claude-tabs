@@ -16,6 +16,130 @@ function fmtToolAction(name: string, inp: Record<string, unknown>): string {
   return name;
 }
 
+// [CT-01] asRecord, parseJsonObject, normalizeCodexToolName (Bash for shell/exec_command), parseCodexToolInput (apply_patch preserves raw patch), codexToolOutputInfo; codex-message/assistant->ConversationMessage(end_turn); KNOWN BUG: codex-tool-call-start returns ToolCallStart without cat, so reducer cat guard is unreachable
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function numField(obj: Record<string, unknown> | null, key: string): number {
+  const value = obj?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumField(obj: Record<string, unknown> | null, key: string): number | null {
+  const value = obj?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringField(obj: Record<string, unknown> | null, key: string): string {
+  const value = obj?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") return asRecord(value);
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeCodexToolName(name: string): string {
+  if (name === "shell" || name === "exec_command") return "Bash";
+  return name;
+}
+
+function codexCommandString(command: unknown): string {
+  if (typeof command === "string") return command;
+  if (!Array.isArray(command)) return "";
+  const parts = command.map((part) => String(part));
+  if (parts.length >= 3 && /(?:^|\/)(?:ba|z|fi)?sh$/.test(parts[0]) && parts[1] === "-lc") {
+    return parts.slice(2).join(" ");
+  }
+  return parts.join(" ");
+}
+
+function parseCodexToolInput(name: string, raw: unknown): { toolName: string; input: Record<string, unknown> } {
+  const parsed = parseJsonObject(raw);
+  if (name === "shell" || name === "exec_command") {
+    const cmd = name === "exec_command"
+      ? stringField(parsed, "cmd")
+      : codexCommandString(parsed?.command);
+    return {
+      toolName: "Bash",
+      input: {
+        ...(parsed ?? {}),
+        command: cmd || (typeof raw === "string" ? raw : ""),
+        description: "Codex command",
+      },
+    };
+  }
+  if (name === "apply_patch") {
+    return {
+      toolName: "apply_patch",
+      input: {
+        ...(parsed ?? {}),
+        patch: typeof raw === "string" ? raw : JSON.stringify(raw ?? ""),
+        description: "apply_patch",
+      },
+    };
+  }
+  return {
+    toolName: normalizeCodexToolName(name),
+    input: parsed ?? { value: raw, description: name },
+  };
+}
+
+function codexTextFromContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => {
+      const rec = asRecord(block);
+      const text = rec?.text;
+      return typeof text === "string" ? text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function codexToolOutputInfo(entry: TapEntry): {
+  outputSizeBytes: number;
+  durationMs: number | null;
+  exitCode: number | null;
+  error: string | null;
+} {
+  const rawOutput = entry.output;
+  const outputText = typeof rawOutput === "string"
+    ? rawOutput
+    : rawOutput == null ? "" : JSON.stringify(rawOutput);
+  let durationMs: number | null = null;
+  let exitCode: number | null = typeof entry.exitCode === "number" ? entry.exitCode : null;
+  const parsed = parseJsonObject(rawOutput);
+  const metadata = asRecord(parsed?.metadata);
+  const durationSeconds = nullableNumField(metadata, "duration_seconds");
+  if (durationSeconds != null) durationMs = Math.round(durationSeconds * 1000);
+  if (exitCode == null) exitCode = nullableNumField(metadata, "exit_code");
+  const duration = asRecord(entry.duration);
+  if (durationMs == null && duration) {
+    const secs = numField(duration, "secs");
+    const nanos = numField(duration, "nanos");
+    durationMs = Math.round(secs * 1000 + nanos / 1_000_000);
+  }
+  const error = (exitCode != null && exitCode !== 0) || outputText.startsWith("apply_patch verification failed")
+    ? outputText.slice(0, 500)
+    : null;
+  return {
+    outputSizeBytes: outputText.length,
+    durationMs,
+    exitCode,
+    error,
+  };
+}
+
 // ── Parse (SSE) classifiers ──
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -769,6 +893,123 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
     // Status line: full status payload from CLI statusLine command
     if (cat === "status-line") {
       return classifyStatusLine(ts, entry);
+    }
+
+    // Codex rollout watcher emits these entries from
+    // ~/.codex/sessions/.../rollout-*.jsonl. They use the same event bus
+    // as Claude TAP entries so reducers and metadata stay CLI-agnostic.
+    if (cat === "codex-session") {
+      return {
+        kind: "SessionRegistration",
+        ts,
+        pid: 0,
+        sessionId: String(entry.codexSessionId || ""),
+        cwd: String(entry.cwd || ""),
+        name: null,
+      };
+    }
+
+    if (cat === "codex-turn-context") {
+      const sandbox = asRecord(entry.sandboxPolicy);
+      return {
+        kind: "CodexTurnContext",
+        ts,
+        cwd: String(entry.cwd || ""),
+        model: String(entry.model || ""),
+        effort: typeof entry.effort === "string" ? entry.effort : null,
+        approvalPolicy: typeof entry.approvalPolicy === "string" ? entry.approvalPolicy : null,
+        sandboxMode: typeof sandbox?.mode === "string" ? sandbox.mode : null,
+      };
+    }
+
+    if (cat === "codex-token-count") {
+      const info = asRecord(entry.info);
+      const total = asRecord(info?.total_token_usage);
+      const last = asRecord(info?.last_token_usage);
+      const limits = asRecord(entry.rateLimits);
+      const primary = asRecord(limits?.primary);
+      const secondary = asRecord(limits?.secondary);
+      return {
+        kind: "CodexTokenCount",
+        ts,
+        totalInputTokens: numField(total, "input_tokens"),
+        cachedInputTokens: numField(total, "cached_input_tokens"),
+        outputTokens: numField(total, "output_tokens"),
+        reasoningOutputTokens: numField(total, "reasoning_output_tokens"),
+        totalTokens: numField(total, "total_tokens"),
+        lastInputTokens: numField(last, "input_tokens"),
+        lastCachedInputTokens: numField(last, "cached_input_tokens"),
+        lastOutputTokens: numField(last, "output_tokens"),
+        lastReasoningOutputTokens: numField(last, "reasoning_output_tokens"),
+        lastTotalTokens: numField(last, "total_tokens"),
+        contextWindow: numField(info, "model_context_window"),
+        primaryUsedPercent: nullableNumField(primary, "used_percent"),
+        primaryResetsAt: nullableNumField(primary, "resets_at"),
+        secondaryUsedPercent: nullableNumField(secondary, "used_percent"),
+        secondaryResetsAt: nullableNumField(secondary, "resets_at"),
+      };
+    }
+
+    if (cat === "codex-tool-call-start") {
+      return {
+        kind: "ToolCallStart",
+        ts,
+        index: 0,
+        toolName: normalizeCodexToolName(String(entry.name || "")),
+        toolId: String(entry.callId || ""),
+      };
+    }
+
+    if (cat === "codex-tool-input") {
+      const parsed = parseCodexToolInput(String(entry.name || ""), entry.arguments);
+      return {
+        kind: "ToolInput",
+        ts,
+        toolName: parsed.toolName,
+        input: parsed.input,
+      };
+    }
+
+    if (cat === "codex-tool-call-complete") {
+      return {
+        kind: "CodexToolCallComplete",
+        ts,
+        callId: String(entry.callId || ""),
+        ...codexToolOutputInfo(entry),
+      };
+    }
+
+    if (cat === "codex-message") {
+      const role = String(entry.role || "");
+      const text = codexTextFromContent(entry.content);
+      if (role === "user") {
+        return { kind: "UserInput", ts, display: text, sessionId: "" };
+      }
+      if (role === "assistant") {
+        return {
+          kind: "ConversationMessage",
+          ts,
+          messageType: "assistant",
+          isSidechain: false,
+          agentId: null,
+          uuid: null,
+          parentUuid: null,
+          promptId: null,
+          stopReason: "end_turn",
+          toolNames: [],
+          toolAction: null,
+          textSnippet: text,
+          cwd: null,
+          hasToolError: false,
+          toolErrorText: null,
+          toolResultSnippets: null,
+        };
+      }
+      return null;
+    }
+
+    if (cat === "codex-compacted") {
+      return { kind: "PostCompactEvent", ts, trigger: "codex", summary: "" };
     }
 
     // [IN-19] System prompt capture: classifies system-prompt category into SystemPromptCapture

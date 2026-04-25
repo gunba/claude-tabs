@@ -6,7 +6,7 @@ import type { PaneComponentProps } from "./ThreePaneEditor";
 import "./HooksPane.css";
 
 // [HM-05] Custom events: includes "Custom event..." option with freeform text input
-const HOOK_EVENTS = [
+const CLAUDE_HOOK_EVENTS = [
   { name: "PreToolUse", desc: "Before tool execution", hasMatcher: true },
   { name: "PostToolUse", desc: "After tool execution", hasMatcher: true },
   { name: "PostToolUseFailure", desc: "After tool failure", hasMatcher: true },
@@ -20,7 +20,17 @@ const HOOK_EVENTS = [
   { name: "SessionEnd", desc: "Session ends", hasMatcher: false },
 ] as const;
 
-const HOOK_TYPES = ["command", "prompt", "agent"] as const; // [HM-09] Three hook types
+const CODEX_HOOK_EVENTS = [
+  { name: "PreToolUse", desc: "Before tool execution", hasMatcher: true },
+  { name: "PermissionRequest", desc: "Before permission prompt", hasMatcher: true },
+  { name: "PostToolUse", desc: "After tool execution", hasMatcher: true },
+  { name: "SessionStart", desc: "Session starts", hasMatcher: false },
+  { name: "UserPromptSubmit", desc: "When user submits", hasMatcher: false },
+  { name: "Stop", desc: "When Codex stops", hasMatcher: false },
+] as const;
+
+const CLAUDE_HOOK_TYPES = ["command", "prompt", "agent"] as const; // [HM-09] Three hook types
+const CODEX_HOOK_TYPES = ["command"] as const;
 
 interface HookEntry {
   type: string;
@@ -66,7 +76,7 @@ const EMPTY_FORM: FormState = {
 // [CM-15] Per-scope hooks CRUD. Scope is a prop, not a dropdown. Calls bumpHookChange() after save.
 // [HM-01] Three scopes: User, Project, Project Local
 // [HM-03] Non-destructive saves: merges hooks into existing settings (preserves other keys)
-export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
+export function HooksPane({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
   const [hooksData, setHooksData] = useState<Record<string, Record<string, MatcherGroup[]>>>({});
   const [editing, setEditing] = useState<FlatHook | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -75,7 +85,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
   const loadHooks = useCallback(async () => {
     try {
       const dirs = projectDir ? [projectDir] : [];
-      const result = await invoke<Record<string, unknown>>("discover_hooks", { workingDirs: dirs });
+      const result = await invoke<Record<string, unknown>>(cli === "codex" ? "discover_codex_hooks" : "discover_hooks", { workingDirs: dirs });
       const parsed: Record<string, Record<string, MatcherGroup[]>> = {};
       for (const [key, val] of Object.entries(result)) {
         if (typeof val === "object" && val !== null) {
@@ -86,14 +96,14 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
     } catch {
       setHooksData({});
     }
-  }, [projectDir]);
+  }, [projectDir, cli]);
 
   useEffect(() => { loadHooks(); }, [loadHooks]);
 
   // Derive scope key
   let scopeKey: string;
   if (scope === "user") scopeKey = "user";
-  else if (scope === "project-local") scopeKey = `project-local:${projectDir}`;
+  else if (scope === "project-local" && cli === "claude") scopeKey = `project-local:${projectDir}`;
   else scopeKey = `project:${projectDir}`;
 
   const currentHooks: Record<string, MatcherGroup[]> = hooksData[scopeKey] ?? {};
@@ -113,7 +123,11 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
   const saveHooks = useCallback(async (updatedHooks: Record<string, MatcherGroup[]>) => {
     try {
       const workingDir = scope === "user" ? "" : projectDir;
-      await invoke("save_hooks", { scope, workingDir, hooksJson: JSON.stringify(updatedHooks) });
+      await invoke(cli === "codex" ? "save_codex_hooks" : "save_hooks", {
+        scope: cli === "codex" && scope === "project-local" ? "project" : scope,
+        workingDir,
+        hooksJson: JSON.stringify(updatedHooks),
+      });
       onStatus({ text: "Hooks saved", type: "success" });
       setTimeout(() => onStatus(null), 2000);
       await loadHooks();
@@ -121,7 +135,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [scope, projectDir, loadHooks, onStatus]);
+  }, [scope, projectDir, cli, loadHooks, onStatus]);
 
   // [HM-04] Edit preserves unknown fields via spread of original entry
   const handleSave = useCallback(() => {
@@ -197,8 +211,10 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
     setForm({ ...EMPTY_FORM });
   }, []);
 
-  const isCustomEvent = !HOOK_EVENTS.some((e) => e.name === form.eventName);
-  const eventHasMatcher = isCustomEvent || (HOOK_EVENTS.find((e) => e.name === form.eventName)?.hasMatcher ?? false);
+  const hookEvents = cli === "codex" ? CODEX_HOOK_EVENTS : CLAUDE_HOOK_EVENTS;
+  const hookTypes = cli === "codex" ? CODEX_HOOK_TYPES : CLAUDE_HOOK_TYPES;
+  const isCustomEvent = !hookEvents.some((e) => e.name === form.eventName);
+  const eventHasMatcher = isCustomEvent || (hookEvents.find((e) => e.name === form.eventName)?.hasMatcher ?? false);
 
   return (
     <div className="hooks-pane">
@@ -255,7 +271,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
               onChange={(v) => setForm((f) => ({ ...f, eventName: v === "__custom__" ? "" : v }))}
               ariaLabel="Hook event"
               options={[
-                ...HOOK_EVENTS.map((ev) => ({ value: ev.name, label: ev.name })),
+                ...hookEvents.map((ev) => ({ value: ev.name, label: ev.name })),
                 { value: "__custom__", label: "Custom..." },
               ]}
             />
@@ -276,7 +292,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
                 className="hooks-pane-form-input"
                 value={form.matcher}
                 onChange={(e) => setForm((f) => ({ ...f, matcher: e.target.value }))}
-                placeholder="Bash|Write"
+              placeholder={cli === "codex" ? "Bash|apply_patch" : "Bash|Write"}
               />
             </div>
           )}
@@ -300,7 +316,7 @@ export function HooksPane({ scope, projectDir, onStatus }: PaneComponentProps) {
               value={form.type}
               onChange={(v) => setForm((f) => ({ ...f, type: v }))}
               ariaLabel="Hook type"
-              options={HOOK_TYPES.map((t) => ({ value: t, label: t }))}
+              options={hookTypes.map((t) => ({ value: t, label: t }))}
             />
           </div>
 

@@ -18,7 +18,11 @@ type MergedEntry =
   | { kind: "skill"; label: string; key: string; ts: number; success: boolean };
 
 export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProps) {
-  const slashCommands = useSettingsStore((s) => s.slashCommands);
+  const activeCli = useSessionStore((s) => {
+    if (!sessionId) return "claude";
+    return s.sessions.find((session) => session.id === sessionId)?.config.cli ?? "claude";
+  });
+  const slashCommands = useSettingsStore((s) => s.slashCommandsByCli[activeCli] ?? []);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const expanded = useSettingsStore((s) => s.commandBarExpanded);
   const setExpanded = useSettingsStore((s) => s.setCommandBarExpanded);

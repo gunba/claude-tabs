@@ -32,6 +32,7 @@ use std::time::SystemTime;
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
 use serde_json::Value;
+use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Mutex;
 
@@ -364,6 +365,25 @@ fn handle_rollout_line(app: &tauri::AppHandle, session_id: &str, line: &str) {
     emit_normalized(app, session_id, &parsed);
 }
 
+fn rollout_ts_millis(ts: &str) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .map(|dt| dt.timestamp_millis())
+        .unwrap_or_else(|_| chrono::Utc::now().timestamp_millis())
+}
+
+// [CX-01] emit_tap_entry publishes 'tap-entry-{sid}' events with codex-* cats; function_call/custom_tool_call dual-handled; dual emit (tool-call-start + tool-input) for tool calls
+fn emit_tap_entry(app: &tauri::AppHandle, session_id: &str, ts: &str, mut entry: Value) {
+    let Some(obj) = entry.as_object_mut() else {
+        return;
+    };
+    obj.insert("ts".into(), Value::Number(rollout_ts_millis(ts).into()));
+    obj.insert("tsIso".into(), Value::String(ts.to_string()));
+    let event_name = format!("tap-entry-{session_id}");
+    if let Ok(line) = serde_json::to_string(&entry) {
+        let _ = app.emit(&event_name, line);
+    }
+}
+
 /// Translate a `RolloutItem` into one (or more) `record_backend_event`
 /// calls. The taxonomy mirrors what tap classifier emits for Claude.
 fn emit_normalized(app: &tauri::AppHandle, session_id: &str, parsed: &RolloutLine) {
@@ -395,6 +415,17 @@ fn emit_normalized(app: &tauri::AppHandle, session_id: &str, parsed: &RolloutLin
                     "cliVersion": cli_version,
                 }),
             );
+            emit_tap_entry(
+                app,
+                session_id,
+                &ts,
+                serde_json::json!({
+                    "cat": "codex-session",
+                    "codexSessionId": id,
+                    "cwd": cwd,
+                    "cliVersion": cli_version,
+                }),
+            );
         }
         "turn_context" => {
             record_backend_event(
@@ -409,6 +440,19 @@ fn emit_normalized(app: &tauri::AppHandle, session_id: &str, parsed: &RolloutLin
                     "payload": &parsed.payload,
                 }),
             );
+            emit_tap_entry(
+                app,
+                session_id,
+                &ts,
+                serde_json::json!({
+                    "cat": "codex-turn-context",
+                    "cwd": parsed.payload.get("cwd"),
+                    "approvalPolicy": parsed.payload.get("approval_policy"),
+                    "sandboxPolicy": parsed.payload.get("sandbox_policy"),
+                    "model": parsed.payload.get("model"),
+                    "effort": parsed.payload.get("effort"),
+                }),
+            );
         }
         "event_msg" => emit_event_msg(app, session_id, &ts, &parsed.payload),
         "response_item" => emit_response_item(app, session_id, &ts, &parsed.payload),
@@ -421,6 +465,12 @@ fn emit_normalized(app: &tauri::AppHandle, session_id: &str, parsed: &RolloutLin
                 "codex.compacted",
                 "Conversation compacted",
                 serde_json::json!({ "ts": ts, "payload": &parsed.payload }),
+            );
+            emit_tap_entry(
+                app,
+                session_id,
+                &ts,
+                serde_json::json!({ "cat": "codex-compacted", "payload": &parsed.payload }),
             );
         }
         other => {
@@ -454,6 +504,40 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
                 "Token usage update",
                 serde_json::json!({ "ts": ts, "info": info }),
             );
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-token-count",
+                    "info": payload.get("info"),
+                    "rateLimits": payload.get("rate_limits"),
+                }),
+            );
+        }
+        "exec_command_end" => {
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.exec_command_end",
+                "Command finished",
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-tool-call-complete",
+                    "callId": payload.get("call_id"),
+                    "name": "exec_command",
+                    "output": payload.get("aggregated_output"),
+                    "exitCode": payload.get("exit_code"),
+                    "duration": payload.get("duration"),
+                }),
+            );
         }
         _ => {
             record_backend_event(
@@ -472,9 +556,14 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
 fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &Value) {
     let kind = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match kind {
-        "function_call" => {
+        "function_call" | "custom_tool_call" => {
             let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let arguments = payload
+                .get("arguments")
+                .or_else(|| payload.get("input"))
+                .cloned()
+                .unwrap_or(Value::Null);
             record_backend_event(
                 app,
                 "LOG",
@@ -486,11 +575,33 @@ fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payloa
                     "ts": ts,
                     "callId": call_id,
                     "name": name,
-                    "arguments": payload.get("arguments"),
+                    "arguments": arguments,
+                }),
+            );
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-tool-call-start",
+                    "callId": call_id,
+                    "name": name,
+                }),
+            );
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-tool-input",
+                    "callId": call_id,
+                    "name": name,
+                    "arguments": arguments,
+                    "status": payload.get("status"),
                 }),
             );
         }
-        "function_call_output" => {
+        "function_call_output" | "custom_tool_call_output" => {
             let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
             record_backend_event(
                 app,
@@ -501,6 +612,16 @@ fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payloa
                 "tool result",
                 serde_json::json!({
                     "ts": ts,
+                    "callId": call_id,
+                    "output": payload.get("output"),
+                }),
+            );
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-tool-call-complete",
                     "callId": call_id,
                     "output": payload.get("output"),
                 }),
@@ -516,6 +637,16 @@ fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payloa
                 "codex.message",
                 role,
                 serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-message",
+                    "role": role,
+                    "content": payload.get("content"),
+                }),
             );
         }
         _ => {

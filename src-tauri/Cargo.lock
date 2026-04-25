@@ -626,6 +626,7 @@ dependencies = [
  "ignore",
  "libc",
  "log",
+ "memchr",
  "notify",
  "notify-rust",
  "open",

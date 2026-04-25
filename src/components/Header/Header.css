@@ -38,6 +38,10 @@
   color: var(--text-secondary);
 }
 
+.app-header-cli-missing {
+  color: var(--text-muted);
+}
+
 .app-header-controls {
   display: flex;
   align-items: center;

@@ -28,7 +28,7 @@ const NEW_COMMAND = "__new_command__";
 const NEW_SKILL = "__new_skill__";
 
 // [CM-30] SkillsEditor lists commands (.claude/commands/) and skills (.claude/skills/) merged via list_skills (kind tag)
-export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps) {
+export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
   const [entries, setEntries] = useState<AgentFile[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState("");
@@ -42,14 +42,14 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
 
   const loadEntries = useCallback(async () => {
     try {
-      const result = await invoke<AgentFile[]>("list_skills", { scope, workingDir });
+      const result = await invoke<AgentFile[]>(cli === "codex" ? "list_codex_skill_files" : "list_skills", { scope, workingDir });
       setEntries(result);
     } catch (err) {
       dlog("config", null, `list_skills failed: ${err}`, "ERR");
       setEntries([]);
     }
     setLoading(false);
-  }, [scope, workingDir]);
+  }, [scope, workingDir, cli]);
 
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
@@ -60,13 +60,13 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
         const first = entries[0];
         setSelected(entryKey(entryKind(first), first.name));
       } else {
-        setSelected(NEW_COMMAND);
+        setSelected(cli === "codex" ? NEW_SKILL : NEW_COMMAND);
       }
     }
-  }, [loading, entries, selected]);
+  }, [loading, entries, selected, cli]);
 
   const isNew = selected === NEW_COMMAND || selected === NEW_SKILL;
-  const newKind: Kind = selected === NEW_SKILL ? "skill" : "command";
+  const newKind: Kind = cli === "codex" || selected === NEW_SKILL ? "skill" : "command";
 
   // Load selected file content (with cancellation to prevent stale writes on rapid selection).
   useEffect(() => {
@@ -84,7 +84,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
     invoke<string>("read_config_file", {
       scope,
       workingDir,
-      fileType: `skill:${parsed.kind}:${parsed.name}`,
+      fileType: cli === "codex" ? `codex-skill:${parsed.name}` : `skill:${parsed.kind}:${parsed.name}`,
     }).then((result) => {
       if (!cancelled) { setContent(result); setSavedContent(result); }
     }).catch((err) => {
@@ -92,7 +92,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       if (!cancelled) { setContent(""); setSavedContent(""); }
     });
     return () => { cancelled = true; };
-  }, [selected, isNew, entries, scope, workingDir]);
+  }, [selected, isNew, entries, scope, workingDir, cli]);
 
   const handleSave = useCallback(async () => {
     if (!selected || isNew) return;
@@ -102,7 +102,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       await invoke("write_config_file", {
         scope,
         workingDir,
-        fileType: `skill:${parsed.kind}:${parsed.name}`,
+        fileType: cli === "codex" ? `codex-skill:${parsed.name}` : `skill:${parsed.kind}:${parsed.name}`,
         content,
       });
       setSavedContent(content);
@@ -113,7 +113,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       dlog("config", null, `save ${parsed.kind} failed: ${err}`, "ERR");
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [selected, isNew, scope, workingDir, content, onStatus]);
+  }, [selected, isNew, scope, workingDir, cli, content, onStatus]);
 
   const handleCreate = useCallback(async () => {
     const name = newName.trim().replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -126,7 +126,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       await invoke("write_config_file", {
         scope,
         workingDir,
-        fileType: `skill:${newKind}:${name}`,
+        fileType: cli === "codex" ? `codex-skill:${name}` : `skill:${newKind}:${name}`,
         content,
       });
       setNewName("");
@@ -140,7 +140,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       dlog("config", null, `create ${newKind} failed: ${err}`, "ERR");
       onStatus({ text: `Create failed: ${err}`, type: "error" });
     }
-  }, [newName, newKind, scope, workingDir, content, entries, loadEntries, onStatus]);
+  }, [newName, newKind, scope, workingDir, cli, content, entries, loadEntries, onStatus]);
 
   const handleDelete = useCallback(async () => {
     if (!selected || isNew) return;
@@ -150,7 +150,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       await invoke("write_config_file", {
         scope,
         workingDir,
-        fileType: `skill-delete:${parsed.kind}:${parsed.name}`,
+        fileType: cli === "codex" ? `codex-skill-delete:${parsed.name}` : `skill-delete:${parsed.kind}:${parsed.name}`,
         content: "",
       });
       setSelected(null);
@@ -162,16 +162,16 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       dlog("config", null, `delete failed: ${err}`, "ERR");
       onStatus({ text: `Delete failed: ${err}`, type: "error" });
     }
-  }, [selected, isNew, scope, workingDir, loadEntries, onStatus]);
+  }, [selected, isNew, scope, workingDir, cli, loadEntries, onStatus]);
 
   const dirty = isNew ? newName.trim() !== "" && content !== "" : content !== savedContent;
 
   // Group entries: commands first, then skills.
   const grouped = useMemo(() => {
-    const commands = entries.filter((e) => entryKind(e) === "command");
+    const commands = cli === "codex" ? [] : entries.filter((e) => entryKind(e) === "command");
     const skills = entries.filter((e) => entryKind(e) === "skill");
     return { commands, skills };
-  }, [entries]);
+  }, [entries, cli]);
 
   if (loading) return <div className="config-md-hint">Loading...</div>;
 
@@ -184,12 +184,12 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
         key={key}
         className={`config-md-editor-item${selected === key ? " active" : ""}`}
         onClick={() => setSelected(key)}
-        title={kind === "skill" ? "Skill (.claude/skills/)" : "Command (.claude/commands/)"}
+        title={cli === "codex" ? "Skill (.agents/skills/)" : kind === "skill" ? "Skill (.claude/skills/)" : "Command (.claude/commands/)"}
       >
         <span className={`config-md-editor-kind config-md-editor-kind-${kind}`}>
           {kind === "skill" ? "skill" : "cmd"}
         </span>
-        /{entry.name}
+        {kind === "command" ? `/${entry.name}` : entry.name}
         {usage > 0 && <span className="config-md-editor-usage">{usage}</span>}
       </button>
     );
@@ -207,12 +207,14 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
       <div className="config-md-editor-list">
         {grouped.commands.map(renderItem)}
         {grouped.skills.map(renderItem)}
-        <button
-          className={`config-md-editor-item config-md-editor-new${selected === NEW_COMMAND ? " active" : ""}`}
-          onClick={() => { setSelected(NEW_COMMAND); setNewName(""); setContent(""); }}
-        >
-          + new command
-        </button>
+        {cli === "claude" && (
+          <button
+            className={`config-md-editor-item config-md-editor-new${selected === NEW_COMMAND ? " active" : ""}`}
+            onClick={() => { setSelected(NEW_COMMAND); setNewName(""); setContent(""); }}
+          >
+            + new command
+          </button>
+        )}
         <button
           className={`config-md-editor-item config-md-editor-new${selected === NEW_SKILL ? " active" : ""}`}
           onClick={() => { setSelected(NEW_SKILL); setNewName(""); setContent(""); }}
@@ -236,7 +238,7 @@ export function SkillsEditor({ scope, projectDir, onStatus }: PaneComponentProps
               autoFocus
             />
           ) : (
-            <span className="config-md-editor-name">/{selectedLabel}</span>
+            <span className="config-md-editor-name">{selectedParsed?.kind === "command" ? `/${selectedLabel}` : selectedLabel}</span>
           )}
           <div className="config-md-editor-actions">
             <button

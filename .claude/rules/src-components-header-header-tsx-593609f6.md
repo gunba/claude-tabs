@@ -14,3 +14,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 ## Platform
 
 - [PL-03 L10] Header drag mechanism: DRAG_THRESHOLD_PX_SQ=9 (3px movement) defers startDragging() until the pointer has actually moved past the squared threshold, preserving click and dblclick paths on Wayland compositors. Explicit onDoubleClick handler calls toggleMaximize() because data-tauri-drag-region's dblclick path does not fire reliably on KDE/GNOME Wayland. data-tauri-drag-region attribute removed entirely — startDragging + dblclick are the only drag mechanism. The .app-header-controls cluster is excluded from both drag and dblclick via closest() guard.
+
+## Brand Rename Code Tabs
+
+- [BR-01 L60] 'Claude Tabs' renamed to 'Code Tabs' across: tauri.conf.json productName and window title, index.html <title>, src-tauri/src/lib.rs build expect string, Header label, and App.tsx dynamic window title (format: 'Code Tabs [vX.Y.Z] · Claude X · Codex Y'). App.tsx window title includes both cliVersions.claude and cliVersions.codex ('not installed' when absent).

@@ -4,20 +4,27 @@ import ReactMarkdown from "react-markdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import "./MarkdownPane.css";
 
-// [CM-14] Scope-to-fileType mapping: user=claudemd-user, project=claudemd-root, project-local=claudemd-local
-const SCOPE_TO_FILETYPE: Record<string, string> = {
+// [CM-14] Scope-to-fileType mapping.
+const CLAUDE_SCOPE_TO_FILETYPE: Record<string, string> = {
   user: "claudemd-user",
   project: "claudemd-root",
   "project-local": "claudemd-local",
 };
 
-export function MarkdownPane({ scope, projectDir, onStatus }: PaneComponentProps) {
+const CODEX_SCOPE_TO_FILETYPE: Record<string, string> = {
+  user: "agentsmd-user",
+  project: "agentsmd-root",
+  "project-local": "agentsmd-local",
+};
+
+export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState(false);
 
-  const fileType = SCOPE_TO_FILETYPE[scope];
+  const fileType = (cli === "codex" ? CODEX_SCOPE_TO_FILETYPE : CLAUDE_SCOPE_TO_FILETYPE)[scope];
+  const docName = cli === "codex" ? "AGENTS.md" : "CLAUDE.md";
 
   const load = useCallback(async () => {
     try {
@@ -46,12 +53,12 @@ export function MarkdownPane({ scope, projectDir, onStatus }: PaneComponentProps
         content: text,
       });
       setSaved(text);
-      onStatus({ text: "CLAUDE.md saved", type: "success" });
+      onStatus({ text: `${docName} saved`, type: "success" });
       setTimeout(() => onStatus(null), 2000);
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [text, scope, projectDir, fileType, onStatus]);
+  }, [text, scope, projectDir, fileType, docName, onStatus]);
 
   const dirty = text !== saved;
 
@@ -69,7 +76,7 @@ export function MarkdownPane({ scope, projectDir, onStatus }: PaneComponentProps
           value={text}
           onChange={(e) => setText(e.target.value)}
           spellCheck={false}
-          placeholder="No CLAUDE.md found — type to create"
+          placeholder={`No ${docName} found - type to create`}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === "s") { e.preventDefault(); handleSave(); }
             if (e.key === "Tab") {

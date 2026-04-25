@@ -31,11 +31,54 @@
   justify-self: end;
 }
 
+.config-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .config-title {
   font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.2px;
+}
+
+.config-cli-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.config-cli-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.config-cli-switch-btn:hover {
+  color: var(--text-secondary);
+}
+
+.config-cli-switch-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.config-cli-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 2px 6px;
 }
 
 .config-tabs {
@@ -596,6 +639,10 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.sh-container-plain {
+  display: flex;
 }
 
 .sh-pre {

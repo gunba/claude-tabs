@@ -11,13 +11,17 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 - [AP-01 L32] canonicalizePath() in paths.ts converts any path to a stable forward-slash form for identity comparisons: backslashes -> forward slashes, MSYS-style /c/Users/ -> C:/Users/, drive letter normalized to uppercase, trailing slashes stripped. Used at ingress in useTapEventProcessor (ToolInput file_path, InstructionsLoadedEvent, PermissionRejected) and the passive git change scan (absolutized paths from git_list_changes) to ensure cross-platform path identity.
 
+## Claude Tabs Worktree Paths
+
+- [CU-01 L54] parseWorktreePath in src/lib/paths.ts matches both '.claude_tabs/worktrees/<name>' and legacy '.claude/worktrees/<name>' paths via the regex /^(.+)\/\.(?:claude_tabs|claude)\/worktrees\/([^/]+)\/?$/. Returns {projectRoot, worktreeName, projectName}. Settings store mock and workspace-key collapsing tests in paths.test.ts mirror both regex branches. Used in settings store (setSavedDefaults workspace key), ConfigManager, SessionLauncher, and useTapEventProcessor.
+
 ## Config Implementation
 
-- [CI-02 L165] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
+- [CI-02 L166] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
 
 ## Config Schema and Providers
 
-- [CM-02 L164] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
+- [CM-02 L165] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
 
 ## Platform
 
@@ -25,4 +29,4 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Data Flow
 
-- [DF-09 L121,138] groupSessionsByDir() and swapWithinGroup() in paths.ts: pure functions for tab grouping by normalized workingDir (Map-based, O(n) single pass, insertion-order groups) and position swapping within group boundaries. TabGroup type exported. parseWorktreePath() detects `.claude/worktrees/<slug>` paths, worktreeAcronym() abbreviates slugs by hyphen initials.
+- [DF-09 L122,139] groupSessionsByDir() and swapWithinGroup() in paths.ts: pure functions for tab grouping by normalized workingDir (Map-based, O(n) single pass, insertion-order groups) and position swapping within group boundaries. TabGroup type exported. parseWorktreePath() detects `.claude/worktrees/<slug>` paths, worktreeAcronym() abbreviates slugs by hyphen initials.

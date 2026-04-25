@@ -6,10 +6,10 @@ import { dlog } from "../lib/debugLog";
 import type { CliCapabilities, CliOption, CliCommand } from "../store/settings";
 
 /**
- * On app start, checks the Claude CLI version and help text.
- * If the version has changed since last check, parses new capabilities
- * and notifies via the meta-agent panel.
+ * On app start, checks each installed agent CLI independently and parses the
+ * capabilities exposed by that binary's current `--help` output.
  */
+// [PR-01] useCliWatcher: checkClaude/checkCodex parallel; Codex normalizes capabilities from help+discover_codex_models+discover_codex_cli_options; single-run 500ms deferred
 export function useCliWatcher(): void {
   const checkedRef = useRef(false);
 
@@ -22,24 +22,31 @@ export function useCliWatcher(): void {
     return () => clearTimeout(timer);
 
     async function check() {
+      trace("cliWatcher: check start");
+      dlog("discovery", null, "CLI watcher started", "LOG", {
+        event: "discovery.cli_watcher_started",
+        data: {},
+      });
+
+      await Promise.allSettled([checkClaude(), checkCodex()]);
+    }
+
+    async function checkClaude() {
       try {
         trace("cliWatcher: check start");
-        dlog("discovery", null, "CLI watcher started", "LOG", {
-          event: "discovery.cli_watcher_started",
-          data: {},
-        });
         const version = await traceAsync("cliWatcher: check_cli_version", () =>
           invoke<string>("check_cli_version")
         , {
           module: "discovery",
           event: "discovery.cli_version_perf",
           warnAboveMs: 500,
-          data: {},
+          data: { cli: "claude" },
         });
-        const cached = useSettingsStore.getState().cliVersion;
+        const cached = useSettingsStore.getState().cliVersions.claude;
         dlog("discovery", null, "CLI version resolved", "LOG", {
           event: "discovery.cli_version_loaded",
           data: {
+            cli: "claude",
             version,
             previousVersion: cached,
           },
@@ -56,13 +63,14 @@ export function useCliWatcher(): void {
               module: "discovery",
               event: "discovery.cli_help_perf",
               warnAboveMs: 500,
-              data: { version },
+              data: { cli: "claude", version },
             });
             const capabilities = parseHelpText(help);
-            useSettingsStore.getState().setCliCapabilities(version, capabilities);
+            useSettingsStore.getState().setCliCapabilitiesForCli("claude", version, capabilities);
             dlog("discovery", null, "CLI help parsed into capabilities", "LOG", {
               event: "discovery.cli_capabilities_loaded",
               data: {
+                cli: "claude",
                 version,
                 helpLength: help.length,
                 models: capabilities.models,
@@ -74,16 +82,10 @@ export function useCliWatcher(): void {
             });
           } catch {
             // Help failed but version succeeded — still update version
-            useSettingsStore.getState().setCliCapabilities(version, {
-              models: [],
-              permissionModes: [],
-              flags: [],
-              options: [],
-              commands: [],
-            });
+            useSettingsStore.getState().setCliCapabilitiesForCli("claude", version, emptyCapabilities());
             dlog("discovery", null, "CLI help parsing failed; stored empty capabilities", "WARN", {
               event: "discovery.cli_capabilities_failed",
-              data: { version },
+              data: { cli: "claude", version },
             });
           }
 
@@ -102,14 +104,104 @@ export function useCliWatcher(): void {
           }
         }
       } catch (err) {
-        // CLI not found or version check failed — ignore
-        dlog("discovery", null, `CLI watcher failed: ${err}`, "WARN", {
+        useSettingsStore.getState().setCliCapabilitiesForCli("claude", null, emptyCapabilities());
+        // CLI not found or version check failed — valid when the user only uses Codex.
+        dlog("discovery", null, `Claude CLI watcher failed: ${err}`, "DEBUG", {
           event: "discovery.cli_watcher_failed",
-          data: { error: String(err) },
+          data: { cli: "claude", error: String(err) },
+        });
+      }
+    }
+
+    async function checkCodex() {
+      try {
+        const version = await traceAsync("cliWatcher: check_codex_cli_version", () =>
+          invoke<string>("check_codex_cli_version")
+        , {
+          module: "discovery",
+          event: "discovery.cli_version_perf",
+          warnAboveMs: 500,
+          data: { cli: "codex" },
+        });
+        const cached = useSettingsStore.getState().cliVersions.codex;
+        let capabilities = emptyCapabilities();
+        try {
+          const [help, models, codexOptions] = await Promise.all([
+            traceAsync("cliWatcher: get_codex_cli_help", () =>
+              invoke<string>("get_codex_cli_help")
+            , {
+              module: "discovery",
+              event: "discovery.cli_help_perf",
+              warnAboveMs: 500,
+              data: { cli: "codex", version },
+            }),
+            invoke<Array<{ slug: string; displayName?: string | null }>>("discover_codex_models")
+              .catch(() => []),
+            invoke<Array<{ flag: string; short?: string; description: string; takesValue: boolean }>>("discover_codex_cli_options")
+              .catch(() => []),
+          ]);
+          capabilities = normalizeCodexCapabilities(parseHelpText(help), models, codexOptions);
+          useSettingsStore.getState().setCliCapabilitiesForCli("codex", version, capabilities);
+          dlog("discovery", null, "Codex CLI help parsed into capabilities", "LOG", {
+            event: "discovery.cli_capabilities_loaded",
+            data: {
+              cli: "codex",
+              version,
+              helpLength: help.length,
+              models: capabilities.models,
+              flagCount: capabilities.flags.length,
+              optionCount: capabilities.options.length,
+              commandCount: capabilities.commands.length,
+            },
+          });
+        } catch (err) {
+          useSettingsStore.getState().setCliCapabilitiesForCli("codex", version, capabilities);
+          dlog("discovery", null, `Codex capabilities failed: ${err}`, "WARN", {
+            event: "discovery.cli_capabilities_failed",
+            data: { cli: "codex", version, error: String(err) },
+          });
+        }
+        if (cached) {
+          dlog("config", null, `Codex CLI updated: ${cached} → ${version}`);
+        }
+      } catch (err) {
+        useSettingsStore.getState().setCliCapabilitiesForCli("codex", null, emptyCapabilities());
+        dlog("discovery", null, `Codex CLI watcher failed: ${err}`, "DEBUG", {
+          event: "discovery.cli_watcher_failed",
+          data: { cli: "codex", error: String(err) },
         });
       }
     }
   }, []);
+}
+
+function emptyCapabilities(): CliCapabilities {
+  return { models: [], permissionModes: [], flags: [], options: [], commands: [] };
+}
+
+function normalizeCodexCapabilities(
+  parsed: CliCapabilities,
+  models: Array<{ slug: string; displayName?: string | null }>,
+  codexOptions: Array<{ flag: string; short?: string; description: string; takesValue: boolean }>,
+): CliCapabilities {
+  const options = codexOptions.length > 0
+    ? codexOptions.map((opt) => ({
+        flag: opt.flag,
+        argName: opt.takesValue ? "<value>" : undefined,
+        description: opt.description,
+      }))
+    : parsed.options;
+  const flags = new Set<string>(parsed.flags);
+  for (const opt of codexOptions) {
+    flags.add(opt.flag);
+    if (opt.short) flags.add(opt.short);
+  }
+  return {
+    ...parsed,
+    models: models.map((m) => m.slug).filter(Boolean),
+    flags: Array.from(flags),
+    options,
+  };
 }
 
 function parseHelpText(help: string): CliCapabilities {

@@ -205,14 +205,19 @@ pub fn run() {
             commands::write_ui_config,
             commands::discover_hooks,
             commands::save_hooks,
+            commands::discover_codex_hooks,
+            commands::save_codex_hooks,
             commands::scan_command_usage,
             commands::read_config_file,
             commands::write_config_file,
             commands::read_mcp_servers,
             commands::write_mcp_servers,
+            commands::read_codex_mcp_servers,
+            commands::write_codex_mcp_servers,
             commands::save_event_kinds,
             commands::list_agents,
             commands::list_skills,
+            commands::list_codex_skill_files,
             commands::register_active_pid,
             commands::unregister_active_pid,
             commands::kill_process_tree,
@@ -260,6 +265,7 @@ pub fn run() {
             proxy::stop_traffic_log,
             commands::detect_codex_cli,
             commands::check_codex_cli_version,
+            commands::get_codex_cli_help,
             commands::discover_codex_models,
             commands::discover_codex_cli_options,
             commands::discover_codex_features,
@@ -284,7 +290,7 @@ pub fn run() {
             pty::pty_drain_output,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Claude Tabs")
+        .expect("error while building Code Tabs")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
                 record_backend_event(

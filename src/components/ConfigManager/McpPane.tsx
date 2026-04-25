@@ -11,8 +11,11 @@ interface McpServerEntry {
   args?: string[];
   env?: Record<string, string>;
   type?: "sse" | "http";
+  transport?: "sse" | "http" | "streamable_http";
   url?: string;
   headers?: Record<string, string>;
+  http_headers?: Record<string, string>;
+  bearer_token_env_var?: string;
   [key: string]: unknown;
 }
 
@@ -48,6 +51,9 @@ const EMPTY_FORM: FormState = {
 function detectTransport(s: McpServerEntry): Transport {
   if (s.type === "sse") return "sse";
   if (s.type === "http") return "http";
+  if (s.transport === "sse") return "sse";
+  if (s.transport === "http" || s.transport === "streamable_http") return "http";
+  if (s.url) return "http";
   return "stdio";
 }
 
@@ -71,7 +77,7 @@ function parseArgs(text: string): string[] {
   return text.split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
-function buildEntry(form: FormState): McpServerEntry {
+function buildEntry(form: FormState, cli: PaneComponentProps["cli"]): McpServerEntry {
   if (form.transport === "stdio") {
     const entry: McpServerEntry = { command: form.command.trim() };
     const args = parseArgs(form.args);
@@ -81,12 +87,13 @@ function buildEntry(form: FormState): McpServerEntry {
     return entry;
   }
   // sse or http
-  const entry: McpServerEntry = {
-    type: form.transport as "sse" | "http",
-    url: form.url.trim(),
-  };
+  const entry: McpServerEntry = { url: form.url.trim() };
+  if (cli === "claude") entry.type = form.transport as "sse" | "http";
   const headers = parseKvPairs(form.headerText);
-  if (Object.keys(headers).length > 0) entry.headers = headers;
+  if (Object.keys(headers).length > 0) {
+    if (cli === "codex") entry.http_headers = headers;
+    else entry.headers = headers;
+  }
   return entry;
 }
 
@@ -99,7 +106,7 @@ function serverToForm(name: string, server: McpServerEntry): FormState {
     args: server.args?.join("\n") || "",
     url: server.url || "",
     envText: kvToText(server.env),
-    headerText: kvToText(server.headers),
+    headerText: kvToText(server.headers ?? server.http_headers),
   };
 }
 
@@ -115,7 +122,7 @@ function isFormValid(form: FormState, servers: Record<string, McpServerEntry>, e
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
+export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
   const [servers, setServers] = useState<Record<string, McpServerEntry>>({});
   const [editing, setEditing] = useState<FlatServer | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -125,19 +132,19 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
 
   const loadServers = useCallback(async () => {
     try {
-      const raw = await invoke<string>("read_mcp_servers", { scope, workingDir });
+      const raw = await invoke<string>(cli === "codex" ? "read_codex_mcp_servers" : "read_mcp_servers", { scope, workingDir });
       const parsed = raw ? JSON.parse(raw) : {};
       setServers((parsed as Record<string, McpServerEntry>) || {});
     } catch {
       setServers({});
     }
-  }, [scope, workingDir]);
+  }, [scope, workingDir, cli]);
 
   useEffect(() => { loadServers(); }, [loadServers]);
 
   const saveServers = useCallback(async (updated: Record<string, McpServerEntry>) => {
     try {
-      await invoke("write_mcp_servers", {
+      await invoke(cli === "codex" ? "write_codex_mcp_servers" : "write_mcp_servers", {
         scope, workingDir,
         serversJson: JSON.stringify(updated),
       });
@@ -147,25 +154,29 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [scope, workingDir, loadServers, onStatus]);
+  }, [scope, workingDir, cli, loadServers, onStatus]);
 
   const handleSave = useCallback(async () => {
     if (!isFormValid(form, servers, editing)) return;
 
     const updated: Record<string, McpServerEntry> = { ...servers };
     const newEntry: McpServerEntry = editing
-      ? { ...editing.server, ...buildEntry(form) }
-      : buildEntry(form);
+      ? { ...editing.server, ...buildEntry(form, cli) }
+      : buildEntry(form, cli);
 
     // When transport changes, clean stale fields from the spread
     if (form.transport === "stdio") {
       delete newEntry.type;
+      delete newEntry.transport;
       delete newEntry.url;
       delete newEntry.headers;
+      delete newEntry.http_headers;
     } else {
       delete newEntry.command;
       delete newEntry.args;
       delete newEntry.env;
+      if (cli === "codex") delete newEntry.type;
+      else delete newEntry.transport;
     }
 
     // Handle rename: delete old key
@@ -178,7 +189,7 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
     setShowForm(false);
     setEditing(null);
     setForm({ ...EMPTY_FORM });
-  }, [form, editing, servers, saveServers]);
+  }, [form, editing, servers, saveServers, cli]);
 
   const handleDelete = useCallback((flat: FlatServer) => {
     const updated = { ...servers };
@@ -209,7 +220,9 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
           flatServers.map((flat) => {
             const transport = detectTransport(flat.server);
             const envCount = flat.server.env ? Object.keys(flat.server.env).length : 0;
-            const headerCount = flat.server.headers ? Object.keys(flat.server.headers).length : 0;
+            const headerCount = flat.server.headers
+              ? Object.keys(flat.server.headers).length
+              : flat.server.http_headers ? Object.keys(flat.server.http_headers).length : 0;
             return (
               <div key={flat.name} className="hook-card">
                 <div className="hook-card-header">
@@ -282,11 +295,16 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
               value={form.transport}
               onChange={(v) => setForm((f) => ({ ...f, transport: v as Transport }))}
               ariaLabel="MCP transport"
-              options={[
-                { value: "stdio", label: "stdio" },
-                { value: "sse", label: "sse" },
-                { value: "http", label: "http" },
-              ]}
+              options={cli === "codex"
+                ? [
+                    { value: "stdio", label: "stdio" },
+                    { value: "http", label: "http" },
+                  ]
+                : [
+                    { value: "stdio", label: "stdio" },
+                    { value: "sse", label: "sse" },
+                    { value: "http", label: "http" },
+                  ]}
             />
           </div>
 
@@ -334,7 +352,7 @@ export function McpPane({ scope, projectDir, onStatus }: PaneComponentProps) {
                   className="mcp-form-input"
                   value={form.url}
                   onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-                  placeholder="https://mcp.example.com/sse"
+                  placeholder={cli === "codex" ? "https://mcp.example.com/mcp" : "https://mcp.example.com/sse"}
                 />
               </div>
 

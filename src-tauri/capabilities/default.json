@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default permissions for Claude Tabs",
+  "description": "Default permissions for Code Tabs",
   "windows": ["main"],
   "permissions": [
     "core:default",

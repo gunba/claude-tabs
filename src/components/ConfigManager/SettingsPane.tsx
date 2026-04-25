@@ -219,22 +219,31 @@ export interface SettingsPaneExtraProps {
   onEditorFocus?: () => void;
 }
 
-export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKeysChange, insertRef, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
+export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, onKeysChange, insertRef, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loading, setLoading] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
-  const { cliCapabilities, binarySettingsSchema, settingsJsonSchema } = useSettingsStore();
+  const { cliCapabilitiesByCli, binarySettingsSchema, settingsJsonSchema } = useSettingsStore();
+  const cliCapabilities = cliCapabilitiesByCli[cli] ?? { models: [], permissionModes: [], flags: [], options: [], commands: [] };
 
   const { schema, sourceInfo } = useMemo(() => ({
-    schema: buildSettingsSchema(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema),
+    schema: cli === "claude" ? buildSettingsSchema(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema) : [],
     sourceInfo: getSchemaSourceInfo(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema),
-  }), [cliCapabilities.options, binarySettingsSchema, settingsJsonSchema]);
+  }), [cli, cliCapabilities.options, binarySettingsSchema, settingsJsonSchema]);
 
   // Parse current JSON for validation + "already set" tracking
   const { currentKeys, unknownKeys, typeMismatches, parseError } = useMemo(() => {
+    if (cli === "codex") {
+      return {
+        currentKeys: new Set<string>(),
+        unknownKeys: [] as string[],
+        typeMismatches: [] as { key: string; expected: string; actual: string }[],
+        parseError: null as string | null,
+      };
+    }
     try {
       const obj = JSON.parse(text) as Record<string, unknown>;
       return {
@@ -251,48 +260,53 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
         parseError: e instanceof Error ? e.message : String(e),
       };
     }
-  }, [text, schema]);
+  }, [cli, text, schema]);
 
   const load = useCallback(async () => {
     try {
       const result = await invoke<string>("read_config_file", {
         scope,
         workingDir: scope === "user" ? "" : projectDir,
-        fileType: "settings",
+        fileType: cli === "codex" ? "codex-config" : "settings",
       });
-      const formatted = result ? JSON.stringify(JSON.parse(result), null, 2) : "{}";
+      const formatted = cli === "codex"
+        ? result
+        : result ? JSON.stringify(JSON.parse(result), null, 2) : "{}";
       setText(formatted);
       setSaved(formatted);
     } catch {
-      setText("{}");
-      setSaved("{}");
+      const empty = cli === "codex" ? "" : "{}";
+      setText(empty);
+      setSaved(empty);
     }
     setLoading(false);
-  }, [scope, projectDir]);
+  }, [scope, projectDir, cli]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSave = useCallback(async () => {
-    try {
-      JSON.parse(text); // validate
-    } catch (err) {
-      onStatus({ text: `Invalid JSON: ${err}`, type: "error" });
-      return;
+    if (cli === "claude") {
+      try {
+        JSON.parse(text); // validate
+      } catch (err) {
+        onStatus({ text: `Invalid JSON: ${err}`, type: "error" });
+        return;
+      }
     }
     try {
       await invoke("write_config_file", {
         scope,
         workingDir: scope === "user" ? "" : projectDir,
-        fileType: "settings",
+        fileType: cli === "codex" ? "codex-config" : "settings",
         content: text,
       });
       setSaved(text);
-      onStatus({ text: "Settings saved", type: "success" });
+      onStatus({ text: cli === "codex" ? "Codex config saved" : "Settings saved", type: "success" });
       setTimeout(() => onStatus(null), 2000);
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [text, scope, projectDir, onStatus]);
+  }, [cli, text, scope, projectDir, onStatus]);
 
   const handleInsert = useCallback((key: string, value: unknown) => {
     setText((prev) => insertIntoJson(prev, key, value));
@@ -344,19 +358,22 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
 
   return (
     <div className="pane-editor" onFocus={onEditorFocus}>
-      <div className="sh-container">
-        <pre
-          ref={preRef}
-          className="sh-pre"
-          aria-hidden="true"
-          dangerouslySetInnerHTML={{ __html: highlightJson(text) + "\n" }}
-        />
+      <div className={cli === "codex" ? "sh-container sh-container-plain" : "sh-container"}>
+        {cli === "claude" && (
+          <pre
+            ref={preRef}
+            className="sh-pre"
+            aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: highlightJson(text) + "\n" }}
+          />
+        )}
         <textarea
           ref={textareaRef}
-          className="pane-textarea sh-textarea"
+          className={cli === "codex" ? "pane-textarea" : "pane-textarea sh-textarea"}
           value={text}
           onChange={(e) => setText(e.target.value)}
           spellCheck={false}
+          placeholder={cli === "codex" ? "No config.toml found - type TOML to create" : undefined}
           onScroll={syncScroll}
           onKeyDown={(e) => {
             if (e.ctrlKey && e.key === "s") { e.preventDefault(); handleSave(); }
@@ -364,7 +381,7 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
         />
       </div>
 
-      {!hideReference && schema.length > 0 && (
+      {cli === "claude" && !hideReference && schema.length > 0 && (
         <SettingsReference
           schema={schema}
           currentKeys={currentKeys}
@@ -373,7 +390,7 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
       )}
 
       <div className="pane-footer">
-        {hasValidation && (
+        {cli === "claude" && hasValidation && (
           <span className="sr-validation">
             {parseError && <span className="sr-validation-error">Invalid JSON</span>}
             {parseError && unknownLabel && " \u2022 "}
@@ -382,7 +399,7 @@ export function SettingsPane({ scope, projectDir, onStatus, hideReference, onKey
             {mismatchLabel && <span className="sr-validation-error">{mismatchLabel}</span>}
           </span>
         )}
-        {!hasValidation && !parseError && currentKeys.size > 0 && (
+        {cli === "claude" && !hasValidation && !parseError && currentKeys.size > 0 && (
           <span className="sr-validation sr-validation-ok">Valid</span>
         )}
         <button className="pane-save-btn" onClick={handleSave} disabled={!dirty}>

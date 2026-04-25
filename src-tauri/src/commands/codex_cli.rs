@@ -118,6 +118,13 @@ pub async fn check_codex_cli_version() -> Result<String, String> {
     .map_err(|e| format!("join error: {e}"))?
 }
 
+#[tauri::command]
+pub async fn get_codex_cli_help() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| run_codex(&["--help"]))
+        .await
+        .map_err(|e| format!("join error: {e}"))?
+}
+
 // ── Models (`codex debug models` → JSON) ────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -468,13 +475,13 @@ pub async fn discover_codex_skills(
 
 // ── Built-in slash commands ────────────────────────────────────────
 //
-// Codex's interactive slash commands live in `codex-rs/tui/src/slash_command.rs`
-// behind the TUI's input parser. There is no CLI subcommand to list them,
-// no app-server endpoint, and the binary is a stripped Rust executable —
-// nothing useful to grep. We vendor a curated catalog of the visible
-// commands so the palette has something to render. This is a UI catalog,
-// not a config schema; it is short, stable, and easy to refresh.
-// Last verified against codex-rs/tui/src/slash_command.rs.
+// Codex exposes CLI subcommands through `codex --help`, but not the
+// interactive TUI slash-command catalog. We still anchor this list to
+// the installed binary: when the native package is available, scan it
+// for command-specific strings and include only commands whose probes
+// are present. Probes are intentionally conservative; commands without
+// stable binary strings remain included so the palette does not go
+// blank on stripped builds.
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -483,45 +490,132 @@ pub struct CodexSlashCommand {
     pub desc: String,
 }
 
-// [CO-03] CODEX_SLASH_COMMANDS: vendored catalog (Codex doesn't expose slash commands via CLI); last verified vs codex-rs/tui/src/slash_command.rs
-const CODEX_SLASH_COMMANDS: &[(&str, &str)] = &[
-    ("/init", "create an AGENTS.md file with instructions for Codex"),
-    ("/compact", "summarize conversation to prevent hitting the context limit"),
-    ("/review", "review my current changes and find issues"),
-    ("/diff", "show git diff (including untracked files)"),
-    ("/status", "show current session configuration and token usage"),
-    ("/model", "choose what model and reasoning effort to use"),
-    ("/approvals", "choose what Codex is allowed to do"),
-    ("/permissions", "choose what Codex is allowed to do"),
-    ("/skills", "use skills to improve how Codex performs specific tasks"),
-    ("/mcp", "list configured MCP tools; use /mcp verbose for details"),
-    ("/plan", "switch to Plan mode"),
-    ("/goal", "set or view the goal for a long-running task"),
-    ("/resume", "resume a saved chat"),
-    ("/fork", "fork the current chat"),
-    ("/new", "start a new chat during a conversation"),
-    ("/rename", "rename the current thread"),
-    ("/clear", "clear the terminal and start a new chat"),
-    ("/copy", "copy last response as markdown"),
-    ("/mention", "mention a file"),
-    ("/theme", "choose a syntax highlighting theme"),
-    ("/statusline", "configure which items appear in the status line"),
-    ("/personality", "choose a communication style for Codex"),
-    ("/feedback", "send logs to maintainers"),
-    ("/logout", "log out of Codex"),
-    ("/quit", "exit Codex"),
-    ("/exit", "exit Codex"),
+// [CO-03] CODEX_SLASH_COMMANDS: interactive TUI catalog, filtered by installed binary probes when possible.
+const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
+    ("/init", "create an AGENTS.md file with instructions for Codex", &["Skipping /init", "AGENTS.md"]),
+    ("/compact", "summarize conversation to prevent hitting the context limit", &["session_task.compact", "thread/compacted"]),
+    ("/review", "review my current changes and find issues", &["session_task.review", "enteredReviewMode"]),
+    ("/diff", "show git diff (including untracked files)", &["turn/diff/updated", "No diff turn found"]),
+    ("/status", "show current session configuration and token usage", &["thread/status/changed", "tokenUsage"]),
+    ("/model", "choose what model and reasoning effort to use", &["model/rerouted", "supported_reasoning_levels"]),
+    ("/approvals", "choose what Codex is allowed to do", &["approvals_reviewer", "allowedApprovalsReviewers"]),
+    ("/permissions", "choose what Codex is allowed to do", &["PermissionsRequest", "requestPermissions"]),
+    ("/skills", "use skills to improve how Codex performs specific tasks", &["skills/changed", "ListSkills"]),
+    ("/mcp", "list configured MCP tools; use /mcp verbose for details", &["mcp_servers", "ListMcpServerStatusParams"]),
+    ("/plan", "switch to Plan mode", &["turn/plan/updated", "PlanItem"]),
+    ("/goal", "set or view the goal for a long-running task", &[]),
+    ("/resume", "resume a saved chat", &["thread/resume", "Resume a previous interactive session"]),
+    ("/fork", "fork the current chat", &["Fork a previous interactive session"]),
+    ("/new", "start a new chat during a conversation", &["thread/started"]),
+    ("/rename", "rename the current thread", &["thread/name/updated", "SetThreadName"]),
+    ("/clear", "clear the terminal and start a new chat", &["SessionStart", "clear"]),
+    ("/copy", "copy last response as markdown", &["upgradeCopy"]),
+    ("/mention", "mention a file", &["fuzzyFileSearch"]),
+    ("/theme", "choose a syntax highlighting theme", &["theme", "show_tooltips"]),
+    ("/statusline", "configure which items appear in the status line", &["status_line"]),
+    ("/personality", "choose a communication style for Codex", &["Personality set", "supportsPersonality"]),
+    ("/feedback", "send logs to maintainers", &["feedback"]),
+    ("/logout", "log out of Codex", &["Remove stored authentication credentials"]),
+    ("/quit", "exit Codex", &[]),
+    ("/exit", "exit Codex", &[]),
 ];
 
 #[tauri::command]
-pub fn discover_codex_slash_commands() -> Vec<CodexSlashCommand> {
-    CODEX_SLASH_COMMANDS
-        .iter()
-        .map(|(cmd, desc)| CodexSlashCommand {
-            cmd: (*cmd).to_string(),
-            desc: (*desc).to_string(),
-        })
-        .collect()
+pub async fn discover_codex_slash_commands() -> Result<Vec<CodexSlashCommand>, String> {
+    tauri::async_runtime::spawn_blocking(discover_codex_slash_commands_sync)
+        .await
+        .map_err(|e| format!("join error: {e}"))
+}
+
+// [CL-01] Filter the vendored CODEX_SLASH_COMMANDS list against the installed
+// native binary. The probe-based filter prunes commands that the binary clearly
+// doesn't ship; an empty filtered list means we couldn't read the binary, in
+// which case we fall back to the full vendored list rather than show nothing.
+fn discover_codex_slash_commands_sync() -> Vec<CodexSlashCommand> {
+    let filtered = resolve_codex_native_binary_path()
+        .and_then(|path| std::fs::read(path).ok())
+        .map(|bytes| {
+            CODEX_SLASH_COMMANDS
+                .iter()
+                .filter(|(_, _, probes)| {
+                    probes.is_empty()
+                        || probes
+                            .iter()
+                            .any(|probe| memchr::memmem::find(&bytes, probe.as_bytes()).is_some())
+                })
+                .map(|(cmd, desc, _)| CodexSlashCommand {
+                    cmd: (*cmd).to_string(),
+                    desc: (*desc).to_string(),
+                })
+                .collect::<Vec<_>>()
+        });
+
+    match filtered {
+        Some(cmds) if !cmds.is_empty() => cmds,
+        _ => CODEX_SLASH_COMMANDS
+            .iter()
+            .map(|(cmd, desc, _)| CodexSlashCommand {
+                cmd: (*cmd).to_string(),
+                desc: (*desc).to_string(),
+            })
+            .collect(),
+    }
+}
+
+fn resolve_codex_native_binary_path() -> Option<PathBuf> {
+    let bin = PathBuf::from(detect_codex_cli_sync().ok()?);
+    let canonical = std::fs::canonicalize(&bin).unwrap_or(bin);
+    if canonical.extension().and_then(|e| e.to_str()) != Some("js") {
+        return Some(canonical);
+    }
+
+    let (triple, package_name, exe_name) = current_codex_native_target()?;
+    let codex_root = canonical.parent()?.parent()?;
+    let candidates = [
+        codex_root
+            .join("node_modules")
+            .join("@openai")
+            .join(package_name)
+            .join("vendor")
+            .join(triple)
+            .join("codex")
+            .join(exe_name),
+        codex_root
+            .join("vendor")
+            .join(triple)
+            .join("codex")
+            .join(exe_name),
+    ];
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn current_codex_native_target() -> Option<(&'static str, &'static str, &'static str)> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        return Some(("x86_64-unknown-linux-musl", "codex-linux-x64", "codex"));
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        return Some(("aarch64-unknown-linux-musl", "codex-linux-arm64", "codex"));
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        return Some(("x86_64-apple-darwin", "codex-darwin-x64", "codex"));
+    }
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        return Some(("aarch64-apple-darwin", "codex-darwin-arm64", "codex"));
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        return Some(("x86_64-pc-windows-msvc", "codex-win32-x64", "codex.exe"));
+    }
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        return Some(("aarch64-pc-windows-msvc", "codex-win32-arm64", "codex.exe"));
+    }
+    #[allow(unreachable_code)]
+    None
 }
 
 #[cfg(test)]
@@ -614,7 +708,7 @@ mod tests {
 
     #[test]
     fn slash_commands_catalog_is_nonempty_and_dedup() {
-        let cmds = discover_codex_slash_commands();
+        let cmds = discover_codex_slash_commands_sync();
         assert!(!cmds.is_empty());
         let mut names: Vec<&str> = cmds.iter().map(|c| c.cmd.as_str()).collect();
         names.sort();

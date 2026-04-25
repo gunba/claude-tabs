@@ -34,6 +34,8 @@ const DEDICATED_FLAGS = new Set([
   "--model", "--permission-mode", "--effort",
   "--dangerously-skip-permissions", "--project-dir",
   "--resume", "--session-id", "--continue",
+  "--cd", "--profile", "--sandbox", "--ask-for-approval", "--full-auto",
+  "--dangerously-bypass-approvals-and-sandbox", "--add-dir",
 ]);
 
 // [SL-14] Non-session flags rendered in separate Utility Commands section
@@ -52,9 +54,10 @@ const NON_SESSION_FLAGS = new Set([
 export function SessionLauncher() {
   const createSession = useSessionStore((s) => s.createSession);
   const claudePath = useSessionStore((s) => s.claudePath);
+  const codexPath = useSessionStore((s) => s.codexPath);
   const { recentDirs, lastConfig, savedDefaults, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
     useSettingsStore();
-  const cliCapabilities = useSettingsStore((s) => s.cliCapabilities);
+  const cliCapabilitiesByCli = useSettingsStore((s) => s.cliCapabilitiesByCli);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
@@ -87,16 +90,60 @@ export function SessionLauncher() {
   const [promptMode, setPromptMode] = useState<"replace" | "append">("replace");
   const [launchError, setLaunchError] = useState<string>("");
 
+  const updateConfig = useCallback(
+    <K extends keyof SessionConfig>(key: K, value: SessionConfig[K]) => {
+      if (key === "workingDir") setLaunchError("");
+      setConfig((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
+
+  // [DU-01] availableCliKinds gating; selectedCliInstalled error banner; buildFullCommand maps Codex permissionMode -> --sandbox/--ask-for-approval combinations and effort -> -c model_reasoning_effort="..."
+  const availableCliKinds = useMemo(() => {
+    const kinds: Array<SessionConfig["cli"]> = [];
+    if (claudePath) kinds.push("claude");
+    if (codexPath) kinds.push("codex");
+    return kinds;
+  }, [claudePath, codexPath]);
+
+  const selectedCliInstalled = availableCliKinds.includes(config.cli);
+  const cliCapabilities = cliCapabilitiesByCli[config.cli] ?? { models: [], permissionModes: [], flags: [], options: [], commands: [] };
+
+  useEffect(() => {
+    if (availableCliKinds.length === 0) return;
+    if (!config.resumeSession && !availableCliKinds.includes(config.cli)) {
+      updateConfig("cli", availableCliKinds[0]);
+    }
+  }, [availableCliKinds, config.cli, config.resumeSession, updateConfig]);
+
   // Unified command line: editable string that starts from config selections.
   // User can edit freely; reset button regenerates from current dropdowns.
   const buildFullCommand = useCallback((cfg: SessionConfig, extra?: string) => {
-    const parts: string[] = ["claude"];
-    if (cfg.model) parts.push("--model", cfg.model);
-    if (cfg.permissionMode !== "default") parts.push("--permission-mode", cfg.permissionMode);
-    if (cfg.effort) parts.push("--effort", cfg.effort);
-    if (cfg.dangerouslySkipPermissions) parts.push("--dangerously-skip-permissions");
-    if (cfg.projectDir) parts.push("--project-dir", cfg.workingDir || ".");
-    if (cfg.resumeSession) parts.push("--resume", cfg.resumeSession);
+    const parts: string[] = [cfg.cli === "codex" ? "codex" : "claude"];
+    if (cfg.cli === "codex") {
+      if (cfg.resumeSession) parts.push("resume", cfg.resumeSession);
+      if (cfg.workingDir) parts.push("--cd", cfg.workingDir);
+      if (cfg.model) parts.push("--model", cfg.model);
+      if (cfg.effort) parts.push("-c", `model_reasoning_effort="${cfg.effort}"`);
+      if (cfg.dangerouslySkipPermissions || cfg.permissionMode === "bypassPermissions") {
+        parts.push("--dangerously-bypass-approvals-and-sandbox");
+      } else if (cfg.permissionMode === "planMode") {
+        parts.push("--sandbox", "read-only", "--ask-for-approval", "untrusted");
+      } else if (cfg.permissionMode === "auto") {
+        parts.push("--full-auto");
+      } else if (cfg.permissionMode === "acceptEdits" || cfg.permissionMode === "dontAsk") {
+        parts.push("--sandbox", "workspace-write", "--ask-for-approval", "never");
+      } else {
+        parts.push("--sandbox", "workspace-write");
+      }
+    } else {
+      if (cfg.model) parts.push("--model", cfg.model);
+      if (cfg.permissionMode !== "default") parts.push("--permission-mode", cfg.permissionMode);
+      if (cfg.effort) parts.push("--effort", cfg.effort);
+      if (cfg.dangerouslySkipPermissions) parts.push("--dangerously-skip-permissions");
+      if (cfg.projectDir) parts.push("--project-dir", cfg.workingDir || ".");
+      if (cfg.resumeSession) parts.push("--resume", cfg.resumeSession);
+    }
     if (extra?.trim()) parts.push(extra.trim());
     return parts.join(" ");
   }, []);
@@ -108,7 +155,7 @@ export function SessionLauncher() {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     if (isUtilityRef.current) return;
     setCommandLine(buildFullCommand(config, config.extraFlags || undefined));
-  }, [config.model, config.permissionMode, config.effort, config.dangerouslySkipPermissions, config.projectDir, config.resumeSession, config.extraFlags, buildFullCommand]);
+  }, [config.cli, config.workingDir, config.model, config.permissionMode, config.effort, config.dangerouslySkipPermissions, config.projectDir, config.resumeSession, config.extraFlags, buildFullCommand]);
 
   useEffect(() => {
     const el = document.getElementById("launcher-path");
@@ -131,14 +178,6 @@ export function SessionLauncher() {
     }
     return result;
   }, [recentDirs]);
-
-  const updateConfig = useCallback(
-    <K extends keyof SessionConfig>(key: K, value: SessionConfig[K]) => {
-      if (key === "workingDir") setLaunchError("");
-      setConfig((prev) => ({ ...prev, [key]: value }));
-    },
-    []
-  );
 
   // [SL-21] Load workspace-specific defaults when switching workspace via browse or recent chip
   const applyWorkspaceDefaults = useCallback((dir: string) => {
@@ -246,13 +285,18 @@ export function SessionLauncher() {
     for (const flag of NON_SESSION_FLAGS) {
       if (activeFlags.has(flag)) return true;
     }
-    const afterClaude = commandTokens.slice(commandTokens.indexOf("claude") + 1);
-    const firstNonFlag = afterClaude.find((t) => !t.startsWith("-"));
+    const cliName = config.cli === "codex" ? "codex" : "claude";
+    const cliIndex = commandTokens.indexOf(cliName);
+    const afterCli = cliIndex >= 0 ? commandTokens.slice(cliIndex + 1) : commandTokens.slice(1);
+    const firstNonFlag = afterCli.find((t) => !t.startsWith("-"));
     if (firstNonFlag) {
+      if (config.cli === "codex" && config.resumeSession && (firstNonFlag === "resume" || firstNonFlag === "fork")) {
+        return false;
+      }
       return (cliCapabilities.commands || []).some((c) => c.name === firstNonFlag);
     }
     return false;
-  }, [commandTokens, activeFlags, cliCapabilities.commands]);
+  }, [config.cli, commandTokens, activeFlags, cliCapabilities.commands]);
 
   isUtilityRef.current = isNonSessionCommand;
 
@@ -281,7 +325,7 @@ export function SessionLauncher() {
     } else {
       // User edited the generated part too — pass entire command line as extra
       // and let the Rust arg builder handle the structured fields
-      const parts = commandLine.replace(/^claude\s*/, "").trim();
+      const parts = commandLine.replace(/^(claude|codex)\s*/, "").trim();
       extra = parts || null;
     }
     // Apply selected system prompt
@@ -302,6 +346,10 @@ export function SessionLauncher() {
   const closeSession = useSessionStore((s) => s.closeSession);
 
   const handleLaunch = useCallback(async () => {
+    if (!selectedCliInstalled) {
+      setLaunchError(`${launchConfig.cli === "codex" ? "Codex" : "Claude Code"} is not installed`);
+      return;
+    }
     if (!isNonSessionCommand && !launchConfig.workingDir.trim()) return;
     // [SL-19] Validate that the working directory actually exists on disk
     if (!isNonSessionCommand && launchConfig.workingDir.trim()) {
@@ -318,7 +366,7 @@ export function SessionLauncher() {
       ? useSettingsStore.getState().sessionNames[finalConfig.resumeSession]
       : undefined;
     const name = isNonSessionCommand
-      ? commandTokens.find(t => t !== "claude" && !t.startsWith("-"))
+      ? commandTokens.find(t => t !== "claude" && t !== "codex" && !t.startsWith("-"))
         || commandTokens.find(t => t.startsWith("--"))
         || "run"
       : storedName || (launchConfig.workingDir ? dirToTabName(launchConfig.workingDir) : "run");
@@ -338,7 +386,7 @@ export function SessionLauncher() {
     } catch (err) {
       dlog("launcher", null, `create session failed: ${err}`, "ERR");
     }
-  }, [launchConfig, isNonSessionCommand, commandTokens, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig]);
+  }, [selectedCliInstalled, launchConfig, isNonSessionCommand, commandTokens, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await open({
@@ -391,7 +439,7 @@ export function SessionLauncher() {
         return buildFullCommand(config);
       }
       // Toggling on → replace entire command
-      return `claude ${flag}`;
+      return `${config.cli === "codex" ? "codex" : "claude"} ${flag}`;
     });
   }, [config, buildFullCommand]);
 
@@ -401,14 +449,14 @@ export function SessionLauncher() {
 
   // ── CLI not found ──
 
-  if (!claudePath) {
+  if (availableCliKinds.length === 0) {
     return (
       <div className="launcher-overlay" onClick={dismissLauncher}>
         <div className="launcher" onClick={(e) => e.stopPropagation()}>
           <div className="launcher-error-content">
             <h2>No CLI installed</h2>
             <p className="launcher-error-msg">
-              Claude Tabs needs at least one of <code>claude</code> (Claude Code) or
+              Code Tabs needs at least one of <code>claude</code> (Claude Code) or
               <code> codex</code> (OpenAI Codex) on your <code>$PATH</code>.
             </p>
             <p>
@@ -490,23 +538,32 @@ export function SessionLauncher() {
 
         {/* CLI selector pills — choose Claude Code or Codex per session */}
         <div className="launcher-cli-row">
-          <button
-            type="button"
-            className={`launcher-cli-pill${config.cli === "claude" ? " launcher-cli-pill--active" : ""}`}
-            onClick={() => updateConfig("cli", "claude")}
-            disabled={isNonSessionCommand}
-          >
-            Claude Code
-          </button>
-          <button
-            type="button"
-            className={`launcher-cli-pill${config.cli === "codex" ? " launcher-cli-pill--active" : ""}`}
-            onClick={() => updateConfig("cli", "codex")}
-            disabled={isNonSessionCommand}
-          >
-            Codex
-          </button>
+          {claudePath && (
+            <button
+              type="button"
+              className={`launcher-cli-pill${config.cli === "claude" ? " launcher-cli-pill--active" : ""}`}
+              onClick={() => updateConfig("cli", "claude")}
+              disabled={isNonSessionCommand}
+            >
+              Claude Code
+            </button>
+          )}
+          {codexPath && (
+            <button
+              type="button"
+              className={`launcher-cli-pill${config.cli === "codex" ? " launcher-cli-pill--active" : ""}`}
+              onClick={() => updateConfig("cli", "codex")}
+              disabled={isNonSessionCommand}
+            >
+              Codex
+            </button>
+          )}
         </div>
+        {!selectedCliInstalled && (
+          <div className="launcher-path-error">
+            {config.cli === "codex" ? "Codex" : "Claude Code"} is not installed.
+          </div>
+        )}
 
         {/* Pill selectors — inline, wrapping */}
         <div className={`launcher-pills-section${isNonSessionCommand ? " launcher-selects-disabled" : ""}`}>
@@ -672,9 +729,10 @@ export function SessionLauncher() {
                         key={cmd.name}
                         className={`launcher-cli-pill launcher-cli-pill-cmd ${heatClass}`}
                         onClick={() => setCommandLine((prev) => {
-                          // [SL-16] Subcommand toggle: clicking a subcommand replaces command line with `claude <cmd>`; clicking again resets to generated command
+                          // [SL-16] Subcommand toggle: clicking a subcommand replaces command line with `<cli> <cmd>`; clicking again resets to generated command
                           const base = buildFullCommand(config);
-                          return prev.trim() === `claude ${cmd.name}` ? base : `claude ${cmd.name}`;
+                          const utility = `${config.cli === "codex" ? "codex" : "claude"} ${cmd.name}`;
+                          return prev.trim() === utility ? base : utility;
                         })}
                         title={cmd.description}
                         type="button"
@@ -715,7 +773,7 @@ export function SessionLauncher() {
         <button
           className={`launcher-launch-btn${isNonSessionCommand ? " launcher-launch-btn-run" : ""}`}
           onClick={handleLaunch}
-          disabled={!isNonSessionCommand && !launchConfig.workingDir.trim()}
+          disabled={!selectedCliInstalled || (!isNonSessionCommand && !launchConfig.workingDir.trim())}
           type="button"
         >
           {launchLabel}

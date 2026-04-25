@@ -10,7 +10,7 @@ vi.mock("../../lib/paths", () => ({
   normalizePath: (p: string) => p,
   parseWorktreePath: (dir: string) => {
     const normalized = dir.replace(/\\/g, "/");
-    const match = normalized.match(/^(.+)\/\.claude\/worktrees\/([^/]+)\/?$/);
+    const match = normalized.match(/^(.+)\/\.(?:claude_tabs|claude)\/worktrees\/([^/]+)\/?$/);
     if (!match) return null;
     return { projectRoot: match[1], worktreeName: match[2], projectName: match[1].split("/").pop() };
   },
@@ -18,7 +18,7 @@ vi.mock("../../lib/paths", () => ({
 
 // Mock sessions store (settings imports it for bootstrapCommandUsage)
 vi.mock("../sessions", () => ({
-  useSessionStore: { getState: () => ({ claudePath: null }) },
+  useSessionStore: { getState: () => ({ claudePath: null, codexPath: null }) },
 }));
 
 // Ensure crypto.randomUUID is available in test env
@@ -55,6 +55,49 @@ describe("recordCommandUsage", () => {
     recordCommandUsage("/build");
     recordCommandUsage("/build");
     expect(useSettingsStore.getState().commandUsage["/build"]).toBe(3);
+  });
+});
+
+describe("per-CLI discovery state", () => {
+  beforeEach(() => {
+    useSettingsStore.setState({
+      cliVersions: { claude: null, codex: null },
+      previousCliVersions: { claude: null, codex: null },
+      cliVersion: null,
+      previousCliVersion: null,
+      cliCapabilitiesByCli: {
+        claude: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
+        codex: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
+      },
+      cliCapabilities: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
+      slashCommandsByCli: { claude: [], codex: [] },
+      slashCommands: [],
+    });
+  });
+
+  it("stores capabilities per CLI while mirroring Claude into legacy fields", () => {
+    const claudeCaps = { models: ["sonnet"], permissionModes: [], flags: ["--model"], options: [], commands: [] };
+    const codexCaps = { models: ["gpt-5.1-codex"], permissionModes: [], flags: ["--cd"], options: [], commands: [] };
+
+    useSettingsStore.getState().setCliCapabilitiesForCli("claude", "claude-1", claudeCaps);
+    useSettingsStore.getState().setCliCapabilitiesForCli("codex", "codex-1", codexCaps);
+
+    const state = useSettingsStore.getState();
+    expect(state.cliVersions).toEqual({ claude: "claude-1", codex: "codex-1" });
+    expect(state.cliCapabilitiesByCli.claude).toEqual(claudeCaps);
+    expect(state.cliCapabilitiesByCli.codex).toEqual(codexCaps);
+    expect(state.cliVersion).toBe("claude-1");
+    expect(state.cliCapabilities).toEqual(claudeCaps);
+  });
+
+  it("keeps slash commands separated by CLI and maintains a merged legacy list", () => {
+    useSettingsStore.getState().setSlashCommandsForCli("claude", [{ cmd: "/doctor", desc: "Claude diagnostic" }]);
+    useSettingsStore.getState().setSlashCommandsForCli("codex", [{ cmd: "/init", desc: "Codex instructions" }]);
+
+    const state = useSettingsStore.getState();
+    expect(state.slashCommandsByCli.claude.map((c) => c.cmd)).toEqual(["/doctor"]);
+    expect(state.slashCommandsByCli.codex.map((c) => c.cmd)).toEqual(["/init"]);
+    expect(state.slashCommands.map((c) => c.cmd)).toEqual(["/doctor", "/init"]);
   });
 });
 
@@ -324,6 +367,17 @@ describe("setSavedDefaults with workspaceDefaults", () => {
     // Key should be the project root, not the worktree path
     expect(ws["/projects/myapp"]).toBeDefined();
     expect(ws["/projects/myapp"].model).toBe("claude-opus-4-20250514");
+  });
+
+  it("collapses claude-tabs worktree paths to project root for workspace key", () => {
+    const wtConfig = makeConfig({
+      workingDir: "/projects/myapp/.claude_tabs/worktrees/sorted-dove",
+      model: "gpt-5.1-codex",
+    });
+    useSettingsStore.getState().setSavedDefaults(wtConfig);
+    const ws = useSettingsStore.getState().workspaceDefaults;
+    expect(ws["/projects/myapp"]).toBeDefined();
+    expect(ws["/projects/myapp"].model).toBe("gpt-5.1-codex");
   });
 
   it("different worktree paths for same project share the workspace key", () => {

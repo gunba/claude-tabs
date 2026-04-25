@@ -444,6 +444,100 @@ describe("classifyTapEntry — worktree events", () => {
   });
 });
 
+describe("classifyTapEntry — Codex rollout events", () => {
+  it("classifies Codex token_count rollout entries", () => {
+    const event = classifyTapEntry({
+      ts: 6000,
+      cat: "codex-token-count",
+      info: {
+        total_token_usage: {
+          input_tokens: 1000,
+          cached_input_tokens: 700,
+          output_tokens: 80,
+          reasoning_output_tokens: 20,
+          total_tokens: 1080,
+        },
+        last_token_usage: {
+          input_tokens: 300,
+          cached_input_tokens: 250,
+          output_tokens: 10,
+          reasoning_output_tokens: 5,
+          total_tokens: 310,
+        },
+        model_context_window: 258400,
+      },
+      rateLimits: {
+        primary: { used_percent: 3, resets_at: 1777138874 },
+        secondary: { used_percent: 24, resets_at: 1777602653 },
+      },
+    });
+    expect(event).toMatchObject({
+      kind: "CodexTokenCount",
+      totalInputTokens: 1000,
+      cachedInputTokens: 700,
+      outputTokens: 80,
+      lastCachedInputTokens: 250,
+      contextWindow: 258400,
+      primaryUsedPercent: 3,
+      secondaryUsedPercent: 24,
+    });
+  });
+
+  it("classifies Codex exec_command function calls as Bash tool input", () => {
+    const event = classifyTapEntry({
+      ts: 6001,
+      cat: "codex-tool-input",
+      name: "exec_command",
+      callId: "call_1",
+      arguments: JSON.stringify({
+        cmd: "sed -n '1,20p' src/App.tsx",
+        workdir: "/repo",
+      }),
+    });
+    expect(event).toMatchObject({
+      kind: "ToolInput",
+      toolName: "Bash",
+      input: {
+        command: "sed -n '1,20p' src/App.tsx",
+        workdir: "/repo",
+      },
+    });
+  });
+
+  it("classifies Codex assistant messages as end_turn ConversationMessage", () => {
+    const event = classifyTapEntry({
+      ts: 6002,
+      cat: "codex-message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Done." }],
+    });
+    expect(event).toMatchObject({
+      kind: "ConversationMessage",
+      messageType: "assistant",
+      stopReason: "end_turn",
+      textSnippet: "Done.",
+    });
+  });
+
+  it("preserves cat='codex-tool-call-start' so the reducer can distinguish it", () => {
+    // The reducer at tapStateReducer.ts:60 checks `event.cat === "codex-tool-call-start"`
+    // to transition to toolUse. classifyTapEntry copies entry.cat onto every result,
+    // so this assertion guards that we don't drop the field if the wrapper changes.
+    const event = classifyTapEntry({
+      ts: 6003,
+      cat: "codex-tool-call-start",
+      name: "shell",
+      callId: "call_42",
+    });
+    expect(event).toMatchObject({
+      kind: "ToolCallStart",
+      cat: "codex-tool-call-start",
+      toolName: "Bash",
+      toolId: "call_42",
+    });
+  });
+});
+
 describe("classifyTapEntry — permission events", () => {
   it("classifies setMode array → PermissionPromptShown", () => {
     const entry: TapEntry = {

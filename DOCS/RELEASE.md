@@ -1,6 +1,6 @@
 # Release
 
-Build commands, version locations, and release workflow for Claude Tabs.
+Build commands, version locations, and release workflow for Code Tabs.
 
 ## Build Commands
 
@@ -14,7 +14,7 @@ npm run build:release   # Sync rules + full NSIS installer (only for releases)
 ### Outputs
 
 - **Portable exe**: `src-tauri/target/release/claude-tabs.exe`
-- **NSIS installer**: `src-tauri/target/release/bundle/nsis/Claude Tabs_<version>_x64-setup.exe`
+- **NSIS installer**: `src-tauri/target/release/bundle/nsis/Code Tabs_<version>_x64-setup.exe`
 
 Never do a full NSIS build just to test. Use `build:quick` or `build:debug`.
 

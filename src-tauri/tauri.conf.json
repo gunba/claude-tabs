@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri-v2-schema/main/tauri.conf.json",
-  "productName": "Claude Tabs",
+  "productName": "Code Tabs",
   "version": "0.60.0",
   "identifier": "com.claudetabs.app",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Claude Tabs",
+        "title": "Code Tabs",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

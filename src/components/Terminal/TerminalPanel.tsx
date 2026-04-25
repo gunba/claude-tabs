@@ -75,6 +75,8 @@ function useDurationTimer(sessionId: string, state: SessionState, respawnCounter
 
 export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   const claudePath = useSessionStore((s) => s.claudePath);
+  const codexPath = useSessionStore((s) => s.codexPath);
+  const initialized = useSessionStore((s) => s.initialized);
   const updateState = useSessionStore((s) => s.updateState);
   const updateConfig = useSessionStore((s) => s.updateConfig);
   const renameSession = useSessionStore((s) => s.renameSession);
@@ -89,7 +91,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // State triggers re-render so useInspectorConnection receives the port after allocation.
   const [inspectorPort, setInspectorPort] = useState<number | null>(null);
   const inspector = useInspectorConnection(
-    session.state !== "dead" ? session.id : null,
+    session.state !== "dead" && session.config.cli === "claude" ? session.id : null,
     inspectorPort,
     inspectorReconnectKey
   );
@@ -373,11 +375,23 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   );
 
   // [RS-07] Spawn PTY once; guards against dead sessions (prevents stale auto-spawn on startup).
-  // Claude sessions wait for `claudePath` detection to complete; Codex sessions don't (the
-  // CodexAdapter discovers the binary inside build_cli_spawn).
+  // Sessions wait for their selected CLI detection to complete. Claude still needs
+  // the inspector/tap preparation, Codex uses the rollout watcher.
+  useEffect(() => {
+    if (spawnedRef.current || !initialized || session.state === "dead" || !terminal.ready) return;
+    const missingCli =
+      (session.config.cli === "claude" && !claudePath)
+      || (session.config.cli === "codex" && !codexPath);
+    if (!missingCli) return;
+    spawnedRef.current = true;
+    updateState(session.id, "error");
+    terminal.write(`\r\n\x1b[31m${session.config.cli === "codex" ? "Codex" : "Claude Code"} is not installed.\x1b[0m\r\n`);
+  }, [initialized, claudePath, codexPath, session.config.cli, session.id, session.state, terminal.ready, terminal.write, updateState]);
+
   useEffect(() => {
     if (spawnedRef.current || session.state === "dead" || !terminal.ready) return;
     if (session.config.cli === "claude" && !claudePath) return;
+    if (session.config.cli === "codex" && !codexPath) return;
 
     const doSpawn = async () => {
       spawnedRef.current = true;
@@ -387,22 +401,29 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         event: "session.spawn_sequence",
         warnAboveMs: 1000,
         data: {
-          claudePath,
+            claudePath,
+            codexPath,
           workingDir: session.config.workingDir,
           resumeSession: session.config.resumeSession,
           continueSession: session.config.continueSession,
         },
       });
       try {
-        // Allocate a verified-free inspector port before spawning.
-        // Register immediately so concurrent allocations (multi-tab restore) skip it.
-        const inspPort = await allocateInspectorPort();
-        registerInspectorPort(session.id, inspPort);
-        setInspectorPort(inspPort);
-        dlog("terminal", session.id, "allocated inspector port", "DEBUG", {
-          event: "session.inspector_port_allocated",
-          data: { inspectorPort: inspPort },
-        });
+        // Allocate a verified-free inspector port before spawning Claude.
+        // Codex is a Rust binary and exposes structured data via rollout JSONL,
+        // not the Bun inspector.
+        let inspPort: number | null = null;
+        if (session.config.cli === "claude") {
+          inspPort = await allocateInspectorPort();
+          registerInspectorPort(session.id, inspPort);
+          setInspectorPort(inspPort);
+          dlog("terminal", session.id, "allocated inspector port", "DEBUG", {
+            event: "session.inspector_port_allocated",
+            data: { inspectorPort: inspPort },
+          });
+        } else {
+          setInspectorPort(null);
+        }
 
         // Start TCP tap server for this session (before PTY spawn so port is ready).
         // Claude only — Codex sessions get observability via the rollout watcher
@@ -437,7 +458,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         const { cols, rows } = terminal.getDimensions();
         const cwd = normalizePath(session.config.workingDir);
         // Pass BUN_INSPECT env for inspector-based hook injection,
-        // TAP_PORT for dedicated TCP event delivery. Claude tabs only.
+        // TAP_PORT for dedicated TCP event delivery. Claude CLI sessions only.
         const env: Record<string, string> = {};
         if (session.config.cli === "claude") {
           env.BUN_INSPECT = `ws://127.0.0.1:${inspPort}/0`;
@@ -512,14 +533,14 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         dlog("terminal", session.id, `spawn failed: ${err}`, "ERR");
         updateState(session.id, "error");
         terminal.write(
-          `\r\n\x1b[31mFailed to start Claude: ${err}\x1b[0m\r\n`
+          `\r\n\x1b[31mFailed to start ${session.config.cli === "codex" ? "Codex" : "Claude"}: ${err}\x1b[0m\r\n`
         );
       }
     };
 
     void doSpawn();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claudePath, session.config, session.id, session.state, respawnCounter, terminal.ready]);
+  }, [claudePath, codexPath, session.config, session.id, session.state, respawnCounter, terminal.ready]);
 
   // Register terminal buffer reader and terminal instance for search/render-wait
   useEffect(() => {

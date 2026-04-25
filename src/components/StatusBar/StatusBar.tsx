@@ -316,7 +316,7 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
   const latestCliVersion = useVersionStore((s) => s.latestCliVersion);
   const cliUpdating = useVersionStore((s) => s.cliUpdating);
   const updateCli = useVersionStore((s) => s.updateCli);
-  const cliVersion = useSettingsStore((s) => s.cliVersion);
+  const cliVersion = useSettingsStore((s) => s.cliVersions.claude);
   const cliUpdateAvailable = newerThan(latestCliVersion, cliVersion);
 
   useEffect(() => {
@@ -328,9 +328,12 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
       setHookCount(0);
       return;
     }
-    invoke<Record<string, unknown>>("discover_hooks", { workingDirs: dirs })
-      .then((hooks) => {
-        setHookCount(countHookEntries(hooks));
+    Promise.all([
+      invoke<Record<string, unknown>>("discover_hooks", { workingDirs: dirs }).catch(() => ({})),
+      invoke<Record<string, unknown>>("discover_codex_hooks", { workingDirs: dirs }).catch(() => ({})),
+    ])
+      .then(([claudeHooks, codexHooks]) => {
+        setHookCount(countHookEntries(claudeHooks) + countHookEntries(codexHooks));
       })
       .catch(() => setHookCount(0));
   }, [sessions]);

@@ -15,7 +15,7 @@ const DRAG_THRESHOLD_PX_SQ = 9; // 3px movement before we start a window drag
 // part of what fails to fire on these compositors.
 export function Header() {
   const appVersion = useVersionStore((s) => s.appVersion);
-  const cliVersion = useSettingsStore((s) => s.cliVersion);
+  const cliVersions = useSettingsStore((s) => s.cliVersions);
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
 
   const onHeaderMouseDown = (e: React.MouseEvent<HTMLElement>) => {
@@ -57,15 +57,18 @@ export function Header() {
       onDoubleClick={onHeaderDoubleClick}
     >
       <div className="app-header-title">
+        {/* [BR-01] Brand: 'Code Tabs' (renamed from 'Claude Tabs'); shows both Claude and Codex versions */}
         <span className="app-header-name">
-          Claude Tabs{appVersion ? ` v${appVersion}` : ""}
+          Code Tabs{appVersion ? ` v${appVersion}` : ""}
         </span>
-        {cliVersion && (
-          <>
-            <span className="app-header-sep">&middot;</span>
-            <span className="app-header-cli">CLI {cliVersion}</span>
-          </>
-        )}
+        <span className="app-header-sep">&middot;</span>
+        <span className={`app-header-cli${!cliVersions.claude ? " app-header-cli-missing" : ""}`}>
+          Claude {cliVersions.claude ?? "not installed"}
+        </span>
+        <span className="app-header-sep">&middot;</span>
+        <span className={`app-header-cli${!cliVersions.codex ? " app-header-cli-missing" : ""}`}>
+          Codex {cliVersions.codex ?? "not installed"}
+        </span>
       </div>
       <div className="app-header-controls">
         <button

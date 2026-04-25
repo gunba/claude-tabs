@@ -51,11 +51,16 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
     case "TurnStart":
     case "ThinkingStart":
     case "TextStart":
+    case "CodexTurnContext":
       return "thinking";
 
     case "ToolCallStart":
       // [SI-23] Plan detection: ToolCallStart(ExitPlanMode) -> actionNeeded
       if (event.toolName === "ExitPlanMode" || event.toolName === "AskUserQuestion") return "actionNeeded";
+      if (event.cat === "codex-tool-call-start") return "toolUse";
+      return "thinking";
+
+    case "CodexToolCallComplete":
       return "thinking";
 
     case "TurnEnd":

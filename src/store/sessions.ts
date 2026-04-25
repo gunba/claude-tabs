@@ -19,6 +19,7 @@ interface SessionsState {
   sessions: Session[];
   activeTabId: string | null;
   claudePath: string | null;
+  codexPath: string | null;
   initialized: boolean;
   subagents: Map<string, Subagent[]>; // sessionId -> subagents
   skillInvocations: Map<string, SkillInvocation[]>; // sessionId -> skills (newest first)
@@ -63,6 +64,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
   sessions: [],
   activeTabId: null,
   claudePath: null,
+  codexPath: null,
   initialized: false,
   subagents: new Map(),
   skillInvocations: new Map(),
@@ -105,11 +107,10 @@ export const useSessionStore = create<SessionsState>((set) => ({
       for (const s of sessions) {
         assignSessionColor(s.id, allIds);
       }
-      set({ sessions, activeTabId: null, initialized: true });
-      trace("init: sessions set, initialized=true");
+      set({ sessions, activeTabId: null });
+      trace("init: sessions set");
     } catch {
-      set({ initialized: true });
-      trace("init: no sessions, initialized=true");
+      trace("init: no sessions");
     }
     // Collect all session IDs for orphan cleanup
     const sessionIds = new Set<string>();
@@ -117,10 +118,13 @@ export const useSessionStore = create<SessionsState>((set) => ({
       if (s.config.sessionId) sessionIds.add(s.config.sessionId);
       if (s.config.resumeSession) sessionIds.add(s.config.resumeSession);
     }
-    // [PS-05] [DS-08] Kill orphans + detect CLI + TUI mode in parallel; all must complete before claudePath is set
-    const [claudePath] = await Promise.all([
+    // [PS-05] [DS-08] Kill orphans + detect CLI + TUI mode in parallel.
+    // Claude and Codex are first-party peers: either one being installed is a valid app state.
+    const [claudePath, codexPath] = await Promise.all([
       traceAsync("init: detect_claude_cli", () => invoke<string>("detect_claude_cli"))
-        .catch((e) => { dlog("session", null, `CLI detection failed: ${e}`, "ERR"); return null as string | null; }),
+        .catch((e) => { dlog("session", null, `Claude CLI detection failed: ${e}`, "WARN"); return null as string | null; }),
+      traceAsync("init: detect_codex_cli", () => invoke<string>("detect_codex_cli"))
+        .catch((e) => { dlog("session", null, `Codex CLI detection failed: ${e}`, "WARN"); return null as string | null; }),
       sessionIds.size > 0
         ? traceAsync("init: kill_orphan_sessions", () =>
             invoke<number>("kill_orphan_sessions", { sessionIds: [...sessionIds] })
@@ -158,12 +162,12 @@ export const useSessionStore = create<SessionsState>((set) => ({
         data: {},
       }),
     ]);
-    if (claudePath) {
-      set({ claudePath });
-      trace("init: claudePath set", {
+    set({ claudePath, codexPath, initialized: true });
+    if (claudePath || codexPath) {
+      trace("init: cli paths set", {
         module: "session",
-        event: "session.init.claude_path_set",
-        data: { claudePath },
+        event: "session.init.cli_paths_set",
+        data: { claudePath, codexPath },
       });
     }
   },

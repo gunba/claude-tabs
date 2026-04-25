@@ -1,5 +1,5 @@
 /**
- * Theme system for Claude Tabs.
+ * Theme system for Code Tabs.
  *
  * // [TH-01] All colors are CSS custom properties on :root — components use var(--x), not hardcoded hex.
  * // [TH-02] Key variables: --bg-primary, --bg-surface, --accent (clay), --accent-secondary (blue), --accent-tertiary (purple), --term-bg, --term-fg
