@@ -1,0 +1,1 @@
+/home/jordan/Desktop/Projects/claude_tabs/CLAUDE.md

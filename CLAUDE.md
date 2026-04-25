@@ -2,6 +2,7 @@
 
 IMPORTANT: Working with an external application means we are developing around a moving target. Do not guess or assume how it works.
 - The Claude Code source itself (4/1/2026) is available here [/home/jordan/Desktop/Projects/claude_code/]. 
+- The Codex CLI source is available [/home/jordan/Desktop/Projects/codex-main/].
 - For anything else, ask the user to log some test data. Logs are at [AppData\Local\claude-tabs\sessions], depending on what logging the user has enabled. You can review these using the debug skill, ideally with a subagent.
 
 Tauri v2 desktop app managing multiple Claude Code and OpenAI Codex CLI sessions in tabs. Rust backend + React/TypeScript frontend. No API key — uses installed CLIs directly.
