@@ -155,6 +155,7 @@ export function applyTheme(theme: Theme): void {
   root.style.setProperty("--font-mono", "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace");
 
   // [CB-12] Rarity CSS variables (WoW item quality — fixed cross-theme)
+  root.style.setProperty("--rarity-poor", "#9d9d9d");
   root.style.setProperty("--rarity-common", "#ffffff");
   root.style.setProperty("--rarity-uncommon", "#1eff00");
   root.style.setProperty("--rarity-rare", "#0070dd");

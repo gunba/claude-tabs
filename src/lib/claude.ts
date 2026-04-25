@@ -251,37 +251,37 @@ export function forceSessionColor(sessionId: string, colorIndex: number): void {
   colorAssignments.set(sessionId, colorIndex % SESSION_COLORS.length);
 }
 
-/** [CB-12] Compute heat level (0-4) for command frequency (WoW rarity).
- * Rank-based quartiles over used commands; unused = common.
- *   count == 0           -> 0 (common/white)
- *   top 25% of used      -> 4 (legendary/orange)
- *   next 25%             -> 3 (epic/purple)
- *   next 25%             -> 2 (rare/blue)
- *   bottom 25%           -> 1 (uncommon/green)
- * For totalUsed < 5 the quartile formula would collapse the middle tiers
- * (e.g. totalUsed==2 skips rare+epic), so we fall back to a direct
- * rank-to-tier mapping that keeps tiers consecutive: [4], [4,3], [4,3,2],
- * [4,3,2,1].
+export type HeatLevel = -1 | 0 | 1 | 2 | 3 | 4;
+
+/** [CB-12] Compute heat level for command frequency (WoW rarity).
+ * Rank-based quintiles over used commands; unused = poor/trash grey.
+ *   count == 0           -> -1 (poor/grey)
+ *   top 20% of used      -> 4 (legendary/orange)
+ *   next 20%             -> 3 (epic/purple)
+ *   next 20%             -> 2 (rare/blue)
+ *   next 20%             -> 1 (uncommon/green)
+ *   bottom 20%           -> 0 (common/white)
+ * For totalUsed < 5 the quintile formula would collapse some tiers, so we
+ * fall back to a direct rank-to-tier mapping that keeps tiers consecutive:
+ * [4], [4,3], [4,3,2], [4,3,2,1], [4,3,2,1,0].
  * rank is 0-indexed from the top of the usage-sorted list (0 = most used).
  * totalUsed is the number of commands with count > 0.
  */
-export function computeHeatLevel(count: number, rank: number, totalUsed: number): 0 | 1 | 2 | 3 | 4 {
-  if (count <= 0 || totalUsed <= 0) return 0;
-  if (totalUsed <= 4) {
+export function computeHeatLevel(count: number, rank: number, totalUsed: number): HeatLevel {
+  if (count <= 0 || totalUsed <= 0) return -1;
+  if (totalUsed <= 5) {
     const tier = 4 - rank;
-    if (tier < 1) return 1;
+    if (tier < 0) return 0;
     if (tier > 4) return 4;
-    return tier as 1 | 2 | 3 | 4;
+    return tier as 0 | 1 | 2 | 3 | 4;
   }
-  const percentile = rank / (totalUsed - 1);
-  if (percentile < 0.25) return 4;
-  if (percentile < 0.50) return 3;
-  if (percentile < 0.75) return 2;
-  return 1;
+  const bucket = Math.min(4, Math.floor((rank * 5) / totalUsed));
+  return (4 - bucket) as 0 | 1 | 2 | 3 | 4;
 }
 
-/** [CB-10] CSS class for heat level -- white, green, blue, purple, orange (WoW rarity). */
-export function heatClassName(level: 0 | 1 | 2 | 3 | 4): string {
+/** [CB-10] CSS class for heat level -- grey, white, green, blue, purple, orange (WoW rarity). */
+export function heatClassName(level: HeatLevel): string {
+  if (level < 0) return "heat-unused";
   return `heat-${level}`;
 }
 

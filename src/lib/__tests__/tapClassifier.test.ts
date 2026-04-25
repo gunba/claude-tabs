@@ -573,9 +573,23 @@ describe("classifyTapEntry — Codex rollout events", () => {
     });
   });
 
-  it("classifies Codex thread names as CustomTitle", () => {
+  it("classifies Codex slash-command user messages as SlashCommand", () => {
     const event = classifyTapEntry({
       ts: 6008,
+      cat: "codex-message",
+      role: "user",
+      content: [{ type: "input_text", text: "/model gpt-5.5" }],
+    });
+    expect(event).toMatchObject({
+      kind: "SlashCommand",
+      command: "/model",
+      display: "/model gpt-5.5",
+    });
+  });
+
+  it("classifies Codex thread names as CustomTitle", () => {
+    const event = classifyTapEntry({
+      ts: 6009,
       cat: "codex-thread-name-updated",
       threadName: "fix activity pane",
       codexSessionId: "thread-1",

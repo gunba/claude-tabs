@@ -492,32 +492,153 @@ pub struct CodexSlashCommand {
 
 // [CO-03] CODEX_SLASH_COMMANDS: interactive TUI catalog, filtered by installed binary probes when possible.
 const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
-    ("/init", "create an AGENTS.md file with instructions for Codex", &["Skipping /init", "AGENTS.md"]),
-    ("/compact", "summarize conversation to prevent hitting the context limit", &["session_task.compact", "thread/compacted"]),
-    ("/review", "review my current changes and find issues", &["session_task.review", "enteredReviewMode"]),
-    ("/diff", "show git diff (including untracked files)", &["turn/diff/updated", "No diff turn found"]),
-    ("/status", "show current session configuration and token usage", &["thread/status/changed", "tokenUsage"]),
-    ("/model", "choose what model and reasoning effort to use", &["model/rerouted", "supported_reasoning_levels"]),
-    ("/approvals", "choose what Codex is allowed to do", &["approvals_reviewer", "allowedApprovalsReviewers"]),
-    ("/permissions", "choose what Codex is allowed to do", &["PermissionsRequest", "requestPermissions"]),
-    ("/skills", "use skills to improve how Codex performs specific tasks", &["skills/changed", "ListSkills"]),
-    ("/mcp", "list configured MCP tools; use /mcp verbose for details", &["mcp_servers", "ListMcpServerStatusParams"]),
+    (
+        "/model",
+        "choose what model and reasoning effort to use",
+        &["model/rerouted", "supported_reasoning_levels"],
+    ),
+    (
+        "/fast",
+        "toggle Fast mode to enable fastest inference with increased plan usage",
+        &["toggle Fast mode", "fast_command_enabled"],
+    ),
+    (
+        "/approvals",
+        "choose what Codex is allowed to do",
+        &["approvals_reviewer", "allowedApprovalsReviewers"],
+    ),
+    (
+        "/permissions",
+        "choose what Codex is allowed to do",
+        &["PermissionsRequest", "requestPermissions"],
+    ),
+    (
+        "/setup-default-sandbox",
+        "set up elevated agent sandbox",
+        &["setup-default-sandbox", "ElevateSandbox"],
+    ),
+    (
+        "/sandbox-add-read-dir",
+        "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>",
+        &["sandbox-add-read-dir", "SandboxReadRoot"],
+    ),
+    (
+        "/experimental",
+        "toggle experimental features",
+        &["toggle experimental features", "experimental"],
+    ),
+    (
+        "/memories",
+        "configure memory use and generation",
+        &["configure memory use", "memories"],
+    ),
+    (
+        "/skills",
+        "use skills to improve how Codex performs specific tasks",
+        &["skills/changed", "ListSkills"],
+    ),
+    (
+        "/review",
+        "review my current changes and find issues",
+        &["session_task.review", "enteredReviewMode"],
+    ),
+    ("/rename", "rename the current thread", &["thread/name/updated", "SetThreadName"]),
+    ("/new", "start a new chat during a conversation", &["thread/started"]),
+    (
+        "/resume",
+        "resume a saved chat",
+        &["thread/resume", "Resume a previous interactive session"],
+    ),
+    ("/fork", "fork the current chat", &["Fork a previous interactive session"]),
+    (
+        "/init",
+        "create an AGENTS.md file with instructions for Codex",
+        &["Skipping /init", "AGENTS.md"],
+    ),
+    (
+        "/compact",
+        "summarize conversation to prevent hitting the context limit",
+        &["session_task.compact", "thread/compacted"],
+    ),
     ("/plan", "switch to Plan mode", &["turn/plan/updated", "PlanItem"]),
     ("/goal", "set or view the goal for a long-running task", &[]),
-    ("/resume", "resume a saved chat", &["thread/resume", "Resume a previous interactive session"]),
-    ("/fork", "fork the current chat", &["Fork a previous interactive session"]),
-    ("/new", "start a new chat during a conversation", &["thread/started"]),
-    ("/rename", "rename the current thread", &["thread/name/updated", "SetThreadName"]),
-    ("/clear", "clear the terminal and start a new chat", &["SessionStart", "clear"]),
+    (
+        "/collab",
+        "change collaboration mode (experimental)",
+        &["change collaboration mode", "collaboration_modes_enabled"],
+    ),
+    (
+        "/agent",
+        "switch the active agent thread",
+        &["switch the active agent thread", "CollabAgent"],
+    ),
+    (
+        "/side",
+        "start a side conversation in an ephemeral fork",
+        &["side conversation", "Side"],
+    ),
     ("/copy", "copy last response as markdown", &["upgradeCopy"]),
+    (
+        "/diff",
+        "show git diff (including untracked files)",
+        &["turn/diff/updated", "No diff turn found"],
+    ),
     ("/mention", "mention a file", &["fuzzyFileSearch"]),
+    (
+        "/status",
+        "show current session configuration and token usage",
+        &["thread/status/changed", "tokenUsage"],
+    ),
+    (
+        "/debug-config",
+        "show config layers and requirement sources for debugging",
+        &["debug-config", "config layers"],
+    ),
+    (
+        "/title",
+        "configure which items appear in the terminal title",
+        &["terminal title", "Title"],
+    ),
+    (
+        "/statusline",
+        "configure which items appear in the status line",
+        &["status_line"],
+    ),
     ("/theme", "choose a syntax highlighting theme", &["theme", "show_tooltips"]),
-    ("/statusline", "configure which items appear in the status line", &["status_line"]),
-    ("/personality", "choose a communication style for Codex", &["Personality set", "supportsPersonality"]),
-    ("/feedback", "send logs to maintainers", &["feedback"]),
-    ("/logout", "log out of Codex", &["Remove stored authentication credentials"]),
+    (
+        "/mcp",
+        "list configured MCP tools; use /mcp verbose for details",
+        &["mcp_servers", "ListMcpServerStatusParams"],
+    ),
+    ("/apps", "manage apps", &["manage apps", "connectors_enabled"]),
+    ("/plugins", "browse plugins", &["browse plugins", "plugins_command_enabled"]),
+    (
+        "/logout",
+        "log out of Codex",
+        &["Remove stored authentication credentials"],
+    ),
     ("/quit", "exit Codex", &[]),
     ("/exit", "exit Codex", &[]),
+    ("/feedback", "send logs to maintainers", &["feedback"]),
+    ("/ps", "list background terminals", &["list background terminals", "background terminals"]),
+    ("/stop", "stop all background terminals", &["stop all background terminals", "background terminals"]),
+    ("/clear", "clear the terminal and start a new chat", &["SessionStart", "clear"]),
+    (
+        "/personality",
+        "choose a communication style for Codex",
+        &["Personality set", "supportsPersonality"],
+    ),
+    (
+        "/realtime",
+        "toggle realtime voice mode (experimental)",
+        &["realtime voice mode", "realtime_conversation_enabled"],
+    ),
+    (
+        "/settings",
+        "configure realtime microphone/speaker",
+        &["realtime microphone", "audio_device_selection_enabled"],
+    ),
+    ("/subagents", "switch the active agent thread", &["subagents", "MultiAgents"]),
 ];
 
 #[tauri::command]
@@ -537,11 +658,12 @@ fn discover_codex_slash_commands_sync() -> Vec<CodexSlashCommand> {
         .map(|bytes| {
             CODEX_SLASH_COMMANDS
                 .iter()
-                .filter(|(_, _, probes)| {
-                    probes.is_empty()
-                        || probes
-                            .iter()
-                            .any(|probe| memchr::memmem::find(&bytes, probe.as_bytes()).is_some())
+                .filter(|(cmd, _, probes)| {
+                    codex_slash_command_visible_on_platform(cmd)
+                        && (probes.is_empty()
+                            || probes.iter().any(|probe| {
+                                memchr::memmem::find(&bytes, probe.as_bytes()).is_some()
+                            }))
                 })
                 .map(|(cmd, desc, _)| CodexSlashCommand {
                     cmd: (*cmd).to_string(),
@@ -554,11 +676,19 @@ fn discover_codex_slash_commands_sync() -> Vec<CodexSlashCommand> {
         Some(cmds) if !cmds.is_empty() => cmds,
         _ => CODEX_SLASH_COMMANDS
             .iter()
+            .filter(|(cmd, _, _)| codex_slash_command_visible_on_platform(cmd))
             .map(|(cmd, desc, _)| CodexSlashCommand {
                 cmd: (*cmd).to_string(),
                 desc: (*desc).to_string(),
             })
             .collect(),
+    }
+}
+
+fn codex_slash_command_visible_on_platform(cmd: &str) -> bool {
+    match cmd {
+        "/sandbox-add-read-dir" => cfg!(target_os = "windows"),
+        _ => true,
     }
 }
 
@@ -720,6 +850,10 @@ mod tests {
         assert!(cmds.iter().any(|c| c.cmd == "/compact"));
         assert!(cmds.iter().any(|c| c.cmd == "/skills"));
         assert!(cmds.iter().any(|c| c.cmd == "/mcp"));
+        assert!(cmds.iter().any(|c| c.cmd == "/fast"));
+        assert!(cmds.iter().any(|c| c.cmd == "/plugins"));
+        assert!(cmds.iter().any(|c| c.cmd == "/apps"));
+        assert!(cmds.iter().any(|c| c.cmd == "/debug-config"));
     }
 
     #[test]

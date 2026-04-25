@@ -636,8 +636,10 @@ pub fn build_claude_args(config: SessionConfig) -> Result<Vec<String>, String> {
 }
 
 /// Scan JSONL conversation history for slash command usage.
-/// Walks ~/.claude/projects/*/*.jsonl, caps at 200 most recent files by mtime,
-/// and counts `<command-name>X</command-name>` patterns.
+/// Claude history uses `<command-name>X</command-name>` entries under
+/// `~/.claude/projects`; Codex history uses rollout `user_message` events under
+/// `$CODEX_HOME/sessions` (or `~/.codex/sessions`). Each side is capped at the
+/// 200 most recent JSONL files by mtime.
 #[tauri::command]
 pub async fn scan_command_usage(
     app: AppHandle,
@@ -660,12 +662,61 @@ pub async fn scan_command_usage(
 
 fn scan_command_usage_sync() -> Result<std::collections::HashMap<String, u64>, String> {
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let projects_dir = home.join(".claude").join("projects");
+    let codex_home = std::env::var_os("CODEX_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".codex"));
+    scan_command_usage_from_roots(
+        &home.join(".claude").join("projects"),
+        &codex_home.join("sessions"),
+    )
+}
+
+fn scan_command_usage_from_roots(
+    claude_projects_dir: &std::path::Path,
+    codex_sessions_dir: &std::path::Path,
+) -> Result<std::collections::HashMap<String, u64>, String> {
+    let mut counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    scan_claude_command_usage(claude_projects_dir, &mut counts)?;
+    scan_codex_command_usage(codex_sessions_dir, &mut counts)?;
+    Ok(counts)
+}
+
+fn collect_jsonl_files(
+    dir: &std::path::Path,
+    max_depth: usize,
+    files: &mut Vec<(std::time::SystemTime, std::path::PathBuf)>,
+) {
+    if max_depth == 0 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_jsonl_files(&path, max_depth - 1, files);
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        if let Ok(meta) = std::fs::metadata(&path) {
+            let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+            files.push((mtime, path));
+        }
+    }
+}
+
+fn scan_claude_command_usage(
+    projects_dir: &std::path::Path,
+    counts: &mut std::collections::HashMap<String, u64>,
+) -> Result<(), String> {
     if !projects_dir.exists() {
-        return Ok(std::collections::HashMap::new());
+        return Ok(());
     }
 
-    // Collect all .jsonl files with their modification times
     let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
     let entries = std::fs::read_dir(&projects_dir).map_err(|e| e.to_string())?;
     for entry in entries.flatten() {
@@ -694,7 +745,6 @@ fn scan_command_usage_sync() -> Result<std::collections::HashMap<String, u64>, S
     use std::io::{BufRead, BufReader};
 
     let re = regex::Regex::new(r"<command-name>(/[\w-]+)</command-name>").unwrap();
-    let mut counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
 
     for (_, path) in &files {
         let file = match std::fs::File::open(path) {
@@ -703,12 +753,74 @@ fn scan_command_usage_sync() -> Result<std::collections::HashMap<String, u64>, S
         };
         for line in BufReader::new(file).lines().flatten() {
             for cap in re.captures_iter(&line) {
-                *counts.entry(cap[1].to_string()).or_insert(0) += 1;
+                *counts.entry(cap[1].to_ascii_lowercase()).or_insert(0) += 1;
             }
         }
     }
 
-    Ok(counts)
+    Ok(())
+}
+
+fn scan_codex_command_usage(
+    sessions_dir: &std::path::Path,
+    counts: &mut std::collections::HashMap<String, u64>,
+) -> Result<(), String> {
+    if !sessions_dir.exists() {
+        return Ok(());
+    }
+
+    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
+    collect_jsonl_files(sessions_dir, 6, &mut files);
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.truncate(200);
+
+    use std::io::{BufRead, BufReader};
+
+    for (_, path) in &files {
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        for line in BufReader::new(file).lines().flatten() {
+            if let Some(command) = extract_codex_slash_command(&line) {
+                *counts.entry(command).or_insert(0) += 1;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn slash_command_from_text(text: &str) -> Option<String> {
+    let first = text.trim_start().split_whitespace().next()?;
+    let rest = first.strip_prefix('/')?;
+    if rest.is_empty() {
+        return None;
+    }
+    if rest
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        Some(first.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
+fn extract_codex_slash_command(line: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(line).ok()?;
+    let message = if parsed.get("type").and_then(|v| v.as_str()) == Some("event_msg") {
+        let payload = parsed.get("payload")?;
+        if payload.get("type").and_then(|v| v.as_str()) != Some("user_message") {
+            return None;
+        }
+        payload.get("message").and_then(|v| v.as_str())?
+    } else if parsed.get("type").and_then(|v| v.as_str()) == Some("user_message") {
+        parsed.get("message").and_then(|v| v.as_str())?
+    } else {
+        return None;
+    };
+    slash_command_from_text(message)
 }
 
 // [RC-18] Plugin management IPC: list/install/uninstall/enable/disable via run_claude_cli
@@ -806,5 +918,54 @@ mod tests {
             dir_arg, "\\home\\user\\project",
             "Windows should normalize to backslashes"
         );
+    }
+
+    #[test]
+    fn codex_usage_extracts_slash_command_from_rollout_event() {
+        let line = r#"{"type":"event_msg","payload":{"type":"user_message","message":"/model gpt-5.5"}}"#;
+        assert_eq!(extract_codex_slash_command(line).as_deref(), Some("/model"));
+    }
+
+    #[test]
+    fn codex_usage_rejects_plain_prompts_and_paths() {
+        let prompt = r#"{"type":"event_msg","payload":{"type":"user_message","message":"hello"}}"#;
+        let path = r#"{"type":"event_msg","payload":{"type":"user_message","message":"/home/jordan/project"}}"#;
+        assert_eq!(extract_codex_slash_command(prompt), None);
+        assert_eq!(extract_codex_slash_command(path), None);
+    }
+
+    #[test]
+    fn command_usage_scans_claude_and_codex_histories() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ct-command-usage-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let claude_dir = tmp.join(".claude").join("projects").join("proj");
+        let codex_dir = tmp.join(".codex").join("sessions").join("2026").join("04").join("26");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::create_dir_all(&codex_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("session.jsonl"),
+            r#"{"message":"<command-name>/Review</command-name>"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            codex_dir.join("rollout.jsonl"),
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"/model gpt-5.5"}}"#,
+        )
+        .unwrap();
+
+        let counts = scan_command_usage_from_roots(
+            &tmp.join(".claude").join("projects"),
+            &tmp.join(".codex").join("sessions"),
+        )
+        .unwrap();
+        assert_eq!(counts.get("/review"), Some(&1));
+        assert_eq!(counts.get("/model"), Some(&1));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

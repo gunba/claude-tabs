@@ -415,7 +415,11 @@
   color: var(--accent-secondary);
 }
 
-/* ── Heat gradient: WoW rarity (Common → Uncommon → Rare → Epic → Legendary) ── */
+/* ── Heat gradient: unused trash grey, then WoW rarity (Common → Legendary) ── */
+
+.launcher-cli-pill-cmd.heat-unused {
+  color: color-mix(in srgb, var(--rarity-poor) 78%, var(--text-muted));
+}
 
 .launcher-cli-pill-cmd.heat-0 {
   color: var(--rarity-common);

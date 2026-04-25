@@ -127,33 +127,35 @@ describe("formatTokenCount", () => {
   });
 });
 
-describe("computeHeatLevel (WoW rarity: 0-4, rank-based)", () => {
-  it("returns 0 (common) for zero count", () => {
-    expect(computeHeatLevel(0, 0, 5)).toBe(0);
+describe("computeHeatLevel (WoW rarity: unused + 0-4, rank-based)", () => {
+  it("returns -1 (poor/trash) for zero count", () => {
+    expect(computeHeatLevel(0, 0, 5)).toBe(-1);
   });
 
-  it("returns 0 (common) when totalUsed is 0", () => {
-    expect(computeHeatLevel(0, 0, 0)).toBe(0);
+  it("returns -1 (poor/trash) when totalUsed is 0", () => {
+    expect(computeHeatLevel(1, 0, 0)).toBe(-1);
   });
 
-  it("returns 0 (common) for negative count", () => {
-    expect(computeHeatLevel(-1, 0, 5)).toBe(0);
+  it("returns -1 (poor/trash) for negative count", () => {
+    expect(computeHeatLevel(-1, 0, 5)).toBe(-1);
   });
 
   it("returns 4 (legendary) when only one command is used", () => {
     expect(computeHeatLevel(1, 0, 1)).toBe(4);
   });
 
-  it("splits 8 used commands into 2+2+2+2 across tiers", () => {
-    // rank 0..1 -> legendary, 2..3 -> epic, 4..5 -> rare, 6..7 -> uncommon
-    expect(computeHeatLevel(100, 0, 8)).toBe(4);
-    expect(computeHeatLevel(50, 1, 8)).toBe(4);
-    expect(computeHeatLevel(30, 2, 8)).toBe(3);
-    expect(computeHeatLevel(20, 3, 8)).toBe(3);
-    expect(computeHeatLevel(10, 4, 8)).toBe(2);
-    expect(computeHeatLevel(5, 5, 8)).toBe(2);
-    expect(computeHeatLevel(2, 6, 8)).toBe(1);
-    expect(computeHeatLevel(1, 7, 8)).toBe(1);
+  it("splits 10 used commands into 2 per rarity tier", () => {
+    // rank 0..1 -> legendary, 2..3 -> epic, 4..5 -> rare, 6..7 -> uncommon, 8..9 -> common
+    expect(computeHeatLevel(100, 0, 10)).toBe(4);
+    expect(computeHeatLevel(50, 1, 10)).toBe(4);
+    expect(computeHeatLevel(30, 2, 10)).toBe(3);
+    expect(computeHeatLevel(20, 3, 10)).toBe(3);
+    expect(computeHeatLevel(10, 4, 10)).toBe(2);
+    expect(computeHeatLevel(5, 5, 10)).toBe(2);
+    expect(computeHeatLevel(3, 6, 10)).toBe(1);
+    expect(computeHeatLevel(2, 7, 10)).toBe(1);
+    expect(computeHeatLevel(1, 8, 10)).toBe(0);
+    expect(computeHeatLevel(1, 9, 10)).toBe(0);
   });
 
   it("places top rank in legendary, bottom rank in uncommon for 4 used", () => {
@@ -176,6 +178,14 @@ describe("computeHeatLevel (WoW rarity: 0-4, rank-based)", () => {
     expect(computeHeatLevel(1, 2, 3)).toBe(2);
   });
 
+  it("uses all five rarity colors for totalUsed == 5", () => {
+    expect(computeHeatLevel(10, 0, 5)).toBe(4);
+    expect(computeHeatLevel(8, 1, 5)).toBe(3);
+    expect(computeHeatLevel(6, 2, 5)).toBe(2);
+    expect(computeHeatLevel(4, 3, 5)).toBe(1);
+    expect(computeHeatLevel(2, 4, 5)).toBe(0);
+  });
+
   it("guarantees epic tier appears in skewed power-law usage", () => {
     // Real-world skew: /r=500, /j=50, /b=10, /x=3, /y=1 — old ratio-based impl
     // would put everything except /r into uncommon. Rank-based spreads them out.
@@ -188,11 +198,17 @@ describe("computeHeatLevel (WoW rarity: 0-4, rank-based)", () => {
     ];
     expect(levels).toContain(4); // legendary
     expect(levels).toContain(3); // epic
+    expect(levels).toContain(2); // rare
     expect(levels).toContain(1); // uncommon
+    expect(levels).toContain(0); // common
   });
 });
 
 describe("heatClassName", () => {
+  it("returns heat-unused for level -1 (Poor/trash)", () => {
+    expect(heatClassName(-1)).toBe("heat-unused");
+  });
+
   it("returns heat-0 for level 0 (Common)", () => {
     expect(heatClassName(0)).toBe("heat-0");
   });

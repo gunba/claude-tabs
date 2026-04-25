@@ -147,6 +147,12 @@ function codexTextFromContent(content: unknown): string {
     .join("\n");
 }
 
+function slashCommandFromText(text: string): string | null {
+  const first = text.trimStart().split(/\s+/, 1)[0] || "";
+  if (!/^\/[\w-]+$/.test(first)) return null;
+  return first.toLowerCase();
+}
+
 function parseCodexContextUserMessage(ts: number, text: string): TapEvent | null {
   const trimmed = text.trim();
   const skillBlock = trimmed.match(/<skill>\s*<name>([^<]+)<\/name>\s*<path>([^<]+)<\/path>/s);
@@ -309,10 +315,11 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
   // UserInput: has display + timestamp + project/sessionId
   if (typeof parsed.display === "string" && parsed.timestamp) {
     const display = parsed.display as string;
-    if (display.startsWith("/")) {
+    const command = slashCommandFromText(display);
+    if (command) {
       return {
         kind: "SlashCommand", ts,
-        command: display.split(" ")[0],
+        command,
         display,
       };
     }
@@ -1098,6 +1105,8 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
       if (role === "user") {
         const contextEvent = parseCodexContextUserMessage(ts, text);
         if (contextEvent) return contextEvent;
+        const command = slashCommandFromText(text);
+        if (command) return { kind: "SlashCommand", ts, command, display: text };
         return { kind: "UserInput", ts, display: text, sessionId: "" };
       }
       if (role === "assistant") {
