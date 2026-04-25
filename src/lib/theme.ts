@@ -148,6 +148,10 @@ export function applyTheme(theme: Theme): void {
   root.style.setProperty("--rarity-rare", "#0070dd");
   root.style.setProperty("--rarity-epic", "#a335ee");
   root.style.setProperty("--rarity-legendary", "#ff8000");
+
+  // CLI provider brand colors (fixed cross-theme — match the tab badges)
+  root.style.setProperty("--accent-claude", "#d4744a");
+  root.style.setProperty("--accent-codex", "#10a37f");
 }
 
 /** Get terminal theme object from CSS custom properties */

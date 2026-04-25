@@ -53,6 +53,11 @@
   height: 66px;
   overflow: hidden;
   box-sizing: border-box;
+  --tab-active-accent: var(--accent-claude);
+}
+
+.tab.tab-cli-codex {
+  --tab-active-accent: var(--accent-codex);
 }
 
 .tab.tab-drag-over {
@@ -67,7 +72,7 @@
 .tab-active {
   background: var(--bg-primary);
   color: var(--text-primary);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: inset 0 -2px 0 var(--tab-active-accent);
 }
 
 /* Settled idle: static green tint, persists until user interaction */
@@ -141,7 +146,7 @@
 
 .ctrl-held .tab-active:not(.tab-dead) {
   background: color-mix(in srgb, var(--accent-secondary) 8%, var(--bg-primary));
-  box-shadow: inset 0 -2px 0 var(--accent), inset 0 2px 0 var(--accent-secondary);
+  box-shadow: inset 0 -2px 0 var(--tab-active-accent), inset 0 2px 0 var(--accent-secondary);
 }
 
 .ctrl-held .tab-active.tab-settled-action {
