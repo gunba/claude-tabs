@@ -687,6 +687,9 @@ fn discover_codex_slash_commands_sync() -> Vec<CodexSlashCommand> {
 
 fn codex_slash_command_visible_on_platform(cmd: &str) -> bool {
     match cmd {
+        // Codex itself only registers /sandbox-add-read-dir on Windows
+        // (codex-rs/tui/src/slash_command.rs:214) — Linux/macOS use the
+        // sandbox config directly. Mirror that gate here.
         "/sandbox-add-read-dir" => cfg!(target_os = "windows"),
         _ => true,
     }

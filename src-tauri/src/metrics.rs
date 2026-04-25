@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
+use sysinfo::{CpuRefreshKind, Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ActivePids;
@@ -49,9 +49,11 @@ pub fn spawn_collector(app: AppHandle) {
     thread::spawn(move || {
         let mut system = System::new_with_specifics(
             RefreshKind::nothing()
+                .with_cpu(CpuRefreshKind::nothing())
                 .with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory()),
         );
-        let cpu_count = num_logical_cpus(&system).max(1) as f32;
+        // `with_cpu` populates the CPU list so `cpus().len()` is the logical count.
+        let cpu_count = system.cpus().len().max(1) as f32;
         let app_pid = std::process::id();
 
         // Prime CPU counters — sysinfo needs two refreshes for non-zero values.
@@ -109,38 +111,42 @@ pub fn spawn_collector(app: AppHandle) {
             let mut overall_mem: u64 = 0;
             let mut overall_proc_count: u32 = 0;
 
-            for root_pid in tracked {
+            // A tracked PID that is a descendant of another tracked PID would
+            // otherwise be counted twice in the overall sum. Skip it for
+            // overall accumulation but still emit its per-root payload.
+            let tracked_set: HashSet<u32> = tracked.iter().copied().collect();
+            let is_real_root = |pid: u32| {
+                let mut current = system
+                    .process(Pid::from_u32(pid))
+                    .and_then(|p| p.parent())
+                    .map(|pid| pid.as_u32());
+                while let Some(p) = current {
+                    if tracked_set.contains(&p) {
+                        return false;
+                    }
+                    current = system
+                        .process(Pid::from_u32(p))
+                        .and_then(|pp| pp.parent())
+                        .map(|pid| pid.as_u32());
+                }
+                true
+            };
+
+            for root_pid in &tracked {
+                let root_pid = *root_pid;
                 let Some(parent_proc) = system.process(Pid::from_u32(root_pid)) else {
                     continue;
                 };
                 let parent_cpu = parent_proc.cpu_usage();
                 let parent_mem = parent_proc.memory();
+                let (children_cpu, children_mem, child_count) =
+                    sum_descendants(&system, &children_of, root_pid);
 
-                let mut children_cpu: f32 = 0.0;
-                let mut children_mem: u64 = 0;
-                let mut child_count: u32 = 0;
-
-                let mut queue: Vec<u32> = children_of.get(&root_pid).cloned().unwrap_or_default();
-                let mut visited: std::collections::HashSet<u32> = std::collections::HashSet::new();
-                visited.insert(root_pid);
-                while let Some(pid) = queue.pop() {
-                    if !visited.insert(pid) {
-                        continue;
-                    }
-                    if let Some(proc_info) = system.process(Pid::from_u32(pid)) {
-                        children_cpu += proc_info.cpu_usage();
-                        children_mem += proc_info.memory();
-                        child_count += 1;
-                    }
-                    if let Some(grand) = children_of.get(&pid) {
-                        queue.extend(grand.iter().copied());
-                    }
+                if is_real_root(root_pid) {
+                    overall_cpu += parent_cpu + children_cpu;
+                    overall_mem += parent_mem + children_mem;
+                    overall_proc_count += 1 + child_count;
                 }
-
-                let total_proc = 1 + child_count;
-                overall_cpu += parent_cpu + children_cpu;
-                overall_mem += parent_mem + children_mem;
-                overall_proc_count += total_proc;
 
                 let payload = ProcessMetricsPayload {
                     pid: root_pid,
@@ -163,14 +169,6 @@ pub fn spawn_collector(app: AppHandle) {
     });
 }
 
-fn num_logical_cpus(system: &System) -> usize {
-    let n = system.cpus().len();
-    if n > 0 {
-        return n;
-    }
-    System::new_all().cpus().len().max(1)
-}
-
 fn sum_descendants(
     system: &System,
     children_of: &HashMap<u32, Vec<u32>>,
@@ -180,7 +178,7 @@ fn sum_descendants(
     let mut children_mem: u64 = 0;
     let mut child_count: u32 = 0;
     let mut queue: Vec<u32> = children_of.get(&root_pid).cloned().unwrap_or_default();
-    let mut visited: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut visited: HashSet<u32> = HashSet::new();
     visited.insert(root_pid);
     while let Some(pid) = queue.pop() {
         if !visited.insert(pid) {

@@ -287,7 +287,7 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
   useEffect(() => { load(); }, [load]);
 
   const handleSave = useCallback(async () => {
-    const value = textareaRef.current?.value ?? text;
+    const value = textareaRef.current?.value ?? "";
     if (cli === "claude") {
       try {
         JSON.parse(value); // validate
@@ -309,7 +309,7 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [cli, text, scope, projectDir, onStatus]);
+  }, [cli, scope, projectDir, onStatus]);
 
   // Insert reformats the entire JSON document. We replace the textarea value
   // through the browser's edit history (execCommand) so the change is a single
