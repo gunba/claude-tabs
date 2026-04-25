@@ -20,6 +20,24 @@ import { createPathLinkProvider } from "../lib/terminalPathLinks";
 export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace";
 
 const XTVERSION_REPLY = "\x1bP>|xterm.js(6.0.0)\x1b\\";
+export const SHIFT_ENTER_SEQUENCE = "\x1b[13;2u";
+
+type TerminalKeyEventLike = Pick<KeyboardEvent, "type" | "key" | "code" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">;
+
+export function getTerminalKeySequenceOverride(ev: TerminalKeyEventLike): string | null {
+  const isEnter = ev.key === "Enter" || ev.code === "Enter" || ev.code === "NumpadEnter";
+  if (
+    ev.type === "keydown" &&
+    isEnter &&
+    ev.shiftKey &&
+    !ev.ctrlKey &&
+    !ev.altKey &&
+    !ev.metaKey
+  ) {
+    return SHIFT_ENTER_SEQUENCE;
+  }
+  return null;
+}
 
 interface UseTerminalOptions {
   sessionId?: string | null;
@@ -364,6 +382,20 @@ export function useTerminal({ sessionId = null, onData, onResize, instanceKey = 
         // Block all input when a modal overlay is open
         if (document.querySelector('.launcher-overlay, .resume-picker-overlay, .modal-overlay, .palette-overlay, .inspector-overlay')) {
           return false; // Suppress — modal is open
+        }
+        const keySequenceOverride = getTerminalKeySequenceOverride(ev);
+        if (keySequenceOverride !== null) {
+          dlog("terminal", sessionIdRef.current, "terminal key sequence override", "DEBUG", {
+            event: "terminal.key_sequence_override",
+            data: {
+              key: ev.key,
+              code: ev.code,
+              sequence: keySequenceOverride,
+              preview: escapePreview(keySequenceOverride),
+            },
+          });
+          onDataRef.current?.(keySequenceOverride);
+          return false;
         }
         // Ctrl+Shift+C — Linux primary copy shortcut; copies selection if present.
         // Always swallow to prevent xterm sending \x03 twice on Linux.

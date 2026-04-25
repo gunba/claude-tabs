@@ -26,10 +26,68 @@ vi.mock("../../lib/debugLog", () => ({
   setDebugCaptureEnabled: () => {},
 }));
 
-import { TERMINAL_FONT_FAMILY } from "../useTerminal";
+import { getTerminalKeySequenceOverride, SHIFT_ENTER_SEQUENCE, TERMINAL_FONT_FAMILY } from "../useTerminal";
 
 describe("TERMINAL_FONT_FAMILY", () => {
   it("is the default monospace stack", () => {
     expect(TERMINAL_FONT_FAMILY).toBe("'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace");
+  });
+});
+
+function keyEvent(overrides: Partial<KeyboardEvent>): Pick<KeyboardEvent, "type" | "key" | "code" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey"> {
+  return {
+    type: "keydown",
+    key: "",
+    code: "",
+    shiftKey: false,
+    ctrlKey: false,
+    altKey: false,
+    metaKey: false,
+    ...overrides,
+  };
+}
+
+describe("getTerminalKeySequenceOverride", () => {
+  it("translates Shift+Enter to Claude Code's CSI-u shifted return sequence", () => {
+    expect(getTerminalKeySequenceOverride(keyEvent({
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true,
+    }))).toBe(SHIFT_ENTER_SEQUENCE);
+  });
+
+  it("translates Shift+NumpadEnter", () => {
+    expect(getTerminalKeySequenceOverride(keyEvent({
+      key: "Enter",
+      code: "NumpadEnter",
+      shiftKey: true,
+    }))).toBe(SHIFT_ENTER_SEQUENCE);
+  });
+
+  it("leaves plain Enter for xterm.js to handle normally", () => {
+    expect(getTerminalKeySequenceOverride(keyEvent({
+      key: "Enter",
+      code: "Enter",
+    }))).toBeNull();
+  });
+
+  it("does not override Ctrl/Alt/Meta modified Enter chords", () => {
+    for (const modifier of ["ctrlKey", "altKey", "metaKey"] as const) {
+      expect(getTerminalKeySequenceOverride(keyEvent({
+        key: "Enter",
+        code: "Enter",
+        shiftKey: true,
+        [modifier]: true,
+      }))).toBeNull();
+    }
+  });
+
+  it("ignores keyup events", () => {
+    expect(getTerminalKeySequenceOverride(keyEvent({
+      type: "keyup",
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true,
+    }))).toBeNull();
   });
 });
