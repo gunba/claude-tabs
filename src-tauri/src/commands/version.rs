@@ -17,22 +17,49 @@ pub fn get_build_info() -> BuildInfo {
     }
 }
 
-// Returns true on Linux + KDE + Wayland — the combination where Tauri's `decorations: false`
-// is silently ignored by KWin (upstream tauri/wry bug, see GH issues #6162 / #6562). Frontend
-// uses this to skip the custom Header on that combo and let KDE's native titlebar show.
+// [PL-01] Returns true on Linux + KDE + Wayland only when GTK is not forced to X11. KWin can
+// ignore Tauri's `decorations: false` for GTK/Wayland windows (upstream tauri/wry bug,
+// see GH issues #6162 / #6562), so the frontend skips the custom Header there and lets
+// KDE's native titlebar show. When GDK_BACKEND=x11 is active, the window is created
+// frameless under Xwayland and still needs the custom Header.
 #[tauri::command]
 pub fn linux_use_native_chrome() -> bool {
     if !cfg!(target_os = "linux") {
         return false;
     }
-    let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
-    if session != "wayland" {
+    let gdk_backend = std::env::var("GDK_BACKEND").ok();
+    let session = std::env::var("XDG_SESSION_TYPE").ok();
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+    linux_use_native_chrome_from_env(
+        gdk_backend.as_deref(),
+        session.as_deref(),
+        desktop.as_deref(),
+    )
+}
+
+fn linux_use_native_chrome_from_env(
+    gdk_backend: Option<&str>,
+    session: Option<&str>,
+    desktop: Option<&str>,
+) -> bool {
+    if gdk_backend_prefers_x11(gdk_backend) {
         return false;
     }
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
-        .unwrap_or_default()
-        .to_uppercase();
+    if session != Some("wayland") {
+        return false;
+    }
+    let desktop = desktop.unwrap_or_default().to_uppercase();
     desktop.split(':').any(|s| s == "KDE")
+}
+
+fn gdk_backend_prefers_x11(value: Option<&str>) -> bool {
+    value
+        .and_then(|v| {
+            v.split(',')
+                .map(str::trim)
+                .find(|backend| !backend.is_empty())
+        })
+        .is_some_and(|backend| backend.eq_ignore_ascii_case("x11"))
 }
 
 // [CN-01] Per-CLI changelog fetch: claude raw GitHub markdown CHANGELOG.md vs codex GitHub releases atom feed + GitHub releases API fallback; semver-aware filter selects entries strictly after fromVersion through toVersion (inclusive), capped at 12 (or 5 default).
@@ -601,6 +628,48 @@ mod tests {
         assert!(compare_versions("codex-cli 0.126.0-alpha.1", "0.125.0").is_gt());
         assert!(compare_versions("0.126.0", "0.126.0-alpha.2").is_gt());
         assert!(compare_versions("0.126.0-alpha.10", "0.126.0-alpha.2").is_gt());
+    }
+
+    #[test]
+    fn linux_native_chrome_detector_honors_forced_x11_backend() {
+        assert!(!linux_use_native_chrome_from_env(
+            Some("x11"),
+            Some("wayland"),
+            Some("KDE")
+        ));
+        assert!(!linux_use_native_chrome_from_env(
+            Some("x11,wayland"),
+            Some("wayland"),
+            Some("KDE")
+        ));
+    }
+
+    #[test]
+    fn linux_native_chrome_detector_keeps_kde_wayland_fallback() {
+        assert!(linux_use_native_chrome_from_env(
+            None,
+            Some("wayland"),
+            Some("KDE")
+        ));
+        assert!(linux_use_native_chrome_from_env(
+            Some("wayland,x11"),
+            Some("wayland"),
+            Some("GNOME:KDE")
+        ));
+    }
+
+    #[test]
+    fn linux_native_chrome_detector_rejects_non_kde_or_non_wayland() {
+        assert!(!linux_use_native_chrome_from_env(
+            None,
+            Some("x11"),
+            Some("KDE")
+        ));
+        assert!(!linux_use_native_chrome_from_env(
+            None,
+            Some("wayland"),
+            Some("GNOME")
+        ));
     }
 
     #[test]

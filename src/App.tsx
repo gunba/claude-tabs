@@ -175,9 +175,10 @@ export default function App() {
 
   // [PL-01] Linux custom titlebar: tauri.conf.json sets decorations:false globally so non-KDE
   // Wayland compositors honor it at window creation. Non-Linux re-enables native decorations
-  // at runtime. KDE+Wayland is a known upstream Tauri bug (issues #6162/#6562 — KWin ignores
-  // decorations:false from wry's GTK-Wayland window), so on that combo we restore native
-  // decorations and skip our custom Header to avoid a duplicated titlebar.
+  // at runtime. KDE+Wayland with GTK/Wayland is a known upstream Tauri bug (issues #6162/#6562
+  // — KWin ignores decorations:false from wry's GTK-Wayland window), so on that combo we
+  // restore native decorations and skip our custom Header. If startup forced GDK_BACKEND=x11,
+  // linux_use_native_chrome() returns false because the Xwayland window was created frameless.
   const [useNativeChrome, setUseNativeChrome] = useState(false);
   useEffect(() => {
     (async () => {
