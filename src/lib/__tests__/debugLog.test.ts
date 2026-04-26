@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { dlog, getDebugLog, getDebugLogForSession, clearDebugLog, removeDebugLogSession, getDebugLogGeneration, setDebugCaptureEnabled, setDebugCaptureResolver, configureObservability } from "../debugLog";
+import { dlog, getDebugLog, getDebugLogForSession, clearDebugLog, removeDebugLogSession, getDebugLogGeneration, setDebugCaptureEnabled, setDebugCaptureResolver, configureObservability, shouldRecordDebugLog } from "../debugLog";
 import type { DebugLogEntry } from "../debugLog";
 
 const MAX_BUFFER_ENTRIES = 3000;
@@ -228,5 +228,28 @@ describe("debugLog", () => {
     });
     dlog("m", null, "hidden");
     expect(getDebugLog()).toHaveLength(0);
+  });
+
+  it("does not normalize dropped payloads", () => {
+    configureObservability({
+      debugBuild: false,
+      observabilityEnabled: false,
+      devtoolsAvailable: false,
+      globalLogPath: null,
+    });
+    const data = {
+      get expensive() {
+        throw new Error("should not evaluate");
+      },
+    };
+    expect(() => dlog("m", null, "hidden", "DEBUG", { data })).not.toThrow();
+    expect(getDebugLog()).toHaveLength(0);
+  });
+
+  it("reports whether a log would be recorded", () => {
+    expect(shouldRecordDebugLog("LOG", null)).toBe(true);
+    setDebugCaptureResolver((sessionId) => sessionId === "s2");
+    expect(shouldRecordDebugLog("DEBUG", "s1")).toBe(false);
+    expect(shouldRecordDebugLog("DEBUG", "s2")).toBe(true);
   });
 });

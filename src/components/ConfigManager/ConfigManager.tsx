@@ -27,10 +27,10 @@ import {
   useUnsavedTextEditorRegistry,
   type UnsavedTextEditorChange,
 } from "./UnsavedTextEditors";
+import { CONFIG_MANAGER_CLOSE_REQUEST_EVENT } from "./events";
 import "./ConfigManager.css";
 
 type Tab = "settings" | "envvars" | "claudemd" | "hooks" | "plugins" | "mcp" | "agents" | "prompts" | "skills" | "recording";
-export const CONFIG_MANAGER_CLOSE_REQUEST_EVENT = "config-manager-close-request";
 
 type DiffPreviewLine = DiffLine | { type: "skip"; skipped: number; truncated?: boolean };
 

@@ -61,7 +61,7 @@ struct ProcessTreeSummary {
     top_children: Vec<ChildProcessMetrics>,
 }
 
-/// [PM-02] spawn_collector: background thread polling sysinfo every 1000ms; CpuRefreshKind::nothing() primes cpu count immediately; CPU% normalized by cpu_count
+/// [PM-02] spawn_collector: background thread polling sysinfo every 1000ms when active PIDs exist; CpuRefreshKind::nothing() primes cpu count immediately; CPU% normalized by cpu_count
 /// [PM-04] Per-tick: parent->children HashMap O(N) build; sum_descendants BFS cycle-safe; emits process-metrics / app-process-metrics / process-metrics-overall per tick
 /// [PM-05] Overall real-root dedup: skips tracked PIDs whose ancestor is also tracked; bails on try_state None or poisoned lock
 /// Spawn the per-tab CPU/memory poller. Runs for the lifetime of the app.
@@ -79,22 +79,10 @@ pub fn spawn_collector(app: AppHandle) {
         // `with_cpu` populates the CPU list so `cpus().len()` is the logical count.
         let cpu_count = system.cpus().len().max(1) as f32;
         let app_pid = std::process::id();
-
-        // Prime CPU counters — sysinfo needs two refreshes for non-zero values.
-        system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            process_refresh_kind(),
-        );
+        let mut had_tracked_processes = false;
 
         loop {
             thread::sleep(POLL_INTERVAL);
-
-            system.refresh_processes_specifics(
-                ProcessesToUpdate::All,
-                true,
-                process_refresh_kind(),
-            );
 
             let tracked: Vec<u32> = match app.try_state::<ActivePids>() {
                 Some(state) => match state.0.lock() {
@@ -103,6 +91,28 @@ pub fn spawn_collector(app: AppHandle) {
                 },
                 None => continue,
             };
+
+            if tracked.is_empty() {
+                if had_tracked_processes {
+                    had_tracked_processes = false;
+                    let _ = app.emit(
+                        "process-metrics-overall",
+                        OverallMetricsPayload {
+                            cpu: 0.0,
+                            mem: 0,
+                            processes: 0,
+                        },
+                    );
+                }
+                continue;
+            }
+            had_tracked_processes = true;
+
+            system.refresh_processes_specifics(
+                ProcessesToUpdate::All,
+                true,
+                process_refresh_kind(),
+            );
 
             // Build parent → children index once per tick (O(N) instead of O(N²) per BFS).
             let mut children_of: HashMap<u32, Vec<u32>> = HashMap::new();
@@ -220,14 +230,10 @@ fn sum_descendants(
         }
         if let Some(proc_info) = system.process(Pid::from_u32(pid)) {
             children_cpu += proc_info.cpu_usage();
-            children_mem += proc_info.memory();
+            let mem = proc_info.memory();
+            children_mem += mem;
             child_count += 1;
-            top_children.push(ChildProcessMetrics {
-                pid,
-                name: os_str_to_string(proc_info.name()),
-                command: process_command(proc_info.name(), proc_info.cmd()),
-                mem: proc_info.memory(),
-            });
+            push_top_child(&mut top_children, pid, proc_info.name(), proc_info.cmd(), mem);
         }
         if let Some(grand) = children_of.get(&pid) {
             queue.extend(grand.iter().copied());
@@ -240,6 +246,38 @@ fn sum_descendants(
         mem: children_mem,
         count: child_count,
         top_children,
+    }
+}
+
+fn push_top_child(
+    top_children: &mut Vec<ChildProcessMetrics>,
+    pid: u32,
+    name: &OsStr,
+    cmd: &[std::ffi::OsString],
+    mem: u64,
+) {
+    if top_children.len() < TOP_CHILD_LIMIT {
+        top_children.push(ChildProcessMetrics {
+            pid,
+            name: os_str_to_string(name),
+            command: process_command(name, cmd),
+            mem,
+        });
+        return;
+    }
+
+    let replace_idx = top_children
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, child)| child.mem)
+        .and_then(|(idx, child)| (mem > child.mem).then_some(idx));
+    if let Some(idx) = replace_idx {
+        top_children[idx] = ChildProcessMetrics {
+            pid,
+            name: os_str_to_string(name),
+            command: process_command(name, cmd),
+            mem,
+        };
     }
 }
 

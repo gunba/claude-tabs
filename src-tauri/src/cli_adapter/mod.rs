@@ -99,8 +99,6 @@ pub struct FlagPill {
 /// (e.g. last-known binary path) live in the calling layer.
 // [CC-01] CliAdapter trait: detect/version/build_spawn/launch_options; adapter_for(CliKind) returns Box<dyn CliAdapter>
 pub trait CliAdapter {
-    fn kind(&self) -> CliKind;
-
     /// Locate the binary. Mirrors the 5-step chain in
     /// `commands/cli.rs::detect_claude_cli_details_sync` for Claude;
     /// Codex uses its own chain.

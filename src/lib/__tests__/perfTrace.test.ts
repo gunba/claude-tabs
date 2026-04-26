@@ -10,6 +10,16 @@ let dumpTraces: typeof import("../perfTrace").dumpTraces;
 
 beforeEach(async () => {
   vi.resetModules();
+  const debugLog = await import("../debugLog");
+  debugLog.clearDebugLog();
+  debugLog.configureObservability({
+    debugBuild: true,
+    observabilityEnabled: true,
+    devtoolsAvailable: true,
+    globalLogPath: null,
+  });
+  debugLog.setDebugCaptureResolver(null);
+  debugLog.setDebugCaptureEnabled(true);
   const mod = await import("../perfTrace");
   trace = mod.trace;
   traceAsync = mod.traceAsync;

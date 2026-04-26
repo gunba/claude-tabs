@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
 import { trace, traceAsync } from "../lib/perfTrace";
 import { dlog } from "../lib/debugLog";
@@ -9,17 +10,15 @@ import type { CliCapabilities, CliOption, CliCommand } from "../store/settings";
  * On app start, checks each installed agent CLI independently and parses the
  * capabilities exposed by that binary's current `--help` output.
  */
-// [PR-01] useCliWatcher: checkClaude/checkCodex parallel; Codex normalizes capabilities from help+discover_codex_models+discover_codex_cli_options; single-run 500ms deferred
+// [PR-01] useCliWatcher: checkClaude/checkCodex parallel; Codex normalizes capabilities from help+discover_codex_models+discover_codex_cli_options; single-run after session init
 export function useCliWatcher(): void {
   const checkedRef = useRef(false);
+  const initialized = useSessionStore((s) => s.initialized);
 
   useEffect(() => {
-    if (checkedRef.current) return;
+    if (checkedRef.current || !initialized) return;
     checkedRef.current = true;
-
-    // Defer so the UI is interactive before spawning subprocesses
-    const timer = setTimeout(() => check(), 500);
-    return () => clearTimeout(timer);
+    void check();
 
     async function check() {
       trace("cliWatcher: check start");
@@ -172,7 +171,7 @@ export function useCliWatcher(): void {
         });
       }
     }
-  }, []);
+  }, [initialized]);
 }
 
 function emptyCapabilities(): CliCapabilities {

@@ -4,7 +4,7 @@ import { useTerminal } from "../../hooks/useTerminal";
 import { usePty } from "../../hooks/usePty";
 import { useSessionStore } from "../../store/sessions";
 import { getResumeId, canResumeSession, stripWorktreeFlags, findNearestLiveTab } from "../../lib/claude";
-import { dlog } from "../../lib/debugLog";
+import { dlog, shouldRecordDebugLog } from "../../lib/debugLog";
 import { allocateInspectorPort, registerInspectorPort, unregisterInspectorPort, registerInspectorCallbacks, unregisterInspectorCallbacks } from "../../lib/inspectorPort";
 import { useInspectorConnection } from "../../hooks/useInspectorConnection";
 import { useTapPipeline } from "../../hooks/useTapPipeline";
@@ -18,6 +18,10 @@ import type { Session, SessionConfig, SessionState } from "../../types/session";
 import { startTraceSpan, traceAsync } from "../../lib/perfTrace";
 import "./TerminalPanel.css";
 
+const EARLY_OUTPUT_LIMIT_BYTES = 4096;
+const CLAUDE_SCROLLBACK_LINES = 100_000;
+const CODEX_SCROLLBACK_LINES = 50_000;
+const ptyOutputDecoder = new TextDecoder();
 
 interface TerminalPanelProps {
   session: Session;
@@ -199,24 +203,35 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
   // Suppress context-clear detection during resume loading phase.
   // Detect "session already in use" errors in early PTY output
   const earlyOutputRef = useRef("");
+  const earlyOutputBytesRef = useRef(0);
   const sessionInUseRef = useRef(false);
   const sessionInUseRetried = useRef(false);
 
   const handlePtyData = useCallback(
     (data: Uint8Array) => {
-      const text = new TextDecoder().decode(data);
-      dlog("pty", session.id, "PTY output received", "DEBUG", {
-        event: "pty.output",
-        data: {
-          byteLength: data.byteLength,
-          containsEscape: text.includes("\x1b"),
-          text,
-          preview: escapeChunkPreview(text),
-        },
-      });
+      const debug = shouldRecordDebugLog("DEBUG", session.id);
+      let text: string | null = null;
+      const getText = () => text ??= ptyOutputDecoder.decode(data);
+      if (debug) {
+        const decoded = getText();
+        dlog("pty", session.id, "PTY output received", "DEBUG", {
+          event: "pty.output",
+          data: {
+            byteLength: data.byteLength,
+            containsEscape: decoded.includes("\x1b"),
+            text: decoded,
+            preview: escapeChunkPreview(decoded),
+          },
+        });
+      }
       // Accumulate early output for error detection (first ~4KB)
-      if (earlyOutputRef.current.length < 4096) {
-        earlyOutputRef.current += text;
+      if (earlyOutputBytesRef.current < EARLY_OUTPUT_LIMIT_BYTES && !sessionInUseRef.current) {
+        const remainingBytes = EARLY_OUTPUT_LIMIT_BYTES - earlyOutputBytesRef.current;
+        const earlySlice = data.byteLength <= remainingBytes ? data : data.subarray(0, remainingBytes);
+        earlyOutputBytesRef.current += earlySlice.byteLength;
+        earlyOutputRef.current += earlySlice.byteLength === data.byteLength
+          ? getText()
+          : ptyOutputDecoder.decode(earlySlice);
         if (/already in use/i.test(earlyOutputRef.current)) {
           dlog("terminal", session.id, "session-in-use marker detected in PTY output", "WARN", {
             event: "session.session_in_use_detected",
@@ -252,6 +267,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
         sessionInUseRef.current = false;
         sessionInUseRetried.current = true;
         earlyOutputRef.current = "";
+        earlyOutputBytesRef.current = 0;
         const resumeId = getResumeId(session);
 
         invoke<{ killed: number; external: number[] }>("kill_session_holder", { sessionId: resumeId })
@@ -279,7 +295,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
               terminalRef.current?.write(
                 "\r\n\x1b[90m[Killed stale session, retrying...]\x1b[0m\r\n"
               );
-              setTimeout(() => triggerRespawnRef.current(), 500);
+              triggerRespawnRef.current();
             }
           })
           .catch(() => {
@@ -348,6 +364,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     // 5. Reset internal state (inspector port allocated in doSpawn)
     spawnedRef.current = false;
     earlyOutputRef.current = "";
+    earlyOutputBytesRef.current = 0;
     sessionInUseRef.current = false;
     sessionInUseRetried.current = false;
     setExternalHolder(null);
@@ -381,7 +398,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
     onResize: handleResize,
     instanceKey: respawnCounter,
     cwd: session.config.workingDir ?? null,
-    scrollback: session.config.cli === "codex" ? 50_000 : 1_000_000,
+    scrollback: session.config.cli === "codex" ? CODEX_SCROLLBACK_LINES : CLAUDE_SCROLLBACK_LINES,
     enableWebgl: session.config.cli !== "codex",
   });
   terminalRef.current = terminal;
@@ -713,7 +730,7 @@ export function TerminalPanel({ session, visible }: TerminalPanelProps) {
                     )
                   ).then(() => {
                     setExternalHolder(null);
-                    setTimeout(() => triggerRespawnRef.current(), 500);
+                    triggerRespawnRef.current();
                   });
                 }}
               >

@@ -194,13 +194,8 @@ export function useCommandDiscovery(): void {
 
   useEffect(() => {
     if (discoveredRef.current || !ready) return;
-
-    // Extra buffer to let the terminal's Claude process fully boot
-    const timer = setTimeout(() => {
-      discoveredRef.current = true;
-      discover();
-    }, 3000);
-    return () => clearTimeout(timer);
+    discoveredRef.current = true;
+    void discover();
   }, [ready]);
 
   // Re-run discovery when skills are created/edited/deleted

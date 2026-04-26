@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::commands::build_claude_args;
 use crate::commands::detect_claude_cli_sync;
-use crate::session::types::{CliKind, SessionConfig};
+use crate::session::types::SessionConfig;
 
 use super::{
     CliAdapter, DetectedBinary, EffortOption, LaunchOptions, ModelOption,
@@ -19,10 +19,6 @@ use super::{
 pub struct ClaudeAdapter;
 
 impl CliAdapter for ClaudeAdapter {
-    fn kind(&self) -> CliKind {
-        CliKind::Claude
-    }
-
     fn detect(&self) -> Result<DetectedBinary, String> {
         // Reuse the existing 5-step chain in commands::cli.
         let path = detect_claude_cli_sync()?;

@@ -23,6 +23,7 @@ vi.mock("../../lib/theme", () => ({
 // Mock debugLog
 vi.mock("../../lib/debugLog", () => ({
   dlog: () => {},
+  shouldRecordDebugLog: () => false,
   setDebugCaptureEnabled: () => {},
   setDebugCaptureResolver: () => {},
 }));

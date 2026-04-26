@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::commands::codex_cli;
-use crate::session::types::{CliKind, PermissionMode, SessionConfig};
+use crate::session::types::{PermissionMode, SessionConfig};
 
 use super::{
     CliAdapter, DetectedBinary, EffortOption, FlagPill, LaunchOptions, ModelOption,
@@ -23,10 +23,6 @@ use super::{
 pub struct CodexAdapter;
 
 impl CliAdapter for CodexAdapter {
-    fn kind(&self) -> CliKind {
-        CliKind::Codex
-    }
-
     fn detect(&self) -> Result<DetectedBinary, String> {
         let path = codex_cli::detect_codex_cli_sync()?;
         Ok(DetectedBinary {
@@ -380,7 +376,6 @@ mod tests {
             args.push(d.clone());
         }
         // The trait impl produces the same args plus a program path.
-        let _ = adapter.kind(); // exercise trait
         assert!(args.contains(&"--cd".to_string()));
         assert!(args.contains(&"/proj".to_string()));
         assert!(args.contains(&"--model".to_string()));

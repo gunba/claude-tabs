@@ -1,22 +1,17 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { lazy, Suspense, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
 import { dirToTabName, effectiveModel, getResumeId, getLaunchWorkingDir, modelLabel, modelColor, effortColor, canResumeSession, stripWorktreeFlags, formatTokenCount, eventKindColor, getActivityText } from "./lib/claude";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
-import { SubagentInspector } from "./components/SubagentInspector/SubagentInspector";
 
 import { SessionLauncher } from "./components/SessionLauncher/SessionLauncher";
-import { ResumePicker } from "./components/ResumePicker/ResumePicker";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { CommandBar } from "./components/CommandBar/CommandBar";
-import { CommandPalette } from "./components/CommandPalette/CommandPalette";
-import { ConfigManager, CONFIG_MANAGER_CLOSE_REQUEST_EVENT } from "./components/ConfigManager/ConfigManager";
+import { CONFIG_MANAGER_CLOSE_REQUEST_EVENT } from "./components/ConfigManager/events";
 import { RightPanel } from "./components/RightPanel/RightPanel";
 import { ModalOverlay } from "./components/ModalOverlay/ModalOverlay";
-import { ContextViewer } from "./components/ContextViewer/ContextViewer";
-import { ChangelogModal } from "./components/ChangelogModal/ChangelogModal";
 
 import { useCliWatcher } from "./hooks/useCliWatcher";
 import { useNotifications } from "./hooks/useNotifications";
@@ -41,6 +36,13 @@ import { settledStateManager, type SettledKind } from "./lib/settledState";
 import { useRuntimeStore } from "./store/runtime";
 import { isCliVersionIncrease, type ChangelogRequest } from "./lib/changelog";
 import "./App.css";
+
+const ChangelogModal = lazy(() => import("./components/ChangelogModal/ChangelogModal").then((m) => ({ default: m.ChangelogModal })));
+const CommandPalette = lazy(() => import("./components/CommandPalette/CommandPalette").then((m) => ({ default: m.CommandPalette })));
+const ConfigManager = lazy(() => import("./components/ConfigManager/ConfigManager").then((m) => ({ default: m.ConfigManager })));
+const ContextViewer = lazy(() => import("./components/ContextViewer/ContextViewer").then((m) => ({ default: m.ContextViewer })));
+const ResumePicker = lazy(() => import("./components/ResumePicker/ResumePicker").then((m) => ({ default: m.ResumePicker })));
+const SubagentInspector = lazy(() => import("./components/SubagentInspector/SubagentInspector").then((m) => ({ default: m.SubagentInspector })));
 
 // [DF-04] React re-renders from Zustand store: tab state dots, status bar, subagent cards
 export default function App() {
@@ -725,11 +727,13 @@ export default function App() {
 
             {/* Subagent inspector overlay */}
             {activeSubagent && (
-              <SubagentInspector
-                key={activeSubagent.id}
-                subagent={activeSubagent}
-                onClose={() => setInspectedSubagent(null)}
-              />
+              <Suspense fallback={null}>
+                <SubagentInspector
+                  key={activeSubagent.id}
+                  subagent={activeSubagent}
+                  onClose={() => setInspectedSubagent(null)}
+                />
+              </Suspense>
             )}
 
             {/* Empty state — no active terminal visible */}
@@ -758,22 +762,38 @@ export default function App() {
       />
 
       {showLauncher && <SessionLauncher key={launcherGeneration} />}
-      {showResumePicker && <ResumePicker onClose={() => setShowResumePicker(false)} />}
-      {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
-      {showConfigManager && <ConfigManager />}
+      {showResumePicker && (
+        <Suspense fallback={null}>
+          <ResumePicker onClose={() => setShowResumePicker(false)} />
+        </Suspense>
+      )}
+      {showPalette && (
+        <Suspense fallback={null}>
+          <CommandPalette onClose={() => setShowPalette(false)} />
+        </Suspense>
+      )}
+      {showConfigManager && (
+        <Suspense fallback={null}>
+          <ConfigManager />
+        </Suspense>
+      )}
       {changelogRequest && (
-        <ChangelogModal
-          request={changelogRequest}
-          currentVersions={cliVersions}
-          onClose={() => setChangelogRequest(null)}
-        />
+        <Suspense fallback={null}>
+          <ChangelogModal
+            request={changelogRequest}
+            currentVersions={cliVersions}
+            onClose={() => setChangelogRequest(null)}
+          />
+        </Suspense>
       )}
       {showContextViewer && activeSession && (
-        <ContextViewer
-          metadata={activeSession.metadata}
-          subagents={subagentMap.get(activeSession.id) || []}
-          onClose={() => setShowContextViewer(false)}
-        />
+        <Suspense fallback={null}>
+          <ContextViewer
+            metadata={activeSession.metadata}
+            subagents={subagentMap.get(activeSession.id) || []}
+            onClose={() => setShowContextViewer(false)}
+          />
+        </Suspense>
       )}
 
       {/* Worktree prune confirmation */}

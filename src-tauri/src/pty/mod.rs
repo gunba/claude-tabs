@@ -20,6 +20,8 @@ pub mod conpty;
 #[cfg(unix)]
 pub mod unix;
 
+const PTY_READ_BATCH_MAX_BYTES: usize = 256 * 1024;
+
 // ── State ────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -176,8 +178,17 @@ pub async fn pty_read(
     tauri::async_runtime::spawn_blocking(move || {
         let output_rx = session.output_rx.blocking_lock();
 
-        // Block until first chunk arrives (or channel disconnects = EOF).
-        let data = output_rx.recv().map_err(|_| "EOF".to_string())?;
+        // Block until first chunk arrives, then drain any chunks that are already
+        // queued. This cuts IPC round trips during high-throughput output without
+        // adding timers or delaying light output.
+        let mut data = output_rx.recv().map_err(|_| "EOF".to_string())?;
+        while data.len() < PTY_READ_BATCH_MAX_BYTES {
+            match output_rx.try_recv() {
+                Ok(mut next) => data.append(&mut next),
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+            }
+        }
         Ok(Response::new(data))
     })
     .await

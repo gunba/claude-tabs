@@ -9,7 +9,7 @@ import "@xterm/xterm/css/xterm.css";
 import { readText as clipboardReadText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 import { getTerminalTheme } from "../lib/theme";
-import { dlog } from "../lib/debugLog";
+import { dlog, shouldRecordDebugLog } from "../lib/debugLog";
 import { startTraceSpan, traceSync } from "../lib/perfTrace";
 import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
@@ -22,6 +22,17 @@ export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji'
 const XTVERSION_REPLY = "\x1bP>|xterm.js(6.0.0)\x1b\\";
 // [TA-12] SHIFT_ENTER_SEQUENCE: kitty-protocol \x1b[13;2u; getTerminalKeySequenceOverride intercepts Shift+Enter before xterm default
 export const SHIFT_ENTER_SEQUENCE = "\x1b[13;2u";
+const terminalOutputDecoder = new TextDecoder();
+const TERMINAL_WRITE_BATCH_MAX_BYTES = 256 * 1024;
+const TERMINAL_WRITE_BATCH_MAX_STRING_CHARS = 256 * 1024;
+
+type TerminalWriteChunk = string | Uint8Array;
+
+interface TerminalWriteBatch {
+  data: TerminalWriteChunk;
+  chunkCount: number;
+  size: number;
+}
 
 type TerminalKeyEventLike = Pick<KeyboardEvent, "type" | "key" | "code" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">;
 
@@ -72,6 +83,45 @@ function captureBufferState(term: Terminal) {
   };
 }
 
+function takeTerminalWriteBatch(queue: TerminalWriteChunk[]): TerminalWriteBatch | null {
+  const first = queue.shift();
+  if (first === undefined) return null;
+
+  if (typeof first === "string") {
+    const chunks = [first];
+    let size = first.length;
+    while (queue.length > 0 && typeof queue[0] === "string" && size < TERMINAL_WRITE_BATCH_MAX_STRING_CHARS) {
+      const next = queue.shift() as string;
+      chunks.push(next);
+      size += next.length;
+    }
+    return {
+      data: chunks.length === 1 ? first : chunks.join(""),
+      chunkCount: chunks.length,
+      size,
+    };
+  }
+
+  const chunks = [first];
+  let size = first.byteLength;
+  while (queue.length > 0 && queue[0] instanceof Uint8Array && size < TERMINAL_WRITE_BATCH_MAX_BYTES) {
+    const next = queue.shift() as Uint8Array;
+    chunks.push(next);
+    size += next.byteLength;
+  }
+  if (chunks.length === 1) {
+    return { data: first, chunkCount: 1, size };
+  }
+
+  const merged = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { data: merged, chunkCount: chunks.length, size };
+}
+
 function isElementVisible(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
@@ -100,6 +150,8 @@ export function useTerminal({
   cwdRef.current = cwd;
   const [ready, setReady] = useState(false);
   const [termGeneration, setTermGeneration] = useState(0);
+  const writeQueueRef = useRef<TerminalWriteChunk[]>([]);
+  const writeInFlightRef = useRef(false);
 
   const webglRef = useRef<WebglAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
@@ -304,6 +356,8 @@ export function useTerminal({
 
       lifecycleDisposables.push(
         term.onRender((range) => {
+          const sid = sessionIdRef.current;
+          if (!shouldRecordDebugLog("DEBUG", sid)) return;
           dlog("terminal", sessionIdRef.current, "terminal render", "DEBUG", {
             event: "terminal.render",
             data: {
@@ -316,6 +370,8 @@ export function useTerminal({
       );
       lifecycleDisposables.push(
         term.onScroll((viewportY) => {
+          const sid = sessionIdRef.current;
+          if (!shouldRecordDebugLog("DEBUG", sid)) return;
           dlog("terminal", sessionIdRef.current, "terminal scroll", "DEBUG", {
             event: "terminal.scroll",
             data: {
@@ -327,6 +383,8 @@ export function useTerminal({
       );
       lifecycleDisposables.push(
         term.onResize(({ cols, rows }) => {
+          const sid = sessionIdRef.current;
+          if (!shouldRecordDebugLog("DEBUG", sid)) return;
           dlog("terminal", sessionIdRef.current, "xterm resize", "DEBUG", {
             event: "terminal.xterm_resize",
             data: {
@@ -541,6 +599,8 @@ export function useTerminal({
       pasteBlockCleanupRef.current?.();
       pasteBlockCleanupRef.current = null;
       lifecycleDisposables.forEach((d) => d.dispose());
+      writeQueueRef.current = [];
+      writeInFlightRef.current = false;
       webglRef.current?.dispose();
       webglRef.current = null;
       searchAddonRef.current?.dispose();
@@ -630,95 +690,126 @@ export function useTerminal({
     // If term isn't ready yet, openTerminal will be called from the useEffect above
   }, [fit, openTerminal]);
 
-  const write = useCallback((data: string) => {
+  const flushWriteQueue = useCallback(() => {
     const term = termRef.current;
     if (!term) return;
-    const before = captureBufferState(term);
-    const span = startTraceSpan("terminal.write_text_apply", {
+    if (writeInFlightRef.current) return;
+    const queuedChunks = writeQueueRef.current.length;
+    const batch = takeTerminalWriteBatch(writeQueueRef.current);
+    if (!batch) return;
+
+    const sid = sessionIdRef.current;
+    const isBytes = batch.data instanceof Uint8Array;
+    const debug = shouldRecordDebugLog("DEBUG", sid);
+    let decoded: string | null = null;
+    const getText = () => {
+      if (typeof batch.data === "string") return batch.data;
+      if (decoded === null) decoded = terminalOutputDecoder.decode(batch.data);
+      return decoded;
+    };
+    const span = startTraceSpan(isBytes ? "terminal.write_bytes_apply" : "terminal.write_text_apply", {
       module: "terminal",
-      sessionId: sessionIdRef.current,
-      event: "terminal.write_text_perf",
+      sessionId: sid,
+      event: isBytes ? "terminal.write_bytes_perf" : "terminal.write_text_perf",
       emitStart: false,
       warnAboveMs: 16,
-      data: {
-        length: data.length,
-        preview: escapePreview(data),
-      },
+      data: () => ({
+        chunkCount: batch.chunkCount,
+        queueDepth: queuedChunks,
+        ...(isBytes
+          ? { byteLength: batch.size, preview: escapePreview(getText()) }
+          : { length: batch.size, preview: escapePreview(getText()) }),
+      }),
     });
-    dlog("terminal", sessionIdRef.current, "terminal write(text)", "DEBUG", {
-      event: "terminal.write_text",
-      data: {
-        length: data.length,
-        text: data,
-        preview: escapePreview(data),
-        before,
-      },
-    });
+    if (debug) {
+      const text = getText();
+      dlog("terminal", sid, isBytes ? "terminal write(bytes) batch" : "terminal write(text) batch", "DEBUG", {
+        event: isBytes ? "terminal.write_bytes_batch" : "terminal.write_text_batch",
+        data: {
+          chunkCount: batch.chunkCount,
+          queueDepth: queuedChunks,
+          ...(isBytes
+            ? {
+                byteLength: batch.size,
+                containsEscape: text.includes("\x1b"),
+                containsCR: text.includes("\r"),
+                containsLF: text.includes("\n"),
+              }
+            : { length: batch.size }),
+          text,
+          preview: escapePreview(text),
+        },
+      });
+    }
+    writeInFlightRef.current = true;
     try {
-      term.write(data, () => {
-        span.end({
+      term.write(batch.data, () => {
+        if (termRef.current !== term) return;
+        span.end(() => ({
           after: captureBufferState(term),
-        });
-        dlog("terminal", sessionIdRef.current, "terminal write(text) applied", "DEBUG", {
-          event: "terminal.write_text_applied",
-          data: {
-            length: data.length,
-            after: captureBufferState(term),
-          },
-        });
+        }));
+        if (debug) {
+          dlog("terminal", sid, isBytes ? "terminal write(bytes) applied" : "terminal write(text) applied", "DEBUG", {
+            event: isBytes ? "terminal.write_bytes_applied" : "terminal.write_text_applied",
+            data: {
+              chunkCount: batch.chunkCount,
+              ...(isBytes ? { byteLength: batch.size } : { length: batch.size }),
+              after: captureBufferState(term),
+            },
+          });
+        }
+        writeInFlightRef.current = false;
+        flushWriteQueue();
       });
     } catch (err) {
       span.fail(err);
+      writeInFlightRef.current = false;
+      dlog("terminal", sid, `term.write error: ${err}`, "ERR");
+      flushWriteQueue();
     }
   }, []);
 
+  const write = useCallback((data: string) => {
+    if (!termRef.current) return;
+    const sid = sessionIdRef.current;
+    if (shouldRecordDebugLog("DEBUG", sid)) {
+      dlog("terminal", sid, "terminal write(text) queued", "DEBUG", {
+        event: "terminal.write_text_queued",
+        data: {
+          length: data.length,
+          preview: escapePreview(data),
+          queueDepth: writeQueueRef.current.length,
+        },
+      });
+    }
+    writeQueueRef.current.push(data);
+    flushWriteQueue();
+  }, [flushWriteQueue]);
+
   // [PT-16] [DF-03] Write raw bytes to terminal.
   const writeBytes = useCallback((data: Uint8Array) => {
-    const term = termRef.current;
-    if (!term) return;
-    const text = new TextDecoder().decode(data);
-    const before = captureBufferState(term);
-    const span = startTraceSpan("terminal.write_bytes_apply", {
-      module: "terminal",
-      sessionId: sessionIdRef.current,
-      event: "terminal.write_bytes_perf",
-      emitStart: false,
-      warnAboveMs: 16,
-      data: {
-        byteLength: data.byteLength,
-        preview: escapePreview(text),
-      },
-    });
-    dlog("terminal", sessionIdRef.current, "terminal write(bytes)", "DEBUG", {
-      event: "terminal.write_bytes",
-      data: {
-        byteLength: data.byteLength,
-        containsEscape: text.includes("\x1b"),
-        containsCR: text.includes("\r"),
-        containsLF: text.includes("\n"),
-        text,
-        preview: escapePreview(text),
-        before,
-      },
-    });
-    try {
-      term.write(data, () => {
-        span.end({
-          after: captureBufferState(term),
-        });
-        dlog("terminal", sessionIdRef.current, "terminal write(bytes) applied", "DEBUG", {
-          event: "terminal.write_bytes_applied",
-          data: {
-            byteLength: data.byteLength,
-            after: captureBufferState(term),
-          },
-        });
+    if (!termRef.current) return;
+    const sid = sessionIdRef.current;
+    if (shouldRecordDebugLog("DEBUG", sid)) {
+      let text: string | null = null;
+      const getText = () => text ??= terminalOutputDecoder.decode(data);
+      const decoded = getText();
+      dlog("terminal", sid, "terminal write(bytes) queued", "DEBUG", {
+        event: "terminal.write_bytes_queued",
+        data: {
+          byteLength: data.byteLength,
+          containsEscape: decoded.includes("\x1b"),
+          containsCR: decoded.includes("\r"),
+          containsLF: decoded.includes("\n"),
+          text: decoded,
+          preview: escapePreview(decoded),
+          queueDepth: writeQueueRef.current.length,
+        },
       });
-    } catch (err) {
-      span.fail(err);
-      dlog("terminal", sessionIdRef.current, `term.write error: ${err}`, "ERR");
     }
-  }, []);
+    writeQueueRef.current.push(data);
+    flushWriteQueue();
+  }, [flushWriteQueue]);
 
   const clear = useCallback(() => {
     if (termRef.current) {

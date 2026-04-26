@@ -114,23 +114,30 @@ function toSafeValue(
   return String(value);
 }
 
-function shouldCapture(level: LogLevel): boolean {
+export function shouldRecordDebugLog(level: LogLevel, sessionId: string | null): boolean {
   if (!observabilityInfo.observabilityEnabled) return false;
-  if (level === "DEBUG" && !debugCaptureResolver && !debugCaptureEnabled) return false;
+  if (level === "DEBUG") {
+    if (debugCaptureResolver) return debugCaptureResolver(sessionId);
+    if (!debugCaptureEnabled) return false;
+  }
   return true;
 }
 
-function forwardToConsole(entry: DebugLogEntry): void {
-  if (entry.level === "DEBUG") {
+function forwardToConsoleRaw(level: LogLevel, module: string, message: string): void {
+  if (level === "DEBUG") {
     return;
   }
-  if (!observabilityInfo.debugBuild && entry.level !== "WARN" && entry.level !== "ERR") {
+  if (!observabilityInfo.debugBuild && level !== "WARN" && level !== "ERR") {
     return;
   }
-  const fmt = `[${entry.module}] ${entry.message}`;
-  if (entry.level === "WARN") console.warn(fmt);
-  else if (entry.level === "ERR") console.error(fmt);
+  const fmt = `[${module}] ${message}`;
+  if (level === "WARN") console.warn(fmt);
+  else if (level === "ERR") console.error(fmt);
   else console.log(fmt);
+}
+
+function forwardToConsole(entry: DebugLogEntry): void {
+  forwardToConsoleRaw(entry.level, entry.module, entry.message);
 }
 
 function startFlushTimer(): void {
@@ -207,11 +214,7 @@ function trimTotalBuffers(): void {
 }
 
 function pushEntry(entry: DebugLogEntry, persist: boolean): void {
-  if (entry.level === "DEBUG" && debugCaptureResolver && !debugCaptureResolver(entry.sessionId)) {
-    return;
-  }
-  if (!shouldCapture(entry.level)) {
-    if (entry.level === "DEBUG") return;
+  if (!shouldRecordDebugLog(entry.level, entry.sessionId)) {
     forwardToConsole(entry);
     return;
   }
@@ -244,6 +247,10 @@ export function dlog(
   level: LogLevel = "LOG",
   meta?: DebugLogMeta,
 ): void {
+  if (!shouldRecordDebugLog(level, sessionId)) {
+    forwardToConsoleRaw(level, module, truncateString(message, MAX_MESSAGE_LENGTH));
+    return;
+  }
   const entry = normalizeEntry({
     level,
     module,

@@ -6,9 +6,10 @@
 // [DP-15] Unified perf.span frontend tracing: trace/traceAsync/traceSync/manual spans
 // feed the same structured observability stream as the rest of the debug log.
 
-import { dlog, type LogLevel } from "./debugLog";
+import { dlog, shouldRecordDebugLog, type LogLevel } from "./debugLog";
 
 type TraceStatus = "mark" | "start" | "done" | "fail";
+type TraceData = unknown | (() => unknown);
 
 interface TraceEntry {
   ts: number;      // ms since page load
@@ -24,7 +25,7 @@ interface TraceEntry {
 export interface TraceOptions {
   module?: string;
   sessionId?: string | null;
-  data?: unknown;
+  data?: TraceData;
   event?: string;
   warnAboveMs?: number;
   persist?: boolean;
@@ -59,6 +60,10 @@ function messageFor(name: string, status: TraceStatus): string {
   return `${name} [${status}]`;
 }
 
+function resolveTraceData(value: TraceData | undefined): unknown {
+  return typeof value === "function" ? (value as () => unknown)() : value;
+}
+
 function recordTrace(
   name: string,
   status: TraceStatus,
@@ -66,16 +71,24 @@ function recordTrace(
   durationMs?: number,
   extraData?: unknown,
   error?: unknown,
-): TraceEntry {
+): TraceEntry | null {
+  const module = options?.module ?? "perf";
+  const sessionId = options?.sessionId ?? null;
+  const level = traceLevel(status, durationMs, options?.warnAboveMs);
+  if (!shouldRecordDebugLog(level, sessionId)) {
+    return null;
+  }
+  const spanData = resolveTraceData(options?.data);
+  const resolvedExtraData = resolveTraceData(extraData);
   const entry: TraceEntry = {
     ts: sinceLoadMs(),
     event: messageFor(name, status),
     name,
     status,
     durationMs,
-    module: options?.module ?? "perf",
-    sessionId: options?.sessionId ?? null,
-    data: options?.data,
+    module,
+    sessionId,
+    data: spanData,
   };
   traces.push(entry);
   if (traces.length > MAX_TRACES) {
@@ -88,15 +101,15 @@ function recordTrace(
     sinceLoadMs: entry.ts,
   };
   if (typeof durationMs === "number") payload.durationMs = durationMs;
-  if (options?.data !== undefined) payload.spanData = options.data;
-  if (extraData !== undefined) payload.extraData = extraData;
+  if (spanData !== undefined) payload.spanData = spanData;
+  if (resolvedExtraData !== undefined) payload.extraData = resolvedExtraData;
   if (error !== undefined) payload.error = error;
 
   dlog(
     entry.module,
     entry.sessionId,
     entry.event,
-    traceLevel(status, durationMs, options?.warnAboveMs),
+    level,
     {
       event: options?.event ?? "perf.span",
       persist: options?.persist,
