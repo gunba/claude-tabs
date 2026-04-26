@@ -1,3 +1,4 @@
+// [DF-03] [PT-16] Append-only chunk queue with O(1) head pointer + adaptive compaction; merges adjacent same-type chunks (text or bytes) into batches up to 256KB / 256K chars for a single term.write call.
 export type TerminalWriteChunk = string | Uint8Array;
 
 export interface TerminalWriteBatch {

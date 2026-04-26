@@ -17,4 +17,4 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 - [PT-07 L6] OS PID registered in global cleanup registry (ptyProcess.ts) immediately on PTY spawn; unregistered on explicit kill. Dual-layer: frontend fires kill_process_tree on beforeunload, Rust ActivePids state kills on RunEvent::Exit as backstop.
 - [PT-04 L112] Kill button (pty.kill()) always fires exitCallback exactly once via exitFired guard -- whether kill or natural exit completes first.
 - [PT-10 L157] Parallel exit waiter: fire-and-forget invoke('pty_exitstatus') runs alongside read loop. On Windows ConPTY, read pipe may hang after Ctrl+C; exitstatus uses WaitForSingleObject which reliably returns. exitFired guard ensures exactly one callback fires.
-- [PT-18 L244] Shutdown drain: pty_drain_output command empties the channel (500ms deadline, 10ms intervals) before session destroy, preventing the background reader thread from blocking on a full channel.
+- [PT-18 L248] Shutdown drain: pty_drain_output command empties the channel (500ms deadline, 10ms intervals) before session destroy, preventing the background reader thread from blocking on a full channel.

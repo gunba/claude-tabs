@@ -28,6 +28,7 @@ interface TerminalPanelProps {
   visible: boolean;
 }
 
+// [TA-13] React.memo with terminalPanelPropsEqual gates rerenders on the subset of session fields the panel actually depends on; tap-event-driven metadata churn no longer rerenders the heavy terminal subtree.
 function terminalPanelPropsEqual(prev: TerminalPanelProps, next: TerminalPanelProps): boolean {
   return prev.visible === next.visible
     && prev.session.id === next.session.id

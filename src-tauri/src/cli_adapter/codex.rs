@@ -311,6 +311,7 @@ fn quote_toml_value(v: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::types::CliKind;
 
     fn cfg() -> SessionConfig {
         SessionConfig {
@@ -345,7 +346,6 @@ mod tests {
     /// shape. Locks the permission-mode mapping table.
     #[test]
     fn build_spawn_default_mode() {
-        let adapter = CodexAdapter;
         // detect() will fail in CI without codex on PATH, so call
         // build_spawn-equivalent assertions on the args by replicating
         // the logic minus the program path.

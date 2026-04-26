@@ -107,6 +107,7 @@ fn emit_tap_batch(
 /// Start a per-session TCP listener. Returns the OS-assigned port.
 /// The background thread accepts one connection at a time, reads JSONL lines,
 /// and emits single lines or newline-delimited batches as a session-scoped Tauri event.
+// [IN-33] Batched JSONL emit (max 128 lines / 256KB per Tauri event) + blocking accept woken via wake_tap_listener TcpStream::connect on stop.
 #[tauri::command]
 pub fn start_tap_server(
     app: AppHandle,

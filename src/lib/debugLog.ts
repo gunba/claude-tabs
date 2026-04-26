@@ -114,6 +114,7 @@ function toSafeValue(
   return String(value);
 }
 
+// [DR-09] Cheap predicate used by call sites to skip building expensive log payloads when no consumer would record them.
 export function shouldRecordDebugLog(level: LogLevel, sessionId: string | null): boolean {
   if (!observabilityInfo.observabilityEnabled) return false;
   if (level === "DEBUG") {

@@ -64,6 +64,7 @@
     "src-lib-tapsubagenttracker-ts-78a603c5.md",
     "src-lib-terminalpathlinks-ts-df9c4a3d.md",
     "src-lib-terminalregistry-ts-80c51fbb.md",
+    "src-lib-terminalwritequeue-ts-a092a42d.md",
     "src-lib-theme-ts-a181114c.md",
     "src-lib-tuiscrollsearch-ts-bbc05229.md",
     "src-store-activity-ts-13b01eb4.md",
@@ -94,6 +95,7 @@
     "src-tauri-src-pty-mod-rs-dbeabb9a.md",
     "src-tauri-src-pty-unix-rs-b4f804b3.md",
     "src-tauri-src-session-types-rs-920df7b3.md",
+    "src-tauri-src-tap-server-rs-dc90a71d.md",
     "src-types-session-ts-b2c31cff.md",
     "src-types-tapevents-ts-79312c4c.md"
   ]

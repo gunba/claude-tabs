@@ -9,7 +9,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## PTY Output
 
-- [PT-15 L255] Background reader thread per session: OS thread reads ConPTY pipe (8 KiB buffer) into bounded sync_channel(64). Decouples blocking pipe reads from IPC, enabling timeout-based reads in the pty_read command.
+- [PT-15 L262] Background reader thread per session: OS thread reads ConPTY pipe (8 KiB buffer) into bounded sync_channel(64). Decouples blocking pipe reads from IPC, enabling timeout-based reads in the pty_read command.
 
 ## PTY Spawn
 

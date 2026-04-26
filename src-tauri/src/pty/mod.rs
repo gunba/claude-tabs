@@ -171,9 +171,7 @@ pub async fn pty_read(
     tauri::async_runtime::spawn_blocking(move || {
         let output_rx = session.output_rx.blocking_lock();
 
-        // Block until first chunk arrives, then drain any chunks that are already
-        // queued. This cuts IPC round trips during high-throughput output without
-        // adding timers or delaying light output.
+        // [PT-27] Drain queued chunks after the blocking recv to cut IPC round-trips during high-throughput output (try_recv until Empty/Disconnected; bound: PTY_READ_BATCH_MAX_BYTES=256KB).
         let mut data = output_rx.recv().map_err(|_| "EOF".to_string())?;
         while data.len() < PTY_READ_BATCH_MAX_BYTES {
             match output_rx.try_recv() {

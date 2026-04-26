@@ -120,7 +120,7 @@ fn anthropic_efforts() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::types::PermissionMode;
+    use crate::session::types::{CliKind, PermissionMode};
 
     fn sample_cfg() -> SessionConfig {
         SessionConfig {

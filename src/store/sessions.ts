@@ -89,6 +89,7 @@ export interface ProcessHealthEntry {
   tree?: ProcessTreeMetrics;
 }
 
+// [AS-04] Change-detection guards: store actions return the same state ref when patches are no-ops, letting Zustand subscribers skip re-renders.
 function patchHasChanges<T extends object>(current: T, patch: Partial<T>): boolean {
   return (Object.keys(patch) as Array<keyof T>).some((key) => !Object.is(current[key], patch[key]));
 }
