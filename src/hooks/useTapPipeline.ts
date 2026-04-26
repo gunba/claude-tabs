@@ -8,7 +8,7 @@ import { tapEventBus } from "../lib/tapEventBus";
 import { dlog } from "../lib/debugLog";
 import { useSettingsStore } from "../store/settings";
 import { useSessionStore } from "../store/sessions";
-import type { TapEntry } from "../types/tapEvents";
+import type { TapEntry, TapEvent } from "../types/tapEvents";
 import { annotateTapEntry, getTapCategoryLabel, type RecordedTapEntry } from "../lib/tapCatalog";
 import { useRuntimeStore } from "../store/runtime";
 
@@ -136,32 +136,43 @@ export function useTapPipeline({
     const sid = sessionId;
 
     const unlisten = listen<string>(`tap-entry-${sid}`, (event) => {
-      const line = event.payload;
-      try {
-        const entry = JSON.parse(line) as TapEntry;
+      const classifiedEvents: TapEvent[] = [];
 
-        // 1. Classify -> dispatch (always, drives state)
-        const classified = classifyTapEntry(entry);
-        if (classified && sessionIdRef.current) {
-          tapEventBus.dispatch(sessionIdRef.current, classified);
-        }
+      for (const rawLine of event.payload.split("\n")) {
+        const line = rawLine.trim();
+        if (!line) continue;
 
-        // 2. Buffer for disk (only if recording enabled)
-        if (recordingEnabled) {
-          const cat = entry.cat;
-          const isCoreCat = cat === "parse" || cat === "stringify";
-          if (isCoreCat || activeCats.current.has(cat)) {
-            pendingRef.current.push(annotateTapEntry(entry));
-            if (pendingRef.current.length >= FLUSH_THRESHOLD) {
-              flush();
+        try {
+          const entry = JSON.parse(line) as TapEntry;
+
+          // 1. Classify -> dispatch (always, drives state)
+          const classified = classifyTapEntry(entry);
+          if (classified) {
+            classifiedEvents.push(classified);
+          }
+
+          // 2. Buffer for disk (only if recording enabled)
+          if (recordingEnabled) {
+            const cat = entry.cat;
+            const isCoreCat = cat === "parse" || cat === "stringify";
+            if (isCoreCat || activeCats.current.has(cat)) {
+              pendingRef.current.push(annotateTapEntry(entry));
             }
           }
+        } catch {
+          dlog("tap", sid, "invalid TAP JSON line dropped", "WARN", {
+            event: "tap.invalid_json",
+            data: { preview: line.slice(0, 240) },
+          });
         }
-      } catch {
-        dlog("tap", sid, "invalid TAP JSON line dropped", "WARN", {
-          event: "tap.invalid_json",
-          data: { preview: line.slice(0, 240) },
-        });
+      }
+
+      if (classifiedEvents.length > 0 && sessionIdRef.current) {
+        tapEventBus.dispatchBatch(sessionIdRef.current, classifiedEvents);
+      }
+
+      if (pendingRef.current.length >= FLUSH_THRESHOLD) {
+        flush();
       }
     });
 

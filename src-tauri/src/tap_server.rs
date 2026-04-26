@@ -1,14 +1,23 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
-use std::net::TcpListener;
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::observability::record_backend_event;
 
+const TAP_READER_BUFFER_CAPACITY: usize = 64 * 1024;
+const TAP_EMIT_BATCH_MAX_LINES: usize = 128;
+const TAP_EMIT_BATCH_MAX_BYTES: usize = 256 * 1024;
+
+struct TapServerControl {
+    should_stop: bool,
+    port: u16,
+    client: Option<TcpStream>,
+}
+
 pub struct TapServerState {
-    active: HashMap<String, bool>, // session_id -> should_stop
+    active: HashMap<String, TapServerControl>,
 }
 
 impl TapServerState {
@@ -19,16 +28,85 @@ impl TapServerState {
     }
 
     /// Set stop flag for all active servers (used on app exit).
-    pub fn stop_all(&mut self) {
-        for v in self.active.values_mut() {
-            *v = true;
+    pub fn stop_all(&mut self) -> Vec<u16> {
+        let mut ports = Vec::with_capacity(self.active.len());
+        for control in self.active.values_mut() {
+            control.should_stop = true;
+            if let Some(client) = &control.client {
+                client.shutdown(Shutdown::Both).ok();
+            }
+            ports.push(control.port);
+        }
+        ports
+    }
+
+    fn stop_session(&mut self, session_id: &str) -> Option<u16> {
+        let control = self.active.get_mut(session_id)?;
+        control.should_stop = true;
+        if let Some(client) = &control.client {
+            client.shutdown(Shutdown::Both).ok();
+        }
+        Some(control.port)
+    }
+}
+
+pub(crate) fn wake_tap_listener(port: u16) {
+    TcpStream::connect(("127.0.0.1", port)).ok();
+}
+
+fn should_stop(state: &Arc<Mutex<TapServerState>>, session_id: &str) -> bool {
+    match state.lock() {
+        Ok(s) => s
+            .active
+            .get(session_id)
+            .map(|control| control.should_stop)
+            .unwrap_or(true),
+        Err(_) => true,
+    }
+}
+
+fn set_active_client(
+    state: &Arc<Mutex<TapServerState>>,
+    session_id: &str,
+    client: Option<TcpStream>,
+) {
+    if let Ok(mut s) = state.lock() {
+        if let Some(control) = s.active.get_mut(session_id) {
+            control.client = client;
         }
     }
 }
 
+fn push_tap_line(batch: &mut Vec<String>, batch_bytes: &mut usize, line: &str) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    *batch_bytes += trimmed.len();
+    batch.push(trimmed.to_string());
+}
+
+fn emit_tap_batch(
+    app: &AppHandle,
+    event_name: &str,
+    batch: &mut Vec<String>,
+    batch_bytes: &mut usize,
+) {
+    if batch.is_empty() {
+        return;
+    }
+    if batch.len() == 1 {
+        app.emit(event_name, batch[0].clone()).ok();
+    } else {
+        app.emit(event_name, batch.join("\n")).ok();
+    }
+    batch.clear();
+    *batch_bytes = 0;
+}
+
 /// Start a per-session TCP listener. Returns the OS-assigned port.
 /// The background thread accepts one connection at a time, reads JSONL lines,
-/// and emits each line as a session-scoped Tauri event.
+/// and emits single lines or newline-delimited batches as a session-scoped Tauri event.
 #[tauri::command]
 pub fn start_tap_server(
     app: AppHandle,
@@ -41,16 +119,19 @@ pub fn start_tap_server(
         .map_err(|e| format!("local_addr failed: {e}"))?
         .port();
 
-    listener
-        .set_nonblocking(true)
-        .map_err(|e| format!("set_nonblocking failed: {e}"))?;
-
     let sid = session_id.clone();
     let state = tap_state.inner().clone();
 
     // Mark as active
     if let Ok(mut s) = state.lock() {
-        s.active.insert(sid.clone(), false);
+        s.active.insert(
+            sid.clone(),
+            TapServerControl {
+                should_stop: false,
+                port,
+                client: None,
+            },
+        );
     }
 
     record_backend_event(
@@ -70,16 +151,16 @@ pub fn start_tap_server(
     std::thread::spawn(move || {
         // Accept loop — one connection at a time, re-accept on disconnect
         loop {
-            // Check stop flag
-            if let Ok(s) = state.lock() {
-                if s.active.get(&sid).copied().unwrap_or(true) {
-                    break;
-                }
+            if should_stop(&state, &sid) {
+                break;
             }
 
-            // Non-blocking accept
             match listener.accept() {
                 Ok((stream, addr)) => {
+                    if should_stop(&state, &sid) {
+                        break;
+                    }
+
                     record_backend_event(
                         &app_for_thread,
                         "LOG",
@@ -89,53 +170,90 @@ pub fn start_tap_server(
                         "Tap client connected",
                         serde_json::json!({ "remoteAddr": addr.to_string() }),
                     );
-                    // Set blocking with read timeout for the data stream
-                    stream.set_nonblocking(false).ok();
-                    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+                    set_active_client(&state, &sid, stream.try_clone().ok());
 
-                    let mut reader = BufReader::new(stream);
+                    let mut reader = BufReader::with_capacity(TAP_READER_BUFFER_CAPACITY, stream);
                     let mut line = String::new();
+                    let mut batch = Vec::with_capacity(TAP_EMIT_BATCH_MAX_LINES);
+                    let mut batch_bytes = 0usize;
 
-                    // Read loop — process JSONL lines until EOF or stop
+                    // Read loop — process JSONL lines until EOF or stop.
+                    // Drain lines already in BufReader's memory into one UI event.
                     loop {
-                        if let Ok(s) = state.lock() {
-                            if s.active.get(&sid).copied().unwrap_or(true) {
-                                break;
-                            }
+                        if should_stop(&state, &sid) {
+                            break;
                         }
 
                         match reader.read_line(&mut line) {
                             Ok(0) => break, // EOF — client disconnected
                             Ok(_) => {
-                                let trimmed = line.trim();
-                                if !trimmed.is_empty() {
-                                    app.emit(&event_name, trimmed).ok();
+                                push_tap_line(&mut batch, &mut batch_bytes, &line);
+                                line.clear();
+
+                                let mut read_failed = false;
+                                while batch.len() < TAP_EMIT_BATCH_MAX_LINES
+                                    && batch_bytes < TAP_EMIT_BATCH_MAX_BYTES
+                                    && reader.buffer().contains(&b'\n')
+                                {
+                                    match reader.read_line(&mut line) {
+                                        Ok(0) => break,
+                                        Ok(_) => {
+                                            push_tap_line(&mut batch, &mut batch_bytes, &line);
+                                            line.clear();
+                                        }
+                                        Err(err) => {
+                                            if !should_stop(&state, &sid) {
+                                                record_backend_event(
+                                                    &app_for_thread,
+                                                    "WARN",
+                                                    "tap-server",
+                                                    Some(&sid_for_thread),
+                                                    "tap.server.read_error",
+                                                    "Tap client read error",
+                                                    serde_json::json!({ "error": err.to_string() }),
+                                                );
+                                            }
+                                            line.clear();
+                                            read_failed = true;
+                                            break;
+                                        }
+                                    }
                                 }
-                                line.clear();
-                            }
-                            Err(ref e)
-                                if e.kind() == std::io::ErrorKind::WouldBlock
-                                    || e.kind() == std::io::ErrorKind::TimedOut =>
-                            {
-                                // Read timeout — check stop flag and continue
-                                line.clear();
-                                continue;
+                                if read_failed {
+                                    break;
+                                }
+
+                                emit_tap_batch(
+                                    &app_for_thread,
+                                    &event_name,
+                                    &mut batch,
+                                    &mut batch_bytes,
+                                );
                             }
                             Err(err) => {
-                                record_backend_event(
-                                    &app_for_thread,
-                                    "WARN",
-                                    "tap-server",
-                                    Some(&sid_for_thread),
-                                    "tap.server.read_error",
-                                    "Tap client read error",
-                                    serde_json::json!({ "error": err.to_string() }),
-                                );
+                                if !should_stop(&state, &sid) {
+                                    record_backend_event(
+                                        &app_for_thread,
+                                        "WARN",
+                                        "tap-server",
+                                        Some(&sid_for_thread),
+                                        "tap.server.read_error",
+                                        "Tap client read error",
+                                        serde_json::json!({ "error": err.to_string() }),
+                                    );
+                                }
                                 break; // Connection error — re-accept
                             }
                         }
                     }
 
+                    emit_tap_batch(
+                        &app_for_thread,
+                        &event_name,
+                        &mut batch,
+                        &mut batch_bytes,
+                    );
+                    set_active_client(&state, &sid, None);
                     record_backend_event(
                         &app_for_thread,
                         "LOG",
@@ -146,11 +264,7 @@ pub fn start_tap_server(
                         serde_json::json!({}),
                     );
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    // No connection yet — sleep and retry
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(_) => {
+                Err(err) => {
                     record_backend_event(
                         &app_for_thread,
                         "ERR",
@@ -158,7 +272,7 @@ pub fn start_tap_server(
                         Some(&sid_for_thread),
                         "tap.server.accept_error",
                         "Tap listener accept failed",
-                        serde_json::json!({}),
+                        serde_json::json!({ "error": err.to_string() }),
                     );
                     // Listener error — exit thread
                     break;
@@ -191,10 +305,12 @@ pub fn stop_tap_server(
     session_id: String,
     tap_state: tauri::State<'_, Arc<Mutex<TapServerState>>>,
 ) {
-    if let Ok(mut s) = tap_state.lock() {
-        if let Some(flag) = s.active.get_mut(&session_id) {
-            *flag = true;
-        }
+    let port = tap_state
+        .lock()
+        .ok()
+        .and_then(|mut s| s.stop_session(&session_id));
+    if let Some(port) = port {
+        wake_tap_listener(port);
     }
     record_backend_event(
         &app,

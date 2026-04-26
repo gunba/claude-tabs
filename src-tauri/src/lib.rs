@@ -328,8 +328,12 @@ pub fn run() {
                 }
                 // Stop all TCP tap server threads
                 let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
-                if let Ok(mut s) = tap_state.lock() {
-                    s.stop_all();
+                let tap_ports = tap_state
+                    .lock()
+                    .map(|mut s| s.stop_all())
+                    .unwrap_or_default();
+                for port in tap_ports {
+                    tap_server::wake_tap_listener(port);
                 }
                 // [RC-11] Kill all active PTY process trees to prevent orphaned CLI processes
                 let active = app_handle.state::<ActivePids>();
