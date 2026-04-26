@@ -9,6 +9,12 @@ interface PerProcessPayload {
   childrenCpu: number;
   childrenMem: number;
   childCount: number;
+  topChildren: Array<{
+    pid: number;
+    name: string;
+    command: string;
+    mem: number;
+  }>;
 }
 
 interface OverallPayload {
@@ -35,6 +41,12 @@ export function useProcessMetrics(): void {
         childrenCpu: p.childrenCpu,
         childrenMemBytes: p.childrenMem,
         childCount: p.childCount,
+        topChildren: (p.topChildren ?? []).map((child) => ({
+          pid: child.pid,
+          name: child.name,
+          command: child.command,
+          memBytes: child.mem,
+        })),
       });
     });
 

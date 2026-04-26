@@ -229,11 +229,17 @@ function SessionStatus({
           const t = health.tree;
           const totalCpu = t.parentCpu + t.childrenCpu;
           const totalMem = t.parentMemBytes + t.childrenMemBytes;
+          const topChildren = t.topChildren?.length
+            ? "\nTop children:\n" + t.topChildren
+                .map((child) => `${formatBytes(child.memBytes)} ${child.command || child.name || child.pid}`)
+                .join("\n")
+            : "";
           const tip =
             `CPU: ${formatCpu(totalCpu)} ` +
             `(parent ${formatCpu(t.parentCpu)} · ${t.childCount} child${t.childCount === 1 ? "" : "ren"} ${formatCpu(t.childrenCpu)})\n` +
             `Memory: ${formatBytes(totalMem)} ` +
-            `(parent ${formatBytes(t.parentMemBytes)} · children ${formatBytes(t.childrenMemBytes)})`;
+            `(parent ${formatBytes(t.parentMemBytes)} · children ${formatBytes(t.childrenMemBytes)})` +
+            topChildren;
           return (
             <>
               <span className="status-item status-cpu" title={tip} style={{ color: cpuColor(totalCpu) }}>

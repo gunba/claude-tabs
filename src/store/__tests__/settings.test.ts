@@ -29,7 +29,7 @@ if (!globalThis.crypto?.randomUUID) {
   });
 }
 
-import { useSettingsStore } from "../settings";
+import { DEFAULT_RECORDING_CONFIG, useSettingsStore } from "../settings";
 
 function resetStore() {
   useSettingsStore.setState({
@@ -55,6 +55,18 @@ describe("recordCommandUsage", () => {
     recordCommandUsage("/build");
     recordCommandUsage("/build");
     expect(useSettingsStore.getState().commandUsage["/build"]).toBe(3);
+  });
+});
+
+describe("recording defaults", () => {
+  it("starts debug observability in quiet mode", () => {
+    expect(DEFAULT_RECORDING_CONFIG.taps.enabled).toBe(false);
+    expect(DEFAULT_RECORDING_CONFIG.traffic.enabled).toBe(false);
+    expect(DEFAULT_RECORDING_CONFIG.debugCapture).toBe(false);
+    expect(DEFAULT_RECORDING_CONFIG.taps.categories.parse).toBe(true);
+    expect(DEFAULT_RECORDING_CONFIG.taps.categories.stringify).toBe(true);
+    expect(DEFAULT_RECORDING_CONFIG.taps.categories.envproxy).toBe(false);
+    expect(DEFAULT_RECORDING_CONFIG.taps.categories.console).toBe(false);
   });
 });
 

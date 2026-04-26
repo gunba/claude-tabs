@@ -32,14 +32,14 @@ export const DEFAULT_NOISY_EVENT_KINDS: string[] = [
 // [CI-06] debugCapture field controls DEBUG-level capture; v8 migration backfills true for older states.
 export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
   taps: {
-    enabled: true,
+    enabled: false,
     categories: {
       parse: true, stringify: true,
-      console: true, fs: true, spawn: true, fetch: true,
-      exit: true, timer: true, stdout: false, stderr: false,
-      require: true, bun: true,
+      console: false, fs: false, spawn: false, fetch: false,
+      exit: false, timer: false, stdout: false, stderr: false,
+      require: false, bun: false,
       websocket: false, net: false, stream: false,
-      fspromises: true, bunfile: true, abort: true,
+      fspromises: false, bunfile: false, abort: false,
       fswatch: false, textdecoder: false, events: false, envproxy: false,
       "codex-session": true,
       "codex-turn-context": true,
@@ -53,11 +53,17 @@ export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
       "system-prompt": true,
     },
   },
-  traffic: { enabled: true },
-  debugCapture: true,
+  traffic: { enabled: false },
+  debugCapture: false,
   maxAgeHours: 72,
   noisyEventKinds: DEFAULT_NOISY_EVENT_KINDS,
 };
+
+const HIGH_VOLUME_TAP_CATEGORIES = [
+  "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr",
+  "require", "bun", "websocket", "net", "stream", "fspromises", "bunfile",
+  "abort", "fswatch", "textdecoder", "events", "envproxy",
+];
 
 function cloneRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG): RecordingConfig {
   return {
@@ -70,6 +76,17 @@ function cloneRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG
     maxAgeHours: config.maxAgeHours,
     noisyEventKinds: [...config.noisyEventKinds],
   };
+}
+
+function quietRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG): RecordingConfig {
+  const cloned = cloneRecordingConfig(config);
+  for (const category of HIGH_VOLUME_TAP_CATEGORIES) {
+    cloned.taps.categories[category] = false;
+  }
+  cloned.taps.enabled = false;
+  cloned.traffic.enabled = false;
+  cloned.debugCapture = false;
+  return cloned;
 }
 
 function mergeRecordingConfig(base: RecordingConfig, patch: Partial<RecordingConfig>): RecordingConfig {
@@ -814,7 +831,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 20,
+      version: 21,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -962,6 +979,14 @@ export const useSettingsStore = create<SettingsState>()(
           };
         } else if (!state.lastOpenedCliVersions) {
           state.lastOpenedCliVersions = { claude: null, codex: null };
+        }
+        if (version < 21) {
+          const byCli = state.recordingConfigsByCli as Partial<RecordingConfigsByCli> | undefined;
+          state.recordingConfigsByCli = {
+            claude: quietRecordingConfig(byCli?.claude ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG),
+            codex: quietRecordingConfig(byCli?.codex ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG),
+          };
+          state.recordingConfig = (state.recordingConfigsByCli as RecordingConfigsByCli).claude;
         }
         return state;
       },

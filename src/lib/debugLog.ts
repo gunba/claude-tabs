@@ -121,6 +121,9 @@ function shouldCapture(level: LogLevel): boolean {
 }
 
 function forwardToConsole(entry: DebugLogEntry): void {
+  if (entry.level === "DEBUG") {
+    return;
+  }
   if (!observabilityInfo.debugBuild && entry.level !== "WARN" && entry.level !== "ERR") {
     return;
   }

@@ -72,6 +72,12 @@ export interface ProcessTreeMetrics {
   childrenCpu: number;     // 0..100, normalized by core count
   childrenMemBytes: number;
   childCount: number;
+  topChildren: Array<{
+    pid: number;
+    name: string;
+    command: string;
+    memBytes: number;
+  }>;
 }
 
 export interface ProcessHealthEntry {

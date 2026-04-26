@@ -65,13 +65,13 @@ describe("debugLog", () => {
     expect(getDebugLog()[0].sessionId).toBeNull();
   });
 
-  it("forwards LOG and DEBUG to console.log", () => {
+  it("forwards LOG to console.log without mirroring DEBUG noise", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     dlog("pty", null, "hello");
     dlog("pty", null, "verbose", "DEBUG");
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith("[pty] hello");
-    expect(spy).toHaveBeenCalledWith("[pty] verbose");
+    expect(getDebugLog().map((entry) => entry.message)).toEqual(["hello", "verbose"]);
   });
 
   it("forwards WARN to console.warn", () => {
