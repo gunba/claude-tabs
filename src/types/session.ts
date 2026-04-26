@@ -234,6 +234,7 @@ export interface CommandHistoryEntry {
 
 export interface PastSession {
   id: string;
+  cli?: CliKind;
   path: string;
   directory: string;
   lastModified: string;

@@ -362,7 +362,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       const workingDir = ps.directory || ".";
       const dead = deadSessionMap.get(ps.id);
       const cached = sessionConfigs[ps.id];
-      const baseConfig = dead?.config ?? { ...DEFAULT_SESSION_CONFIG, ...cached };
+      const baseConfig = dead?.config ?? { ...DEFAULT_SESSION_CONFIG, ...cached, cli: ps.cli ?? cached?.cli ?? DEFAULT_SESSION_CONFIG.cli };
       const resumeConfig: SessionConfig = {
         ...baseConfig,
         workingDir,
@@ -395,7 +395,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
       const ps = chain.resumeSession;
       const dead = findDead(chain);
       const cached = sessionConfigs[ps.id];
-      const baseConfig = dead?.config ?? { ...DEFAULT_SESSION_CONFIG, ...cached };
+      const baseConfig = dead?.config ?? { ...DEFAULT_SESSION_CONFIG, ...cached, cli: ps.cli ?? cached?.cli ?? DEFAULT_SESSION_CONFIG.cli };
       const prefillConfig: SessionConfig = {
         ...baseConfig,
         workingDir: ps.directory,
@@ -526,6 +526,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
             // Build badges (all share base class + color modifier)
             const badges: { label: string; mod: string; style?: React.CSSProperties }[] = [];
             if (!chain.dirExists) badges.push({ label: "Unavailable", mod: "resume-picker-badge-danger" });
+            if (ps.cli === "codex") badges.push({ label: "Codex", mod: "resume-picker-badge-agent" });
             if (modelBadge) badges.push({ label: modelBadge, mod: "resume-picker-badge-model" });
             if (config?.dangerouslySkipPermissions) badges.push({ label: "Skip Perms", mod: "resume-picker-badge-danger" });
             if (config?.permissionMode && config.permissionMode !== "default") {
@@ -592,7 +593,7 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
                     {abbreviatePath(ps.directory)}
                   </span>
                   {badges.map((b) => (
-                    <span key={b.mod} className={`resume-picker-badge ${b.mod}`} style={b.style}>{b.label}</span>
+                    <span key={`${b.mod}-${b.label}`} className={`resume-picker-badge ${b.mod}`} style={b.style}>{b.label}</span>
                   ))}
                   {chain.chainLength > 1 && (
                     <span
