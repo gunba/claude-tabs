@@ -1,3 +1,4 @@
+// [TO-01] parseToml: smol-toml wrapper; blank input -> {ok:true,value:{}}. flattenTomlKeys emits parent paths AND dotted leaves so 'shell_environment_policy' AND 'shell_environment_policy.inherit' both appear; arrays of inline tables emit only the parent (per-entry leaves out of scope); additionalProperties tables emit parent + user-chosen child names.
 import { parse as smolParse } from "smol-toml";
 
 /** Result of parsing a TOML string. Either the parsed object or a parse error. */

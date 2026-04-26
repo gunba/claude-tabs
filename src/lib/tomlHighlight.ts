@@ -16,6 +16,7 @@
  * paint the textarea contents.
  */
 
+// [TO-02] highlightToml: line-by-line tokenize emitting sh-key/sh-string/sh-number/sh-bool/sh-comment/sh-section/sh-datetime spans (mirrors highlightJson classes). Multi-line basic """..."""/literal '''...''' strings tracked across lines via inMultiBasic/inMultiLiteral state toggled on odd triple-delim count per line. Section headers ([name]/[[name]]) detected first; comments # consume to EOL; bare keys /^[A-Za-z0-9_\-.]+(?=\s*=)/. HTML metacharacters escaped before tokenize so the result is innerHTML-safe.
 export function highlightToml(text: string): string {
   const lines = text.split("\n");
   const out: string[] = [];

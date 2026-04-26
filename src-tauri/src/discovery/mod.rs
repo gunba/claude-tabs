@@ -12,6 +12,8 @@
 //! `pub use claude::*` re-export below keeps that surface stable after the
 //! Phase 1a split.
 
+// [DM-01] Discovery primitives split per-CLI: claude.rs (read_claude_binary etc), codex.rs (Codex schema/env-var discovery), mod.rs (shared types + scan_skill_md). pub use claude::* keeps existing call sites unchanged.
+
 use serde_json::json;
 
 pub mod claude;

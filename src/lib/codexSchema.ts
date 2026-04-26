@@ -143,6 +143,7 @@ function unwrapNullableAnyOf(prop: JsonSchemaProperty): JsonSchemaProperty {
   return prop;
 }
 
+// [CG-02] normalize() pipeline: resolveRef (#/definitions/<Name> against root.definitions, preserve description/default from referencing site) -> unwrapAllOf ({allOf:[{$ref:...}]} schemars description-on-ref pattern) -> unwrapNullableAnyOf (strip {anyOf:[{type:X},{type:'null'}]} for Option<T>; collapse multi-variant const-only to {type:'string',enum:[...]}). getCodexUnknownKeys accepts dotted keys whose first segment matches any schema entry's first segment plus all additionalProperties-keyed tables; getCodexTypeMismatches recurses into nested objects.
 function normalize(prop: JsonSchemaProperty, root: JsonSchema): JsonSchemaProperty {
   return unwrapNullableAnyOf(unwrapAllOf(resolveRef(prop, root), root));
 }
@@ -223,6 +224,7 @@ function tomlKeyToLabel(key: string): string {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
+// [CG-01] parseCodexJsonSchema: additionalProperties-keyed tables (mcp_servers/profiles/plugins/model_providers/projects/marketplaces/features) -> single 'managed-elsewhere' stub with hint to dedicated pane; typed object tables flatten one level (parent.child); scalars emit as direct keys; categorizeTopLevel buckets to Codex-specific category order; defaultForCodexType returns first choice for enum, true for boolean (opt-in), 0 for number, '' for string, [] for stringArray, {} for stringMap/object.
 /**
  * Parse a Codex JSON Schema into a flat `SettingField[]`. Walks each
  * top-level property; if its schema is a typed object (has explicit

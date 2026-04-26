@@ -14,8 +14,8 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 - [CM-05 L191] Config tabs route by pane type: Settings and Env Vars use dedicated tabs; Claude and Hooks use 3-column ThreePaneEditor; MCP, Agents, and Skills use 2-column ThreePaneEditor; Plugins, Prompts, Providers, and Recording use dedicated panes.
   - ProvidersPane is keep-alive via a visible prop, while RecordingPane renders only when the Recording tab is active.
 - [CM-18 L192] Config tabs use inline SVG icons (gear, document, hook, puzzle, server, bot, skill, lightning, braces, close, circle) instead of emoji -- monochrome, consistent cross-platform.
-- [CM-04 L347] Keystrokes blocked via shared ModalOverlay component (onKeyDown stopPropagation); Escape and Ctrl+, pass through to global handler.
-- [CM-09 L347] Escape and Ctrl+, close the modal via global handler; clicking the X button closes modal. Backdrop click is disabled (closeOnBackdropClick={false}) — clicking outside the modal does nothing.
+- [CM-04 L350] Keystrokes blocked via shared ModalOverlay component (onKeyDown stopPropagation); Escape and Ctrl+, pass through to global handler.
+- [CM-09 L350] Escape and Ctrl+, close the modal via global handler; clicking the X button closes modal. Backdrop click is disabled (closeOnBackdropClick={false}) — clicking outside the modal does nothing.
 
 ## Dual-CLI Config Modal
 

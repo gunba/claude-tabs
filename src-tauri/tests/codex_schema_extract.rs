@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use code_tabs_lib::discovery::codex::{
-    cache_key_for_binary, discover_codex_env_vars_sync, discover_codex_settings_schema_sync,
+    discover_codex_env_vars_sync, discover_codex_settings_schema_sync,
     vendored_codex_settings_schema,
 };
 
@@ -74,12 +74,6 @@ fn resolves_codex_schema_from_real_binary_or_bundled() {
     }
     assert!(prop_count >= 20, "expected >=20 top-level keys, got {prop_count}");
     assert!(matches!(result.source, "binary" | "bundled"));
-
-    // Cache key roundtrip — same binary should produce a stable hash.
-    let k1 = cache_key_for_binary(&bin).unwrap();
-    let k2 = cache_key_for_binary(&bin).unwrap();
-    assert_eq!(k1, k2);
-    assert_eq!(k1.len(), 64, "expected sha256 hex (64 chars), got {}", k1.len());
 }
 
 #[test]

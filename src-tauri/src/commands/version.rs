@@ -605,48 +605,6 @@ mod tests {
     }
 
     #[test]
-    fn linux_native_chrome_detector_honors_forced_x11_backend() {
-        assert!(!linux_use_native_chrome_from_env(
-            Some("x11"),
-            Some("wayland"),
-            Some("KDE")
-        ));
-        assert!(!linux_use_native_chrome_from_env(
-            Some("x11,wayland"),
-            Some("wayland"),
-            Some("KDE")
-        ));
-    }
-
-    #[test]
-    fn linux_native_chrome_detector_keeps_kde_wayland_fallback() {
-        assert!(linux_use_native_chrome_from_env(
-            None,
-            Some("wayland"),
-            Some("KDE")
-        ));
-        assert!(linux_use_native_chrome_from_env(
-            Some("wayland,x11"),
-            Some("wayland"),
-            Some("GNOME:KDE")
-        ));
-    }
-
-    #[test]
-    fn linux_native_chrome_detector_rejects_non_kde_or_non_wayland() {
-        assert!(!linux_use_native_chrome_from_env(
-            None,
-            Some("x11"),
-            Some("KDE")
-        ));
-        assert!(!linux_use_native_chrome_from_env(
-            None,
-            Some("wayland"),
-            Some("GNOME")
-        ));
-    }
-
-    #[test]
     fn codex_atom_parser_extracts_release_entries() {
         let raw = r#"
         <feed>

@@ -31,15 +31,11 @@
 //!   * `discover_codex_env_vars_sync(&Path)` → curated + mined env vars.
 //!   * `codex_env_var_catalog()` → curated table alone (tests, fallback).
 //!   * `vendored_codex_settings_schema()` → bundled copy (tests, refresh).
-//!   * `cache_key_for_binary(&Path)` → stable hash over first+last 4 KiB.
 
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use super::DiscoveredEnvVar;
 
@@ -119,6 +115,7 @@ fn read_binary_capped(path: &Path) -> Result<Vec<u8>, BinaryMineError> {
         .map_err(|e| BinaryMineError::IoError(format!("read({}): {}", path.display(), e)))
 }
 
+// [CY-01] discover_codex_settings_schema_sync: binary-mine attempt (memchr Draft-07 probe + 4-key ConfigToml signature) -> vendored fallback (include_str! codex_schema.json). Refresh bundled copy via npm run discover:fetch-codex-schema.
 /// Resolve the Codex ConfigToml JSON Schema. Tries binary mining first
 /// (future-proof: works automatically when/if Codex starts embedding the
 /// schema in the runtime binary); falls back to the bundled vendored copy.
@@ -191,6 +188,7 @@ fn mine_schema_from_binary(native_binary_path: &Path) -> Result<Value, BinaryMin
     best.map(|(_, v)| v).ok_or(BinaryMineError::NoMatches)
 }
 
+// [CY-02] discover_codex_env_vars_sync: mine_codex_env_var_names walks raw bytes (no UTF-8 decode of ~196 MiB binary) using memchr on b"CODEX_"; merge with codex_env_var_catalog (~45 curated entries with categories/descriptions); is_noise_env_var filters Codex internals (test/dev overrides). Sort documented-first then category, then name.
 /// Mine `CODEX_*` and curated env vars from the Codex native binary.
 /// Mined names are merged with the curated catalog: known-noise vars
 /// (e.g. `CODEX_RS_SSE_FIXTURE` test-only) are filtered out, and curated
@@ -300,40 +298,6 @@ fn is_noise_env_var(name: &str) -> bool {
             | "CODEX_OPEN_BRACE__"
             | "CODEX_CLOSE_BRACE__"
     )
-}
-
-/// Cheap stable identity for the Codex binary. Reads the first and last
-/// 4 KiB only, so it's fast even for the 196 MiB native binary. Different
-/// versions / builds of Codex always diverge in either header or trailer,
-/// so collisions across releases are negligible.
-pub fn cache_key_for_binary(native_binary_path: &Path) -> Result<String, String> {
-    let mut file = File::open(native_binary_path)
-        .map_err(|e| format!("open({}): {}", native_binary_path.display(), e))?;
-    let metadata = file
-        .metadata()
-        .map_err(|e| format!("metadata({}): {}", native_binary_path.display(), e))?;
-    let len = metadata.len();
-
-    let mut hasher = Sha256::new();
-    hasher.update(len.to_le_bytes());
-
-    let chunk_size = 4096u64.min(len);
-    let mut head = vec![0u8; chunk_size as usize];
-    file.read_exact(&mut head)
-        .map_err(|e| format!("read head: {}", e))?;
-    hasher.update(&head);
-
-    if len > chunk_size {
-        let tail_offset = len.saturating_sub(chunk_size);
-        file.seek(SeekFrom::Start(tail_offset))
-            .map_err(|e| format!("seek tail: {}", e))?;
-        let mut tail = vec![0u8; chunk_size as usize];
-        file.read_exact(&mut tail)
-            .map_err(|e| format!("read tail: {}", e))?;
-        hasher.update(&tail);
-    }
-
-    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Curated catalog of env vars Codex respects. Sourced from a manual
@@ -532,18 +496,5 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(tmp);
-    }
-
-    #[test]
-    fn cache_key_changes_when_binary_changes() {
-        let tmp_a = std::env::temp_dir().join("codex_cache_key_a.bin");
-        let tmp_b = std::env::temp_dir().join("codex_cache_key_b.bin");
-        std::fs::write(&tmp_a, b"hello world").unwrap();
-        std::fs::write(&tmp_b, b"hello world!").unwrap();
-        let key_a = cache_key_for_binary(&tmp_a).unwrap();
-        let key_b = cache_key_for_binary(&tmp_b).unwrap();
-        assert_ne!(key_a, key_b);
-        let _ = std::fs::remove_file(tmp_a);
-        let _ = std::fs::remove_file(tmp_b);
     }
 }
