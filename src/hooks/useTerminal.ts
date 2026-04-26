@@ -15,6 +15,14 @@ import { useSettingsStore } from "../store/settings";
 import { getResumeId } from "../lib/claude";
 import { IS_WINDOWS, IS_LINUX } from "../lib/paths";
 import { createPathLinkProvider } from "../lib/terminalPathLinks";
+import {
+  createTerminalWriteQueue,
+  enqueueTerminalWrite,
+  getTerminalWriteQueueDepth,
+  resetTerminalWriteQueue,
+  takeTerminalWriteBatch,
+  type TerminalWriteQueue,
+} from "../lib/terminalWriteQueue";
 
 export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace";
 
@@ -22,16 +30,6 @@ const XTVERSION_REPLY = "\x1bP>|xterm.js(6.0.0)\x1b\\";
 // [TA-12] SHIFT_ENTER_SEQUENCE: kitty-protocol \x1b[13;2u; getTerminalKeySequenceOverride intercepts Shift+Enter before xterm default
 export const SHIFT_ENTER_SEQUENCE = "\x1b[13;2u";
 const terminalOutputDecoder = new TextDecoder();
-const TERMINAL_WRITE_BATCH_MAX_BYTES = 256 * 1024;
-const TERMINAL_WRITE_BATCH_MAX_STRING_CHARS = 256 * 1024;
-
-type TerminalWriteChunk = string | Uint8Array;
-
-interface TerminalWriteBatch {
-  data: TerminalWriteChunk;
-  chunkCount: number;
-  size: number;
-}
 
 type TerminalKeyEventLike = Pick<KeyboardEvent, "type" | "key" | "code" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey">;
 
@@ -83,45 +81,6 @@ function captureBufferState(term: Terminal) {
   };
 }
 
-function takeTerminalWriteBatch(queue: TerminalWriteChunk[]): TerminalWriteBatch | null {
-  const first = queue.shift();
-  if (first === undefined) return null;
-
-  if (typeof first === "string") {
-    const chunks = [first];
-    let size = first.length;
-    while (queue.length > 0 && typeof queue[0] === "string" && size < TERMINAL_WRITE_BATCH_MAX_STRING_CHARS) {
-      const next = queue.shift() as string;
-      chunks.push(next);
-      size += next.length;
-    }
-    return {
-      data: chunks.length === 1 ? first : chunks.join(""),
-      chunkCount: chunks.length,
-      size,
-    };
-  }
-
-  const chunks = [first];
-  let size = first.byteLength;
-  while (queue.length > 0 && queue[0] instanceof Uint8Array && size < TERMINAL_WRITE_BATCH_MAX_BYTES) {
-    const next = queue.shift() as Uint8Array;
-    chunks.push(next);
-    size += next.byteLength;
-  }
-  if (chunks.length === 1) {
-    return { data: first, chunkCount: 1, size };
-  }
-
-  const merged = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return { data: merged, chunkCount: chunks.length, size };
-}
-
 function isElementVisible(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
@@ -153,7 +112,7 @@ export function useTerminal({
   visibleRef.current = visible;
   const [ready, setReady] = useState(false);
   const [termGeneration, setTermGeneration] = useState(0);
-  const writeQueueRef = useRef<TerminalWriteChunk[]>([]);
+  const writeQueueRef = useRef<TerminalWriteQueue>(createTerminalWriteQueue());
   const writeInFlightRef = useRef(false);
 
   const webglRef = useRef<WebglAddon | null>(null);
@@ -622,7 +581,7 @@ export function useTerminal({
       pasteBlockCleanupRef.current?.();
       pasteBlockCleanupRef.current = null;
       lifecycleDisposables.forEach((d) => d.dispose());
-      writeQueueRef.current = [];
+      resetTerminalWriteQueue(writeQueueRef.current);
       writeInFlightRef.current = false;
       webglRef.current?.dispose();
       webglRef.current = null;
@@ -721,7 +680,7 @@ export function useTerminal({
     const term = termRef.current;
     if (!term) return;
     if (writeInFlightRef.current) return;
-    const queuedChunks = writeQueueRef.current.length;
+    const queuedChunks = getTerminalWriteQueueDepth(writeQueueRef.current);
     const batch = takeTerminalWriteBatch(writeQueueRef.current);
     if (!batch) return;
 
@@ -805,11 +764,11 @@ export function useTerminal({
         data: {
           length: data.length,
           preview: escapePreview(data),
-          queueDepth: writeQueueRef.current.length,
+          queueDepth: getTerminalWriteQueueDepth(writeQueueRef.current),
         },
       });
     }
-    writeQueueRef.current.push(data);
+    enqueueTerminalWrite(writeQueueRef.current, data);
     flushWriteQueue();
   }, [flushWriteQueue]);
 
@@ -830,11 +789,11 @@ export function useTerminal({
           containsLF: decoded.includes("\n"),
           text: decoded,
           preview: escapePreview(decoded),
-          queueDepth: writeQueueRef.current.length,
+          queueDepth: getTerminalWriteQueueDepth(writeQueueRef.current),
         },
       });
     }
-    writeQueueRef.current.push(data);
+    enqueueTerminalWrite(writeQueueRef.current, data);
     flushWriteQueue();
   }, [flushWriteQueue]);
 
