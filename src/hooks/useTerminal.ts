@@ -649,27 +649,33 @@ export function useTerminal({
 
     if (onData) {
       disposables.push(term.onData((data) => {
-        dlog("terminal", sessionIdRef.current, "terminal input", "DEBUG", {
-          event: "terminal.input",
-          data: {
-            length: data.length,
-            text: data,
-            preview: escapePreview(data),
-          },
-        });
+        const sid = sessionIdRef.current;
+        if (shouldRecordDebugLog("DEBUG", sid)) {
+          dlog("terminal", sid, "terminal input", "DEBUG", {
+            event: "terminal.input",
+            data: {
+              length: data.length,
+              text: data,
+              preview: escapePreview(data),
+            },
+          });
+        }
         onData(data);
       }));
     }
     if (onResize) {
       disposables.push(term.onResize(({ cols, rows }) => {
-        dlog("terminal", sessionIdRef.current, "terminal resize callback", "DEBUG", {
-          event: "terminal.resize_callback",
-          data: {
-            cols,
-            rows,
-            buffer: captureBufferState(term),
-          },
-        });
+        const sid = sessionIdRef.current;
+        if (shouldRecordDebugLog("DEBUG", sid)) {
+          dlog("terminal", sid, "terminal resize callback", "DEBUG", {
+            event: "terminal.resize_callback",
+            data: {
+              cols,
+              rows,
+              buffer: captureBufferState(term),
+            },
+          });
+        }
         onResize(cols, rows);
       }));
     }

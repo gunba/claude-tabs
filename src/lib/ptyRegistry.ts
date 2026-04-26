@@ -6,7 +6,7 @@
  * correct session's terminal by session ID.
  */
 
-import { dlog } from "./debugLog";
+import { dlog, shouldRecordDebugLog } from "./debugLog";
 
 const ptyWriters = new Map<string, (data: string) => void>();
 const ptyKills = new Map<string, () => Promise<void>>();
@@ -54,15 +54,17 @@ export function writeToPty(sessionId: string, data: string): boolean {
     });
     return false;
   }
-  dlog("pty", sessionId, "forwarding input to PTY", "DEBUG", {
-    event: "pty.write_request",
-    data: {
-      sessionId,
-      length: data.length,
-      text: data,
-      preview: escapeDataPreview(data),
-    },
-  });
+  if (shouldRecordDebugLog("DEBUG", sessionId)) {
+    dlog("pty", sessionId, "forwarding input to PTY", "DEBUG", {
+      event: "pty.write_request",
+      data: {
+        sessionId,
+        length: data.length,
+        text: data,
+        preview: escapeDataPreview(data),
+      },
+    });
+  }
   write(data);
   return true;
 }

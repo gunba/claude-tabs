@@ -1,6 +1,6 @@
 // [PT-01] Direct PTY wrapper — calls Tauri IPC commands for PTY lifecycle.
 import { invoke } from "@tauri-apps/api/core";
-import { dlog } from "./debugLog";
+import { dlog, shouldRecordDebugLog } from "./debugLog";
 import { useSessionStore } from "../store/sessions";
 
 // [PT-07] Active PID registry for cleanup on app close
@@ -172,25 +172,29 @@ export async function spawnPty(
 
     write(data: string) {
       if (!aborted) {
-        dlog("pty", sessionId, "writing to PTY transport", "DEBUG", {
-          event: "pty.write_transport",
-          data: {
-            pid,
-            length: data.length,
-            text: data,
-            preview: escapeDataPreview(data),
-          },
-        });
+        if (shouldRecordDebugLog("DEBUG", sessionId)) {
+          dlog("pty", sessionId, "writing to PTY transport", "DEBUG", {
+            event: "pty.write_transport",
+            data: {
+              pid,
+              length: data.length,
+              text: data,
+              preview: escapeDataPreview(data),
+            },
+          });
+        }
         invoke("pty_write", { pid, data }).catch(() => {});
       }
     },
 
     resize(cols: number, rows: number) {
       if (!aborted) {
-        dlog("pty", sessionId, "resizing PTY transport", "DEBUG", {
-          event: "pty.resize_transport",
-          data: { pid, cols, rows },
-        });
+        if (shouldRecordDebugLog("DEBUG", sessionId)) {
+          dlog("pty", sessionId, "resizing PTY transport", "DEBUG", {
+            event: "pty.resize_transport",
+            data: { pid, cols, rows },
+          });
+        }
         invoke("pty_resize", { pid, cols, rows }).catch(() => {});
       }
     },
