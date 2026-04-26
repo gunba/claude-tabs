@@ -4,6 +4,28 @@
    All colors use CSS custom properties.
    ============================================================ */
 
+.provider-scope-claude,
+.app-provider-claude,
+.config-modal-cli-claude {
+  --provider-accent: var(--provider-claude-accent);
+  --provider-accent-bg: var(--provider-claude-accent-bg);
+  --provider-accent-hover: var(--provider-claude-accent-hover);
+  --accent: var(--provider-accent);
+  --accent-bg: var(--provider-accent-bg);
+  --accent-hover: var(--provider-accent-hover);
+}
+
+.provider-scope-codex,
+.app-provider-codex,
+.config-modal-cli-codex {
+  --provider-accent: var(--provider-codex-accent);
+  --provider-accent-bg: var(--provider-codex-accent-bg);
+  --provider-accent-hover: var(--provider-codex-accent-hover);
+  --accent: var(--provider-accent);
+  --accent-bg: var(--provider-accent-bg);
+  --accent-hover: var(--provider-accent-hover);
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -53,12 +75,24 @@
   height: 54px;
   overflow: hidden;
   box-sizing: border-box;
-  /* [CV-03] --tab-active-accent: Claude=var(--accent-claude), Codex=var(--accent-codex) */
+  /* [CV-03] Per-tab provider scope keeps inactive tab metadata colored by its own CLI. */
   --tab-active-accent: var(--accent-claude);
+  --provider-accent: var(--provider-claude-accent);
+  --provider-accent-bg: var(--provider-claude-accent-bg);
+  --provider-accent-hover: var(--provider-claude-accent-hover);
+  --accent: var(--provider-accent);
+  --accent-bg: var(--provider-accent-bg);
+  --accent-hover: var(--provider-accent-hover);
 }
 
 .tab.tab-cli-codex {
   --tab-active-accent: var(--accent-codex);
+  --provider-accent: var(--provider-codex-accent);
+  --provider-accent-bg: var(--provider-codex-accent-bg);
+  --provider-accent-hover: var(--provider-codex-accent-hover);
+  --accent: var(--provider-accent);
+  --accent-bg: var(--provider-accent-bg);
+  --accent-hover: var(--provider-accent-hover);
 }
 
 .tab.tab-drag-over {

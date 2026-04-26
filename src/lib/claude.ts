@@ -57,9 +57,9 @@ export function getEffectiveState(state: SessionState, subagents: Subagent[]): S
 
 /** Known model families: keyword → display label + CSS color. */
 export const MODEL_FAMILIES: Array<{ keyword: string; label: string; color: string }> = [
-  { keyword: "opus", label: "Opus", color: "#ff8000" },     // Legendary
-  { keyword: "sonnet", label: "Sonnet", color: "#a335ee" },  // Epic
-  { keyword: "haiku", label: "Haiku", color: "#0070dd" },    // Rare
+  { keyword: "opus", label: "Opus", color: "var(--rarity-legendary)" },
+  { keyword: "sonnet", label: "Sonnet", color: "var(--rarity-epic)" },
+  { keyword: "haiku", label: "Haiku", color: "var(--rarity-rare)" },
 ];
 
 export function resolveModelFamily(model: string | null): (typeof MODEL_FAMILIES)[number] | null {

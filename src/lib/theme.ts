@@ -2,7 +2,7 @@
  * Theme system for Code Tabs.
  *
  * // [TH-01] All colors are CSS custom properties on :root — components use var(--x), not hardcoded hex.
- * // [TH-02] Key variables: --bg-primary, --bg-surface, --accent (clay), --accent-secondary (blue), --accent-tertiary (purple), --term-bg, --term-fg
+ * // [TH-02] Key variables: --bg-primary, --bg-surface, --accent (provider-scoped alias), --accent-secondary (blue), --accent-tertiary (purple), --term-bg, --term-fg
  * Components use var(--color-name) instead of hardcoded hex values.
  * The meta-agent (or any automation) can change themes by calling applyTheme().
  */
@@ -27,7 +27,7 @@ export interface Theme {
     textOnAccent: string;    // Text on accent-colored backgrounds
 
     // Accent
-    accent: string;          // Primary brand color (Cowork clay)
+    accent: string;          // Default primary provider color (Claude clay at :root)
     accentHover: string;
     accentBg: string;        // Accent tinted background (active tab, selected button)
     accentSecondary: string; // Secondary accent (soft blue)
@@ -136,6 +136,16 @@ export function applyTheme(theme: Theme): void {
   root.style.setProperty("--cli-claude-bg", c.cliClaudeBg);
   root.style.setProperty("--cli-codex", c.cliCodex);
   root.style.setProperty("--cli-codex-bg", c.cliCodexBg);
+  // Provider palette: containers set --accent/--accent-bg/--accent-hover to these active-provider values.
+  root.style.setProperty("--provider-claude-accent", c.cliClaude);
+  root.style.setProperty("--provider-claude-accent-bg", c.cliClaudeBg);
+  root.style.setProperty("--provider-claude-accent-hover", c.accentHover);
+  root.style.setProperty("--provider-codex-accent", c.cliCodex);
+  root.style.setProperty("--provider-codex-accent-bg", c.cliCodexBg);
+  root.style.setProperty("--provider-codex-accent-hover", "#56d4dd");
+  root.style.setProperty("--provider-accent", c.cliClaude);
+  root.style.setProperty("--provider-accent-bg", c.cliClaudeBg);
+  root.style.setProperty("--provider-accent-hover", c.accentHover);
 
   root.style.setProperty("--success", c.success);
   root.style.setProperty("--warning", c.warning);
@@ -155,7 +165,8 @@ export function applyTheme(theme: Theme): void {
   // Font — match main terminal (TERMINAL_FONT_FAMILY in useTerminal.ts)
   root.style.setProperty("--font-mono", "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace");
 
-  // [CB-12] Rarity CSS variables (WoW item quality — fixed cross-theme)
+  // [CB-12] Rarity CSS variables (WoW item quality — fixed cross-theme/provider)
+  root.style.setProperty("--rarity-trash", "#9d9d9d");
   root.style.setProperty("--rarity-poor", "#9d9d9d");
   root.style.setProperty("--rarity-common", "#ffffff");
   root.style.setProperty("--rarity-uncommon", "#1eff00");

@@ -131,7 +131,7 @@ export function ConfigManager() {
   const codexTwoScopes = configCli === "codex" ? ["user", "project"] as Array<"user" | "project"> : undefined;
 
   return (
-    <ModalOverlay onClose={onClose} className="config-modal" closeOnBackdropClick={false}>
+    <ModalOverlay onClose={onClose} className={`config-modal config-modal-cli-${configCli}`} closeOnBackdropClick={false}>
       {/* [CM-04] [CM-09] keystroke isolation + Escape/X/Ctrl+, close */}
       {/* Header with tabs */}
       <div className="config-header">

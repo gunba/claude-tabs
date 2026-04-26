@@ -71,15 +71,15 @@ describe("modelColor", () => {
   });
 
   it("returns legendary orange for opus model", () => {
-    expect(modelColor("claude-opus-4-6")).toBe("#ff8000");
+    expect(modelColor("claude-opus-4-6")).toBe("var(--rarity-legendary)");
   });
 
   it("returns epic purple for sonnet model", () => {
-    expect(modelColor("claude-sonnet-4-6")).toBe("#a335ee");
+    expect(modelColor("claude-sonnet-4-6")).toBe("var(--rarity-epic)");
   });
 
   it("returns rare blue for haiku model", () => {
-    expect(modelColor("claude-haiku-4-5-20251001")).toBe("#0070dd");
+    expect(modelColor("claude-haiku-4-5-20251001")).toBe("var(--rarity-rare)");
   });
 
   it("returns muted color for unknown model", () => {
@@ -87,15 +87,15 @@ describe("modelColor", () => {
   });
 
   it("matches opus substring anywhere in model string", () => {
-    expect(modelColor("some-opus-variant")).toBe("#ff8000");
+    expect(modelColor("some-opus-variant")).toBe("var(--rarity-legendary)");
   });
 
   it("matches sonnet substring anywhere in model string", () => {
-    expect(modelColor("my-sonnet-4-20260101")).toBe("#a335ee");
+    expect(modelColor("my-sonnet-4-20260101")).toBe("var(--rarity-epic)");
   });
 
   it("matches haiku substring anywhere in model string", () => {
-    expect(modelColor("claude-3-haiku-20240307")).toBe("#0070dd");
+    expect(modelColor("claude-3-haiku-20240307")).toBe("var(--rarity-rare)");
   });
 });
 

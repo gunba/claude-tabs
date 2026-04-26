@@ -123,10 +123,10 @@
   background: var(--bg-surface-hover);
 }
 
-/* [CB-12] Heat gradient: unused trash grey, then 5-tier WoW rarity (Common → Legendary) */
+/* [CB-12] Heat gradient: unused Trash grey, then 5-tier WoW rarity (Common → Legendary) */
 
 .command-btn.heat-unused {
-  color: color-mix(in srgb, var(--rarity-poor) 78%, var(--text-muted));
+  color: color-mix(in srgb, var(--rarity-trash) 78%, var(--text-muted));
 }
 
 .command-btn.heat-0 {

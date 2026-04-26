@@ -485,7 +485,7 @@ export function SessionLauncher() {
 
   return (
     <div className="launcher-overlay" onClick={dismissLauncher}>
-      <div className="launcher" onClick={(e) => e.stopPropagation()}>
+      <div className={`launcher provider-scope-${config.cli}`} onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
         <div className="launcher-header">

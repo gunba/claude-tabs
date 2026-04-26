@@ -381,6 +381,7 @@ export default function App() {
 
   // Active session's subagents + skill invocations — unified bar items
   const activeSession = sessions.find((s) => s.id === activeTabId);
+  const activeProvider = activeSession?.config.cli ?? "claude";
   const allSubs = activeTabId ? (subagentMap.get(activeTabId) || []) : [];
   // Build agent bar items sorted by timestamp (newest first) — subagents only
   // Skills are shown in CommandBar (they are slash-command results)
@@ -397,7 +398,7 @@ export default function App() {
   }, [subagentMap, activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className={`app${ctrlHeld ? " ctrl-held" : ""}`}>
+    <div className={`app app-provider-${activeProvider}${ctrlHeld ? " ctrl-held" : ""}`}>
       {IS_LINUX && !useNativeChrome && <Header />}
       {/* Tab bar */}
       <div className="tab-bar">
