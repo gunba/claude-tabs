@@ -96,7 +96,7 @@ Audit run: 2026-04-25 (batches 1–10 landed).
 3. **Cross-ecosystem copy actions.** Add explicit copy/sync affordances for settings, MCP, hooks, and skills now that both sides are first-party.
 4. **Hooks port.** Translator table from Claude `settings.json[hooks]` → Codex `config.toml[[hooks.*]]`. Locked event-name table sourced from `codex-rs/config/src/hook_config.rs:16-29` (PreToolUse, PermissionRequest, PostToolUse, SessionStart, UserPromptSubmit, Stop — same set).
 5. **Slash-command-to-skill converter.** Best-effort `.claude/commands/foo.md` → `.codex/skills/foo/SKILL.md` with frontmatter wrapping.
-6. **Rules follow-up.** `proofd sync` now generates Claude Markdown snapshots plus `.codex/rules/agent-proofs.rules`; remaining work is any future UI affordance for surfacing that generated Codex policy.
+6. **Proofd context follow-up.** Codex has no Claude-style path-scoped rule auto-load; proofd support now relies on Codex skills, hooks, explicit context lookup, and MCP.
 
 ## Test status (after first-party Codex UI completion)
 

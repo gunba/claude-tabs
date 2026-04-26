@@ -121,7 +121,7 @@ def rule_context_paths(repo_root: pathlib.Path, paths: list[str]) -> list[str]:
         normalized = file_name.replace("\\", "/").strip()
         if not normalized:
             continue
-        if normalized.startswith(".proofs/") or normalized.startswith(".claude/rules/") or normalized.startswith(".codex/rules/"):
+        if normalized.startswith(".proofs/") or normalized.startswith(".claude/rules/"):
             continue
         if "/__pycache__/" in f"/{normalized}" or pathlib.Path(normalized).suffix.lower() in SKIP_CONTEXT_SUFFIXES:
             continue
@@ -232,7 +232,7 @@ def rule_context_lines(repo_root: pathlib.Path, paths: list[str], read_only: boo
     preloaded = proofd_context(repo_root, selected)
     lines = [
         "## Rule Context",
-        "Codex `.rules` files are command-execution policy. Use proofd context or the proofd MCP tool for tagged documentation context.",
+        "Codex does not auto-load `.claude/rules` by touched file path. Use proofd context or the proofd MCP tool for tagged documentation context.",
     ]
     if selected:
         lines.extend(
@@ -389,11 +389,11 @@ def janitor_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
             f"5. Record outcomes with `{PROOFD_CMD} record-verification ...`.",
             "6. If documentation is missing, create rules or entries through `proofd` and only then add the source-code tag anchor.",
             "7. If an existing source tag already covers the implementation site, reuse it instead of creating a duplicate tag.",
-            "8. Limit writes to proof-maintenance work: proofd state, canonical or overlay rule data, generated `.claude/rules` and `.codex/rules`, and source tag comments. Do not make unrelated product-code changes.",
+            "8. Limit writes to proof-maintenance work: proofd state, canonical or overlay rule data, generated `.claude/rules`, and source tag comments. Do not make unrelated product-code changes.",
             "9. If `proofd` MCP is already configured in this Codex environment you may use it; otherwise use the CLI.",
             f"10. Run `{PROOFD_CMD} sync` and `{PROOFD_CMD} lint`.",
-            "11. `sync` regenerates local `.claude/rules/*.md` files for Claude context injection and `.codex/rules/agent-proofs.rules` for Codex command policy. Those files are generated output; do not edit them manually.",
-            "12. If this repo tracks generated rule snapshots, include the refreshed snapshot in the branch. The canonical proof update still lives in proofd KB/state plus any source tag comments you changed.",
+            "11. `sync` regenerates local `.claude/rules/*.md` files for Claude context injection. Those files are generated output; do not edit them manually.",
+            "12. If this repo tracks `.claude/rules`, include the refreshed snapshot in the branch. The canonical proof update still lives in proofd KB/state plus any source tag comments you changed.",
             "13. Do not log, commit, merge, or exit the worktree from inside this subprocess. Claude will handle finalization after the janitor pass returns.",
             "14. End with a report. If janitor is blocked, say so explicitly.",
             "",
@@ -423,7 +423,7 @@ def build_handoff(repo_root: pathlib.Path, args: argparse.Namespace) -> str:
             "2. Request proofd context for any files you inspect or modify during the build flow. If `proofd` MCP is already configured in this Codex environment you may use it; otherwise use the CLI.",
             "3. Execute only the requested build pipeline steps.",
             f"4. If commit or release is included and you are not using repo build scripts that already refresh rules, run `{PROOFD_CMD} sync` first.",
-            "5. Treat `.claude/rules/*.md` and `.codex/rules/agent-proofs.rules` as generated but normal repo files: never edit them manually, and include refreshed snapshots when they change.",
+            "5. Treat `.claude/rules/*.md` as generated but normal repo files: never edit them manually, and include the refreshed snapshot when it changes.",
             "6. If commit is included, match recent commit style.",
             "7. If release is included, validate before bump, push, or release creation.",
             "8. This subprocess is non-interactive. Approval prompts are disabled; release-capable flows may be launched with full access by the wrapper so push and release steps can complete.",
@@ -466,10 +466,10 @@ def review_janitor_handoff(repo_root: pathlib.Path, args: argparse.Namespace) ->
             "2. Then run the janitor or proof pass against the requested scope.",
             "3. Start the janitor phase with the preloaded proofd context and the preloaded `select-matching` output above.",
             f"4. If you need a fresh proof selection, run `{PROOFD_CMD} select-matching <files...>`.",
-            "5. During the janitor phase, limit writes to proof-maintenance work: proofd state, canonical or overlay rule data, generated `.claude/rules` and `.codex/rules`, and source tag comments.",
+            "5. During the janitor phase, limit writes to proof-maintenance work: proofd state, canonical or overlay rule data, generated `.claude/rules`, and source tag comments.",
             "6. If an existing source tag already covers the implementation site, reuse it instead of creating a duplicate tag.",
             "7. If `proofd` MCP is already configured in this Codex environment you may use it; otherwise use the CLI.",
-            "8. When janitor runs `sync`, remember that `.claude/rules/*.md` and `.codex/rules/agent-proofs.rules` are generated local output. Do not edit them manually, and if this repo tracks them, include the refreshed snapshots in the branch.",
+            "8. When janitor runs `sync`, remember that `.claude/rules/*.md` is generated local output. Do not edit it manually, and if this repo tracks it, include the refreshed snapshot in the branch.",
             "9. Keep review findings and janitor or proof outcomes separate in the final report.",
             "10. Do not log, commit, merge, or exit the worktree from inside this subprocess. Claude will handle that after the combined pass returns.",
             "11. Say explicitly if janitor was blocked.",

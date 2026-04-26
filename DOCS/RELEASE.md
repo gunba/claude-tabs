@@ -38,7 +38,7 @@ Version must be bumped in all three files:
 1. Bump version in all three files
 2. Run validation (tsc + test + cargo check)
 3. Build locally with `build:quick` to verify compilation and refresh tracked proofd rule snapshots.
-4. Include any resulting `.claude/rules/*` or `.codex/rules/*` updates in the release commit.
+4. Include any resulting `.claude/rules/*` updates in the release commit.
 5. Commit version bump, push with tag:
    ```bash
    git tag v<version>

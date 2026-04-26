@@ -5,7 +5,6 @@
 - A companion knowledge base repo outside the code repo for canonical structured rules
 - A local SQLite DB for verification history, run logs, and branch overlays
 - Generated `.claude/rules/*.md` for Claude Code auto-loading
-- Generated `.codex/rules/agent-proofs.rules` for Codex proofd command policy
 
 The goal is to preserve automatic context injection while removing merge-heavy proof state from the code repo.
 
@@ -30,14 +29,14 @@ Per repo, `proofd` stores:
 - Repo metadata in `kb/repos/<repo-id>/repo.json`
 - Branch overlays in `%LOCALAPPDATA%\\proofd\\overlays\\<repo-id>\\<branch>\\rules/*.json`
 
-The code repo receives generated `.claude/rules/*.md` and `.codex/rules/agent-proofs.rules` as tracked snapshots.
-Claude worktrees should symlink `.claude/rules/` and `.codex/rules/` back to the main repo so one generated ruleset is shared across the parent session and worktrees.
+The code repo receives generated `.claude/rules/*.md` as tracked snapshots.
+Claude worktrees should symlink `.claude/rules/` back to the main repo so one generated ruleset is shared across the parent session and worktrees.
 
 For cross-machine use:
 
 - share or git-sync the KB root
 - keep `state.db` local to each machine
-- use committed `.claude/rules/` for Claude default startup context and `.codex/rules/` for Codex exec policy
+- use committed `.claude/rules/` for Claude default startup context
 - refresh tracked generated rule snapshots locally with `proofd sync` during build or release finalization when proof content changed
 
 `repo_id` now defaults to a stable digest of the normalized `remote.origin.url`, so the same repo can resolve to the same KB identity on Windows and Linux. If a repo has no stable origin remote, use `--repo-key <stable-id>` or `PROOFD_REPO_KEY=<stable-id>`.
@@ -87,8 +86,6 @@ python tools/proofd.py promote-overlay
 
 `proofd sync` renders one Markdown file per source file that contains source tags. Each generated file uses a single-entry `paths:` YAML frontmatter list for that exact file, so Claude Code auto-loads only the rules relevant to that file.
 
-`proofd sync` also renders `.codex/rules/agent-proofs.rules`. Codex `.rules` files are exec-policy files, so the generated Codex rule controls proofd command approval behavior rather than embedding tagged documentation context.
-
 Generated rule files include:
 
 - The source file path in frontmatter
@@ -119,6 +116,16 @@ Current tools:
 - `proofd_sync`
 - `proofd_lint`
 
+## Codex Support
+
+Codex does not have a direct equivalent to Claude's path-scoped `.claude/rules/*.md` auto-load. This repo supports proofd in Codex through:
+
+- `~/.agents/skills` workflow skills
+- repo-local Codex hooks in `.codex/config.toml` and `.codex/hooks.json`
+- the `proofd` CLI and MCP server for scoped context lookup
+
+The `SessionStart` hook injects compact proofd guidance once at startup or resume. The `UserPromptSubmit` hook injects scoped `proofd context` when a prompt mentions paths or proof/review work.
+
 ## Suggested Workflow
 
 1. Import once from the legacy `.proofs` and `.claude/rules`.
@@ -130,6 +137,6 @@ Current tools:
 ## Notes
 
 - `proofd lint` warnings are intentionally advisory. Large projects may legitimately surface many rules.
-- Do not hand-edit `.claude/rules/*.md` or `.codex/rules/agent-proofs.rules`; mutate rule state through `proofd` and regenerate.
+- Do not hand-edit `.claude/rules/*.md`; mutate rule state through `proofd` and regenerate.
 - Splitting is supported even when multiple rule files share the same source-file scope. This is the main escape hatch for large single-feature rule sets.
 - If an entry refers to deleted code, remove it with `proofd delete-entry` instead of leaving it as a permanent lint warning.
