@@ -104,7 +104,7 @@ jobs:
             echo "::error::No setup .exe found"
             exit 1
           fi
-          installer_name=$(basename "$installer_file")
+          installer_name=$(basename "$installer_file" | tr ' ' '.')
 
           # Try to download existing latest.json (Linux may have uploaded first)
           existing="{}"
