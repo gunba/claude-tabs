@@ -347,6 +347,12 @@ export function useTerminal({
     }
   }, [disposeWebglRenderer, enableWebgl, enableWebglRenderer, visible]);
 
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.cursorBlink = visible;
+  }, [visible]);
+
   // Create terminal instance once fonts are ready
   useEffect(() => {
     let cancelled = false;
@@ -364,7 +370,7 @@ export function useTerminal({
       // Codex uses normal scrollback more heavily than Claude's alternate-screen TUI,
       // so its cap is intentionally lower to avoid long-session xterm memory blowups.
       term = new Terminal({
-        cursorBlink: true,
+        cursorBlink: visibleRef.current,
         fontSize: 14,
         fontFamily: TERMINAL_FONT_FAMILY,
         theme: getTerminalTheme(),

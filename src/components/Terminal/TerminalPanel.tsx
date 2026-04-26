@@ -28,6 +28,16 @@ interface TerminalPanelProps {
   visible: boolean;
 }
 
+function terminalPanelPropsEqual(prev: TerminalPanelProps, next: TerminalPanelProps): boolean {
+  return prev.visible === next.visible
+    && prev.session.id === next.session.id
+    && prev.session.state === next.session.state
+    && prev.session.name === next.session.name
+    && prev.session.config === next.session.config
+    && prev.session.metadata.nodeSummary === next.session.metadata.nodeSummary
+    && prev.session.metadata.assistantMessageCount === next.session.metadata.assistantMessageCount;
+}
+
 function escapeChunkPreview(text: string): string {
   return text
     .replace(/\x1b/g, "\\x1b")
@@ -749,4 +759,4 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
       )}
     </div>
   );
-});
+}, terminalPanelPropsEqual);
