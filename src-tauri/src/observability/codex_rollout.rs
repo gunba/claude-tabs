@@ -177,7 +177,7 @@ impl CodexRolloutHandle {
 }
 
 /// App-state registry of active Codex rollout watchers, keyed by
-/// claude-tabs session id (NOT the Codex conversation id, which we
+/// code-tabs session id (NOT the Codex conversation id, which we
 /// don't know until the rollout file is attributed).
 #[derive(Default)]
 pub struct CodexRolloutState {

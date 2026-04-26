@@ -1,46 +1,55 @@
 # Code Tabs
 
-A desktop app for managing Claude Code and OpenAI Codex CLI sessions in tabs. Rust backend, React/TypeScript frontend, no API key required — uses your installed CLI directly.
+A desktop app for running Claude Code and OpenAI Codex CLI sessions side by side in tabs. Code Tabs has a Rust backend, a React/TypeScript frontend, and no app-level API key requirement: it uses the CLIs you already have installed and authenticated.
 
 ![Screenshot](ss.png)
 
 ## Features
 
-- **Multiple coding-agent sessions in tabs** — Run Claude Code and Codex sessions side by side with fixed-width tabs, drag-to-reorder, working-directory grouping, and auto-respawn of dead tabs.
-- **Subagents as first-class terminals** — Live status bar tracks every nested agent with elapsed time, tokens, and cost; click to open the full inspector with conversation, edits, bash, and file tool calls.
-- **First-party Claude Code and Codex support** — Launch either CLI when installed, hide missing-CLI features, and keep slash commands, models, settings, hooks, MCP, and skills scoped to the active ecosystem.
-- **Live tok/s, latency, and cost** — EMA-smoothed output throughput, API latency, network RTT, and per-session spend — all derived from TAP events, no terminal polling.
-- **Auto-discovers installed CLIs** — Scans Claude Code and Codex for versions, command options, models, slash commands, env hints, settings, skills, and plugins where each ecosystem exposes them.
-- **Session resume with chain merging** — Browse past conversations with previews, model badges, and content search; plan-mode forks collapse into a single card and config (model, permissions, effort, budgets, system prompt) is preserved across resumes.
-- **Configuration manager (Ctrl+,)** — Modal covering settings, env vars, instructions, hooks, plugins, agents, prompts, skills, providers, and recording, editable across User / Project / Project Local scopes with non-destructive saves.
-- **Visual CLI launcher** — Installed CLI flags as clickable pills with live command preview; quick-launch (Ctrl+Shift+T) bypasses the modal using saved defaults.
-- **Command bar with usage heat** — Slash commands ranked by how rarely you use them (green → blue → purple → orange), click to type, Ctrl+click to send, per-session history strip.
-- **Activity panel** — File tree of everything the agent touched this response, with a floating mascot that tracks the main agent and pinned markers for each subagent at their last edit site.
-- **Cross-session terminal search (Ctrl+Shift+F)** — Regex search across every live terminal buffer with a 500-result cap.
-- **System prompt / context viewer** — Inspect captured system prompt blocks with token stats and cache-boundary markers.
-- **TAP event pipeline** — Push-based TCP socket receives raw entries, a classifier produces ~45 typed events across 22 flag-gated categories; state is derived from events, not terminal scraping.
-- **API proxy with request compression** — Rewrites bash, grep, glob, and JSON request bodies to trim token usage before they hit the wire; tracks per-rule match counts.
-- **Desktop notifications with click-to-focus** — Rate-limited WinRT toasts on response complete, permission needed, or error; clicking jumps to the source tab.
-- **WebGL terminal** — 1M fixed scrollback, DEC 2026 synchronized output, batch-debounced writes, OSC 52 clipboard-hijack stripping, and scroll-to-last-message via prompt-marker detection.
+- **Multiple coding-agent sessions in tabs** - Run Claude Code and Codex sessions side by side with fixed-width tabs, drag-to-reorder, working-directory grouping, and auto-respawn of dead tabs.
+- **First-party Claude Code and Codex support** - Launch either CLI when installed, hide features for missing CLIs, and keep slash commands, models, settings, hooks, MCP, and skills scoped to the active ecosystem.
+- **Auto-discovery for installed CLIs** - Detect versions, command options, models, slash commands, env hints, settings, skills, and plugins where each CLI exposes them.
+- **Visual CLI launcher** - Pick Claude Code or Codex, set per-CLI model/effort/permission options, preview the full command, and quick-launch with saved workspace defaults.
+- **Session resume with content search** - Browse past Claude Code conversations and Codex rollouts with previews, model badges, working directory context, and searchable transcript content.
+- **Configuration manager (Ctrl+,)** - Edit settings, env vars, instructions, hooks, plugins, MCP, agents, prompts, skills, port content, and observability across User / Project / Project Local scopes where supported.
+- **Portable project content** - Copy or translate compatible `.claude/` and `.codex/` project content, including skills, AGENTS/CLAUDE instructions, and MCP server config, with a mandatory backup before writes.
+- **Subagents as first-class terminals** - Track nested agents with elapsed time, tokens, and cost; open the inspector for conversation, edits, shell commands, and file tool calls.
+- **Live tok/s, latency, and cost** - EMA-smoothed output throughput, API latency, network RTT, and per-session spend derived from structured events instead of terminal scraping.
+- **Command bar with usage heat** - Rank slash commands by how rarely you use them, click to type, Ctrl+click to send, and keep a per-session history strip.
+- **Activity panel** - Show the files touched by the latest response, with main-agent and subagent markers at their last edit sites.
+- **Cross-session terminal search (Ctrl+Shift+F)** - Regex search across every live terminal buffer with a 500-result cap.
+- **System prompt / context viewer** - Inspect captured system and instruction blocks with token stats and cache-boundary markers.
+- **Observability event pipeline** - Classify Claude Code TAP entries and Codex rollout events into typed frontend state so the UI follows agent activity deterministically.
+- **API proxy and prompt rewrite tools** - Route supported provider requests, apply prompt rewrite rules, log traffic when enabled, and track per-rule match counts.
+- **Desktop notifications with click-to-focus** - Rate-limited notifications on response complete, permission needed, or error; clicking jumps to the source tab.
+- **WebGL terminal** - 1M fixed scrollback, DEC 2026 synchronized output, batch-debounced writes, OSC 52 clipboard-hijack stripping, and scroll-to-last-message via prompt-marker detection.
 
 ## Install
 
-Download the latest `.exe` from [Releases](../../releases) or build from source:
+Download the latest build from [Releases](../../releases):
+
+- Windows: NSIS installer `.exe` or `code-tabs-windows-portable.exe`
+- Linux: `.deb`, `.rpm`, `.AppImage`, or `code-tabs-linux-portable`
+
+Or build from source:
 
 ```bash
 npm install
-npm run tauri build
+npm run build:release
 ```
 
-The installer is at `src-tauri/target/release/bundle/nsis/`.
+Build outputs are written under `src-tauri/target/release/`:
 
-Or run the portable exe directly from `src-tauri/target/release/`.
+- Windows installer: `bundle/nsis/`
+- Linux packages: `bundle/deb/`, `bundle/rpm/`, and `bundle/appimage/`
+- Portable binary: `code-tabs` or `code-tabs.exe`
 
 ### Requirements
 
-- Windows 10 (21H2+) or Windows 11
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview) or [OpenAI Codex CLI](https://developers.openai.com/codex/cli) installed and authenticated
+- Windows 10 (21H2+), Windows 11, or Linux with the WebKitGTK dependencies required by Tauri v2
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview) and/or [OpenAI Codex CLI](https://developers.openai.com/codex/cli) installed and authenticated
 - WebView2 runtime (pre-installed on Windows 11)
+- Node.js 20 and a stable Rust toolchain for source builds
 
 ## Development
 
@@ -72,20 +81,25 @@ npm run build:debug      # Debug build (no NSIS installer)
 | Right-click tab | Context menu (copy ID, rename, etc.) |
 | Escape | Dismiss (ordered: context menu, palette, side panel, config, resume, launcher, inspector) |
 
-Activity, Search, and Debug views are tabs in the right panel — click to switch, or hit Ctrl+Shift+F to jump straight to Search.
+Activity, Search, and Debug views are tabs in the right panel. Click to switch, or hit Ctrl+Shift+F to jump straight to Search.
+
+## Local Data
+
+- App data and session logs: `%LOCALAPPDATA%\code-tabs` on Windows, `${XDG_DATA_HOME:-~/.local/share}/code-tabs` on Linux
+- Port-content backups: `~/.code_tabs/backups/`
 
 ## Architecture
 
 ```
-React 19 + TypeScript (WebView2)
+React 19 + TypeScript (Tauri webview)
   |
   Tauri v2 IPC
   |
   Rust Backend
   |-- ConPTY / openpty --> Claude Code CLI / Codex CLI
-  |-- TAP TCP socket <-- Inspector events
-  |-- API proxy --> Provider routing
-  |-- WinRT toast notifications
+  |-- Observability events <-- TAP / rollout capture
+  |-- API proxy --> provider routing and prompt rewrites
+  |-- Desktop notifications
 ```
 
 Built with [Tauri v2](https://tauri.app), [xterm.js 6](https://xtermjs.org), [Zustand](https://github.com/pmndrs/zustand), and [React 19](https://react.dev).

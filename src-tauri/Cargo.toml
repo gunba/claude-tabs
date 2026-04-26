@@ -1,11 +1,11 @@
 [package]
-name = "claude-tabs"
+name = "code-tabs"
 version = "0.62.0"
 edition = "2021"
-default-run = "claude-tabs"
+default-run = "code-tabs"
 
 [lib]
-name = "claude_tabs_lib"
+name = "code_tabs_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 # Standalone discovery audit binary. See src/bin/discover_audit.rs.

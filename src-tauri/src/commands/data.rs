@@ -160,12 +160,12 @@ fn summarize_codex_rollout(path: &std::path::Path) -> Option<CodexRolloutSummary
     }
 }
 
-/// Get the claude-tabs data directory (%LOCALAPPDATA%/claude-tabs/).
+/// Get the code-tabs data directory (%LOCALAPPDATA%/code-tabs/).
 /// Creates it if it doesn't exist.
 pub(crate) fn get_data_dir() -> Result<std::path::PathBuf, String> {
     let data_dir = dirs::data_local_dir()
         .ok_or("Could not determine local data directory")?
-        .join("claude-tabs");
+        .join("code-tabs");
     if !data_dir.exists() {
         std::fs::create_dir_all(&data_dir)
             .map_err(|e| format!("Failed to create data dir: {}", e))?;

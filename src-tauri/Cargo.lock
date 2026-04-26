@@ -614,7 +614,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "claude-tabs"
+name = "clipboard-win"
+version = "5.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
+dependencies = [
+ "error-code",
+]
+
+[[package]]
+name = "code-tabs"
 version = "0.62.0"
 dependencies = [
  "base64 0.22.1",
@@ -657,15 +666,6 @@ dependencies = [
  "toml 0.8.2",
  "uuid",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "clipboard-win"
-version = "5.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
-dependencies = [
- "error-code",
 ]
 
 [[package]]

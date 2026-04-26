@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri-v2-schema/main/tauri.conf.json",
   "productName": "Code Tabs",
   "version": "0.62.0",
-  "identifier": "com.claudetabs.app",
+  "identifier": "com.codetabs.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -51,7 +51,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENDQ0Y4RUVEMjdGM0RFOUUKUldTZTN2TW43WTdQekZOTWRBYnM1dTVMcFo0VlBocnpBdnVWb0lsSFFPU2NId0hvUFpzQ1ZXcTkK",
       "endpoints": [
-        "https://github.com/gunba/claude-tabs/releases/latest/download/latest.json"
+        "https://github.com/gunba/code-tabs/releases/latest/download/latest.json"
       ]
     }
   }

@@ -830,7 +830,7 @@ export const useSettingsStore = create<SettingsState>()(
       }),
     }),
     {
-      name: "claude-tabs-settings",
+      name: "code-tabs-settings",
       version: 21,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.

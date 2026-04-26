@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { dlog } from "./debugLog";
 
 /**
- * Shared UI configuration stored at %LOCALAPPDATA%/claude-tabs/ui-config.json.
+ * Shared UI configuration stored at %LOCALAPPDATA%/code-tabs/ui-config.json.
  * Loaded once at startup. Changes require app restart.
  */
 

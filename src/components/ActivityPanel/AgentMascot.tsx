@@ -1,8 +1,8 @@
-import mascotSrc from "../../assets/claude-mascot.png";
+import mascotSrc from "../../assets/agent-mascot.png";
 
 export type MascotState = "reading" | "writing" | "moving" | "idle" | "searching";
 
-interface ClaudeMascotProps {
+interface AgentMascotProps {
   state: MascotState;
   isSubagent?: boolean;
   isCompleted?: boolean;
@@ -17,10 +17,10 @@ const OVERLAY: Record<MascotState, string | null> = {
   idle: null,
 };
 
-export function ClaudeMascot({ state, isSubagent, isCompleted, size = 20 }: ClaudeMascotProps) {
+export function AgentMascot({ state, isSubagent, isCompleted, size = 20 }: AgentMascotProps) {
   const overlay = OVERLAY[state];
   // [AP-04] Completed subagents reuse the same mascot with a dimmed, no-animation class.
-  const classes = `claude-mascot claude-mascot-${state}${isSubagent ? " claude-mascot-subagent" : ""}${isCompleted ? " claude-mascot-completed" : ""}`;
+  const classes = `agent-mascot agent-mascot-${state}${isSubagent ? " agent-mascot-subagent" : ""}${isCompleted ? " agent-mascot-completed" : ""}`;
 
   return (
     <span
@@ -28,14 +28,14 @@ export function ClaudeMascot({ state, isSubagent, isCompleted, size = 20 }: Clau
       style={{ width: size, height: size }}
     >
       <img
-        className="claude-mascot-img"
+        className="agent-mascot-img"
         src={mascotSrc}
         alt=""
         width={size}
         height={size}
         draggable={false}
       />
-      {overlay && <span className="claude-mascot-overlay">{overlay}</span>}
+      {overlay && <span className="agent-mascot-overlay">{overlay}</span>}
     </span>
   );
 }

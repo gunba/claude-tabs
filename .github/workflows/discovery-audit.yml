@@ -1,6 +1,6 @@
 name: Discovery Audit
 
-# Detects drift between Claude Tabs's settings/command/env-var discovery and
+# Detects drift between Code Tabs' settings/command/env-var discovery and
 # the official Claude Code documentation. Non-blocking by design: the purpose
 # is to surface drift for a human to triage, not to gate builds.
 

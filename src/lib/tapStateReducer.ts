@@ -51,7 +51,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
   }
 
   switch (event.kind) {
-    // New turn or streaming content = Claude is actively working
+    // New turn or streaming content = the active CLI is working
     case "TurnStart":
     case "CodexTaskStarted":
     case "ThinkingStart":

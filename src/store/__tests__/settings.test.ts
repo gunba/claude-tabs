@@ -10,7 +10,7 @@ vi.mock("../../lib/paths", () => ({
   normalizePath: (p: string) => p,
   parseWorktreePath: (dir: string) => {
     const normalized = dir.replace(/\\/g, "/");
-    const match = normalized.match(/^(.+)\/\.(?:claude_tabs|claude)\/worktrees\/([^/]+)\/?$/);
+    const match = normalized.match(/^(.+)\/\.(?:code_tabs|claude)\/worktrees\/([^/]+)\/?$/);
     if (!match) return null;
     return { projectRoot: match[1], worktreeName: match[2], projectName: match[1].split("/").pop() };
   },
@@ -401,9 +401,9 @@ describe("setSavedDefaults with workspaceDefaults", () => {
     expect(ws["/projects/myapp"].model).toBe("claude-opus-4-20250514");
   });
 
-  it("collapses claude-tabs worktree paths to project root for workspace key", () => {
+  it("collapses code-tabs worktree paths to project root for workspace key", () => {
     const wtConfig = makeConfig({
-      workingDir: "/projects/myapp/.claude_tabs/worktrees/sorted-dove",
+      workingDir: "/projects/myapp/.code_tabs/worktrees/sorted-dove",
       model: "gpt-5.1-codex",
     });
     useSettingsStore.getState().setSavedDefaults(wtConfig);

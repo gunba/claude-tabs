@@ -13,7 +13,7 @@ npm run build:release   # Sync rules + full NSIS installer (only for releases)
 
 ### Outputs
 
-- **Portable exe**: `src-tauri/target/release/claude-tabs.exe`
+- **Portable exe**: `src-tauri/target/release/code-tabs.exe`
 - **NSIS installer**: `src-tauri/target/release/bundle/nsis/Code Tabs_<version>_x64-setup.exe`
 
 Never do a full NSIS build just to test. Use `build:quick` or `build:debug`.
@@ -50,8 +50,8 @@ Version must be bumped in all three files:
    ```
 
 CI workflows (`.github/workflows/build-windows.yml` and `build-linux.yml`) trigger on the `v*` tag push and upload platform artifacts automatically:
-- **Windows**: NSIS installer + `claude-tabs-windows-portable.exe`
-- **Linux**: `.deb`, `.rpm`, `.AppImage` + `claude-tabs-linux-portable`
+- **Windows**: NSIS installer + `code-tabs-windows-portable.exe`
+- **Linux**: `.deb`, `.rpm`, `.AppImage` + `code-tabs-linux-portable`
 
 Both workflows include a release-existence guard — whichever finishes first creates the release if `/b` hasn't already, the other appends with `--clobber`.
 

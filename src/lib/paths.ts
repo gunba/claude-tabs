@@ -45,16 +45,16 @@ export function canonicalizePath(p: string): string {
 }
 
 export interface WorktreeInfo {
-  projectName: string;   // last component of project root (e.g., "claude_tabs")
+  projectName: string;   // last component of project root (e.g., "code_tabs")
   worktreeName: string;  // full slug (e.g., "sorted-marinating-dove")
-  projectRoot: string;   // path before /.claude_tabs/worktrees/ or legacy /.claude/worktrees/
+  projectRoot: string;   // path before /.code_tabs/worktrees/ or Claude Code /.claude/worktrees/
 }
 
-/** Detect if a directory is a `.claude_tabs/worktrees/<name>` or legacy `.claude/worktrees/<name>` path and extract info. */
-// [CU-01] parseWorktreePath matches '.claude_tabs/worktrees/<name>' (new) and '.claude/worktrees/<name>' (legacy) via alternation regex
+/** Detect if a directory is a `.code_tabs/worktrees/<name>` or Claude Code `.claude/worktrees/<name>` path and extract info. */
+// [CU-01] parseWorktreePath matches '.code_tabs/worktrees/<name>' and Claude Code '.claude/worktrees/<name>' via alternation regex
 export function parseWorktreePath(dir: string): WorktreeInfo | null {
   const normalized = dir.replace(/\\/g, "/");
-  const match = normalized.match(/^(.+)\/\.(?:claude_tabs|claude)\/worktrees\/([^/]+)\/?$/);
+  const match = normalized.match(/^(.+)\/\.(?:code_tabs|claude)\/worktrees\/([^/]+)\/?$/);
   if (!match) return null;
   const projectRoot = match[1];
   const worktreeName = match[2];

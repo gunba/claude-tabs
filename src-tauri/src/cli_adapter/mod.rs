@@ -1,6 +1,6 @@
 //! CLI adapter abstraction.
 //!
-//! Both Claude Code and Codex are spawned as PTY children of claude-tabs.
+//! Both Claude Code and Codex are spawned as PTY children of code-tabs.
 //! Their detection, version probing, args building, and launch-option
 //! discovery differ; everything else (PTY layer, observability sink,
 //! tab UI) is shared. A `CliAdapter` is the single seam that holds the

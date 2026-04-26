@@ -33,7 +33,7 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
     {
       id: "new-session",
       label: "New Session",
-      description: "Open a new Claude Code session",
+      description: "Open a new CLI session",
       action: () => {
         setShowLauncher(true);
         onClose();

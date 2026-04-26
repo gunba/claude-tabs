@@ -176,23 +176,23 @@
 }
 
 /* ============================================================
-   ClaudeMascot — Animated pixel-art mascot
+   AgentMascot — Animated pixel-art mascot
    ============================================================ */
 
-.claude-mascot {
+.agent-mascot {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.claude-mascot-img {
+.agent-mascot-img {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
 /* Overlay icon (eye, pencil) positioned bottom-right of mascot */
-.claude-mascot-overlay {
+.agent-mascot-overlay {
   position: absolute;
   bottom: -1px;
   right: -2px;
@@ -205,9 +205,9 @@
 /* -- Animation states -- */
 
 /* Reading and writing: unified rocking motion anchored at left edge */
-.claude-mascot-reading .claude-mascot-img,
-.claude-mascot-writing .claude-mascot-img,
-.claude-mascot-searching .claude-mascot-img {
+.agent-mascot-reading .agent-mascot-img,
+.agent-mascot-writing .agent-mascot-img,
+.agent-mascot-searching .agent-mascot-img {
   animation: mascot-rock 0.4s steps(4) infinite alternate;
   transform-origin: left center;
 }
@@ -218,7 +218,7 @@
 }
 
 /* Moving: hop (single play) */
-.claude-mascot-moving .claude-mascot-img {
+.agent-mascot-moving .agent-mascot-img {
   animation: mascot-hop 0.35s ease-out;
 }
 
@@ -229,7 +229,7 @@
 }
 
 /* Idle: subtle bob */
-.claude-mascot-idle .claude-mascot-img {
+.agent-mascot-idle .agent-mascot-img {
   animation: mascot-bob 3s steps(8) infinite;
 }
 
@@ -239,15 +239,15 @@
 }
 
 /* Subagent: blue tint via CSS filter */
-.claude-mascot-subagent .claude-mascot-img {
+.agent-mascot-subagent .agent-mascot-img {
   filter: hue-rotate(190deg) saturate(1.3) brightness(0.95);
 }
 
 /* Completed agent: dimmed to indicate no longer active */
-.claude-mascot-completed {
+.agent-mascot-completed {
   opacity: 0.4;
 }
 
-.claude-mascot-completed .claude-mascot-img {
+.agent-mascot-completed .agent-mascot-img {
   animation: none;
 }

@@ -1,9 +1,9 @@
 ---
-name: claude-tabs-debugging
-description: Investigate Claude Tabs debug captures. Use only when the user is explicitly working with debug logs, session IDs, TAP output, proxy traffic, observability files, or debug markers and wants log-based analysis or correlation.
+name: code-tabs-debugging
+description: Investigate Code Tabs debug captures. Use only when the user is explicitly working with debug logs, session IDs, TAP output, proxy traffic, observability files, or debug markers and wants log-based analysis or correlation.
 ---
 
-# Claude Tabs Debugging
+# Code Tabs Debugging
 
 Treat Claude Code as a moving target. Verify behavior from local Claude Code source before assuming how it works.
 
@@ -18,17 +18,17 @@ Debug observability is debug-build only. If a bug needs logs, reproduce it in th
 
 Primary files:
 
-- `%LOCALAPPDATA%\claude-tabs\observability\app.jsonl`
-- `%LOCALAPPDATA%\claude-tabs\sessions\<sessionId>\observability.jsonl`
-- `%LOCALAPPDATA%\claude-tabs\sessions\<sessionId>\taps.jsonl`
-- `%LOCALAPPDATA%\claude-tabs\sessions\<sessionId>\traffic.jsonl`
+- `%LOCALAPPDATA%\code-tabs\observability\app.jsonl`
+- `%LOCALAPPDATA%\code-tabs\sessions\<sessionId>\observability.jsonl`
+- `%LOCALAPPDATA%\code-tabs\sessions\<sessionId>\taps.jsonl`
+- `%LOCALAPPDATA%\code-tabs\sessions\<sessionId>\traffic.jsonl`
 
 Start with `observability.jsonl`. Use it as the correlated timeline. Read `WARN`, `ERR`, and `event = "perf.span"` first, then narrow by `sessionId`, `module`, `event`, and `data`.
 
 Use:
 
 ```powershell
-lnav "$env:LOCALAPPDATA\claude-tabs\observability\app.jsonl" "$env:LOCALAPPDATA\claude-tabs\sessions\<sessionId>\observability.jsonl"
+lnav "$env:LOCALAPPDATA\code-tabs\observability\app.jsonl" "$env:LOCALAPPDATA\code-tabs\sessions\<sessionId>\observability.jsonl"
 ```
 
 to align app-wide and session-specific timestamps.

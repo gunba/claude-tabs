@@ -164,7 +164,7 @@ fn truncate_body(body: &str) -> (String, bool) {
 fn http_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .user_agent("claude-tabs")
+        .user_agent("code-tabs")
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))
 }

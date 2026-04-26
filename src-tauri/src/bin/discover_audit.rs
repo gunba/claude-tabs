@@ -3,7 +3,7 @@
 // [DA-01] discover_audit binary: subcommands dump/audit/fetch-docs; exit codes 0/1/2/3
 // [DA-02] Advisory-only CI; triggers on discovery source changes + weekly
 //!
-//! Runs the same `claude_tabs_lib::discovery::*` functions the app runs, plus
+//! Runs the same `code_tabs_lib::discovery::*` functions the app runs, plus
 //! a thin audit layer that diffs discovered items against docs.claude.com.
 //! This exists so discovery drift surfaces in CI / dev tooling — not in
 //! production error reports from users.
@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use claude_tabs_lib::discovery::{
+use code_tabs_lib::discovery::{
     discover_builtin_commands_sync, discover_env_vars_sync, discover_plugin_commands_sync,
     discover_settings_schema_sync,
 };
@@ -650,7 +650,7 @@ fn diff_string_sets(
 
 fn fetch_url(url: &str) -> Result<String, String> {
     let client = reqwest::blocking::Client::builder()
-        .user_agent("claude-tabs-discover-audit/0.1")
+        .user_agent("code-tabs-discover-audit/0.1")
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("http client: {}", e))?;

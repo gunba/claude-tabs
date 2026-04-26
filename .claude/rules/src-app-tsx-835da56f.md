@@ -30,7 +30,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Hooks Manager
 
-- [HM-11 L124] Hook configuration is user-managed only: claude-tabs may read and edit existing Claude hook files via the Hooks UI, but it never auto-installs or mutates user hook settings on startup.
+- [HM-11 L124] Hook configuration is user-managed only: Code Tabs may read and edit existing Claude hook files via the Hooks UI, but it never auto-installs or mutates user hook settings on startup.
 
 ## State Metadata
 

@@ -11,7 +11,7 @@
 //!     {command, args, env} shape aligns 1:1.
 //!
 //! Every Apply is preceded by a tarball backup of the affected paths
-//! at `~/.claude_tabs/backups/port-<ts>.tar.gz`. The backup is
+//! at `~/.code_tabs/backups/port-<ts>.tar.gz`. The backup is
 //! mandatory: refusal to write the tarball aborts the port.
 //!
 //! Hooks, slash-command→skill conversion, and `.claude/commands/*.md`
@@ -56,12 +56,12 @@ pub struct PortReport {
 // ── Backup ──────────────────────────────────────────────────────────
 
 /// Write a `.tar.gz` of all paths in `targets` to
-/// `~/.claude_tabs/backups/port-<ts>.tar.gz`. Missing paths are
+/// `~/.code_tabs/backups/port-<ts>.tar.gz`. Missing paths are
 /// silently skipped (we don't want to abort because a target file
 /// doesn't exist yet). Returns the backup path.
 fn write_backup(targets: &[PathBuf]) -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("no home dir")?;
-    let backup_dir = home.join(".claude_tabs").join("backups");
+    let backup_dir = home.join(".code_tabs").join("backups");
     fs::create_dir_all(&backup_dir).map_err(|e| format!("create backup dir: {e}"))?;
     let ts = chrono::Local::now().format("%Y%m%dT%H%M%S");
     let backup_path = backup_dir.join(format!("port-{ts}.tar.gz"));
@@ -130,7 +130,7 @@ fn skills_root_for(direction: PortDirection, project_dir: &Path) -> Result<(Path
     }
 }
 
-// [PC-01] port_skill/port_memory/port_mcp: .claude/<->.codex/ portability; mandatory tarball backup at ~/.claude_tabs/backups/port-<ts>.tar.gz before any write
+// [PC-01] port_skill/port_memory/port_mcp: .claude/<->.codex/ portability; mandatory tarball backup at ~/.code_tabs/backups/port-<ts>.tar.gz before any write
 #[tauri::command]
 pub async fn port_skill(req: PortSkillRequest) -> Result<PortReport, String> {
     tauri::async_runtime::spawn_blocking(move || port_skill_sync(&req))

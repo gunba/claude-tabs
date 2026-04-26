@@ -382,7 +382,7 @@ export function useTerminal({
             event: "terminal.title_change",
             data: { rawTitle, title },
           });
-          if (!sid || !title || title === "Code Tabs" || title === "Claude Tabs" || title.startsWith("Claude Code") || title.toLowerCase() === "claude") return;
+          if (!sid || !title || title === "Code Tabs" || title.startsWith("Claude Code") || title.toLowerCase() === "claude") return;
           const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
           if (session && title !== session.name) {
             useSessionStore.getState().renameSession(sid, title);

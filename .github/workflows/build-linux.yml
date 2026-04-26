@@ -79,7 +79,7 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz
             src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz.sig
-            src-tauri/target/release/claude-tabs
+            src-tauri/target/release/code-tabs
 
       - name: Upload to release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -95,7 +95,7 @@ jobs:
                    src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz.sig; do
             [ -f "$f" ] && gh release upload "$tag" "$f" --clobber
           done
-          gh release upload "$tag" src-tauri/target/release/claude-tabs#claude-tabs-linux-portable --clobber
+          gh release upload "$tag" src-tauri/target/release/code-tabs#code-tabs-linux-portable --clobber
 
       - name: Generate and upload latest.json
         if: startsWith(github.ref, 'refs/tags/v')
@@ -130,7 +130,7 @@ jobs:
             --arg v "$version" \
             --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg sig "$sig" \
-            --arg url "https://github.com/gunba/claude-tabs/releases/download/$tag/$tar_name" \
+            --arg url "https://github.com/gunba/code-tabs/releases/download/$tag/$tar_name" \
             '{
               version: $v,
               notes: ("Release v" + $v),

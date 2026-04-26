@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useActivityStore } from "../../store/activity";
 import { useSessionStore } from "../../store/sessions";
-import { ClaudeMascot } from "./ClaudeMascot";
-import type { MascotState } from "./ClaudeMascot";
+import { AgentMascot } from "./AgentMascot";
+import type { MascotState } from "./AgentMascot";
 import { IconFolder, IconDocument } from "../Icons/Icons";
 import { isSubagentActive } from "../../types/session";
 import type { FileActivity, ContextFileEntry } from "../../types/activity";
@@ -113,7 +113,7 @@ function FileTreeRow({
       >
         <span className="file-tree-icon-slot">
           {inlineMascot ? (
-            <ClaudeMascot
+            <AgentMascot
               state={mascotState!}
               isSubagent={primaryMascot!.isSubagent}
               isCompleted={primaryMascot!.isCompleted}
@@ -161,7 +161,7 @@ function FileTreeRow({
       </span>
       <span className="file-tree-icon-slot">
         {inlineMascot ? (
-          <ClaudeMascot
+          <AgentMascot
             state={mascotState!}
             isSubagent={primaryMascot!.isSubagent}
             isCompleted={primaryMascot!.isCompleted}
@@ -514,7 +514,7 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
                 className="activity-mascot-float"
                 style={{ top: mascot.top, left: mascot.left }}
               >
-                <ClaudeMascot
+                <AgentMascot
                   state={mascot.state}
                   isSubagent={mascot.isSubagent}
                   size={16}

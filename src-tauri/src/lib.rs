@@ -21,11 +21,11 @@ use session::SessionManager;
 use tap_server::TapServerState;
 
 /// [PT-07] OS PIDs of active PTY child processes, registered by the frontend.
-/// Killed on app exit to prevent orphaned Claude Code CLI processes.
+/// Killed on app exit to prevent orphaned CLI child processes.
 pub struct ActivePids(pub Mutex<HashSet<u32>>);
 
 /// Create a Windows Job Object and assign our process to it.
-/// All child processes (ConPTY conhost, Claude CLI, etc.) inherit the job.
+/// All child processes (ConPTY conhost, agent CLIs, etc.) inherit the job.
 /// `KILL_ON_JOB_CLOSE` ensures they all die when our process exits.
 #[cfg(target_os = "windows")]
 fn setup_job_object() {
@@ -86,7 +86,7 @@ pub fn run() {
     // Assign our process to a Job Object with KILL_ON_JOB_CLOSE.
     // When our process exits (clean, crash, or force-close), Windows
     // automatically kills all child processes — including conhost.exe
-    // instances spawned by ConPTY and Claude CLI processes.
+    // instances spawned by ConPTY and agent CLI processes.
     #[cfg(target_os = "windows")]
     setup_job_object();
 

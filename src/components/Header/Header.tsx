@@ -57,7 +57,7 @@ export function Header() {
       onDoubleClick={onHeaderDoubleClick}
     >
       <div className="app-header-title">
-        {/* [BR-01] Brand: 'Code Tabs' (renamed from 'Claude Tabs'); shows both Claude and Codex versions */}
+        {/* [BR-01] Brand: 'Code Tabs'; shows both Claude and Codex versions */}
         <span className="app-header-name">
           Code Tabs{appVersion ? ` v${appVersion}` : ""}
         </span>

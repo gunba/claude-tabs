@@ -227,11 +227,11 @@ describe("scopePath", () => {
 
 describe("parseWorktreePath", () => {
   it("detects a worktree path with backslashes", () => {
-    const result = parseWorktreePath("C:\\Users\\jorda\\Projects\\claude_tabs\\.claude\\worktrees\\sorted-marinating-dove");
+    const result = parseWorktreePath("C:\\Users\\jorda\\Projects\\code_tabs\\.claude\\worktrees\\sorted-marinating-dove");
     expect(result).toEqual({
-      projectName: "claude_tabs",
+      projectName: "code_tabs",
       worktreeName: "sorted-marinating-dove",
-      projectRoot: "C:/Users/jorda/Projects/claude_tabs",
+      projectRoot: "C:/Users/jorda/Projects/code_tabs",
     });
   });
 
@@ -244,8 +244,8 @@ describe("parseWorktreePath", () => {
     });
   });
 
-  it("detects the claude-tabs-owned worktree directory", () => {
-    const result = parseWorktreePath("C:/Users/jorda/Projects/my-app/.claude_tabs/worktrees/fix-bug");
+  it("detects the code-tabs-owned worktree directory", () => {
+    const result = parseWorktreePath("C:/Users/jorda/Projects/my-app/.code_tabs/worktrees/fix-bug");
     expect(result).toEqual({
       projectName: "my-app",
       worktreeName: "fix-bug",
@@ -263,7 +263,7 @@ describe("parseWorktreePath", () => {
   });
 
   it("returns null for non-worktree path", () => {
-    expect(parseWorktreePath("C:\\Users\\jorda\\Projects\\claude_tabs")).toBeNull();
+    expect(parseWorktreePath("C:\\Users\\jorda\\Projects\\code_tabs")).toBeNull();
   });
 
   it("returns null for path containing .claude but not worktrees", () => {
@@ -307,11 +307,11 @@ describe("worktreeAcronym", () => {
 
 describe("dirToTabName", () => {
   it("returns project name for worktree path", () => {
-    expect(dirToTabName("C:\\Users\\jorda\\Projects\\claude_tabs\\.claude\\worktrees\\sorted-marinating-dove")).toBe("claude_tabs");
+    expect(dirToTabName("C:\\Users\\jorda\\Projects\\code_tabs\\.claude\\worktrees\\sorted-marinating-dove")).toBe("code_tabs");
   });
 
   it("returns last component for non-worktree path", () => {
-    expect(dirToTabName("C:\\Users\\jorda\\Projects\\claude_tabs")).toBe("claude_tabs");
+    expect(dirToTabName("C:\\Users\\jorda\\Projects\\code_tabs")).toBe("code_tabs");
   });
 
   it("returns empty string for empty input", () => {
@@ -506,23 +506,23 @@ describe("groupSessionsByDir", () => {
   it("groups worktree sessions with their project root", () => {
     const sessions = IS_WINDOWS
       ? [
-          mkSession("root", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs"),
-          mkSession("wt1", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs\\.claude\\worktrees\\gentle-wandering-dongarra"),
-          mkSession("wt2", "C:\\Users\\jorda\\PycharmProjects\\claude_tabs\\.claude\\worktrees\\sorted-marinating-dove"),
+          mkSession("root", "C:\\Users\\jorda\\PycharmProjects\\code_tabs"),
+          mkSession("wt1", "C:\\Users\\jorda\\PycharmProjects\\code_tabs\\.claude\\worktrees\\gentle-wandering-dongarra"),
+          mkSession("wt2", "C:\\Users\\jorda\\PycharmProjects\\code_tabs\\.claude\\worktrees\\sorted-marinating-dove"),
         ]
       : [
-          mkSession("root", "/home/jordan/PycharmProjects/claude_tabs"),
-          mkSession("wt1", "/home/jordan/PycharmProjects/claude_tabs/.claude/worktrees/gentle-wandering-dongarra"),
-          mkSession("wt2", "/home/jordan/PycharmProjects/claude_tabs/.claude/worktrees/sorted-marinating-dove"),
+          mkSession("root", "/home/jordan/PycharmProjects/code_tabs"),
+          mkSession("wt1", "/home/jordan/PycharmProjects/code_tabs/.claude/worktrees/gentle-wandering-dongarra"),
+          mkSession("wt2", "/home/jordan/PycharmProjects/code_tabs/.claude/worktrees/sorted-marinating-dove"),
         ];
     const groups = groupSessionsByDir(sessions);
     expect(groups).toHaveLength(1);
     expect(groups[0].sessions.map((s) => s.id)).toEqual(["root", "wt1", "wt2"]);
-    expect(groups[0].label).toBe("claude_tabs");
+    expect(groups[0].label).toBe("code_tabs");
     expect(groups[0].key).toBe(
       IS_WINDOWS
-        ? "C:\\Users\\jorda\\PycharmProjects\\claude_tabs"
-        : "/home/jordan/PycharmProjects/claude_tabs",
+        ? "C:\\Users\\jorda\\PycharmProjects\\code_tabs"
+        : "/home/jordan/PycharmProjects/code_tabs",
     );
   });
 });

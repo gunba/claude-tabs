@@ -8,7 +8,7 @@ export default defineConfig(async () => ({
   plugins: [react()],
   assetsInclude: ["**/*.wasm"],
   test: {
-    exclude: [...configDefaults.exclude, "**/.claude_tabs/worktrees/**", "**/.claude/worktrees/**"],
+    exclude: [...configDefaults.exclude, "**/.code_tabs/worktrees/**", "**/.claude/worktrees/**"],
   },
   clearScreen: false,
   server: {

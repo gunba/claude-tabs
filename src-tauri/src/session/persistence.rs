@@ -5,7 +5,7 @@ use super::types::SessionSnapshot;
 
 fn data_dir() -> PathBuf {
     let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("claude-tabs");
+    let dir = base.join("code-tabs");
     fs::create_dir_all(&dir).ok();
     dir
 }

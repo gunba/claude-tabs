@@ -277,7 +277,7 @@ fn is_descendant_of(pid: u32, ancestor: u32, tree: &[(u32, u32)]) -> bool {
 
 // [RC-13] Kill orphans: ancestry check skips processes managed by other instances
 /// Kill orphaned processes holding any of the given session IDs.
-/// Checks for other running claude-tabs instances first — processes that
+/// Checks for other running code-tabs instances first — processes that
 /// are descendants of another instance are skipped (they're managed, not
 /// orphaned). Only kills true orphans from crashed/force-closed instances.
 #[tauri::command]

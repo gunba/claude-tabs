@@ -71,7 +71,7 @@ Audit run: 2026-04-25 (batches 1–10 landed).
 | Command palette skills | Active-terminal scoped: Claude plugins/commands/skills and Codex skills are kept in separate stores | ✅ |
 | Recording / Observability tab | Reads `observability.jsonl` (CLI-agnostic sink) | ✅ — both CLIs land here |
 | Port content tab | Three pairs (Skill, Memory, MCP) with backup tarball | ✅ |
-| Worktree tab grouping | `parseWorktreePath()` matches `.claude_tabs/worktrees/<slug>` and legacy `.claude/worktrees/<slug>` | ⚠️ — parser/test coverage migrated; new-worktree default and legacy-location banner still pending. |
+| Worktree tab grouping | `parseWorktreePath()` matches app-owned `.code_tabs/worktrees/<slug>` paths and Claude Code `.claude/worktrees/<slug>` paths | ⚠️ — parser/test coverage is in place; new-worktree default and mixed-location messaging still pending. |
 
 ## Login / auth
 
@@ -91,7 +91,7 @@ Audit run: 2026-04-25 (batches 1–10 landed).
 
 ## Open follow-ups (next batch beyond 10)
 
-1. **Worktree dir rename.** Finish migration from `.claude/worktrees/` → `.claude_tabs/worktrees/`: new-worktree default + per-project legacy-location banner.
+1. **Worktree ownership.** Finish the app-owned `.code_tabs/worktrees/` default and add per-project messaging when Claude Code `.claude/worktrees/` paths are present.
 2. **Codex settings schema/reference.** Add a typed helper/reference for common `config.toml` keys (`model`, `model_reasoning_effort`, `sandbox_mode`, approvals, `[instructions]`, `[developer_instructions]`, `[hooks]`) without pretending the Claude schema applies.
 3. **Cross-ecosystem copy actions.** Add explicit copy/sync affordances for settings, MCP, hooks, and skills now that both sides are first-party.
 4. **Hooks port.** Translator table from Claude `settings.json[hooks]` → Codex `config.toml[[hooks.*]]`. Locked event-name table sourced from `codex-rs/config/src/hook_config.rs:16-29` (PreToolUse, PermissionRequest, PostToolUse, SessionStart, UserPromptSubmit, Stop — same set).

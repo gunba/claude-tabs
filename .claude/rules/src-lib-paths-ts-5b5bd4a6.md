@@ -11,9 +11,9 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 - [AP-01 L32] canonicalizePath() in paths.ts converts any path to a stable forward-slash form for identity comparisons: backslashes -> forward slashes, MSYS-style /c/Users/ -> C:/Users/, drive letter normalized to uppercase, trailing slashes stripped. Used at ingress in useTapEventProcessor (ToolInput file_path, InstructionsLoadedEvent, PermissionRejected) and the passive git change scan (absolutized paths from git_list_changes) to ensure cross-platform path identity.
 
-## Claude Tabs Worktree Paths
+## Code Tabs Worktree Paths
 
-- [CU-01 L54] parseWorktreePath in src/lib/paths.ts matches both '.claude_tabs/worktrees/<name>' and legacy '.claude/worktrees/<name>' paths via the regex /^(.+)\/\.(?:claude_tabs|claude)\/worktrees\/([^/]+)\/?$/. Returns {projectRoot, worktreeName, projectName}. Settings store mock and workspace-key collapsing tests in paths.test.ts mirror both regex branches. Used in settings store (setSavedDefaults workspace key), ConfigManager, SessionLauncher, and useTapEventProcessor.
+- [CU-01 L54] parseWorktreePath in src/lib/paths.ts matches both app-owned '.code_tabs/worktrees/<name>' paths and Claude Code '.claude/worktrees/<name>' paths via the regex /^(.+)\/\.(?:code_tabs|claude)\/worktrees\/([^/]+)\/?$/. Returns {projectRoot, worktreeName, projectName}. Settings store mock and workspace-key collapsing tests in paths.test.ts mirror both regex branches. Used in settings store (setSavedDefaults workspace key), ConfigManager, SessionLauncher, and useTapEventProcessor.
 
 ## Config Implementation
 

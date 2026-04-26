@@ -171,7 +171,7 @@ fn run_claude_cli(args: &[&str], label: &str) -> Result<String, String> {
     // preserves all output. Stderr stays on a pipe so we can surface
     // errors; stderr volume is small and never hits the buffering race.
     let stdout_path = std::env::temp_dir().join(format!(
-        "claude-tabs-cli-{}-{}.out",
+        "code-tabs-cli-{}-{}.out",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
