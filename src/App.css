@@ -139,10 +139,20 @@
   opacity: 0.85;
 }
 
+.tab-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  line-height: 13px;
+  overflow: hidden;
+}
+
 .tab-cli-row {
   font-size: 9px;
   font-weight: 700;
-  line-height: 11px;
+  line-height: 13px;
+  flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -154,6 +164,18 @@
 
 .tab-cli-row-codex {
   color: var(--cli-codex);
+}
+
+.tab-activity {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 13px;
+  letter-spacing: 0.02em;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Ctrl-held: unified blue top-bar + tint ──────────── */

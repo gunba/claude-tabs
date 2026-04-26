@@ -574,19 +574,21 @@ export default function App() {
                   <span className={`tab-dot state-${effectiveState}${inspectorOffSessions.has(session.id) ? " inspector-off" : ""}`} />
                   <span className="tab-label">
                     <span className="tab-name">{fullName}</span>
-                    <span
-                      className={`tab-cli-row tab-cli-row-${session.config.cli}`}
-                      title={session.config.cli === "codex" ? "Codex" : "Claude Code"}
-                    >
-                      {session.config.cli === "codex" ? "Codex" : "Claude"}
-                    </span>
-                    <span className="tab-status-row">
-                      <span style={{ color: activityColor ?? "var(--text-secondary)" }}>
+                    <span className="tab-meta-row">
+                      <span
+                        className={`tab-cli-row tab-cli-row-${session.config.cli}`}
+                        title={session.config.cli === "codex" ? "Codex" : "Claude Code"}
+                      >
+                        {session.config.cli === "codex" ? "Codex" : "Claude"}
+                      </span>
+                      <span className="tab-activity" style={{ color: activityColor ?? "var(--text-secondary)" }}>
                         {activityText}
                       </span>
+                    </span>
+                    <span className="tab-status-row">
                       {statusSpans.map((s, i) => (
                         <span key={i}>
-                          <span style={{ color: "var(--text-muted)", opacity: 0.5 }}> &middot; </span>
+                          {i > 0 && <span style={{ color: "var(--text-muted)", opacity: 0.5 }}> &middot; </span>}
                           <span style={{ color: s.color }} title={s.title}>{s.text}</span>
                         </span>
                       ))}
