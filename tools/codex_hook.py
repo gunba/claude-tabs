@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# [CK-01] Codex SessionStart + UserPromptSubmit hook entrypoints for proofd context injection.
 """
 Codex hook entrypoint for agent-proofs.
 

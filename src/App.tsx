@@ -419,6 +419,7 @@ export default function App() {
 
   // Active session's subagents + skill invocations — unified bar items
   const activeSession = sessions.find((s) => s.id === activeTabId);
+  // [PO-01] Provider-scoped accents: app-provider-{cli} root class swaps --accent palette to the active session's CLI; per-tab .tab-cli-{cli} keeps inactive tabs colored by their own CLI.
   const activeProvider = activeSession?.config.cli ?? "claude";
   const allSubs = activeTabId ? (subagentMap.get(activeTabId) || []) : [];
   // Build agent bar items sorted by timestamp (newest first) — subagents only

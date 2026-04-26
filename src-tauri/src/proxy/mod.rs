@@ -429,6 +429,7 @@ pub fn stop_traffic_log(
 const ANTHROPIC_UPSTREAM_BASE_URL: &str = "https://api.anthropic.com";
 const OPENAI_UPSTREAM_BASE_URL: &str = "https://api.openai.com";
 
+// [SP-02] Per-request upstream resolver: anthropic vs openai routing + path matchers + OpenAI instructions field rewrite (Codex/OpenAI Responses analog of Claude system field).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum UpstreamKind {
     Anthropic,

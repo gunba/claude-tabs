@@ -33,6 +33,7 @@ pub fn linux_use_native_chrome() -> bool {
     desktop.split(':').any(|s| s == "KDE")
 }
 
+// [CN-01] Per-CLI changelog fetch: claude raw GitHub markdown CHANGELOG.md vs codex GitHub releases atom feed + GitHub releases API fallback; semver-aware filter selects entries strictly after fromVersion through toVersion (inclusive), capped at 12 (or 5 default).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangelogEntry {

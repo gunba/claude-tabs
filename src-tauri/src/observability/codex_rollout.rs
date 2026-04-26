@@ -375,6 +375,7 @@ async fn tail_rollout(
     }
 }
 
+// [CX-02] Codex prompt capture state: base_instructions captured from session_meta; developer/user instructions captured from turn_context, deduped by stable joined-string key.
 #[derive(Default)]
 struct CodexPromptCaptureState {
     base_instructions: Option<String>,
@@ -659,6 +660,7 @@ fn emit_codex_prompt_capture(
 fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &Value) {
     let kind = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match kind {
+        // [CX-03] Codex task lifecycle events: task_started/task_complete/turn_aborted -> dedicated codex-task-* tap entries + record_backend_event log entries.
         "task_started" | "turn_started" => {
             emit_tap_entry(
                 app,

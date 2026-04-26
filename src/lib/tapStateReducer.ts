@@ -28,6 +28,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
         return "actionNeeded";
       case "TurnStart":
       case "CodexTaskStarted":
+        // [IN-31] Codex task transitions: CodexTaskStarted joins TurnStart in clearing actionNeeded -> thinking; CodexTaskComplete -> idle directly; CodexToolCallComplete idempotent on idle.
         // Bug 003 fallback: no ConversationMessage(user) or ToolResult fires for
         // AskUserQuestion answers in some CLI versions. TurnStart is the only
         // guaranteed event when the agent continues. Risk: background subagent

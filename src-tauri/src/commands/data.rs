@@ -9,6 +9,7 @@ fn codex_home_dir() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".codex"))
 }
 
+// [SR-09] Codex resume picker: walk $CODEX_HOME/sessions for rollout-*.jsonl, summarize each via summarize_codex_rollout (linear pass extracting session_meta + turn_context + event_msg user_message + response_item user/assistant text); list_past_sessions and search_session_content thread these into the unified resume picker alongside Claude entries.
 fn collect_codex_rollout_files() -> Vec<std::path::PathBuf> {
     let Some(root) = codex_home_dir().map(|h| h.join("sessions")) else {
         return Vec::new();

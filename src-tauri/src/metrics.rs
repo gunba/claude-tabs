@@ -192,6 +192,7 @@ pub fn spawn_collector(app: AppHandle) {
     });
 }
 
+// [PM-08] without_tasks() prevents Linux thread RSS double-count; top_children top-5 by mem in per-session payload
 fn process_refresh_kind() -> ProcessRefreshKind {
     // Linux tasks are threads in sysinfo; counting them as descendants multiplies RSS.
     ProcessRefreshKind::nothing()

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
+// [UT-01] UnsavedTextEditorRegistry: editors register pre/post-save snapshots; ConfigManager collects pending changes on close/switch and prompts via DiscardChangesDialog with per-editor unified diff preview.
 export interface UnsavedTextEditorChange {
   id: string;
   title: string;
