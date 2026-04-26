@@ -141,6 +141,11 @@ function resolveActivityPath(rawPath: string, workDir: string): string {
   return canonicalizePath(`${workDir.replace(/[\\/]+$/, "")}/${rawPath}`);
 }
 
+function isExternalActivityPath(path: string, workDir: string): boolean {
+  const normalizedWorkDir = normalizePath(workDir);
+  return normalizedWorkDir ? !normalizePath(path).startsWith(normalizedWorkDir) : false;
+}
+
 function recordContextPath(
   sid: string,
   rawPath: string,
@@ -153,7 +158,7 @@ function recordContextPath(
   const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
   const workDir = session?.config.workingDir ?? "";
   const ctxPath = resolveActivityPath(rawPath, workDir);
-  const isExternal = workDir ? !normalizePath(ctxPath).startsWith(workDir) : false;
+  const isExternal = isExternalActivityPath(ctxPath, workDir);
   const activityStore = useActivityStore.getState();
   activityStore.addContextFile(sid, {
     path: ctxPath,
@@ -233,20 +238,27 @@ function deriveCodexPromptTitle(display: string): string | null {
   return title.length > 54 ? `${title.slice(0, 51).trim()}...` : title;
 }
 
-function maybeAutoNameCodexSession(sid: string, display: string, seen: Set<string>): void {
-  if (seen.has(sid)) return;
+function isAutoNameableCodexName(name: string | null | undefined, defaultName: string): boolean {
+  if (!name) return true;
+  const normalized = name.trim().toLowerCase();
+  return name === defaultName || normalized === "run" || normalized === "codex" || normalized === "new session";
+}
+
+function maybeAutoNameCodexSession(sid: string, display: string, seen: Set<string>): string | null {
+  if (seen.has(sid)) return null;
   const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-  if (!session || session.config.cli !== "codex") return;
+  if (!session || session.config.cli !== "codex") return null;
   const defaultName = dirToTabName(session.config.launchWorkingDir || session.config.workingDir);
-  if (session.name && session.name !== defaultName) {
+  if (!isAutoNameableCodexName(session.name, defaultName)) {
     seen.add(sid);
-    return;
+    return null;
   }
   const title = deriveCodexPromptTitle(display);
-  if (!title || title === session.name) return;
+  if (!title || title === session.name) return null;
   useSessionStore.getState().renameSession(sid, title);
   useSettingsStore.getState().setSessionName(getResumeId(session), title);
   seen.add(sid);
+  return title;
 }
 
 // [SI-13] Event priority: runs reduceTapEvent which enforces sticky actionNeeded guard
@@ -295,10 +307,24 @@ export function useTapEventProcessor(
     subTrackerRef.current = subTracker;
     stateRef.current = "starting";
     let activityTurnCounter = 0;
+    let activityTurnOpen = false;
+    let lastActivityPromptDisplay: string | null = null;
+    let codexAutoNameTitle: string | null = null;
     const contextFileHintsSeen = new Set<string>();
     const codexAutoNamed = new Set<string>();
     setClaudeSessionId(null);
     setUserPrompt(null);
+
+    const startActivityTurn = (sid: string, promptDisplay: string | null): void => {
+      if (activityTurnOpen) {
+        if (promptDisplay) lastActivityPromptDisplay = promptDisplay;
+        return;
+      }
+      activityTurnCounter++;
+      useActivityStore.getState().startTurn(sid, `turn-${activityTurnCounter}`);
+      activityTurnOpen = true;
+      lastActivityPromptDisplay = promptDisplay;
+    };
 
     const updateCwdIfChanged = (cwd: string, opts?: { fromWorktreeEvent?: boolean }) => {
       const normalized = normalizePath(cwd);
@@ -426,9 +452,8 @@ export function useTapEventProcessor(
         const isSidechain = subTracker.isSidechainActive?.() ?? false;
         const agentId = isSidechain ? (subTracker.getLastActiveAgentId?.() ?? null) : null;
 
-        if (event.kind === "TurnStart" && !isSidechain) {
-          activityTurnCounter++;
-          activityStore.startTurn(sid, `turn-${activityTurnCounter}`);
+        if ((event.kind === "TurnStart" || event.kind === "CodexTaskStarted") && !isSidechain) {
+          startActivityTurn(sid, null);
         }
 
         // endTurn is driven by settled-state (see subscription below), not TurnEnd,
@@ -453,10 +478,10 @@ export function useTapEventProcessor(
 
           const rawFilePath = event.input.file_path ?? event.input.notebook_path;
           if (typeof rawFilePath === "string" && !isPhantomRead) {
-            const filePath = canonicalizePath(rawFilePath);
             const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
             const workDir = session?.config.workingDir ?? "";
-            const isExternal = workDir ? !normalizePath(filePath).startsWith(workDir) : false;
+            const filePath = resolveActivityPath(rawFilePath, workDir);
+            const isExternal = isExternalActivityPath(filePath, workDir);
 
             if (event.toolName === "Read") {
               activityStore.addFileActivity(sid, filePath, "read", {
@@ -504,7 +529,7 @@ export function useTapEventProcessor(
               const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
               const workDir = session?.config.workingDir ?? "";
               for (const file of parseApplyPatchFiles(patch, workDir)) {
-                const isExternal = workDir ? !normalizePath(file.path).startsWith(workDir) : false;
+                const isExternal = isExternalActivityPath(file.path, workDir);
                 activityStore.addFileActivity(sid, file.path, file.kind, {
                   agentId,
                   toolName: "apply_patch",
@@ -518,10 +543,10 @@ export function useTapEventProcessor(
           if (event.toolName === "Grep") {
             const rawGrepPath = typeof event.input.path === "string" ? event.input.path : null;
             if (rawGrepPath) {
-              const grepPath = canonicalizePath(rawGrepPath);
               const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
               const workDir = session?.config.workingDir ?? "";
-              const isExternal = workDir ? !normalizePath(grepPath).startsWith(workDir) : false;
+              const grepPath = resolveActivityPath(rawGrepPath, workDir);
+              const isExternal = isExternalActivityPath(grepPath, workDir);
               const lastSegment = grepPath.split("/").pop() ?? "";
               const looksLikeFile = lastSegment.includes(".") && !lastSegment.startsWith(".");
               activityStore.addFileActivity(sid, grepPath, "searched", {
@@ -549,9 +574,9 @@ export function useTapEventProcessor(
             const rawGlobPath = typeof event.input.path === "string" ? event.input.path : null;
             const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
             const workDir = session?.config.workingDir ?? "";
-            const targetPath = rawGlobPath ? canonicalizePath(rawGlobPath) : (workDir ? canonicalizePath(workDir) : null);
+            const targetPath = rawGlobPath ? resolveActivityPath(rawGlobPath, workDir) : (workDir ? canonicalizePath(workDir) : null);
             if (targetPath) {
-              const isExternal = workDir ? !normalizePath(targetPath).startsWith(workDir) : false;
+              const isExternal = isExternalActivityPath(targetPath, workDir);
               activityStore.addFileActivity(sid, targetPath, "searched", {
                 agentId,
                 toolName: "Glob",
@@ -565,10 +590,10 @@ export function useTapEventProcessor(
           if (event.toolName === "LSP") {
             const rawLspPath = typeof event.input.filePath === "string" ? event.input.filePath : null;
             if (rawLspPath) {
-              const lspPath = canonicalizePath(rawLspPath);
               const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
               const workDir = session?.config.workingDir ?? "";
-              const isExternal = workDir ? !normalizePath(lspPath).startsWith(workDir) : false;
+              const lspPath = resolveActivityPath(rawLspPath, workDir);
+              const isExternal = isExternalActivityPath(lspPath, workDir);
               activityStore.addFileActivity(sid, lspPath, "searched", {
                 agentId,
                 toolName: "LSP",
@@ -578,18 +603,20 @@ export function useTapEventProcessor(
           }
 
           // [DF-12] Bash — extract file ops by tokenizing the command string with shell-quote
-          // and walking a small registry (rm/mv/cp/touch/mkdir/tee/redirects). This
-          // is heuristic: subshells, var expansion, and globs are not handled. Path
-          // existence is verified by the settled-idle validator before the entries
-          // are surfaced as confirmed.
+          // and walking a small registry for mutations plus common read/search commands.
+          // This is heuristic: subshells, var expansion, and globs are not handled. Path
+          // existence is verified by the settled-idle validator before entries are finalized.
           if (event.toolName === "Bash") {
             const cmd = typeof event.input.command === "string" ? event.input.command : "";
             if (cmd) {
               const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
               const workDir = session?.config.workingDir ?? "";
-              const ops = parseBashFiles(cmd, workDir);
+              const commandWorkDir = typeof event.input.workdir === "string"
+                ? event.input.workdir
+                : typeof event.input.cwd === "string" ? event.input.cwd : workDir;
+              const ops = parseBashFiles(cmd, commandWorkDir);
               for (const op of ops) {
-                const isExternal = workDir ? !normalizePath(op.path).startsWith(workDir) : false;
+                const isExternal = isExternalActivityPath(op.path, workDir);
                 activityStore.addFileActivity(sid, op.path, op.kind, {
                   agentId,
                   toolName: "Bash",
@@ -651,6 +678,10 @@ export function useTapEventProcessor(
       if (event.kind === "SessionRegistration") {
         if (!subTracker.isSubagentInFlight()) {
           setClaudeSessionId(event.sessionId);
+          const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+          if (session?.config.cli === "codex" && codexAutoNameTitle && event.sessionId) {
+            useSettingsStore.getState().setSessionName(event.sessionId, codexAutoNameTitle);
+          }
         } else {
           dlog("tap", sid, `SessionRegistration(${event.sessionId}) suppressed — subagent in flight`, "DEBUG");
         }
@@ -667,10 +698,15 @@ export function useTapEventProcessor(
 
       // [AS-01] markUserMessage on UserInput/SlashCommand (not TurnStart) — response window starts at real user input
       if (event.kind === "UserInput" || event.kind === "SlashCommand") {
-        useActivityStore.getState().markUserMessage(sid);
-        setUserPrompt(event.display.slice(0, 200));
-        if (event.kind === "UserInput") {
-          maybeAutoNameCodexSession(sid, event.display, codexAutoNamed);
+        const duplicateOpenPrompt = activityTurnOpen && lastActivityPromptDisplay === event.display;
+        if (!duplicateOpenPrompt) {
+          useActivityStore.getState().markUserMessage(sid);
+          startActivityTurn(sid, event.display);
+          setUserPrompt(event.display.slice(0, 200));
+        }
+        if (event.kind === "UserInput" && !duplicateOpenPrompt) {
+          const title = maybeAutoNameCodexSession(sid, event.display, codexAutoNamed);
+          if (title) codexAutoNameTitle = title;
         }
       }
 
@@ -832,6 +868,7 @@ export function useTapEventProcessor(
       (settledSid, kind) => {
         if (settledSid === sessionId && kind === "idle") {
           useActivityStore.getState().endTurn(sessionId);
+          activityTurnOpen = false;
           void runGitScanAndValidate(sessionId);
         }
       },

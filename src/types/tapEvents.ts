@@ -237,6 +237,18 @@ export interface CodexToolCallComplete extends TapEventBase {
   error: string | null;
 }
 
+export interface CodexTaskStarted extends TapEventBase {
+  kind: "CodexTaskStarted";
+  turnId: string;
+}
+
+export interface CodexTaskComplete extends TapEventBase {
+  kind: "CodexTaskComplete";
+  turnId: string;
+  lastAgentMessage: string | null;
+  durationMs: number | null;
+}
+
 export interface ContextFilesHintEvent extends TapEventBase {
   kind: "ContextFilesHint";
   contextKind: "mcp" | "plugin" | "config" | "rules";
@@ -672,6 +684,8 @@ export type TapEvent =
   | CodexTurnContext
   | CodexTokenCount
   | CodexToolCallComplete
+  | CodexTaskStarted
+  | CodexTaskComplete
   | ContextFilesHintEvent
   // Fetch
   | ApiFetch

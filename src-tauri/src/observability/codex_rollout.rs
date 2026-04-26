@@ -659,6 +659,73 @@ fn emit_codex_prompt_capture(
 fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &Value) {
     let kind = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match kind {
+        "task_started" | "turn_started" => {
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-task-started",
+                    "turnId": payload.get("turn_id"),
+                    "startedAt": payload.get("started_at"),
+                }),
+            );
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.task_started",
+                "Task started",
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+        }
+        "task_complete" | "turn_complete" => {
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-task-complete",
+                    "turnId": payload.get("turn_id"),
+                    "lastAgentMessage": payload.get("last_agent_message"),
+                    "durationMs": payload.get("duration_ms"),
+                    "completedAt": payload.get("completed_at"),
+                }),
+            );
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.task_complete",
+                "Task complete",
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+        }
+        "turn_aborted" => {
+            emit_tap_entry(
+                app,
+                session_id,
+                ts,
+                serde_json::json!({
+                    "cat": "codex-turn-aborted",
+                    "turnId": payload.get("turn_id"),
+                    "reason": payload.get("reason"),
+                    "durationMs": payload.get("duration_ms"),
+                    "completedAt": payload.get("completed_at"),
+                }),
+            );
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.turn_aborted",
+                payload.get("reason").and_then(|v| v.as_str()).unwrap_or("aborted"),
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+        }
         "token_count" => {
             // payload.info has total_token_usage and last_token_usage,
             // each with input_tokens, cached_input_tokens, output_tokens,

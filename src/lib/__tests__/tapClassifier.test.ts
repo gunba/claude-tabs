@@ -522,7 +522,7 @@ describe("classifyTapEntry — Codex rollout events", () => {
     });
   });
 
-  it("keeps Codex list_dir calls under their native tool name", () => {
+  it("maps Codex list_dir calls to Glob activity", () => {
     const event = classifyTapEntry({
       ts: 6005,
       cat: "codex-tool-input",
@@ -532,14 +532,27 @@ describe("classifyTapEntry — Codex rollout events", () => {
     });
     expect(event).toMatchObject({
       kind: "ToolInput",
-      toolName: "list_dir",
-      input: { dir_path: "/repo/src" },
+      toolName: "Glob",
+      input: { path: "/repo/src", pattern: "*" },
+    });
+  });
+
+  it("classifies Codex normal user messages as UserInput", () => {
+    const event = classifyTapEntry({
+      ts: 6006,
+      cat: "codex-message",
+      role: "user",
+      content: [{ type: "input_text", text: "fix the activity panel" }],
+    });
+    expect(event).toMatchObject({
+      kind: "UserInput",
+      display: "fix the activity panel",
     });
   });
 
   it("classifies Codex skill context messages as InstructionsLoadedEvent", () => {
     const event = classifyTapEntry({
-      ts: 6006,
+      ts: 6007,
       cat: "codex-message",
       role: "user",
       content: [{
@@ -557,7 +570,7 @@ describe("classifyTapEntry — Codex rollout events", () => {
 
   it("classifies Codex AGENTS.md context messages as InstructionsLoadedEvent", () => {
     const event = classifyTapEntry({
-      ts: 6007,
+      ts: 6008,
       cat: "codex-message",
       role: "user",
       content: [{
@@ -575,7 +588,7 @@ describe("classifyTapEntry — Codex rollout events", () => {
 
   it("classifies Codex slash-command user messages as SlashCommand", () => {
     const event = classifyTapEntry({
-      ts: 6008,
+      ts: 6009,
       cat: "codex-message",
       role: "user",
       content: [{ type: "input_text", text: "/model gpt-5.5" }],
@@ -589,7 +602,7 @@ describe("classifyTapEntry — Codex rollout events", () => {
 
   it("classifies Codex thread names as CustomTitle", () => {
     const event = classifyTapEntry({
-      ts: 6009,
+      ts: 6010,
       cat: "codex-thread-name-updated",
       threadName: "fix activity pane",
       codexSessionId: "thread-1",
@@ -601,7 +614,7 @@ describe("classifyTapEntry — Codex rollout events", () => {
     });
   });
 
-  it("classifies Codex assistant messages as end_turn ConversationMessage", () => {
+  it("keeps Codex assistant messages informational until task_complete", () => {
     const event = classifyTapEntry({
       ts: 6002,
       cat: "codex-message",
@@ -611,7 +624,7 @@ describe("classifyTapEntry — Codex rollout events", () => {
     expect(event).toMatchObject({
       kind: "ConversationMessage",
       messageType: "assistant",
-      stopReason: "end_turn",
+      stopReason: null,
       textSnippet: "Done.",
     });
   });
@@ -647,6 +660,30 @@ describe("classifyTapEntry — Codex rollout events", () => {
       cat: "codex-tool-call-start",
       toolName: "Bash",
       toolId: "call_42",
+    });
+  });
+
+  it("classifies Codex task lifecycle events", () => {
+    expect(classifyTapEntry({
+      ts: 6011,
+      cat: "codex-task-started",
+      turnId: "turn-1",
+    })).toMatchObject({
+      kind: "CodexTaskStarted",
+      turnId: "turn-1",
+    });
+
+    expect(classifyTapEntry({
+      ts: 6012,
+      cat: "codex-task-complete",
+      turnId: "turn-1",
+      lastAgentMessage: "Done.",
+      durationMs: 1234,
+    })).toMatchObject({
+      kind: "CodexTaskComplete",
+      turnId: "turn-1",
+      lastAgentMessage: "Done.",
+      durationMs: 1234,
     });
   });
 });

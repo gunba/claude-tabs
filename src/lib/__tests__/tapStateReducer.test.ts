@@ -86,6 +86,22 @@ describe("reduceTapEvent", () => {
     })).toBe("thinking");
   });
 
+  it("late Codex tool completion does not reactivate an idle completed task", () => {
+    expect(reduceTapEvent("idle", {
+      kind: "CodexToolCallComplete", ts: 0,
+      callId: "call_1", outputSizeBytes: 10, durationMs: 120, exitCode: 0, error: null,
+    })).toBe("idle");
+  });
+
+  it("Codex task lifecycle drives work state", () => {
+    expect(reduceTapEvent("idle", {
+      kind: "CodexTaskStarted", ts: 0, turnId: "turn-1",
+    })).toBe("thinking");
+    expect(reduceTapEvent("thinking", {
+      kind: "CodexTaskComplete", ts: 1, turnId: "turn-1", lastAgentMessage: "Done.", durationMs: 500,
+    })).toBe("idle");
+  });
+
   it("ToolCallStart ExitPlanMode → actionNeeded", () => {
     expect(reduceTapEvent("thinking", { kind: "ToolCallStart", ts: 0, index: 1, toolName: "ExitPlanMode", toolId: "t1" })).toBe("actionNeeded");
   });
@@ -143,6 +159,10 @@ describe("reduceTapEvent", () => {
 
   it("ConversationMessage assistant end_turn → idle (main agent)", () => {
     expect(reduceTapEvent("thinking", convMsg({ stopReason: "end_turn" }))).toBe("idle");
+  });
+
+  it("Codex assistant ConversationMessage does not idle without task_complete", () => {
+    expect(reduceTapEvent("thinking", convMsg({ cat: "codex-message", stopReason: "end_turn" }))).toBe("thinking");
   });
 
   it("ConversationMessage assistant tool_use → toolUse (main agent)", () => {

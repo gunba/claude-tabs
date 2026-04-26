@@ -115,13 +115,50 @@ describe("parseBashFiles", () => {
     ]);
   });
 
-  it("ignores cat (read-only)", () => {
-    expect(parseBashFiles("cat foo.txt", CWD)).toEqual([]);
+  it("tracks cat as a read", () => {
+    expect(parseBashFiles("cat foo.txt", CWD)).toEqual([
+      { path: "/home/u/proj/foo.txt", kind: "read" },
+    ]);
   });
 
-  it("ignores ls and other read-only commands", () => {
-    expect(parseBashFiles("ls -la /tmp", CWD)).toEqual([]);
-    expect(parseBashFiles("grep foo bar.txt", CWD)).toEqual([]);
+  it("tracks sed ranges as reads", () => {
+    expect(parseBashFiles("sed -n '1,20p' src/App.tsx", CWD)).toEqual([
+      { path: "/home/u/proj/src/App.tsx", kind: "read" },
+    ]);
+  });
+
+  it("tracks grep file targets as searches", () => {
+    expect(parseBashFiles("grep foo bar.txt", CWD)).toEqual([
+      { path: "/home/u/proj/bar.txt", kind: "searched", isFolder: false },
+    ]);
+  });
+
+  it("tracks rg roots as searches", () => {
+    expect(parseBashFiles("rg SkillInvocation src", CWD)).toEqual([
+      { path: "/home/u/proj/src", kind: "searched", isFolder: true },
+    ]);
+  });
+
+  it("tracks rg --files roots as searches", () => {
+    expect(parseBashFiles("rg --files -g '*.ts' src", CWD)).toEqual([
+      { path: "/home/u/proj/src", kind: "searched", isFolder: true },
+    ]);
+  });
+
+  it("tracks ls and find roots as searches", () => {
+    expect(parseBashFiles("ls -la /tmp", CWD)).toEqual([
+      { path: "/tmp", kind: "searched", isFolder: true },
+    ]);
+    expect(parseBashFiles("find . -name '*.ts'", CWD)).toEqual([
+      { path: "/home/u/proj", kind: "searched", isFolder: true },
+    ]);
+  });
+
+  it("tracks input redirection as a read", () => {
+    expect(parseBashFiles("sort < in.txt > out.txt", CWD)).toEqual([
+      { path: "/home/u/proj/in.txt", kind: "read" },
+      { path: "/home/u/proj/out.txt", kind: "created" },
+    ]);
   });
 
   it("ignores git commands (covered by git_list_changes)", () => {

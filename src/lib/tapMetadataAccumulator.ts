@@ -148,6 +148,16 @@ export class TapMetadataAccumulator {
         if (event.effort) this.effortLevel = event.effort;
         break;
 
+      case "CodexTaskStarted":
+        this.currentToolName = null;
+        this.currentAction = null;
+        this.hookStatus = null;
+        this.activeSubprocess = null;
+        this.lastToolDurationMs = null;
+        this.lastToolResultSize = null;
+        this.lastToolError = null;
+        break;
+
       // [CA-01] CodexTokenCount: total input/output, last-turn delta, primary/secondary rate limits, contextDebugSource='codexTokenCount'
       case "CodexTokenCount": {
         this.inputTokens = event.totalInputTokens;
@@ -195,6 +205,15 @@ export class TapMetadataAccumulator {
         if (event.error) {
           this.hookStatus = "Error: " + event.error.slice(0, 60);
         }
+        break;
+
+      case "CodexTaskComplete":
+        if (this.sidechainActive) break;
+        this.currentToolName = null;
+        this.currentAction = null;
+        this.choiceHint = false;
+        this.hookStatus = null;
+        this.activeSubprocess = null;
         break;
 
       case "UserInput":

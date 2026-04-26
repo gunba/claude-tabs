@@ -16,7 +16,7 @@ function fmtToolAction(name: string, inp: Record<string, unknown>): string {
   return name;
 }
 
-// [CT-01] asRecord, parseJsonObject, normalizeCodexToolName (Bash for shell/exec_command), parseCodexToolInput (apply_patch preserves raw patch), codexToolOutputInfo; codex-message/assistant->ConversationMessage(end_turn); KNOWN BUG: codex-tool-call-start returns ToolCallStart without cat, so reducer cat guard is unreachable
+// [CT-01] asRecord, parseJsonObject, normalizeCodexToolName (Bash for shell/exec_command), parseCodexToolInput (apply_patch preserves raw patch), codexToolOutputInfo
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -102,6 +102,39 @@ function parseCodexToolInput(name: string, raw: unknown): { toolName: string; in
         ...(parsed ?? {}),
         file_path: filePath,
         description: name === "view_image" ? "Codex image read" : "Codex file read",
+      },
+    };
+  }
+  if (name === "list_dir") {
+    const dirPath = stringField(parsed, "dir_path")
+      || stringField(parsed, "path")
+      || stringField(parsed, "directory")
+      || (typeof raw === "string" ? raw : "");
+    return {
+      toolName: "Glob",
+      input: {
+        ...(parsed ?? {}),
+        path: dirPath,
+        pattern: "*",
+        description: "Codex directory list",
+      },
+    };
+  }
+  if (name === "grep" || name === "search_files") {
+    const searchPath = stringField(parsed, "path")
+      || stringField(parsed, "dir_path")
+      || stringField(parsed, "directory");
+    const pattern = stringField(parsed, "pattern")
+      || stringField(parsed, "query")
+      || stringField(parsed, "regex")
+      || "";
+    return {
+      toolName: "Grep",
+      input: {
+        ...(parsed ?? {}),
+        path: searchPath,
+        pattern,
+        description: "Codex search",
       },
     };
   }
@@ -1064,6 +1097,32 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
       };
     }
 
+    if (cat === "codex-task-started") {
+      return {
+        kind: "CodexTaskStarted",
+        ts,
+        turnId: String(entry.turnId || ""),
+      };
+    }
+
+    if (cat === "codex-task-complete") {
+      return {
+        kind: "CodexTaskComplete",
+        ts,
+        turnId: String(entry.turnId || ""),
+        lastAgentMessage: typeof entry.lastAgentMessage === "string" ? entry.lastAgentMessage : null,
+        durationMs: nullableNumField(entry, "durationMs"),
+      };
+    }
+
+    if (cat === "codex-turn-aborted") {
+      return {
+        kind: "UserInterruption",
+        ts,
+        forToolUse: false,
+      };
+    }
+
     if (cat === "codex-thread-name-updated") {
       const title = String(entry.threadName || "").trim();
       if (!title) return null;
@@ -1078,7 +1137,6 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
     if (cat === "codex-message") {
       const role = String(entry.role || "");
       const text = codexTextFromContent(entry.content);
-      const phase = typeof entry.phase === "string" ? entry.phase : "";
       if (role === "user") {
         const contextEvent = parseCodexContextUserMessage(ts, text);
         if (contextEvent) return contextEvent;
@@ -1096,7 +1154,7 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
           uuid: null,
           parentUuid: null,
           promptId: null,
-          stopReason: phase && phase !== "final_answer" ? null : "end_turn",
+          stopReason: null,
           toolNames: [],
           toolAction: null,
           textSnippet: text,

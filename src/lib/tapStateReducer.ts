@@ -27,11 +27,14 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
           return "thinking";
         return "actionNeeded";
       case "TurnStart":
+      case "CodexTaskStarted":
         // Bug 003 fallback: no ConversationMessage(user) or ToolResult fires for
         // AskUserQuestion answers in some CLI versions. TurnStart is the only
         // guaranteed event when the agent continues. Risk: background subagent
         // TurnStart (no agentId field) prematurely clears — cosmetic, not functional.
         return "thinking";
+      case "CodexTaskComplete":
+        return "idle";
       case "UserInterruption":
         return "interrupted";
       case "PermissionPromptShown":
@@ -49,6 +52,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
   switch (event.kind) {
     // New turn or streaming content = Claude is actively working
     case "TurnStart":
+    case "CodexTaskStarted":
     case "ThinkingStart":
     case "TextStart":
     case "CodexTurnContext":
@@ -61,7 +65,11 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
       return "thinking";
 
     case "CodexToolCallComplete":
+      if (state === "idle") return "idle";
       return "thinking";
+
+    case "CodexTaskComplete":
+      return "idle";
 
     case "TurnEnd":
       if (event.stopReason === "tool_use") return "toolUse";
@@ -105,6 +113,7 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
 
     case "ConversationMessage":
       if (event.messageType === "user" && !event.isSidechain) return "thinking";
+      if (event.cat === "codex-message") return state;
       if (event.messageType === "assistant" && !event.isSidechain) {
         if (event.stopReason === "tool_use") return "toolUse";
         if (event.stopReason === "end_turn") return "idle";
