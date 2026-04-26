@@ -387,6 +387,7 @@ pub fn discover_builtin_commands_sync(
         let desc = c["desc"].as_str().unwrap_or("");
         // Skip commands that look like CLI tools or MCP tools (very long descriptions about DOM/browser)
         !cmd.starts_with("/--")
+            && cmd != "/release-notes"
             && !desc.contains("tab ID")
             && !desc.contains("DOM")
             && cmd.len() >= 4
@@ -2172,8 +2173,8 @@ mod tests {
             "should find /rewind with reversed order"
         );
         assert!(
-            names.contains(&"/release-notes"),
-            "should find /release-notes with reversed order"
+            !names.contains(&"/release-notes"),
+            "Claude changelog command should be managed by Code Tabs instead"
         );
 
         let rewind_desc = commands

@@ -323,9 +323,10 @@ function countHookEntries(hooks: Record<string, unknown>): number {
 
 interface StatusBarProps {
   onOpenContextViewer?: () => void;
+  onOpenChangelog?: () => void;
 }
 
-export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
+export function StatusBar({ onOpenContextViewer, onOpenChangelog }: StatusBarProps) {
   const sessions = useSessionStore((s) => s.sessions);
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const activeSession = sessions.find((s) => s.id === activeTabId);
@@ -461,6 +462,15 @@ export function StatusBar({ onOpenContextViewer }: StatusBarProps) {
             title="View system prompt context"
           >
             Context
+          </button>
+        )}
+        {onOpenChangelog && (
+          <button
+            className="status-item status-hooks-btn"
+            onClick={onOpenChangelog}
+            title="Open changelog"
+          >
+            Changelog
           </button>
         )}
         {devtoolsAvailable && (

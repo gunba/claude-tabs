@@ -162,6 +162,7 @@ interface SettingsState {
   themeName: string;
   notificationsEnabled: boolean;
   cliVersions: Record<CliKind, string | null>;
+  lastOpenedCliVersions: Record<CliKind, string | null>;
   previousCliVersions: Record<CliKind, string | null>;
   cliVersion: string | null;
   previousCliVersion: string | null;
@@ -204,6 +205,7 @@ interface SettingsState {
   setShowLauncher: (show: boolean) => void;
   setThemeName: (name: string) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
+  setLastOpenedCliVersion: (cli: CliKind, version: string | null) => void;
   setCliCapabilitiesForCli: (cli: CliKind, version: string | null, capabilities: CliCapabilities) => void;
   setCliCapabilities: (version: string, capabilities: CliCapabilities) => void;
   recordCommandUsage: (command: string) => void;
@@ -252,6 +254,7 @@ export const useSettingsStore = create<SettingsState>()(
       themeName: "Claude",
       notificationsEnabled: true,
       cliVersions: { claude: null, codex: null },
+      lastOpenedCliVersions: { claude: null, codex: null },
       previousCliVersions: { claude: null, codex: null },
       cliVersion: null,
       previousCliVersion: null,
@@ -403,6 +406,10 @@ export const useSettingsStore = create<SettingsState>()(
       setThemeName: (name) => set({ themeName: name }),
 
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
+      setLastOpenedCliVersion: (cli, version) =>
+        set((s) => ({
+          lastOpenedCliVersions: { ...s.lastOpenedCliVersions, [cli]: version },
+        })),
 
 // [PE-01] cliCapabilitiesByCli, slashCommandsByCli, cliVersions per CliKind; v17 migration backfills from legacy fields; setCliCapabilitiesForCli mirrors Claude into legacy fields; setSlashCommandsForCli rebuilds merged slashCommands
       setCliCapabilitiesForCli: (cli, version, capabilities) =>
@@ -807,7 +814,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "claude-tabs-settings",
-      version: 19,
+      version: 20,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -947,6 +954,15 @@ export const useSettingsStore = create<SettingsState>()(
           };
           state.recordingConfig = (state.recordingConfigsByCli as RecordingConfigsByCli).claude;
         }
+        if (version < 20) {
+          const versions = state.cliVersions as Partial<Record<CliKind, string | null>> | undefined;
+          state.lastOpenedCliVersions = {
+            claude: versions?.claude ?? (state.cliVersion as string | null | undefined) ?? null,
+            codex: versions?.codex ?? null,
+          };
+        } else if (!state.lastOpenedCliVersions) {
+          state.lastOpenedCliVersions = { claude: null, codex: null };
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -960,6 +976,7 @@ export const useSettingsStore = create<SettingsState>()(
         themeName: state.themeName,
         notificationsEnabled: state.notificationsEnabled,
         cliVersions: state.cliVersions,
+        lastOpenedCliVersions: state.lastOpenedCliVersions,
         previousCliVersions: state.previousCliVersions,
         cliVersion: state.cliVersion,
         previousCliVersion: state.previousCliVersion,

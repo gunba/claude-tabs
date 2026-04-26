@@ -62,6 +62,7 @@ describe("per-CLI discovery state", () => {
   beforeEach(() => {
     useSettingsStore.setState({
       cliVersions: { claude: null, codex: null },
+      lastOpenedCliVersions: { claude: null, codex: null },
       previousCliVersions: { claude: null, codex: null },
       cliVersion: null,
       previousCliVersion: null,
@@ -98,6 +99,16 @@ describe("per-CLI discovery state", () => {
     expect(state.slashCommandsByCli.claude.map((c) => c.cmd)).toEqual(["/doctor"]);
     expect(state.slashCommandsByCli.codex.map((c) => c.cmd)).toEqual(["/init"]);
     expect(state.slashCommands.map((c) => c.cmd)).toEqual(["/doctor", "/init"]);
+  });
+
+  it("tracks the last app-opened version per CLI", () => {
+    useSettingsStore.getState().setLastOpenedCliVersion("claude", "2.1.119");
+    useSettingsStore.getState().setLastOpenedCliVersion("codex", "0.125.0");
+
+    expect(useSettingsStore.getState().lastOpenedCliVersions).toEqual({
+      claude: "2.1.119",
+      codex: "0.125.0",
+    });
   });
 });
 

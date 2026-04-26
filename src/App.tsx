@@ -16,6 +16,7 @@ import { ConfigManager, CONFIG_MANAGER_CLOSE_REQUEST_EVENT } from "./components/
 import { RightPanel } from "./components/RightPanel/RightPanel";
 import { ModalOverlay } from "./components/ModalOverlay/ModalOverlay";
 import { ContextViewer } from "./components/ContextViewer/ContextViewer";
+import { ChangelogModal } from "./components/ChangelogModal/ChangelogModal";
 
 import { useCliWatcher } from "./hooks/useCliWatcher";
 import { useNotifications } from "./hooks/useNotifications";
@@ -33,11 +34,12 @@ import { dlog, flushDebugLog } from "./lib/debugLog";
 import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
 import { Header } from "./components/Header/Header";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym, IS_LINUX } from "./lib/paths";
-import type { Session, Subagent } from "./types/session";
+import type { CliKind, Session, Subagent } from "./types/session";
 import { isSubagentActive } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
 import { settledStateManager, type SettledKind } from "./lib/settledState";
 import { useRuntimeStore } from "./store/runtime";
+import { isCliVersionIncrease, type ChangelogRequest } from "./lib/changelog";
 import "./App.css";
 
 // [DF-04] React re-renders from Zustand store: tab state dots, status bar, subagent cards
@@ -67,6 +69,7 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false);
   const [showResumePicker, setShowResumePicker] = useState(false);
   const [showContextViewer, setShowContextViewer] = useState(false);
+  const [changelogRequest, setChangelogRequest] = useState<ChangelogRequest | null>(null);
   const [inspectedSubagent, setInspectedSubagent] = useState<{ sessionId: string; subagentId: string } | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
@@ -74,6 +77,7 @@ export default function App() {
   const ctrlHeld = useCtrlKey();
   const dragTabRef = useRef<string | null>(null);
   const initRef = useRef(false);
+  const handledCliVersionRef = useRef<Partial<Record<CliKind, string>>>({});
   const [pruneConfirm, setPruneConfirm] = useState<{
     sessionId: string; worktreePath: string; worktreeName: string; projectRoot: string;
   } | null>(null);
@@ -130,6 +134,8 @@ export default function App() {
   // Dynamic window title with version info
   const appVersion = useVersionStore((s) => s.appVersion);
   const cliVersions = useSettingsStore((s) => s.cliVersions);
+  const lastOpenedCliVersions = useSettingsStore((s) => s.lastOpenedCliVersions);
+  const setLastOpenedCliVersion = useSettingsStore((s) => s.setLastOpenedCliVersion);
   useEffect(() => {
     const parts = ["Code Tabs"];
     if (appVersion) parts[0] += ` v${appVersion}`;
@@ -137,6 +143,33 @@ export default function App() {
     parts.push(`Codex ${cliVersions.codex ?? "not installed"}`);
     getCurrentWindow().setTitle(parts.join(" · ")).catch(() => {});
   }, [appVersion, cliVersions]);
+
+  useEffect(() => {
+    const ranges: ChangelogRequest["ranges"] = {};
+    for (const cli of ["claude", "codex"] as const) {
+      const current = cliVersions[cli];
+      if (!current) continue;
+      if (handledCliVersionRef.current[cli] === current) continue;
+      handledCliVersionRef.current[cli] = current;
+
+      const previous = lastOpenedCliVersions[cli];
+      if (previous && isCliVersionIncrease(current, previous)) {
+        ranges[cli] = { fromVersion: previous, toVersion: current };
+      }
+      if (previous !== current) {
+        setLastOpenedCliVersion(cli, current);
+      }
+    }
+
+    const changedCli = (["claude", "codex"] as const).find((cli) => ranges[cli]);
+    if (changedCli && !changelogRequest) {
+      setChangelogRequest({
+        kind: "startup",
+        initialCli: changedCli,
+        ranges,
+      });
+    }
+  }, [changelogRequest, cliVersions, lastOpenedCliVersions, setLastOpenedCliVersion]);
 
   // [PL-01] Linux custom titlebar: tauri.conf.json sets decorations:false globally so non-KDE
   // Wayland compositors honor it at window creation. Non-Linux re-enables native decorations
@@ -328,10 +361,11 @@ export default function App() {
         openMainDevtools().catch(() => {});
       }
 
-      // [KB-09] Escape dismissal chain: contextMenu -> palette -> contextViewer -> config -> resume -> launcher -> inspector
+      // [KB-09] Escape dismissal chain: contextMenu -> palette -> changelog -> contextViewer -> config -> resume -> launcher -> inspector
       if (e.key === "Escape") {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (showPalette) return;
+        if (changelogRequest) { setChangelogRequest(null); return; }
         if (showContextViewer) { setShowContextViewer(false); return; }
         if (showConfigManager) { window.dispatchEvent(new Event(CONFIG_MANAGER_CLOSE_REQUEST_EVENT)); return; }
         if (showResumePicker) { setShowResumePicker(false); return; }
@@ -373,7 +407,7 @@ export default function App() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, showContextViewer, inspectedSubagent, tabContextMenu, quickLaunch, devtoolsAvailable, openMainDevtools]);
+  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, changelogRequest, showContextViewer, inspectedSubagent, tabContextMenu, quickLaunch, devtoolsAvailable, openMainDevtools]);
 
   const regularSessions = useMemo(() => sessions.filter((s) => !s.isMetaAgent), [sessions]);
   const groups = useMemo(() => groupSessionsByDir(regularSessions), [regularSessions]);
@@ -713,12 +747,26 @@ export default function App() {
         <RightPanel />
       </div>
 
-      <StatusBar onOpenContextViewer={() => setShowContextViewer(true)} />
+      <StatusBar
+        onOpenContextViewer={() => setShowContextViewer(true)}
+        onOpenChangelog={() => setChangelogRequest({
+          kind: "manual",
+          initialCli: activeProvider,
+          ranges: {},
+        })}
+      />
 
       {showLauncher && <SessionLauncher key={launcherGeneration} />}
       {showResumePicker && <ResumePicker onClose={() => setShowResumePicker(false)} />}
       {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
       {showConfigManager && <ConfigManager />}
+      {changelogRequest && (
+        <ChangelogModal
+          request={changelogRequest}
+          currentVersions={cliVersions}
+          onClose={() => setChangelogRequest(null)}
+        />
+      )}
       {showContextViewer && activeSession && (
         <ContextViewer
           metadata={activeSession.metadata}
