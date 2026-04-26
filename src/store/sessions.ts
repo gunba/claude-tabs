@@ -89,6 +89,30 @@ export interface ProcessHealthEntry {
   tree?: ProcessTreeMetrics;
 }
 
+function patchHasChanges<T extends object>(current: T, patch: Partial<T>): boolean {
+  return (Object.keys(patch) as Array<keyof T>).some((key) => !Object.is(current[key], patch[key]));
+}
+
+function processTreeMetricsEqual(a: ProcessTreeMetrics, b: ProcessTreeMetrics): boolean {
+  if (
+    a.parentCpu !== b.parentCpu
+    || a.parentMemBytes !== b.parentMemBytes
+    || a.childrenCpu !== b.childrenCpu
+    || a.childrenMemBytes !== b.childrenMemBytes
+    || a.childCount !== b.childCount
+    || a.topChildren.length !== b.topChildren.length
+  ) {
+    return false;
+  }
+  return a.topChildren.every((child, index) => {
+    const other = b.topChildren[index];
+    return child.pid === other.pid
+      && child.name === other.name
+      && child.command === other.command
+      && child.memBytes === other.memBytes;
+  });
+}
+
 export const useSessionStore = create<SessionsState>((set) => ({
   sessions: [],
   activeTabId: null,
@@ -290,6 +314,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
 
   updateState: (id, state) => {
     const prev = useSessionStore.getState().sessions.find((x) => x.id === id);
+    if (!prev || prev.state === state) return;
     if (prev && prev.state !== state) {
       dlog("session", id, `state ${prev.state} → ${state}`, "DEBUG");
     }
@@ -301,19 +326,29 @@ export const useSessionStore = create<SessionsState>((set) => ({
   },
 
   updateMetadata: (id, metadata) => {
-    set((s) => ({
-      sessions: s.sessions.map((x) =>
-        x.id === id ? { ...x, metadata: { ...x.metadata, ...metadata } } : x
-      ),
-    }));
+    set((s) => {
+      let changed = false;
+      const sessions = s.sessions.map((x) => {
+        if (x.id !== id) return x;
+        if (!patchHasChanges(x.metadata, metadata)) return x;
+        changed = true;
+        return { ...x, metadata: { ...x.metadata, ...metadata } };
+      });
+      return changed ? { sessions } : s;
+    });
   },
 
   updateConfig: (id, config) => {
-    set((s) => ({
-      sessions: s.sessions.map((x) =>
-        x.id === id ? { ...x, config: { ...x.config, ...config } } : x
-      ),
-    }));
+    set((s) => {
+      let changed = false;
+      const sessions = s.sessions.map((x) => {
+        if (x.id !== id) return x;
+        if (!patchHasChanges(x.config, config)) return x;
+        changed = true;
+        return { ...x, config: { ...x.config, ...config } };
+      });
+      return changed ? { sessions } : s;
+    });
   },
 
   reorderTabs: (order) => {
@@ -355,18 +390,25 @@ export const useSessionStore = create<SessionsState>((set) => ({
   },
 
   renameSession: (id, name) => {
-    set((s) => ({
-      sessions: s.sessions.map((x) =>
-        x.id === id ? { ...x, name } : x
-      ),
-    }));
+    set((s) => {
+      let changed = false;
+      const sessions = s.sessions.map((x) => {
+        if (x.id !== id) return x;
+        if (x.name === name) return x;
+        changed = true;
+        return { ...x, name };
+      });
+      return changed ? { sessions } : s;
+    });
   },
 
   requestKill: (id) => {
+    if (useSessionStore.getState().killRequest === id) return;
     set({ killRequest: id });
   },
 
   clearKillRequest: () => {
+    if (useSessionStore.getState().killRequest === null) return;
     set({ killRequest: null });
   },
 
@@ -376,6 +418,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
 
   setInspectorOff: (id, off) => {
     set((s) => {
+      if (s.inspectorOffSessions.has(id) === off) return s;
       const next = new Set(s.inspectorOffSessions);
       if (off) {
         next.add(id);
@@ -406,6 +449,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
 
   startTrafficLog: (id, path) => {
     set((s) => {
+      if (s.trafficRecording.get(id) === path) return s;
       const next = new Map(s.trafficRecording);
       next.set(id, path);
       return { trafficRecording: next };
@@ -414,6 +458,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
 
   stopTrafficLog: (id) => {
     set((s) => {
+      if (!s.trafficRecording.has(id)) return s;
       const next = new Map(s.trafficRecording);
       next.delete(id);
       return { trafficRecording: next };
@@ -438,9 +483,14 @@ export const useSessionStore = create<SessionsState>((set) => ({
       const map = new Map(s.subagents);
       const list = map.get(sessionId);
       if (!list) return s;
-      const updated = list.map((sa) =>
-        sa.id === subagentId ? { ...sa, ...updates } : sa
-      );
+      let changed = false;
+      const updated = list.map((sa) => {
+        if (sa.id !== subagentId) return sa;
+        if (!patchHasChanges(sa, updates)) return sa;
+        changed = true;
+        return { ...sa, ...updates };
+      });
+      if (!changed) return s;
       map.set(sessionId, updated);
       return { subagents: map };
     });
@@ -501,6 +551,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
     set((s) => {
       const next = new Map(s.processHealth);
       const prev = next.get(id);
+      if (prev && !patchHasChanges(prev, data)) return s;
       next.set(id, prev ? { ...prev, ...data } : { ...data });
       return { processHealth: next };
     });
@@ -510,6 +561,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
     set((s) => {
       const next = new Map(s.processHealth);
       const prev = next.get(id);
+      if (prev?.tree && processTreeMetricsEqual(prev.tree, data)) return s;
       // Keep CLI-supplied rss/heapUsed/uptime if they exist; otherwise leave 0s
       // until the CLI emits its first ProcessHealth tap event.
       next.set(id, {
@@ -523,11 +575,23 @@ export const useSessionStore = create<SessionsState>((set) => ({
   },
 
   setOverallMetrics: (data) => {
+    const current = useSessionStore.getState().overallMetrics;
+    if (
+      (current === null && data === null)
+      || (current !== null
+        && data !== null
+        && current.cpu === data.cpu
+        && current.memBytes === data.memBytes
+        && current.processes === data.processes)
+    ) {
+      return;
+    }
     set({ overallMetrics: data });
   },
 
   registerSessionPid: (sessionId, pid) => {
     set((s) => {
+      if (s.pidToSessionId.get(pid) === sessionId) return s;
       const next = new Map(s.pidToSessionId);
       next.set(pid, sessionId);
       return { pidToSessionId: next };

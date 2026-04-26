@@ -40,7 +40,12 @@ function resetStore() {
     killRequest: null,
     hookChangeCounter: 0,
     inspectorOffSessions: new Set(),
+    trafficRecording: new Map(),
     processHealth: new Map(),
+    pidToSessionId: new Map(),
+    overallMetrics: null,
+    seenToolNames: new Set(),
+    seenEventKinds: new Set(),
   });
 }
 
@@ -352,10 +357,24 @@ describe("simple state actions", () => {
     expect(meta.outputTokens).toBe(0); // unchanged
   });
 
+  it("updateMetadata is a no-op when values are unchanged", () => {
+    useSessionStore.setState({ sessions: [makeSession("s1")] });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateMetadata("s1", { costUsd: 0, inputTokens: 0 });
+    expect(useSessionStore.getState()).toBe(before);
+  });
+
   it("updateState changes session state", () => {
     useSessionStore.setState({ sessions: [makeSession("s1")] });
     useSessionStore.getState().updateState("s1", "thinking");
     expect(useSessionStore.getState().sessions[0].state).toBe("thinking");
+  });
+
+  it("updateState is a no-op when state is unchanged", () => {
+    useSessionStore.setState({ sessions: [makeSession("s1")] });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateState("s1", "idle");
+    expect(useSessionStore.getState()).toBe(before);
   });
 
   it("updateConfig merges partial config", () => {
@@ -364,6 +383,39 @@ describe("simple state actions", () => {
     const cfg = useSessionStore.getState().sessions[0].config;
     expect(cfg.model).toBe("claude-opus-4-6");
     expect(cfg.workingDir).toBe("/tmp"); // unchanged
+  });
+
+  it("updateConfig is a no-op when values are unchanged", () => {
+    useSessionStore.setState({ sessions: [makeSession("s1")] });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateConfig("s1", { workingDir: "/tmp" });
+    expect(useSessionStore.getState()).toBe(before);
+  });
+
+  it("updateProcessHealth is a no-op when values are unchanged", () => {
+    useSessionStore.setState({
+      processHealth: new Map([["s1", { rss: 10, heapUsed: 5, uptime: 2 }]]),
+    });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateProcessHealth("s1", { rss: 10, heapUsed: 5, uptime: 2 });
+    expect(useSessionStore.getState()).toBe(before);
+  });
+
+  it("updateProcessTreeMetrics is a no-op when values are unchanged", () => {
+    const tree = {
+      parentCpu: 1,
+      parentMemBytes: 100,
+      childrenCpu: 2,
+      childrenMemBytes: 200,
+      childCount: 1,
+      topChildren: [{ pid: 42, name: "node", command: "node app.js", memBytes: 200 }],
+    };
+    useSessionStore.setState({
+      processHealth: new Map([["s1", { rss: 10, heapUsed: 5, uptime: 2, tree }]]),
+    });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateProcessTreeMetrics("s1", tree);
+    expect(useSessionStore.getState()).toBe(before);
   });
 
   it("reorderTabs reorders sessions array", () => {
