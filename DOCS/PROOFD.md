@@ -3,8 +3,9 @@
 `proofd` replaces the old repo-local `.proofs` pipeline with:
 
 - A companion knowledge base repo outside the code repo for canonical structured rules
-- A local SQLite DB for verification history, citations, run logs, and branch overlays
+- A local SQLite DB for verification history, run logs, and branch overlays
 - Generated `.claude/rules/*.md` for Claude Code auto-loading
+- Generated `.codex/rules/agent-proofs.rules` for Codex proofd command policy
 
 The goal is to preserve automatic context injection while removing merge-heavy proof state from the code repo.
 
@@ -13,7 +14,7 @@ The goal is to preserve automatic context injection while removing merge-heavy p
 - Agents do not invent tags. They obtain tags only by calling `proofd` mutation commands.
 - Rule markdown is generated output, not the source of truth.
 - Branch/worktree mutations live in a local overlay until promoted.
-- Source-code tag anchors such as `// [CI-01] ...` remain first-class and are linted.
+- Source-code tag comments such as `// [CI-01] ...` remain first-class and are linted.
 - Global rules are allowed, but should stay concise.
 
 ## Storage
@@ -29,15 +30,15 @@ Per repo, `proofd` stores:
 - Repo metadata in `kb/repos/<repo-id>/repo.json`
 - Branch overlays in `%LOCALAPPDATA%\\proofd\\overlays\\<repo-id>\\<branch>\\rules/*.json`
 
-The code repo receives generated `.claude/rules/*.md` as a tracked snapshot.
-Claude worktrees should symlink `.claude/rules/` back to the main repo so one generated ruleset is shared across the parent session and worktrees.
+The code repo receives generated `.claude/rules/*.md` and `.codex/rules/agent-proofs.rules` as tracked snapshots.
+Claude worktrees should symlink `.claude/rules/` and `.codex/rules/` back to the main repo so one generated ruleset is shared across the parent session and worktrees.
 
 For cross-machine use:
 
 - share or git-sync the KB root
 - keep `state.db` local to each machine
-- use committed `.claude/rules/` for default startup context
-- refresh the tracked snapshot locally with `proofd sync` during build or release finalization when proof content changed
+- use committed `.claude/rules/` for Claude default startup context and `.codex/rules/` for Codex exec policy
+- refresh tracked generated rule snapshots locally with `proofd sync` during build or release finalization when proof content changed
 
 `repo_id` now defaults to a stable digest of the normalized `remote.origin.url`, so the same repo can resolve to the same KB identity on Windows and Linux. If a repo has no stable origin remote, use `--repo-key <stable-id>` or `PROOFD_REPO_KEY=<stable-id>`.
 
@@ -72,7 +73,7 @@ Mutate rules without editing markdown:
 ```powershell
 python tools/proofd.py create-rule --title "Foo" --paths "src/foo/**"
 python tools/proofd.py update-rule --rule foo --paths "src/foo/**,src/bar/**"
-python tools/proofd.py add-entry --rule foo --statement "Foo does bar" --files "src/foo/index.ts"
+python tools/proofd.py add-entry --rule foo --statement "Foo does bar"
 python tools/proofd.py update-entry --tag FO-01 --statement "Updated text"
 python tools/proofd.py entry-files --tag FO-01
 python tools/proofd.py delete-entry --tag FO-02
@@ -84,15 +85,17 @@ python tools/proofd.py promote-overlay
 
 ## Generated Rules
 
-`proofd sync` renders each structured rule as a concise markdown file with optional `paths:` YAML frontmatter so Claude Code auto-loads the right rules when files are touched.
+`proofd sync` renders one Markdown file per source file that contains source tags. Each generated file uses a single-entry `paths:` YAML frontmatter list for that exact file, so Claude Code auto-loads only the rules relevant to that file.
+
+`proofd sync` also renders `.codex/rules/agent-proofs.rules`. Codex `.rules` files are exec-policy files, so the generated Codex rule controls proofd command approval behavior rather than embedding tagged documentation context.
 
 Generated rule files include:
 
-- Rule title
-- Stable tag statements
+- The source file path in frontmatter
+- The matching rule groups and stable tag statements for tags referenced from that file
 - Compact `L<n>` source-tag line hints for that file (`L<n+1>` is usually the implementation line)
 
-They intentionally omit verification telemetry, `Files:` lines, and long historical notes. Query anchors on demand with `proofd entry-files --tag <TAG>`, which now returns line-aware `path:L<n>` references.
+They intentionally omit verification telemetry, stored `Files:` lines, and long historical notes. If the same tag appears in multiple source files, `proofd sync` duplicates that entry into each file-scoped rule snapshot. Query source-reference files on demand with `proofd entry-files --tag <TAG>`, which now returns line-aware `path:L<n>` references.
 If `proofd delete-entry` removes the final entry in a rule, proofd now prunes the rule from the store instead of leaving an empty placeholder behind.
 Rules with no entries are not rendered by `proofd sync`; delete obsolete empty rules from the store instead of keeping placeholder markdown around.
 
@@ -121,11 +124,12 @@ Current tools:
 1. Import once from the legacy `.proofs` and `.claude/rules`.
 2. Stop editing rule markdown directly.
 3. Let agents create/update rules through `proofd`.
-4. Let `/b` or release/finalization work run `proofd sync` to refresh the tracked shared rules snapshot when proof content changed, rather than doing it mid-session by hand.
+4. Let `/b` or release/finalization work run `proofd sync` to refresh tracked generated rule snapshots when proof content changed, rather than doing it mid-session by hand.
 5. Promote branch overlays when the code branch is ready to merge.
 
 ## Notes
 
 - `proofd lint` warnings are intentionally advisory. Large projects may legitimately surface many rules.
+- Do not hand-edit `.claude/rules/*.md` or `.codex/rules/agent-proofs.rules`; mutate rule state through `proofd` and regenerate.
 - Splitting is supported even when multiple rule files share the same source-file scope. This is the main escape hatch for large single-feature rule sets.
 - If an entry refers to deleted code, remove it with `proofd delete-entry` instead of leaving it as a permanent lint warning.

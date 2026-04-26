@@ -6,7 +6,7 @@ This script intentionally makes only low-risk repo-local changes:
 - initializes proofd state for the repo
 - optionally imports legacy `.proofs` / `.claude/rules`
 - updates repo-local Claude settings for worktree rule symlinks
-- writes a CLAUDE.md snippet file for manual merge into the project instructions
+- writes CLAUDE.md and AGENTS.md snippet files for manual merge into project instructions
 """
 
 from __future__ import annotations
@@ -41,9 +41,9 @@ Do NOT use TaskOutput to poll. Wait for task-notifications, then read the refere
 
 # Documentation
 
-All tagged documentation is managed by `proofd`. Canonical rule data lives outside the repo in the proofd knowledge base. `.claude/rules/` is generated output for Claude Code auto-loading.
+All tagged documentation is managed by `proofd`. Canonical rule data lives outside the repo in the proofd knowledge base. `proofd sync` generates Claude Markdown snapshots under `.claude/rules/` and a Codex exec-policy rule under `.codex/rules/`.
 
-Do not hand-edit `.claude/rules/*.md`. They are refreshed by `proofd sync`, typically during janitor, build, release, or finalization work. Use `{proofd_cmd}` subcommands to create rules, add entries, split rules, record verifications, and regenerate the rule output.
+Do not hand-edit `.claude/rules/*.md` or `.codex/rules/agent-proofs.rules`. They are refreshed by `proofd sync`, typically during janitor, build, release, or finalization work. Use `{proofd_cmd}` subcommands to create rules, add entries, split rules, record verifications, and regenerate the rule output.
 Generated rule markdown is file-scoped and intentionally omits stored file lists. If you need source-reference files for a tag, use `{proofd_cmd} entry-files --tag <TAG>`.
 
 Tags are embedded in source code as language-appropriate comments containing `[TAG]` near the implementation site. Tags must be allocated by `proofd`; agents must not invent tag IDs themselves.
@@ -161,9 +161,10 @@ def ensure_repo_settings(repo_root: pathlib.Path) -> tuple[bool, bool]:
     worktree = settings.setdefault("worktree", {})
     symlink_directories = worktree.setdefault("symlinkDirectories", [])
     updated_symlink = False
-    if ".claude/rules" not in symlink_directories:
-        symlink_directories.append(".claude/rules")
-        updated_symlink = True
+    for rule_dir in [".claude/rules", ".codex/rules"]:
+        if rule_dir not in symlink_directories:
+            symlink_directories.append(rule_dir)
+            updated_symlink = True
 
     path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return updated_symlink, removed_hook
@@ -171,6 +172,13 @@ def ensure_repo_settings(repo_root: pathlib.Path) -> tuple[bool, bool]:
 
 def write_claude_snippet(repo_root: pathlib.Path) -> pathlib.Path:
     target = repo_root / ".claude" / "agent-proofs-CLAUDE-snippet.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(build_claude_snippet().rstrip() + "\n", encoding="utf-8")
+    return target
+
+
+def write_codex_snippet(repo_root: pathlib.Path) -> pathlib.Path:
+    target = repo_root / ".codex" / "agent-proofs-AGENTS-snippet.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(build_claude_snippet().rstrip() + "\n", encoding="utf-8")
     return target
@@ -211,31 +219,34 @@ def main() -> int:
                 "--sync",
             ],
         )
-        action = "Imported legacy rules/proofs and generated `.claude/rules`."
+        action = "Imported legacy rules/proofs and generated `.claude/rules` plus `.codex/rules`."
     else:
         run_proofd(repo_root, ["init"])
         run_proofd(repo_root, ["sync"])
-        action = "Initialized proofd metadata and generated `.claude/rules`."
+        action = "Initialized proofd metadata and generated `.claude/rules` plus `.codex/rules`."
 
     snippet_path = write_claude_snippet(repo_root)
+    codex_snippet_path = write_codex_snippet(repo_root)
 
     print(f"Repo: {repo_root}")
     print(action)
     if gitignore_updates:
         print(f"Updated .gitignore: {', '.join(gitignore_updates)}")
     if symlink_updated:
-        print("Updated .claude/settings.json: added worktree symlinkDirectories entry for .claude/rules.")
+        print("Updated .claude/settings.json: added worktree symlinkDirectories entries for generated rule directories.")
     else:
-        print(".claude/settings.json already symlinked .claude/rules into new worktrees.")
+        print(".claude/settings.json already symlinked generated rule directories into new worktrees.")
     if removed_hook:
         print("Removed legacy SessionStart proofd sync hook from .claude/settings.json.")
     print(f"Wrote CLAUDE.md integration snippet: {snippet_path}")
+    print(f"Wrote AGENTS.md integration snippet: {codex_snippet_path}")
     print("")
     print("Next steps:")
     print("1. Merge the snippet into the repo's CLAUDE.md.")
-    print("2. Review generated `.claude/rules/` and run proofd lint.")
-    print("3. Decide whether this repo will track the generated `.claude/rules` snapshot and keep that policy consistent.")
-    print("4. Start using `/r`, `/j`, `/b`, `/c`, `/rj`, and `proofd` from this repo root.")
+    print("2. Merge the AGENTS snippet into the repo's AGENTS.md if Codex does not already read CLAUDE.md through a symlink or fallback.")
+    print("3. Review generated `.claude/rules/` and `.codex/rules/`, then run proofd lint.")
+    print("4. Decide whether this repo will track the generated rule snapshots and keep that policy consistent.")
+    print("5. Start using `/r`, `/j`, `/b`, `/c`, `/rj`, and `proofd` from this repo root.")
     return 0
 
 

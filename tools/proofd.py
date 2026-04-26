@@ -2,7 +2,7 @@
 """
 proofd: externalized proofs/rules tooling for tagged project documentation.
 
-The code repo keeps only generated `.claude/rules/*.md`.
+The code repo keeps generated rule snapshots for local agent integrations.
 Canonical rule data lives in a companion knowledge base root.
 Operational state lives in SQLite.
 
@@ -39,6 +39,27 @@ DEFAULT_BATCH_SIZE = 20
 DEFAULT_SOURCE_EXTENSIONS = {".c", ".cc", ".cpp", ".cs", ".css", ".go", ".h", ".hpp", ".java", ".js", ".jsx", ".kt", ".kts", ".lua", ".mjs", ".php", ".py", ".rb", ".rs", ".sass", ".scala", ".scss", ".sh", ".sql", ".swift", ".ts", ".tsx", ".vue"}
 DEFAULT_SCAN_EXCLUDES = {".claude", ".git", ".idea", ".next", ".nuxt", ".pytest_cache", ".ruff_cache", ".svn", ".turbo", ".venv", "__pycache__", "bin", "build", "coverage", "dist", "node_modules", "out", "target", "tmp", "vendor", "venv"}
 PREFERRED_SOURCE_DIRS = ["src", "app", "lib", "server", "client", "frontend", "backend", "cmd", "internal", "pkg", "crates", "packages"]
+CLAUDE_RULES_DIR = ".claude/rules"
+CODEX_RULES_DIR = ".codex/rules"
+CODEX_RULES_FILENAME = "agent-proofs.rules"
+PROOFD_READ_COMMANDS = ["status", "context", "entry-files", "select-matching", "lint", "review-brief"]
+PROOFD_WRITE_COMMANDS = [
+    "init",
+    "import-legacy",
+    "sync",
+    "create-rule",
+    "update-rule",
+    "delete-rule",
+    "allocate-tag",
+    "add-entry",
+    "update-entry",
+    "delete-entry",
+    "split-rule",
+    "record-verification",
+    "log-run",
+    "promote-overlay",
+    "mcp",
+]
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -686,8 +707,6 @@ class ProofStore:
                 repo_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
                 seen_count INTEGER NOT NULL DEFAULT 0,
-                up_count INTEGER NOT NULL DEFAULT 0,
-                down_count INTEGER NOT NULL DEFAULT 0,
                 last_seen_at TEXT,
                 last_verified_at TEXT,
                 PRIMARY KEY (repo_id, tag_id)
@@ -712,8 +731,6 @@ class ProofStore:
                 command TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 build_time_s REAL,
-                cited_up_json TEXT NOT NULL,
-                cited_down_json TEXT NOT NULL,
                 ts TEXT NOT NULL
             );
 
@@ -726,7 +743,95 @@ class ProofStore:
             );
             """
         )
+        self._migrate_db_tables()
         self.conn.commit()
+
+    def _table_columns(self, table: str) -> list[str]:
+        rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return [str(row["name"]) for row in rows]
+
+    def _migrate_db_tables(self) -> None:
+        self._migrate_tag_stats_table()
+        self._migrate_runs_table()
+
+    def _migrate_tag_stats_table(self) -> None:
+        expected = ["repo_id", "tag_id", "seen_count", "last_seen_at", "last_verified_at"]
+        columns = self._table_columns("tag_stats")
+        if columns == expected:
+            return
+        selects = []
+        for column in expected:
+            if column in columns:
+                selects.append(column)
+            elif column == "seen_count":
+                selects.append("0 AS seen_count")
+            else:
+                selects.append(f"NULL AS {column}")
+        self.conn.executescript(
+            """
+            DROP TABLE IF EXISTS tag_stats_new;
+            CREATE TABLE tag_stats_new (
+                repo_id TEXT NOT NULL,
+                tag_id TEXT NOT NULL,
+                seen_count INTEGER NOT NULL DEFAULT 0,
+                last_seen_at TEXT,
+                last_verified_at TEXT,
+                PRIMARY KEY (repo_id, tag_id)
+            );
+            """
+        )
+        self.conn.execute(
+            f"""
+            INSERT OR REPLACE INTO tag_stats_new ({", ".join(expected)})
+            SELECT {", ".join(selects)} FROM tag_stats
+            """
+        )
+        self.conn.executescript(
+            """
+            DROP TABLE tag_stats;
+            ALTER TABLE tag_stats_new RENAME TO tag_stats;
+            """
+        )
+
+    def _migrate_runs_table(self) -> None:
+        expected = ["run_id", "repo_id", "branch", "command", "summary", "build_time_s", "ts"]
+        columns = self._table_columns("runs")
+        if columns == expected:
+            return
+        selects = []
+        for column in expected:
+            if column in columns:
+                selects.append(column)
+            elif column == "build_time_s":
+                selects.append("NULL AS build_time_s")
+            else:
+                selects.append(f"'' AS {column}")
+        self.conn.executescript(
+            """
+            DROP TABLE IF EXISTS runs_new;
+            CREATE TABLE runs_new (
+                run_id TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                branch TEXT NOT NULL,
+                command TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                build_time_s REAL,
+                ts TEXT NOT NULL
+            );
+            """
+        )
+        self.conn.execute(
+            f"""
+            INSERT OR REPLACE INTO runs_new ({", ".join(expected)})
+            SELECT {", ".join(selects)} FROM runs
+            """
+        )
+        self.conn.executescript(
+            """
+            DROP TABLE runs;
+            ALTER TABLE runs_new RENAME TO runs;
+            """
+        )
 
     def _ensure_repo_profile(self) -> dict[str, Any]:
         repo_id = self.identity["repo_id"]
@@ -744,7 +849,7 @@ class ProofStore:
                 INSERT INTO repos (repo_id, root_path, display_name, output_dir, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (repo_id, str(self.repo_root), display_name, ".claude/rules", now, now),
+                (repo_id, str(self.repo_root), display_name, CLAUDE_RULES_DIR, now, now),
             )
         else:
             self.conn.execute(
@@ -842,7 +947,7 @@ class ProofStore:
         if existing is not None:
             return
         created_at = seed_row["created_at"] if seed_row is not None else now
-        output_dir = seed_row["output_dir"] if seed_row is not None else ".claude/rules"
+        output_dir = seed_row["output_dir"] if seed_row is not None else CLAUDE_RULES_DIR
         self.conn.execute(
             """
             INSERT INTO repos (repo_id, root_path, display_name, output_dir, created_at, updated_at)
@@ -890,7 +995,7 @@ class ProofStore:
     def _merge_tag_stats(self, target_repo_id: str, legacy_repo_id: str) -> None:
         rows = self.conn.execute(
             """
-            SELECT tag_id, seen_count, up_count, down_count, last_seen_at, last_verified_at
+            SELECT tag_id, seen_count, last_seen_at, last_verified_at
             FROM tag_stats
             WHERE repo_id = ?
             """,
@@ -899,12 +1004,10 @@ class ProofStore:
         for row in rows:
             self.conn.execute(
                 """
-                INSERT INTO tag_stats (repo_id, tag_id, seen_count, up_count, down_count, last_seen_at, last_verified_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tag_stats (repo_id, tag_id, seen_count, last_seen_at, last_verified_at)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(repo_id, tag_id) DO UPDATE SET
                     seen_count = tag_stats.seen_count + excluded.seen_count,
-                    up_count = tag_stats.up_count + excluded.up_count,
-                    down_count = tag_stats.down_count + excluded.down_count,
                     last_seen_at = CASE
                         WHEN COALESCE(tag_stats.last_seen_at, '') >= COALESCE(excluded.last_seen_at, '') THEN tag_stats.last_seen_at
                         ELSE excluded.last_seen_at
@@ -918,8 +1021,6 @@ class ProofStore:
                     target_repo_id,
                     row["tag_id"],
                     row["seen_count"],
-                    row["up_count"],
-                    row["down_count"],
                     row["last_seen_at"],
                     row["last_verified_at"],
                 ),
@@ -1538,41 +1639,35 @@ class ProofStore:
         self,
         tag_id: str,
         seen_delta: int = 0,
-        up_delta: int = 0,
-        down_delta: int = 0,
         last_seen_at: str | None = None,
         last_verified_at: str | None = None,
     ) -> None:
         row = self.conn.execute(
-            "SELECT seen_count, up_count, down_count, last_seen_at, last_verified_at FROM tag_stats WHERE repo_id = ? AND tag_id = ?",
+            "SELECT seen_count, last_seen_at, last_verified_at FROM tag_stats WHERE repo_id = ? AND tag_id = ?",
             (self.profile["repo_id"], tag_id),
         ).fetchone()
         if row:
             seen = int(row["seen_count"]) + seen_delta
-            up = int(row["up_count"]) + up_delta
-            down = int(row["down_count"]) + down_delta
             seen_at = last_seen_at or row["last_seen_at"]
             verified_at = last_verified_at or row["last_verified_at"]
             self.conn.execute(
                 """
                 UPDATE tag_stats
-                SET seen_count = ?, up_count = ?, down_count = ?, last_seen_at = ?, last_verified_at = ?
+                SET seen_count = ?, last_seen_at = ?, last_verified_at = ?
                 WHERE repo_id = ? AND tag_id = ?
                 """,
-                (seen, up, down, seen_at, verified_at, self.profile["repo_id"], tag_id),
+                (seen, seen_at, verified_at, self.profile["repo_id"], tag_id),
             )
         else:
             self.conn.execute(
                 """
-                INSERT INTO tag_stats (repo_id, tag_id, seen_count, up_count, down_count, last_seen_at, last_verified_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tag_stats (repo_id, tag_id, seen_count, last_seen_at, last_verified_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     self.profile["repo_id"],
                     tag_id,
                     seen_delta,
-                    up_delta,
-                    down_delta,
                     last_seen_at,
                     last_verified_at,
                 ),
@@ -1588,8 +1683,6 @@ class ProofStore:
             "repo_id": self.profile["repo_id"],
             "tag_id": tag_id,
             "seen_count": 0,
-            "up_count": 0,
-            "down_count": 0,
             "last_seen_at": None,
             "last_verified_at": None,
         }
@@ -1636,24 +1729,11 @@ class ProofStore:
             "notes": notes,
         }
 
-    def record_citations(self, tags: list[str], command: str = "manual", direction: str = "up") -> dict[str, Any]:
-        if direction not in {"up", "down"}:
-            raise RuntimeError("direction must be up or down")
-        timestamp = now_iso()
-        for tag_id in tags:
-            if direction == "up":
-                self.upsert_tag_stats(tag_id, up_delta=1, last_seen_at=timestamp)
-            else:
-                self.upsert_tag_stats(tag_id, down_delta=1, last_seen_at=timestamp)
-        return {"tags": tags, "direction": direction, "command": command, "ts": timestamp}
-
     def log_run(
         self,
         command: str,
         summary: str,
         build_time_s: float | None,
-        cited_up: list[str],
-        cited_down: list[str],
         branch: str | None = None,
     ) -> dict[str, Any]:
         branch = branch or current_branch(self.repo_root)
@@ -1661,8 +1741,8 @@ class ProofStore:
         timestamp = now_iso()
         self.conn.execute(
             """
-            INSERT INTO runs (run_id, repo_id, branch, command, summary, build_time_s, cited_up_json, cited_down_json, ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs (run_id, repo_id, branch, command, summary, build_time_s, ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -1671,8 +1751,6 @@ class ProofStore:
                 command,
                 summary.strip(),
                 build_time_s,
-                json.dumps(cited_up),
-                json.dumps(cited_down),
                 timestamp,
             ),
         )
@@ -1680,10 +1758,6 @@ class ProofStore:
         all_tags = {entry["tag_id"] for rule in self.load_rules(branch).values() for entry in rule["entries"]}
         for tag_id in sorted(all_tags):
             self.upsert_tag_stats(tag_id, seen_delta=1, last_seen_at=timestamp)
-        if cited_up:
-            self.record_citations(cited_up, command=command, direction="up")
-        if cited_down:
-            self.record_citations(cited_down, command=command, direction="down")
         return {"run_id": run_id, "ts": timestamp}
 
     def recent_runs(self, limit: int = 5) -> list[dict[str, Any]]:
@@ -1750,7 +1824,6 @@ class ProofStore:
             proof_path = legacy_proofs_dir / f"prove-{markdown_path.stem}.json"
             proof_state = json.loads(proof_path.read_text(encoding="utf-8")) if proof_path.exists() else {}
             metadata = proof_state.get("metadata", {})
-            citations = proof_state.get("citations", {})
 
             for entry in rule["entries"]:
                 tag_id = entry["tag_id"]
@@ -1760,12 +1833,8 @@ class ProofStore:
                 if isinstance(imported_notes, str):
                     imported_notes = [{"date": imported_meta.get("verified"), "text": imported_notes}]
                 entry["notes"] = [note for note in imported_notes if note]
-                counts = citations.get(tag_id, {})
                 self.upsert_tag_stats(
                     tag_id,
-                    seen_delta=int(counts.get("seen", 0)),
-                    up_delta=int(counts.get("up", 0)),
-                    down_delta=int(counts.get("down", 0)),
                     last_verified_at=imported_meta.get("verified"),
                 )
                 if imported_meta.get("verified"):
@@ -1807,8 +1876,8 @@ class ProofStore:
                     continue
                 self.conn.execute(
                     """
-                    INSERT OR IGNORE INTO runs (run_id, repo_id, branch, command, summary, build_time_s, cited_up_json, cited_down_json, ts)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR IGNORE INTO runs (run_id, repo_id, branch, command, summary, build_time_s, ts)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(uuid.uuid4()),
@@ -1817,8 +1886,6 @@ class ProofStore:
                         payload.get("cmd", "legacy"),
                         payload.get("summary", "Imported legacy run"),
                         payload.get("build_time_s"),
-                        json.dumps(payload.get("cited", {}).get("up", [])),
-                        json.dumps(payload.get("cited", {}).get("down", [])),
                         payload.get("ts", now_iso()),
                     ),
                 )
@@ -1838,6 +1905,12 @@ class ProofStore:
     def generated_rule_filename(self, source_path: str) -> str:
         digest = hashlib.sha1(source_path.encode("utf-8")).hexdigest()[:8]
         return f"{slugify(source_path)}-{digest}.md"
+
+    def codex_rules_dir(self) -> pathlib.Path:
+        return self.repo_root / CODEX_RULES_DIR
+
+    def codex_rules_path(self) -> pathlib.Path:
+        return self.codex_rules_dir() / CODEX_RULES_FILENAME
 
     def render_file_scoped_markdown(
         self,
@@ -1869,6 +1942,109 @@ class ProofStore:
                 for detail in entry.get("details", []):
                     lines.append(f"  - {detail}")
         return render_frontmatter(frontmatter) + "\n".join(lines).rstrip() + "\n"
+
+    def render_codex_exec_rules(self) -> str:
+        # Codex `.rules` are exec-policy files, not project-instruction
+        # documents. Keep proof context in proofd/Markdown and use this file to
+        # make the local proofd command policy explicit.
+        def starlark_string(value: str) -> str:
+            return json.dumps(value, ensure_ascii=False)
+
+        def starlark_list(values: list[Any]) -> str:
+            return "[" + ", ".join(starlark_value(value) for value in values) + "]"
+
+        def starlark_value(value: Any) -> str:
+            if isinstance(value, list):
+                return starlark_list(value)
+            return starlark_string(str(value))
+
+        def prefix_rule(
+            pattern: list[Any],
+            decision: str,
+            justification: str,
+            match: list[str],
+            not_match: list[str] | None = None,
+        ) -> list[str]:
+            lines = [
+                "prefix_rule(",
+                f"    pattern = {starlark_list(pattern)},",
+                f"    decision = {starlark_string(decision)},",
+                f"    justification = {starlark_string(justification)},",
+                f"    match = {starlark_list(match)},",
+            ]
+            if not_match:
+                lines.append(f"    not_match = {starlark_list(not_match)},")
+            lines.append(")")
+            return lines
+
+        local_proofd_paths = [
+            path
+            for path in ("tools/proofd.py", "bin/proofd.py")
+            if (self.repo_root / path).exists()
+        ] or ["tools/proofd.py"]
+        python_runners = ["python", "python3", "py"]
+        read_commands = PROOFD_READ_COMMANDS
+        write_commands = PROOFD_WRITE_COMMANDS
+        lines = [
+            "# Generated by proofd. Do not edit manually.",
+            "# Codex .rules files control command execution outside the sandbox.",
+            "# The proof documentation context remains in proofd and generated Markdown snapshots.",
+            "",
+        ]
+        for proofd_path in local_proofd_paths:
+            script_runners = [f"./{proofd_path}", proofd_path]
+            rules = [
+                (
+                    [python_runners, proofd_path, read_commands],
+                    "allow",
+                    "Read-only proofd commands may inspect local rule context.",
+                    [
+                        f"python {proofd_path} status",
+                        f"python3 {proofd_path} context src/App.tsx",
+                    ],
+                    [f"python {proofd_path} sync"],
+                ),
+                (
+                    [script_runners, read_commands],
+                    "allow",
+                    "Read-only proofd script invocations may inspect local rule context.",
+                    [
+                        f"./{proofd_path} status",
+                        f"{proofd_path} lint",
+                    ],
+                    [f"./{proofd_path} add-entry --rule docs --statement x"],
+                ),
+                (
+                    [python_runners, proofd_path, write_commands],
+                    "prompt",
+                    "Proofd mutation commands update generated snapshots or local proof state.",
+                    [
+                        f"python {proofd_path} sync",
+                        f"python3 {proofd_path} record-verification --tag AA-01 --status confirmed --files src/a.ts",
+                    ],
+                    None,
+                ),
+                (
+                    [script_runners, write_commands],
+                    "prompt",
+                    "Proofd mutation script invocations update generated snapshots or local proof state.",
+                    [
+                        f"./{proofd_path} sync",
+                        f"{proofd_path} promote-overlay",
+                    ],
+                    None,
+                ),
+            ]
+            for pattern, decision, justification, match, not_match in rules:
+                lines.extend(prefix_rule(pattern, decision, justification, match, not_match))
+                lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
+    def sync_codex_rules(self) -> dict[str, Any]:
+        output_dir = ensure_dir(self.codex_rules_dir())
+        path = self.codex_rules_path()
+        path.write_text(self.render_codex_exec_rules(), encoding="utf-8")
+        return {"generated": 1, "output_dir": str(output_dir), "files": [path.name]}
 
     def sync_rules(self, branch: str | None = None, clean: bool = True) -> dict[str, Any]:
         branch = branch or current_branch(self.repo_root)
@@ -1913,7 +2089,16 @@ class ProofStore:
                         stale_path.unlink()
 
         manifest_path.write_text(stable_json({"branch": branch, "files": sorted(generated_files)}), encoding="utf-8")
-        return {"generated": len(generated_files), "output_dir": str(output_dir), "branch": branch}
+        codex = self.sync_codex_rules()
+        return {
+            "generated": len(generated_files),
+            "output_dir": str(output_dir),
+            "branch": branch,
+            "outputs": {
+                "claude": {"generated": len(generated_files), "output_dir": str(output_dir), "files": sorted(generated_files)},
+                "codex": codex,
+            },
+        }
 
     def context(self, paths: list[str], branch: str | None = None, format_name: str = "markdown") -> str:
         branch = branch or current_branch(self.repo_root)
@@ -2263,18 +2448,10 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--canonical", action="store_true")
     verify_parser.add_argument("--json", action="store_true")
 
-    citations_parser = subparsers.add_parser("record-citations")
-    citations_parser.add_argument("--tags", required=True, help="Comma-separated tag ids")
-    citations_parser.add_argument("--command-name", default="manual")
-    citations_parser.add_argument("--direction", choices=["up", "down"], default="up")
-    citations_parser.add_argument("--json", action="store_true")
-
     log_parser = subparsers.add_parser("log-run")
     log_parser.add_argument("--cmd", required=True)
     log_parser.add_argument("--summary", required=True)
     log_parser.add_argument("--build-time", default=None)
-    log_parser.add_argument("--cited-up", default="")
-    log_parser.add_argument("--cited-down", default="")
     log_parser.add_argument("--json", action="store_true")
 
     review_parser = subparsers.add_parser("review-brief")
@@ -2344,7 +2521,10 @@ def run_cli(args: argparse.Namespace) -> int:
             if args.json:
                 print_json(payload)
             else:
-                print(f"Generated {payload['generated']} rule files into {payload['output_dir']} for branch {payload['branch']}")
+                codex_output = payload.get("outputs", {}).get("codex", {})
+                print(f"Generated {payload['generated']} Claude rule files into {payload['output_dir']} for branch {payload['branch']}")
+                if codex_output:
+                    print(f"Generated {codex_output['generated']} Codex rule file into {codex_output['output_dir']}")
             return 0
         if command == "lint":
             payload = store.lint(branch=args.branch)
@@ -2503,25 +2683,12 @@ def run_cli(args: argparse.Namespace) -> int:
             else:
                 print(f"Recorded {payload['status']} for {payload['tag_id']}")
             return 0
-        if command == "record-citations":
-            payload = store.record_citations(
-                tags=[tag.strip() for tag in args.tags.split(",") if tag.strip()],
-                command=args.command_name,
-                direction=args.direction,
-            )
-            if args.json:
-                print_json(payload)
-            else:
-                print(f"Recorded {payload['direction']} citations for {', '.join(payload['tags'])}")
-            return 0
         if command == "log-run":
             build_time = float(args.build_time) if args.build_time not in (None, "", "null") else None
             payload = store.log_run(
                 command=args.cmd,
                 summary=args.summary,
                 build_time_s=build_time,
-                cited_up=[tag.strip() for tag in args.cited_up.split(",") if tag.strip()],
-                cited_down=[tag.strip() for tag in args.cited_down.split(",") if tag.strip()],
             )
             if args.json:
                 print_json(payload)
@@ -2632,7 +2799,7 @@ def mcp_tools() -> list[dict[str, Any]]:
                 "required": ["tag", "status", "files"],
             },
         },
-        {"name": "proofd_sync", "description": "Generate `.claude/rules/*.md` from the canonical+overlay store.", "inputSchema": {"type": "object", "properties": {}}},
+        {"name": "proofd_sync", "description": "Generate Claude Markdown rules and the Codex proofd exec-policy rule from the canonical+overlay store.", "inputSchema": {"type": "object", "properties": {}}},
         {"name": "proofd_lint", "description": "Lint rules, source references, and auto-load coverage.", "inputSchema": {"type": "object", "properties": {}}},
     ]
 
