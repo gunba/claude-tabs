@@ -1,5 +1,5 @@
-mod commands;
 mod cli_adapter;
+mod commands;
 pub mod discovery;
 mod metrics;
 mod observability;

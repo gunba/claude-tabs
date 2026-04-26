@@ -1,4 +1,6 @@
-use crate::observability::{record_backend_perf_end, record_backend_perf_fail, record_backend_perf_start};
+use crate::observability::{
+    record_backend_perf_end, record_backend_perf_fail, record_backend_perf_start,
+};
 use tauri::AppHandle;
 
 const MAX_SNAPSHOT_BYTES: usize = 500 * 1024;

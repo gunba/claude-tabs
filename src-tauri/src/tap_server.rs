@@ -247,12 +247,7 @@ pub fn start_tap_server(
                         }
                     }
 
-                    emit_tap_batch(
-                        &app_for_thread,
-                        &event_name,
-                        &mut batch,
-                        &mut batch_bytes,
-                    );
+                    emit_tap_batch(&app_for_thread, &event_name, &mut batch, &mut batch_bytes);
                     set_active_client(&state, &sid, None);
                     record_backend_event(
                         &app_for_thread,

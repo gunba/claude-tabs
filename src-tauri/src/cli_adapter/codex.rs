@@ -87,7 +87,10 @@ impl CliAdapter for CodexAdapter {
         if let Some(ref effort) = cfg.effort {
             if !effort.is_empty() {
                 args.push("-c".into());
-                args.push(format!("model_reasoning_effort={}", quote_toml_value(effort)));
+                args.push(format!(
+                    "model_reasoning_effort={}",
+                    quote_toml_value(effort)
+                ));
             }
         }
 
@@ -101,7 +104,10 @@ impl CliAdapter for CodexAdapter {
         }
         if let Some(prompt) = codex_developer_instructions(cfg) {
             args.push("-c".into());
-            args.push(format!("developer_instructions={}", quote_toml_value(prompt)));
+            args.push(format!(
+                "developer_instructions={}",
+                quote_toml_value(prompt)
+            ));
         }
 
         // Permission/sandbox mapping — locked. Document explicitly so
@@ -200,10 +206,7 @@ impl CliAdapter for CodexAdapter {
                 }
                 ModelOption {
                     id: m.slug.clone(),
-                    display_name: m
-                        .display_name
-                        .clone()
-                        .unwrap_or_else(|| m.slug.clone()),
+                    display_name: m.display_name.clone().unwrap_or_else(|| m.slug.clone()),
                     description: m.description.clone(),
                     default_effort: m.default_reasoning_level.clone(),
                 }
@@ -383,9 +386,7 @@ mod tests {
         assert!(args.contains(&"--profile".to_string()));
         assert!(args.contains(&"daily".to_string()));
         assert!(args.contains(&"-c".to_string()));
-        assert!(args
-            .iter()
-            .any(|a| a == "model_reasoning_effort=\"high\""));
+        assert!(args.iter().any(|a| a == "model_reasoning_effort=\"high\""));
         assert!(args.contains(&"--sandbox".to_string()));
         assert!(args.contains(&"workspace-write".to_string()));
         assert!(args.contains(&"--add-dir".to_string()));
@@ -406,7 +407,10 @@ mod tests {
             }
             _ => unreachable!(),
         }
-        assert_eq!(args, vec!["--sandbox", "read-only", "--ask-for-approval", "untrusted"]);
+        assert_eq!(
+            args,
+            vec!["--sandbox", "read-only", "--ask-for-approval", "untrusted"]
+        );
     }
 
     #[test]
@@ -482,7 +486,10 @@ mod tests {
     #[test]
     fn quote_toml_value_quotes_strings_only() {
         assert_eq!(quote_toml_value("high"), "\"high\"");
-        assert_eq!(quote_toml_value("say \"hi\"\nnow"), "\"say \\\"hi\\\"\\nnow\"");
+        assert_eq!(
+            quote_toml_value("say \"hi\"\nnow"),
+            "\"say \\\"hi\\\"\\nnow\""
+        );
         assert_eq!(quote_toml_value("0.5"), "0.5");
         assert_eq!(quote_toml_value("true"), "true");
         assert_eq!(quote_toml_value("false"), "false");

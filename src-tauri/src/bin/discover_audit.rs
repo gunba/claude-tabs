@@ -109,8 +109,7 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
                 i += 2;
             }
             "--out" => {
-                args.out_dir =
-                    Some(PathBuf::from(raw.get(i + 1).ok_or("--out needs a value")?));
+                args.out_dir = Some(PathBuf::from(raw.get(i + 1).ok_or("--out needs a value")?));
                 i += 2;
             }
             other => return Err(format!("unknown argument: {}", other)),
@@ -210,7 +209,10 @@ fn cmd_audit(args: &Args) -> ExitCode {
     let report = audit_diff(&discovered, &docs, args.what);
     match args.format {
         Format::Json => {
-            println!("{}", serde_json::to_string_pretty(&report.to_json()).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report.to_json()).unwrap()
+            );
         }
         Format::Pretty => report.print_pretty(),
     }
@@ -244,7 +246,12 @@ fn cmd_fetch_docs(args: &Args) -> ExitCode {
                     eprintln!("failed to write {}: {}", path.display(), e);
                     return ExitCode::from(3);
                 }
-                eprintln!("fetched {} ({} bytes) -> {}", url, body.len(), path.display());
+                eprintln!(
+                    "fetched {} ({} bytes) -> {}",
+                    url,
+                    body.len(),
+                    path.display()
+                );
             }
             Err(e) => {
                 eprintln!("fetch {} failed: {}", url, e);
@@ -391,17 +398,26 @@ fn load_docs(args: &Args) -> Result<DocsExpected, String> {
     };
 
     let settings = if matches!(want, What::Settings | What::All) {
-        read("settings.html", SETTINGS_URL)?.as_deref().map(parse_settings_html).transpose()?
+        read("settings.html", SETTINGS_URL)?
+            .as_deref()
+            .map(parse_settings_html)
+            .transpose()?
     } else {
         None
     };
     let commands = if matches!(want, What::Commands | What::All) {
-        read("commands.html", COMMANDS_URL)?.as_deref().map(parse_commands_html).transpose()?
+        read("commands.html", COMMANDS_URL)?
+            .as_deref()
+            .map(parse_commands_html)
+            .transpose()?
     } else {
         None
     };
     let env_vars = if matches!(want, What::EnvVars | What::All) {
-        read("env-vars.html", ENV_VARS_URL)?.as_deref().map(parse_env_vars_html).transpose()?
+        read("env-vars.html", ENV_VARS_URL)?
+            .as_deref()
+            .map(parse_env_vars_html)
+            .transpose()?
     } else {
         None
     };
@@ -442,7 +458,9 @@ fn parse_settings_html(html: &str) -> Result<BTreeSet<String>, String> {
         }
     }
     if out.is_empty() {
-        return Err("settings.html: found 0 rows — parser may be broken or fixture wrong page".into());
+        return Err(
+            "settings.html: found 0 rows — parser may be broken or fixture wrong page".into(),
+        );
     }
     Ok(out)
 }
@@ -459,7 +477,10 @@ fn parse_commands_html(html: &str) -> Result<BTreeSet<CommandExpectation>, Strin
             Some(td) => td,
             None => continue,
         };
-        let second_td_text = tds.next().map(|td| td.text().collect::<String>()).unwrap_or_default();
+        let second_td_text = tds
+            .next()
+            .map(|td| td.text().collect::<String>())
+            .unwrap_or_default();
         // Commands are rendered as `<code>/commit</code>`; strip to slash-name.
         let raw = match first_td.select(&code_sel).next() {
             Some(c) => c.text().collect::<String>(),
@@ -475,7 +496,9 @@ fn parse_commands_html(html: &str) -> Result<BTreeSet<CommandExpectation>, Strin
         out.insert(CommandExpectation { cmd, is_skill });
     }
     if out.is_empty() {
-        return Err("commands.html: found 0 rows — parser may be broken or fixture wrong page".into());
+        return Err(
+            "commands.html: found 0 rows — parser may be broken or fixture wrong page".into(),
+        );
     }
     Ok(out)
 }
@@ -497,15 +520,22 @@ fn parse_env_vars_html(html: &str) -> Result<BTreeSet<String>, String> {
         };
         let name = raw.trim().to_string();
         // Env vars are UPPER_SNAKE_CASE; filter noise.
-        if name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        if name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
             && name.len() >= 3
-            && name.chars().next().map_or(false, |c| c.is_ascii_uppercase())
+            && name
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_uppercase())
         {
             out.insert(name);
         }
     }
     if out.is_empty() {
-        return Err("env-vars.html: found 0 rows — parser may be broken or fixture wrong page".into());
+        return Err(
+            "env-vars.html: found 0 rows — parser may be broken or fixture wrong page".into(),
+        );
     }
     Ok(out)
 }
@@ -536,7 +566,8 @@ fn is_plausible_setting_key(s: &str) -> bool {
     }
     // Allow letters, digits, dots (for nested keys like worktree.isolation),
     // underscores and dashes (some permission names use hyphens).
-    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
 // ---------------- diff / report ----------------
@@ -600,16 +631,33 @@ impl AuditReport {
                 }
             }
         };
-        print_section("Settings", self.settings_checked, &self.settings_missing, &self.settings_extra);
-        print_section("Commands", self.commands_checked, &self.commands_missing, &self.commands_extra);
-        print_section("Env vars", self.env_vars_checked, &self.env_vars_missing, &self.env_vars_extra);
+        print_section(
+            "Settings",
+            self.settings_checked,
+            &self.settings_missing,
+            &self.settings_extra,
+        );
+        print_section(
+            "Commands",
+            self.commands_checked,
+            &self.commands_missing,
+            &self.commands_extra,
+        );
+        print_section(
+            "Env vars",
+            self.env_vars_checked,
+            &self.env_vars_missing,
+            &self.env_vars_extra,
+        );
         println!("\ntotal missing: {}", self.total_missing());
     }
 }
 
 fn audit_diff(found: &DiscoveredSet, docs: &DocsExpected, want: What) -> AuditReport {
     let (sm, se) = match (&docs.settings, matches!(want, What::Settings | What::All)) {
-        (Some(expected), true) => diff_string_sets(&found.settings.keys().cloned().collect(), expected),
+        (Some(expected), true) => {
+            diff_string_sets(&found.settings.keys().cloned().collect(), expected)
+        }
         _ => (Vec::new(), Vec::new()),
     };
     let (cm, ce) = match (&docs.commands, matches!(want, What::Commands | What::All)) {
@@ -620,7 +668,9 @@ fn audit_diff(found: &DiscoveredSet, docs: &DocsExpected, want: What) -> AuditRe
         _ => (Vec::new(), Vec::new()),
     };
     let (em, ee) = match (&docs.env_vars, matches!(want, What::EnvVars | What::All)) {
-        (Some(expected), true) => diff_string_sets(&found.env_vars.keys().cloned().collect(), expected),
+        (Some(expected), true) => {
+            diff_string_sets(&found.env_vars.keys().cloned().collect(), expected)
+        }
         _ => (Vec::new(), Vec::new()),
     };
 
@@ -752,8 +802,14 @@ mod tests {
 
     #[test]
     fn normalize_key_strips_noise() {
-        assert_eq!(normalize_key("  `showThinkingSummaries`  "), "showThinkingSummaries");
-        assert_eq!(normalize_key("permissions.allow (Recommended)"), "permissions.allow");
+        assert_eq!(
+            normalize_key("  `showThinkingSummaries`  "),
+            "showThinkingSummaries"
+        );
+        assert_eq!(
+            normalize_key("permissions.allow (Recommended)"),
+            "permissions.allow"
+        );
         assert_eq!(normalize_key("fast-mode"), "fast-mode");
     }
 }

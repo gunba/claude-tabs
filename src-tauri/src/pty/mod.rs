@@ -85,14 +85,7 @@ pub async fn pty_spawn(
     let result = conpty::spawn(&file, &args, cols, rows, cwd.as_deref(), &env)?;
 
     #[cfg(unix)]
-    let result = unix::spawn(
-        &file,
-        &args,
-        cols,
-        rows,
-        cwd.as_deref(),
-        &env,
-    )?;
+    let result = unix::spawn(&file, &args, cols, rows, cwd.as_deref(), &env)?;
 
     let handler = state.session_id.fetch_add(1, Ordering::Relaxed);
 

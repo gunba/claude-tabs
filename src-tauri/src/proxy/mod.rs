@@ -454,9 +454,9 @@ impl UpstreamKind {
 
 fn path_matches_endpoint(path: &str, endpoint: &str) -> bool {
     path == endpoint
-        || path
-            .strip_prefix(endpoint)
-            .map_or(false, |suffix| suffix.starts_with('?') || suffix.starts_with('/'))
+        || path.strip_prefix(endpoint).map_or(false, |suffix| {
+            suffix.starts_with('?') || suffix.starts_with('/')
+        })
 }
 
 fn is_anthropic_endpoint(path: &str) -> bool {
@@ -589,7 +589,11 @@ async fn handle_connection(
         req = req.header(k.as_str(), v.as_str());
     }
 
-    let final_body_for_log = if should_log { Some(final_body.clone()) } else { None };
+    let final_body_for_log = if should_log {
+        Some(final_body.clone())
+    } else {
+        None
+    };
     let req_start = std::time::Instant::now();
     let req_ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -821,7 +825,10 @@ pub(crate) fn write_traffic_entry(
 
 // ── System prompt rule application ──────────────────────────────────
 
-fn rewrite_system_prompt_in_body(body: &[u8], rules: &[SystemPromptRule]) -> (Vec<u8>, Vec<String>) {
+fn rewrite_system_prompt_in_body(
+    body: &[u8],
+    rules: &[SystemPromptRule],
+) -> (Vec<u8>, Vec<String>) {
     let enabled: Vec<&SystemPromptRule> = rules
         .iter()
         .filter(|r| r.enabled && !r.pattern.is_empty())

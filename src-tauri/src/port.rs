@@ -103,7 +103,10 @@ pub struct PortSkillRequest {
     pub dry_run: bool,
 }
 
-fn skills_root_for(direction: PortDirection, project_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
+fn skills_root_for(
+    direction: PortDirection,
+    project_dir: &Path,
+) -> Result<(PathBuf, PathBuf), String> {
     let home = dirs::home_dir().ok_or("no home dir")?;
     match direction {
         // Claude → Codex
@@ -269,8 +272,12 @@ pub async fn port_memory(req: PortMemoryRequest) -> Result<PortReport, String> {
 pub fn port_memory_sync(req: &PortMemoryRequest) -> Result<PortReport, String> {
     let project_dir = PathBuf::from(&req.project_dir);
     let (src, dest) = match req.direction {
-        PortDirection::ClaudeToCodex => (project_dir.join("CLAUDE.md"), project_dir.join("AGENTS.md")),
-        PortDirection::CodexToClaude => (project_dir.join("AGENTS.md"), project_dir.join("CLAUDE.md")),
+        PortDirection::ClaudeToCodex => {
+            (project_dir.join("CLAUDE.md"), project_dir.join("AGENTS.md"))
+        }
+        PortDirection::CodexToClaude => {
+            (project_dir.join("AGENTS.md"), project_dir.join("CLAUDE.md"))
+        }
     };
 
     let mut written = Vec::new();
@@ -420,11 +427,16 @@ pub fn port_mcp_sync(req: &PortMcpRequest) -> Result<PortReport, String> {
             messages,
         });
     }
-    messages.push(format!("read {} MCP server(s) from {src_path:?}", servers.len()));
+    messages.push(format!(
+        "read {} MCP server(s) from {src_path:?}",
+        servers.len()
+    ));
 
     if req.dry_run {
         for name in servers.keys() {
-            messages.push(format!("dry-run: would write server '{name}' to {dest_path:?}"));
+            messages.push(format!(
+                "dry-run: would write server '{name}' to {dest_path:?}"
+            ));
         }
         return Ok(PortReport {
             kind: "mcp".into(),
@@ -438,7 +450,14 @@ pub fn port_mcp_sync(req: &PortMcpRequest) -> Result<PortReport, String> {
 
     let backup_path = write_backup(&[dest_path.clone()])?;
 
-    let merged = merge_mcp_into(dest_path, dest_kind, servers, req.conflict, &mut skipped, &mut messages)?;
+    let merged = merge_mcp_into(
+        dest_path,
+        dest_kind,
+        servers,
+        req.conflict,
+        &mut skipped,
+        &mut messages,
+    )?;
 
     fs::create_dir_all(dest_path.parent().ok_or("dest has no parent")?)
         .map_err(|e| format!("mkdir parent: {e}"))?;
@@ -459,8 +478,8 @@ fn read_mcp_from(path: &Path, kind: &str) -> Result<BTreeMap<String, McpServerEn
     let raw = fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
     match kind {
         "claude_json" => {
-            let v: serde_json::Value = serde_json::from_str(&raw)
-                .map_err(|e| format!("invalid JSON in {path:?}: {e}"))?;
+            let v: serde_json::Value =
+                serde_json::from_str(&raw).map_err(|e| format!("invalid JSON in {path:?}: {e}"))?;
             let map = v
                 .get("mcpServers")
                 .and_then(|x| x.as_object())
@@ -475,8 +494,8 @@ fn read_mcp_from(path: &Path, kind: &str) -> Result<BTreeMap<String, McpServerEn
             Ok(out)
         }
         "codex_toml" => {
-            let v: toml::Value = toml::from_str(&raw)
-                .map_err(|e| format!("invalid TOML in {path:?}: {e}"))?;
+            let v: toml::Value =
+                toml::from_str(&raw).map_err(|e| format!("invalid TOML in {path:?}: {e}"))?;
             let map = v
                 .get("mcp_servers")
                 .and_then(|x| x.as_table())
@@ -511,7 +530,9 @@ fn merge_mcp_into(
             } else {
                 serde_json::json!({})
             };
-            let obj = existing.as_object_mut().ok_or("dest is not a JSON object")?;
+            let obj = existing
+                .as_object_mut()
+                .ok_or("dest is not a JSON object")?;
             let map = obj
                 .entry("mcpServers".to_string())
                 .or_insert_with(|| serde_json::json!({}))
@@ -539,8 +560,7 @@ fn merge_mcp_into(
                 }
                 map.insert(
                     name,
-                    serde_json::to_value(entry)
-                        .map_err(|e| format!("serialize MCP entry: {e}"))?,
+                    serde_json::to_value(entry).map_err(|e| format!("serialize MCP entry: {e}"))?,
                 );
             }
             Ok(serde_json::to_string_pretty(&existing)
@@ -549,7 +569,8 @@ fn merge_mcp_into(
         "codex_toml" => {
             let mut existing: toml::Value = if dest.exists() {
                 let raw = fs::read_to_string(dest).map_err(|e| format!("read dest: {e}"))?;
-                toml::from_str(&raw).unwrap_or_else(|_| toml::Value::Table(toml::value::Table::new()))
+                toml::from_str(&raw)
+                    .unwrap_or_else(|_| toml::Value::Table(toml::value::Table::new()))
             } else {
                 toml::Value::Table(toml::value::Table::new())
             };
@@ -580,8 +601,8 @@ fn merge_mcp_into(
                         }
                     }
                 }
-                let json = serde_json::to_value(entry)
-                    .map_err(|e| format!("serialize MCP entry: {e}"))?;
+                let json =
+                    serde_json::to_value(entry).map_err(|e| format!("serialize MCP entry: {e}"))?;
                 let toml_val: toml::Value = json_to_toml(json);
                 mcp_servers.insert(name, toml_val);
             }
@@ -605,7 +626,9 @@ fn json_to_toml(v: serde_json::Value) -> toml::Value {
             }
         }
         serde_json::Value::String(s) => toml::Value::String(s),
-        serde_json::Value::Array(a) => toml::Value::Array(a.into_iter().map(json_to_toml).collect()),
+        serde_json::Value::Array(a) => {
+            toml::Value::Array(a.into_iter().map(json_to_toml).collect())
+        }
         serde_json::Value::Object(o) => {
             let mut t = toml::value::Table::new();
             for (k, v) in o {
@@ -703,7 +726,10 @@ mod tests {
             dry_run: false,
         };
         let report = port_memory_sync(&req).expect("port");
-        assert_eq!(fs::read_to_string(proj.join("AGENTS.md")).unwrap(), "claude doc");
+        assert_eq!(
+            fs::read_to_string(proj.join("AGENTS.md")).unwrap(),
+            "claude doc"
+        );
         assert_eq!(report.written.len(), 1);
         assert!(report.backup_path.is_some());
         let _ = fs::remove_dir_all(&proj);
@@ -781,11 +807,7 @@ mod tests {
         .unwrap();
         let codex = proj.join(".codex").join("config.toml");
         fs::create_dir_all(codex.parent().unwrap()).unwrap();
-        fs::write(
-            &codex,
-            "[mcp_servers.fs]\ncommand = \"existing\"\n",
-        )
-        .unwrap();
+        fs::write(&codex, "[mcp_servers.fs]\ncommand = \"existing\"\n").unwrap();
         let req = PortMcpRequest {
             direction: PortDirection::ClaudeToCodex,
             conflict: ConflictPolicy::Rename,
@@ -796,7 +818,10 @@ mod tests {
         port_mcp_sync(&req).expect("port");
         let toml_text = fs::read_to_string(&codex).unwrap();
         // Original entry preserved.
-        assert!(toml_text.contains("[mcp_servers.fs]"), "missing original fs entry; got:\n{toml_text}");
+        assert!(
+            toml_text.contains("[mcp_servers.fs]"),
+            "missing original fs entry; got:\n{toml_text}"
+        );
         assert!(toml_text.contains("command = \"existing\""));
         // Renamed entry from Claude side gets a -claude suffix (the
         // suffix names which side the incoming entry came from).

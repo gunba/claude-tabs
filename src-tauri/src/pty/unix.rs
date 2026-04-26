@@ -236,7 +236,14 @@ pub fn spawn(
             // setsid, which clears the parent-death signal. Persists across
             // exec for non-setuid targets.
             #[cfg(target_os = "linux")]
-            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL as libc::c_ulong, 0, 0, 0) < 0 {
+            if libc::prctl(
+                libc::PR_SET_PDEATHSIG,
+                libc::SIGKILL as libc::c_ulong,
+                0,
+                0,
+                0,
+            ) < 0
+            {
                 return Err(io::Error::last_os_error());
             }
             Ok(())

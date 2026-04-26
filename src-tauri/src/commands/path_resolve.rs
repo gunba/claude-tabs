@@ -99,7 +99,9 @@ fn build_index(cwd: &Path) -> CwdIndex {
             break;
         }
         let Ok(entry) = result else { continue };
-        let Some(ft) = entry.file_type() else { continue };
+        let Some(ft) = entry.file_type() else {
+            continue;
+        };
         if !ft.is_file() {
             continue;
         }
@@ -175,11 +177,7 @@ fn lookup_in_index(candidate: &str, index: &CwdIndex) -> Option<PathBuf> {
             .cloned()
             .collect()
     } else {
-        index
-            .by_basename
-            .get(&lower)
-            .cloned()
-            .unwrap_or_default()
+        index.by_basename.get(&lower).cloned().unwrap_or_default()
     };
 
     matches
@@ -263,12 +261,7 @@ pub async fn resolve_paths(cwd: Option<String>, candidates: Vec<String>) -> Vec<
         candidates
             .iter()
             .map(|cand| {
-                resolve_candidate(
-                    cand,
-                    normalized_cwd.as_deref(),
-                    home.as_deref(),
-                    &mut index,
-                )
+                resolve_candidate(cand, normalized_cwd.as_deref(), home.as_deref(), &mut index)
             })
             .collect()
     })
@@ -377,7 +370,10 @@ mod tests {
             Some(tmp.path().to_str().unwrap()),
             &["private.ts", "public.ts"],
         );
-        assert!(out[0].abs_path.is_none(), "gitignored file should not resolve");
+        assert!(
+            out[0].abs_path.is_none(),
+            "gitignored file should not resolve"
+        );
         assert!(out[1].abs_path.is_some());
     }
 

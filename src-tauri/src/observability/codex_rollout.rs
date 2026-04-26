@@ -137,15 +137,14 @@ pub fn start_codex_rollout_watcher(
     let session_id_for_task = session_id.clone();
     let app_for_task = app.clone();
     tokio::spawn(async move {
-        if let Err(e) =
-            run_watcher(
-                app_for_task.clone(),
-                session_id_for_task.clone(),
-                spawn_time,
-                claimed_rollouts,
-                stop_rx,
-            )
-                .await
+        if let Err(e) = run_watcher(
+            app_for_task.clone(),
+            session_id_for_task.clone(),
+            spawn_time,
+            claimed_rollouts,
+            stop_rx,
+        )
+        .await
         {
             record_backend_event(
                 &app_for_task,
@@ -246,8 +245,7 @@ async fn run_watcher(
     mut stop_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let dir = todays_sessions_dir().ok_or("could not resolve $CODEX_HOME/sessions/today")?;
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("create rollout dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create rollout dir: {e}"))?;
 
     // Try to attribute an existing fresh rollout first (handles the
     // race where Codex creates the file before our watcher arms).
@@ -416,7 +414,10 @@ fn rollout_ts_millis(ts: &str) -> i64 {
 }
 
 fn parsed_str<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
-    payload.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+    payload
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
 // [CX-01] emit_tap_entry publishes 'tap-entry-{sid}' events with codex-* cats; function_call/custom_tool_call dual-handled; dual emit (tool-call-start + tool-input) for tool calls
@@ -443,7 +444,11 @@ fn emit_normalized(
     let ts = parsed.timestamp.clone().unwrap_or_default();
     match parsed.kind.as_str() {
         "session_meta" => {
-            let id = parsed.payload.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let id = parsed
+                .payload
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let cwd = parsed
                 .payload
                 .get("cwd")
@@ -724,7 +729,10 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
                 "codex.rollout",
                 Some(session_id),
                 "codex.turn_aborted",
-                payload.get("reason").and_then(|v| v.as_str()).unwrap_or("aborted"),
+                payload
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("aborted"),
                 serde_json::json!({ "ts": ts, "payload": payload }),
             );
         }
@@ -842,7 +850,10 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
                 "codex.rollout",
                 Some(session_id),
                 "codex.agent_message",
-                payload.get("phase").and_then(|v| v.as_str()).unwrap_or("assistant"),
+                payload
+                    .get("phase")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("assistant"),
                 serde_json::json!({ "ts": ts, "payload": payload }),
             );
         }
@@ -872,10 +883,19 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
         }
         "mcp_tool_call_begin" => {
             let invocation = payload.get("invocation").unwrap_or(&Value::Null);
-            let server = invocation.get("server").and_then(|v| v.as_str()).unwrap_or("");
-            let tool = invocation.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+            let server = invocation
+                .get("server")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let tool = invocation
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let name = format!("mcp__{server}__{tool}");
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             emit_tap_entry(
                 app,
                 session_id,
@@ -908,7 +928,10 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
             );
         }
         "mcp_tool_call_end" => {
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             emit_tap_entry(
                 app,
                 session_id,
@@ -949,7 +972,10 @@ fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payloa
     match kind {
         "function_call" | "custom_tool_call" => {
             let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let arguments = payload
                 .get("arguments")
                 .or_else(|| payload.get("input"))
@@ -993,7 +1019,10 @@ fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payloa
             );
         }
         "function_call_output" | "custom_tool_call_output" => {
-            let call_id = payload.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+            let call_id = payload
+                .get("call_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             record_backend_event(
                 app,
                 "LOG",
@@ -1063,7 +1092,10 @@ mod tests {
         let line = r#"{"timestamp":"2025-11-18T09:40:36.766Z","type":"session_meta","payload":{"id":"019a9656-691d-7ff3-890e-3e6678ed46d8","cwd":"/proj","cli_version":"0.58.0"}}"#;
         let parsed: RolloutLine = serde_json::from_str(line).unwrap();
         assert_eq!(parsed.kind, "session_meta");
-        assert_eq!(parsed.payload.get("id").and_then(|v| v.as_str()), Some("019a9656-691d-7ff3-890e-3e6678ed46d8"));
+        assert_eq!(
+            parsed.payload.get("id").and_then(|v| v.as_str()),
+            Some("019a9656-691d-7ff3-890e-3e6678ed46d8")
+        );
     }
 
     #[test]
@@ -1090,7 +1122,10 @@ mod tests {
         let old_path = tmp.join("rollout-2025-01-01T00-00-00-old.jsonl");
         std::fs::write(&old_path, b"").unwrap();
         let old_time = SystemTime::now() - std::time::Duration::from_secs(3600);
-        let file = std::fs::OpenOptions::new().write(true).open(&old_path).unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&old_path)
+            .unwrap();
         let _ = file.set_modified(old_time);
 
         let spawn = SystemTime::now() - std::time::Duration::from_secs(60);

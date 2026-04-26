@@ -203,7 +203,13 @@ fn version_key(s: &str) -> Vec<(u32, String)> {
 /// which means stray `}` inside a quoted string can prematurely terminate the
 /// region. In minified JS bundles this is rare enough not to matter; callers
 /// that need exact balancing should use a real JS parser.
-fn walk_balanced(content: &str, start: usize, open: char, close: char, max: usize) -> Option<usize> {
+fn walk_balanced(
+    content: &str,
+    start: usize,
+    open: char,
+    close: char,
+    max: usize,
+) -> Option<usize> {
     let limit = (start + max).min(content.len());
     let slice = content.get(start..limit)?;
     let mut depth: i32 = 1;
@@ -503,11 +509,7 @@ pub fn discover_settings_schema_sync(
         let description = desc_double_re
             .captures(lookahead)
             .map(|c| c[1].to_string())
-            .or_else(|| {
-                desc_single_re
-                    .captures(lookahead)
-                    .map(|c| c[1].to_string())
-            })
+            .or_else(|| desc_single_re.captures(lookahead).map(|c| c[1].to_string()))
             .or_else(|| {
                 desc_template_re
                     .captures(lookahead)
@@ -576,17 +578,18 @@ pub fn discover_settings_schema_sync(
         .filter_map(|e| e["key"].as_str().map(|s| s.to_string()))
         .collect();
 
-    let mut push_extra = |key: String, source: &'static str, fields: &mut Vec<serde_json::Value>| {
-        if seen_keys.insert(key.clone()) {
-            fields.push(json!({
-                "key": key,
-                "type": "string",
-                "description": "",
-                "optional": true,
-                "source": source,
-            }));
-        }
-    };
+    let mut push_extra =
+        |key: String, source: &'static str, fields: &mut Vec<serde_json::Value>| {
+            if seen_keys.insert(key.clone()) {
+                fields.push(json!({
+                    "key": key,
+                    "type": "string",
+                    "description": "",
+                    "optional": true,
+                    "source": source,
+                }));
+            }
+        };
 
     // Pass A: settings metadata objects like `showTurnDuration:{source:"global",type:"boolean",description:'…'}`
     for key in scan_settings_metadata(&content) {
@@ -846,8 +849,7 @@ fn resolve_lazy_schema_body<'a>(
         .filter_map(|needle| content.find(needle.as_str()).map(|p| p + needle.len()))
         .collect();
 
-    let obj_re =
-        regex::Regex::new(&format!(r#"{}\.object\(\{{"#, alias_pattern)).unwrap();
+    let obj_re = regex::Regex::new(&format!(r#"{}\.object\(\{{"#, alias_pattern)).unwrap();
 
     for start in starts {
         let window_end = (start + 400).min(content.len());
@@ -912,9 +914,10 @@ fn detect_zod_aliases(content: &str) -> Vec<String> {
     let mut aliases = std::collections::BTreeSet::new();
 
     // ES-module `import * as X from "zod"`
-    let re_esm =
-        regex::Regex::new(r#"import\s*\*\s*as\s+([a-zA-Z_$][a-zA-Z0-9_$]{0,3})\s*from\s*["']zod["']"#)
-            .unwrap();
+    let re_esm = regex::Regex::new(
+        r#"import\s*\*\s*as\s+([a-zA-Z_$][a-zA-Z0-9_$]{0,3})\s*from\s*["']zod["']"#,
+    )
+    .unwrap();
     for cap in re_esm.captures_iter(content) {
         aliases.insert(cap[1].to_string());
     }
@@ -1140,7 +1143,9 @@ pub fn discover_env_vars_sync(cli_path: Option<&str>) -> Result<Vec<DiscoveredEn
 
     if let Ok(content) = read_claude_binary(cli_path) {
         let mut seen: std::collections::HashSet<String> = catalog_names;
-        let push = |name: String, result: &mut Vec<DiscoveredEnvVar>, seen: &mut std::collections::HashSet<String>| {
+        let push = |name: String,
+                    result: &mut Vec<DiscoveredEnvVar>,
+                    seen: &mut std::collections::HashSet<String>| {
             if seen.insert(name.clone()) {
                 result.push(DiscoveredEnvVar {
                     name,
@@ -1198,21 +1203,21 @@ pub fn discover_env_vars_sync(cli_path: Option<&str>) -> Result<Vec<DiscoveredEn
             match env_anchors.binary_search(&offset) {
                 Ok(_) => true,
                 Err(idx) => {
-                    let before = idx
-                        .checked_sub(1)
-                        .and_then(|i| env_anchors.get(i))
-                        .copied();
+                    let before = idx.checked_sub(1).and_then(|i| env_anchors.get(i)).copied();
                     let after = env_anchors.get(idx).copied();
                     [before, after].iter().flatten().any(|a| {
-                        let d = if *a > offset { *a - offset } else { offset - *a };
+                        let d = if *a > offset {
+                            *a - offset
+                        } else {
+                            offset - *a
+                        };
                         d <= RADIUS
                     })
                 }
             }
         };
 
-        let literal_re =
-            regex::Regex::new(r#"["']([A-Z][A-Z0-9_]{5,})["']"#).unwrap();
+        let literal_re = regex::Regex::new(r#"["']([A-Z][A-Z0-9_]{5,})["']"#).unwrap();
         for cap in literal_re.captures_iter(&content.content) {
             let name = &cap[1];
             let has_prefix = ENV_PREFIXES.iter().any(|p| name.starts_with(p));
@@ -1230,8 +1235,7 @@ pub fn discover_env_vars_sync(cli_path: Option<&str>) -> Result<Vec<DiscoveredEn
         // Pass 4: NAME=value assignments inside quoted strings like
         //   "CLAUDECODE=1"
         // Common for env vars that parent process passes to children.
-        let assign_re =
-            regex::Regex::new(r#"["']([A-Z][A-Z0-9_]{5,})=[^"']{0,80}["']"#).unwrap();
+        let assign_re = regex::Regex::new(r#"["']([A-Z][A-Z0-9_]{5,})=[^"']{0,80}["']"#).unwrap();
         for cap in assign_re.captures_iter(&content.content) {
             let name = &cap[1];
             if ENV_PREFIXES.iter().any(|p| name.starts_with(p)) {
@@ -1244,8 +1248,7 @@ pub fn discover_env_vars_sync(cli_path: Option<&str>) -> Result<Vec<DiscoveredEn
         // error messages (e.g. `"…or set CLAUDE_CODE_TEAM_NAME."`) that the
         // quoted-literal passes miss because the name sits mid-string. The
         // proximity gate and prefix allowlist together keep this tight.
-        let word_re =
-            regex::Regex::new(r#"\b([A-Z][A-Z0-9_]{5,})\b"#).unwrap();
+        let word_re = regex::Regex::new(r#"\b([A-Z][A-Z0-9_]{5,})\b"#).unwrap();
         for cap in word_re.captures_iter(&content.content) {
             let name = &cap[1];
             let has_prefix = ENV_PREFIXES.iter().any(|p| name.starts_with(p));
@@ -1582,8 +1585,7 @@ mod tests {
             "---\nname: custom-name\ndescription: Does things\n---\nbody\n",
         );
 
-        let (cmds, rejections) =
-            discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
+        let (cmds, rejections) = discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
         assert!(
             rejections.is_empty(),
             "no rejections expected, got {:?}",
@@ -1609,8 +1611,7 @@ mod tests {
             "---\ndescription: \"Document the change, review it\"\n---\nbody\n",
         );
 
-        let (cmds, rejections) =
-            discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
+        let (cmds, rejections) = discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
         assert!(rejections.is_empty(), "rejections: {:?}", rejections);
         let r = cmds.iter().find(|c| c["cmd"] == "/r");
         assert!(r.is_some(), "/r expected in {:?}", cmds);
@@ -1629,8 +1630,7 @@ mod tests {
             "# Plain skill\n\nDoes stuff without frontmatter.\n",
         );
 
-        let (cmds, rejections) =
-            discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
+        let (cmds, rejections) = discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
         assert!(rejections.is_empty(), "rejections: {:?}", rejections);
         let plain = cmds.iter().find(|c| c["cmd"] == "/plain");
         assert!(plain.is_some(), "/plain expected in {:?}", cmds);
@@ -1648,8 +1648,7 @@ mod tests {
         std::fs::create_dir_all(&bad).unwrap();
         std::fs::write(bad.join("SKILL.md"), "no frontmatter\n").unwrap();
 
-        let (_cmds, rejections) =
-            discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
+        let (_cmds, rejections) = discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
         assert!(
             rejections.iter().any(|r| r.path.contains("SKILL.md")),
             "expected rejection, got {:?}",
@@ -1664,8 +1663,7 @@ mod tests {
         std::fs::create_dir_all(&cmds_dir).unwrap();
         std::fs::write(cmds_dir.join("hello.md"), "# Hello command\nbody\n").unwrap();
 
-        let (cmds, _) =
-            discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
+        let (cmds, _) = discover_plugin_commands_sync_with_home(&[], tmp.path()).unwrap();
         assert!(cmds.iter().any(|c| c["cmd"] == "/hello"));
     }
 
@@ -1766,9 +1764,7 @@ mod tests {
         std::fs::write(&p, content).unwrap();
 
         let fields = discover_settings_schema_sync(Some(p.to_str().unwrap())).unwrap();
-        assert!(fields
-            .iter()
-            .any(|f| f["key"] == "showThinkingSummaries"));
+        assert!(fields.iter().any(|f| f["key"] == "showThinkingSummaries"));
     }
 
     #[test]
@@ -1791,8 +1787,8 @@ mod tests {
     #[test]
     fn settings_regex_describe_past_long_chain() {
         // Verify the wider 1200-char lookahead catches .describe() after a very long chain.
-        let long_chain = ".optional().catch(\"\").refine(x => x == x, {message: \"blah\"})"
-            .repeat(6); // ~400+ chars of chain
+        let long_chain =
+            ".optional().catch(\"\").refine(x => x == x, {message: \"blah\"})".repeat(6); // ~400+ chars of chain
         let content = format!(
             r#"name:"",description:"" import*as u from"zod";var s=u.object({{remote:u.boolean(){}.describe("A setting")}});"#,
             long_chain
@@ -2672,8 +2668,7 @@ mod tests {
     #[test]
     fn scan_nested_namespaces_respects_alias() {
         // Alias is `z`; `N.` schemas should NOT match.
-        let content =
-            r#"schema={worktree:N.object({sparsePaths:N.array(N.string()).optional()})}"#;
+        let content = r#"schema={worktree:N.object({sparsePaths:N.array(N.string()).optional()})}"#;
         let keys = scan_nested_namespaces(content, "z");
         assert!(keys.is_empty(), "mismatched alias should capture nothing");
     }
@@ -2690,7 +2685,10 @@ mod tests {
 
         let cmds = discover_builtin_commands_sync(Some(js_path.to_str().unwrap())).unwrap();
         let names: Vec<&str> = cmds.iter().filter_map(|c| c["cmd"].as_str()).collect();
-        assert!(names.contains(&"/batch"), "skill with userInvocable should be picked up");
+        assert!(
+            names.contains(&"/batch"),
+            "skill with userInvocable should be picked up"
+        );
     }
 
     #[test]
@@ -2741,7 +2739,8 @@ mod tests {
 
         let vars = discover_env_vars_sync(Some(js_path.to_str().unwrap())).unwrap();
         assert!(
-            vars.iter().any(|v| v.name == "VERTEX_REGION_CLAUDE_4_0_OPUS"),
+            vars.iter()
+                .any(|v| v.name == "VERTEX_REGION_CLAUDE_4_0_OPUS"),
             "proximity-gated literal should be picked up"
         );
     }
@@ -2751,7 +2750,8 @@ mod tests {
         // `RANDOM_CONSTANT` does not have an allowlisted prefix.
         let dir = tempfile::tempdir().unwrap();
         let js_path = dir.path().join("cli.js");
-        let content = r#"name:"init",description:"init",process.env.ANTHROPIC_API_KEY;x="RANDOM_CONSTANT""#;
+        let content =
+            r#"name:"init",description:"init",process.env.ANTHROPIC_API_KEY;x="RANDOM_CONSTANT""#;
         std::fs::write(&js_path, content).unwrap();
 
         let vars = discover_env_vars_sync(Some(js_path.to_str().unwrap())).unwrap();
@@ -2772,5 +2772,4 @@ mod tests {
         assert!(vars.iter().any(|v| v.name == "CLAUDECODE"));
         assert!(vars.iter().any(|v| v.name == "CLAUDE_CODE_EXPERIMENTAL_X"));
     }
-
 }

@@ -5,11 +5,11 @@ use tauri::AppHandle;
 
 // Discovery primitives live in `crate::discovery` so the standalone
 // `discover_audit` binary can invoke the exact same code as the Tauri app.
+pub use crate::discovery::DiscoveredEnvVar;
 use crate::discovery::{
     discover_builtin_commands_sync, discover_env_vars_sync, discover_plugin_commands_sync,
     discover_settings_schema_sync, read_claude_binary,
 };
-pub use crate::discovery::DiscoveredEnvVar;
 
 fn log_discovery(
     app: &AppHandle,
@@ -214,7 +214,10 @@ fn run_claude_cli(args: &[&str], label: &str) -> Result<String, String> {
         log::info!(
             "{}: stderr_head={:?}",
             label,
-            String::from_utf8_lossy(&stderr_bytes).chars().take(400).collect::<String>()
+            String::from_utf8_lossy(&stderr_bytes)
+                .chars()
+                .take(400)
+                .collect::<String>()
         );
     }
     if status.success() {
@@ -922,7 +925,8 @@ mod tests {
 
     #[test]
     fn codex_usage_extracts_slash_command_from_rollout_event() {
-        let line = r#"{"type":"event_msg","payload":{"type":"user_message","message":"/model gpt-5.5"}}"#;
+        let line =
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"/model gpt-5.5"}}"#;
         assert_eq!(extract_codex_slash_command(line).as_deref(), Some("/model"));
     }
 
@@ -945,7 +949,12 @@ mod tests {
                 .as_nanos()
         ));
         let claude_dir = tmp.join(".claude").join("projects").join("proj");
-        let codex_dir = tmp.join(".codex").join("sessions").join("2026").join("04").join("26");
+        let codex_dir = tmp
+            .join(".codex")
+            .join("sessions")
+            .join("2026")
+            .join("04")
+            .join("26");
         std::fs::create_dir_all(&claude_dir).unwrap();
         std::fs::create_dir_all(&codex_dir).unwrap();
         std::fs::write(

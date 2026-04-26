@@ -163,17 +163,12 @@ struct CodexModelsRaw {
 // [CO-01] discover_codex_models: 'codex debug models' JSON; filters visibility!='list'; drives model picker
 pub(crate) fn discover_codex_models_sync() -> Result<Vec<CodexModel>, String> {
     let raw = run_codex(&["debug", "models"])?;
-    let parsed: CodexModelsRaw = serde_json::from_str(&raw)
-        .map_err(|e| format!("codex debug models: invalid JSON: {e}"))?;
+    let parsed: CodexModelsRaw =
+        serde_json::from_str(&raw).map_err(|e| format!("codex debug models: invalid JSON: {e}"))?;
     Ok(parsed
         .models
         .into_iter()
-        .filter(|m| {
-            m.visibility
-                .as_deref()
-                .map(|v| v == "list")
-                .unwrap_or(true)
-        })
+        .filter(|m| m.visibility.as_deref().map(|v| v == "list").unwrap_or(true))
         .collect())
 }
 
@@ -203,16 +198,21 @@ pub struct CodexCliOption {
 /// matching `-X, --long <VAL>` or `--long <VAL>` followed by an
 /// indented description. Cheap, regex-driven, version-tolerant.
 fn parse_help_options(help: &str) -> Vec<CodexCliOption> {
-    let re_flag = regex::Regex::new(
-        r"(?m)^\s{2,}(?:(-\w),\s+)?(--[\w-]+)(\s+<[^>]+>|\s+\[[^\]]+\])?",
-    )
-    .expect("flag regex must compile");
+    let re_flag =
+        regex::Regex::new(r"(?m)^\s{2,}(?:(-\w),\s+)?(--[\w-]+)(\s+<[^>]+>|\s+\[[^\]]+\])?")
+            .expect("flag regex must compile");
     let mut out = Vec::new();
     let mut last_flag_idx: Option<usize> = None;
     for line in help.lines() {
         if let Some(caps) = re_flag.captures(line) {
-            let short = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
-            let flag = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
+            let short = caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            let flag = caps
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
             let takes_value = caps.get(3).is_some();
             let tail = caps.get(0).map(|m| m.end()).unwrap_or(0);
             let inline_desc = line.get(tail..).unwrap_or("").trim().to_string();
@@ -294,7 +294,11 @@ fn parse_features(stdout: &str) -> Vec<CodexFeature> {
         let stage = parts[1].to_string();
         let state = parts[2].to_ascii_lowercase();
         let enabled = matches!(state.as_str(), "on" | "enabled" | "true");
-        out.push(CodexFeature { name, stage, enabled });
+        out.push(CodexFeature {
+            name,
+            stage,
+            enabled,
+        });
     }
     out
 }
@@ -431,9 +435,7 @@ pub(crate) fn discover_codex_skills_sync(
         }
     }
 
-    let global_roots = [
-        home.join(".agents").join("skills"),
-    ];
+    let global_roots = [home.join(".agents").join("skills")];
     for root in &global_roots {
         if root.exists() {
             scan_dir(root, &mut commands, &mut rejections);
@@ -441,9 +443,7 @@ pub(crate) fn discover_codex_skills_sync(
     }
 
     for dir in extra_dirs {
-        let project_roots = [
-            std::path::Path::new(dir).join(".agents").join("skills"),
-        ];
+        let project_roots = [std::path::Path::new(dir).join(".agents").join("skills")];
         for root in &project_roots {
             if root.exists() {
                 scan_dir(root, &mut commands, &mut rejections);
@@ -451,9 +451,7 @@ pub(crate) fn discover_codex_skills_sync(
         }
     }
 
-    let compat_global_roots = [
-        home.join(".codex").join("skills"),
-    ];
+    let compat_global_roots = [home.join(".codex").join("skills")];
     for root in &compat_global_roots {
         if root.exists() {
             scan_dir(root, &mut commands, &mut rejections);
@@ -461,9 +459,7 @@ pub(crate) fn discover_codex_skills_sync(
     }
 
     for dir in extra_dirs {
-        let compat_project_roots = [
-            std::path::Path::new(dir).join(".codex").join("skills"),
-        ];
+        let compat_project_roots = [std::path::Path::new(dir).join(".codex").join("skills")];
         for root in &compat_project_roots {
             if root.exists() {
                 scan_dir(root, &mut commands, &mut rejections);
@@ -560,14 +556,26 @@ const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
         "review my current changes and find issues",
         &["session_task.review", "enteredReviewMode"],
     ),
-    ("/rename", "rename the current thread", &["thread/name/updated", "SetThreadName"]),
-    ("/new", "start a new chat during a conversation", &["thread/started"]),
+    (
+        "/rename",
+        "rename the current thread",
+        &["thread/name/updated", "SetThreadName"],
+    ),
+    (
+        "/new",
+        "start a new chat during a conversation",
+        &["thread/started"],
+    ),
     (
         "/resume",
         "resume a saved chat",
         &["thread/resume", "Resume a previous interactive session"],
     ),
-    ("/fork", "fork the current chat", &["Fork a previous interactive session"]),
+    (
+        "/fork",
+        "fork the current chat",
+        &["Fork a previous interactive session"],
+    ),
     (
         "/init",
         "create an AGENTS.md file with instructions for Codex",
@@ -578,7 +586,11 @@ const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
         "summarize conversation to prevent hitting the context limit",
         &["session_task.compact", "thread/compacted"],
     ),
-    ("/plan", "switch to Plan mode", &["turn/plan/updated", "PlanItem"]),
+    (
+        "/plan",
+        "switch to Plan mode",
+        &["turn/plan/updated", "PlanItem"],
+    ),
     ("/goal", "set or view the goal for a long-running task", &[]),
     (
         "/collab",
@@ -622,14 +634,26 @@ const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
         "configure which items appear in the status line",
         &["status_line"],
     ),
-    ("/theme", "choose a syntax highlighting theme", &["theme", "show_tooltips"]),
+    (
+        "/theme",
+        "choose a syntax highlighting theme",
+        &["theme", "show_tooltips"],
+    ),
     (
         "/mcp",
         "list configured MCP tools; use /mcp verbose for details",
         &["mcp_servers", "ListMcpServerStatusParams"],
     ),
-    ("/apps", "manage apps", &["manage apps", "connectors_enabled"]),
-    ("/plugins", "browse plugins", &["browse plugins", "plugins_command_enabled"]),
+    (
+        "/apps",
+        "manage apps",
+        &["manage apps", "connectors_enabled"],
+    ),
+    (
+        "/plugins",
+        "browse plugins",
+        &["browse plugins", "plugins_command_enabled"],
+    ),
     (
         "/logout",
         "log out of Codex",
@@ -638,9 +662,21 @@ const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
     ("/quit", "exit Codex", &[]),
     ("/exit", "exit Codex", &[]),
     ("/feedback", "send logs to maintainers", &["feedback"]),
-    ("/ps", "list background terminals", &["list background terminals", "background terminals"]),
-    ("/stop", "stop all background terminals", &["stop all background terminals", "background terminals"]),
-    ("/clear", "clear the terminal and start a new chat", &["SessionStart", "clear"]),
+    (
+        "/ps",
+        "list background terminals",
+        &["list background terminals", "background terminals"],
+    ),
+    (
+        "/stop",
+        "stop all background terminals",
+        &["stop all background terminals", "background terminals"],
+    ),
+    (
+        "/clear",
+        "clear the terminal and start a new chat",
+        &["SessionStart", "clear"],
+    ),
     (
         "/personality",
         "choose a communication style for Codex",
@@ -656,7 +692,11 @@ const CODEX_SLASH_COMMANDS: &[(&str, &str, &[&str])] = &[
         "configure realtime microphone/speaker",
         &["realtime microphone", "audio_device_selection_enabled"],
     ),
-    ("/subagents", "switch the active agent thread", &["subagents", "MultiAgents"]),
+    (
+        "/subagents",
+        "switch the active agent thread",
+        &["subagents", "MultiAgents"],
+    ),
 ];
 
 #[tauri::command]
@@ -778,7 +818,9 @@ mod tests {
     fn parse_help_options_picks_long_and_short() {
         let help = "Usage: codex [OPTIONS]\n\nOptions:\n  -c, --config <key=value>\n          Override a configuration value\n\n      --enable <FEATURE>\n          Enable a feature (repeatable)\n\n  -h, --help\n          Print help\n";
         let parsed = parse_help_options(help);
-        assert!(parsed.iter().any(|o| o.flag == "--config" && o.short == "-c" && o.takes_value));
+        assert!(parsed
+            .iter()
+            .any(|o| o.flag == "--config" && o.short == "-c" && o.takes_value));
         assert!(parsed.iter().any(|o| o.flag == "--enable" && o.takes_value));
         assert!(parsed.iter().any(|o| o.flag == "--help" && o.short == "-h"));
     }
@@ -787,7 +829,10 @@ mod tests {
     fn parse_help_options_attaches_continuation_description() {
         let help = "Options:\n  -c, --config <key=value>\n          Override a configuration value that would otherwise be loaded from\n          ~/.codex/config.toml\n";
         let parsed = parse_help_options(help);
-        let cfg = parsed.iter().find(|o| o.flag == "--config").expect("config opt");
+        let cfg = parsed
+            .iter()
+            .find(|o| o.flag == "--config")
+            .expect("config opt");
         assert!(cfg.description.contains("Override"));
         assert!(cfg.description.contains("config.toml"));
     }
@@ -796,7 +841,8 @@ mod tests {
     fn parse_help_options_handles_deep_indent() {
         // Clap can wrap continuation lines with 8-12 leading spaces.
         // The earlier `{2,6}` upper bound silently dropped these flags.
-        let help = "Options:\n        --remote <ADDR>\n            Connect to a remote app-server.\n";
+        let help =
+            "Options:\n        --remote <ADDR>\n            Connect to a remote app-server.\n";
         let parsed = parse_help_options(help);
         assert!(parsed.iter().any(|o| o.flag == "--remote" && o.takes_value));
     }
@@ -805,7 +851,8 @@ mod tests {
     fn parse_help_options_resets_continuation_on_section_header() {
         // A non-indented "Arguments:" header line should end the
         // previous flag's continuation, not get appended to it.
-        let help = "Options:\n  --foo <V>\n          foo description\nArguments:\n          [PROMPT]\n";
+        let help =
+            "Options:\n  --foo <V>\n          foo description\nArguments:\n          [PROMPT]\n";
         let parsed = parse_help_options(help);
         let foo = parsed.iter().find(|o| o.flag == "--foo").expect("foo opt");
         assert!(foo.description.contains("foo description"));
@@ -885,7 +932,11 @@ mod tests {
         let proj = tmp.join("proj");
 
         // ~/.agents/skills/foo/SKILL.md
-        let global = tmp.join("home_dir").join(".agents").join("skills").join("foo");
+        let global = tmp
+            .join("home_dir")
+            .join(".agents")
+            .join("skills")
+            .join("foo");
         std::fs::create_dir_all(&global).unwrap();
         std::fs::write(
             global.join("SKILL.md"),
@@ -915,8 +966,14 @@ mod tests {
             .iter()
             .map(|c| c["cmd"].as_str().unwrap_or("").to_string())
             .collect();
-        assert!(names.contains("/foo"), "expected global skill foo, got {names:?}");
-        assert!(names.contains("/bar"), "expected project skill bar, got {names:?}");
+        assert!(
+            names.contains("/foo"),
+            "expected global skill foo, got {names:?}"
+        );
+        assert!(
+            names.contains("/bar"),
+            "expected project skill bar, got {names:?}"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

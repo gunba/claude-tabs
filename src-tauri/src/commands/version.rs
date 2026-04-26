@@ -29,7 +29,9 @@ pub fn linux_use_native_chrome() -> bool {
     if session != "wayland" {
         return false;
     }
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .to_uppercase();
     desktop.split(':').any(|s| s == "KDE")
 }
 
@@ -211,32 +213,34 @@ fn fetch_claude_changelog(
     from_version: Option<String>,
     to_version: Option<String>,
 ) -> Result<CliChangelog, String> {
-    const SOURCE_URL: &str = "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md";
+    const SOURCE_URL: &str =
+        "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md";
     let raw = fetch_text(SOURCE_URL)?;
     let heading_re = Regex::new(r"^##\s+(.+?)\s*$").unwrap();
     let mut entries = Vec::new();
     let mut current_version: Option<String> = None;
     let mut body_lines: Vec<String> = Vec::new();
 
-    let push_entry =
-        |entries: &mut Vec<ChangelogEntry>, version: Option<String>, body_lines: &mut Vec<String>| {
-            let Some(version) = version else {
-                return false;
-            };
-            let body = body_lines.join("\n").trim().to_string();
-            body_lines.clear();
-            if body.is_empty() {
-                return false;
-            }
-            let (body, body_truncated) = truncate_body(&body);
-            entries.push(ChangelogEntry {
-                version,
-                date: None,
-                body,
-                url: Some("https://code.claude.com/docs/en/changelog".to_string()),
-            });
-            body_truncated
+    let push_entry = |entries: &mut Vec<ChangelogEntry>,
+                      version: Option<String>,
+                      body_lines: &mut Vec<String>| {
+        let Some(version) = version else {
+            return false;
         };
+        let body = body_lines.join("\n").trim().to_string();
+        body_lines.clear();
+        if body.is_empty() {
+            return false;
+        }
+        let (body, body_truncated) = truncate_body(&body);
+        entries.push(ChangelogEntry {
+            version,
+            date: None,
+            body,
+            url: Some("https://code.claude.com/docs/en/changelog".to_string()),
+        });
+        body_truncated
+    };
 
     let mut truncated = false;
     for line in raw.lines() {
@@ -345,7 +349,8 @@ fn parse_codex_atom(raw: &str) -> Vec<ChangelogEntry> {
             let version = normalize_cli_version(&title)?;
             let date = capture_tag(block, "updated");
             let url = capture_link(block);
-            let raw_body = capture_tag(block, "content").unwrap_or_else(|| format!("Release {version}"));
+            let raw_body =
+                capture_tag(block, "content").unwrap_or_else(|| format!("Release {version}"));
             let body = html_fragment_to_markdown(&raw_body);
             let (body, _) = truncate_body(&body);
             Some(ChangelogEntry {
@@ -620,19 +625,33 @@ mod tests {
     #[test]
     fn select_entries_filters_open_closed_version_range() {
         let entries = vec![
-            ChangelogEntry { version: "2.1.119".into(), date: None, body: "a".into(), url: None },
-            ChangelogEntry { version: "2.1.118".into(), date: None, body: "b".into(), url: None },
-            ChangelogEntry { version: "2.1.117".into(), date: None, body: "c".into(), url: None },
+            ChangelogEntry {
+                version: "2.1.119".into(),
+                date: None,
+                body: "a".into(),
+                url: None,
+            },
+            ChangelogEntry {
+                version: "2.1.118".into(),
+                date: None,
+                body: "b".into(),
+                url: None,
+            },
+            ChangelogEntry {
+                version: "2.1.117".into(),
+                date: None,
+                body: "c".into(),
+                url: None,
+            },
         ];
-        let (selected, truncated) = select_entries(
-            entries,
-            Some("2.1.117".into()),
-            Some("2.1.119".into()),
-            5,
-        );
+        let (selected, truncated) =
+            select_entries(entries, Some("2.1.117".into()), Some("2.1.119".into()), 5);
         assert!(!truncated);
         assert_eq!(
-            selected.iter().map(|e| e.version.as_str()).collect::<Vec<_>>(),
+            selected
+                .iter()
+                .map(|e| e.version.as_str())
+                .collect::<Vec<_>>(),
             vec!["2.1.119", "2.1.118"],
         );
     }

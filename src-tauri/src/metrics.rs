@@ -233,7 +233,13 @@ fn sum_descendants(
             let mem = proc_info.memory();
             children_mem += mem;
             child_count += 1;
-            push_top_child(&mut top_children, pid, proc_info.name(), proc_info.cmd(), mem);
+            push_top_child(
+                &mut top_children,
+                pid,
+                proc_info.name(),
+                proc_info.cmd(),
+                mem,
+            );
         }
         if let Some(grand) = children_of.get(&pid) {
             queue.extend(grand.iter().copied());

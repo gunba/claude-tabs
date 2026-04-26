@@ -880,7 +880,15 @@ fn search_codex_rollout_file(
             None => continue,
         };
 
-        push_search_matches(results, re, app_session_id, message_index, &role, &text, limit);
+        push_search_matches(
+            results,
+            re,
+            app_session_id,
+            message_index,
+            &role,
+            &text,
+            limit,
+        );
         message_index += 1;
     }
 }
@@ -1226,7 +1234,15 @@ fn search_jsonl_files_sync(
                 }
             };
 
-            push_search_matches(&mut results, &re, session_id, message_index, role, &text, limit);
+            push_search_matches(
+                &mut results,
+                &re,
+                session_id,
+                message_index,
+                role,
+                &text,
+                limit,
+            );
 
             message_index += 1;
         }

@@ -208,7 +208,8 @@ fn read_codex_config_value(path: &std::path::Path) -> Result<toml::Value, String
 }
 
 fn write_codex_config_value(path: &std::path::Path, value: &toml::Value) -> Result<(), String> {
-    let output = toml::to_string_pretty(value).map_err(|e| format!("Failed to serialize TOML: {e}"))?;
+    let output =
+        toml::to_string_pretty(value).map_err(|e| format!("Failed to serialize TOML: {e}"))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
     }
@@ -326,7 +327,11 @@ pub fn discover_codex_hooks(
             }
         }
         let project_hooks = read_codex_hooks_for_scope("project", dir)?;
-        if !project_hooks.as_object().map(|m| m.is_empty()).unwrap_or(true) {
+        if !project_hooks
+            .as_object()
+            .map(|m| m.is_empty())
+            .unwrap_or(true)
+        {
             all_hooks.insert(format!("project:{}", dir), project_hooks);
         }
     }
@@ -347,7 +352,11 @@ pub fn discover_codex_hooks(
 }
 
 #[tauri::command]
-pub fn save_codex_hooks(scope: String, working_dir: String, hooks_json: String) -> Result<(), String> {
+pub fn save_codex_hooks(
+    scope: String,
+    working_dir: String,
+    hooks_json: String,
+) -> Result<(), String> {
     let path = codex_config_path(&scope, &working_dir)?;
     let mut config = read_codex_config_value(&path)?;
     let table = config
@@ -432,9 +441,12 @@ fn resolve_config_path(
             // Format: "skill:<kind>:<name>" or "skill-delete:<kind>:<name>"
             // <kind> is "command" or "skill".
             let rest = file_type.split_once(':').map(|(_, r)| r).unwrap_or("");
-            let (kind, name) = rest
-                .split_once(':')
-                .ok_or_else(|| format!("Invalid file_type '{}': expected '<prefix>:<kind>:<name>'", file_type))?;
+            let (kind, name) = rest.split_once(':').ok_or_else(|| {
+                format!(
+                    "Invalid file_type '{}': expected '<prefix>:<kind>:<name>'",
+                    file_type
+                )
+            })?;
             validate_md_file_name(name)?;
             let claude_dir = match scope {
                 "user" => home.join(".claude"),
@@ -444,14 +456,16 @@ fn resolve_config_path(
             match kind {
                 "command" => Ok(claude_dir.join("commands").join(format!("{}.md", name))),
                 "skill" => Ok(claude_dir.join("skills").join(name).join("SKILL.md")),
-                other => Err(format!("Invalid kind '{}': expected 'command' or 'skill'", other)),
+                other => Err(format!(
+                    "Invalid kind '{}': expected 'command' or 'skill'",
+                    other
+                )),
             }
         }
-        _ if file_type.starts_with("codex-skill:") || file_type.starts_with("codex-skill-delete:") => {
-            let name = file_type
-                .split_once(':')
-                .map(|(_, n)| n)
-                .unwrap_or("");
+        _ if file_type.starts_with("codex-skill:")
+            || file_type.starts_with("codex-skill-delete:") =>
+        {
+            let name = file_type.split_once(':').map(|(_, n)| n).unwrap_or("");
             validate_md_file_name(name)?;
             match scope {
                 "user" => Ok(home
@@ -532,8 +546,7 @@ pub fn write_config_file(
             .map_err(|e| format!("Invalid JSON: {}", e))?;
     }
     if file_type == "codex-config" {
-        toml::from_str::<toml::Value>(&content)
-            .map_err(|e| format!("Invalid TOML: {}", e))?;
+        toml::from_str::<toml::Value>(&content).map_err(|e| format!("Invalid TOML: {}", e))?;
     }
 
     // Create parent directories
@@ -634,8 +647,12 @@ fn cli_skill_source_roots(
             home.join(".codex").join("skills"),
         ],
         ("codex", "project") => vec![
-            std::path::Path::new(working_dir).join(".agents").join("skills"),
-            std::path::Path::new(working_dir).join(".codex").join("skills"),
+            std::path::Path::new(working_dir)
+                .join(".agents")
+                .join("skills"),
+            std::path::Path::new(working_dir)
+                .join(".codex")
+                .join("skills"),
         ],
         _ => return Err("Invalid CLI or scope".into()),
     };
@@ -661,9 +678,7 @@ fn cli_skill_dest_root(
     }
 }
 
-fn discover_copyable_skills(
-    roots: &[std::path::PathBuf],
-) -> Vec<(String, std::path::PathBuf)> {
+fn discover_copyable_skills(roots: &[std::path::PathBuf]) -> Vec<(String, std::path::PathBuf)> {
     let mut skills = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for root in roots {
@@ -697,8 +712,8 @@ fn discover_copyable_skills(
 fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(dest)
         .map_err(|e| format!("Failed to create {}: {}", dest.display(), e))?;
-    let entries = std::fs::read_dir(src)
-        .map_err(|e| format!("Failed to read {}: {}", src.display(), e))?;
+    let entries =
+        std::fs::read_dir(src).map_err(|e| format!("Failed to read {}: {}", src.display(), e))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let src_path = entry.path();
@@ -1186,12 +1201,7 @@ fn collect_rule_file(
 
 fn safe_skill_segment(name: &str) -> Option<&str> {
     let name = name.trim();
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-    {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
         None
     } else {
         Some(name)
@@ -1242,7 +1252,11 @@ fn skill_file_matches(path: &std::path::Path, wanted: &[String]) -> bool {
     if path.file_name().and_then(|s| s.to_str()) != Some("SKILL.md") {
         return false;
     }
-    if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()) {
+    if let Some(parent_name) = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+    {
         if skill_name_matches(parent_name, wanted) {
             return true;
         }
@@ -1379,13 +1393,19 @@ pub fn resolve_activity_context_files(
         }
         (_, "mcp") => {
             push_existing_file(&mut paths, project.join(".mcp.json"));
-            push_existing_file(&mut paths, project.join(".claude").join("settings.local.json"));
+            push_existing_file(
+                &mut paths,
+                project.join(".claude").join("settings.local.json"),
+            );
             push_existing_file(&mut paths, project.join(".claude").join("settings.json"));
             push_existing_file(&mut paths, home.join(".claude").join("settings.json"));
             push_existing_file(&mut paths, home.join(".claude.json"));
         }
         (_, "config") => {
-            push_existing_file(&mut paths, project.join(".claude").join("settings.local.json"));
+            push_existing_file(
+                &mut paths,
+                project.join(".claude").join("settings.local.json"),
+            );
             push_existing_file(&mut paths, project.join(".claude").join("settings.json"));
             push_existing_file(&mut paths, home.join(".claude").join("settings.json"));
         }
@@ -1395,7 +1415,13 @@ pub fn resolve_activity_context_files(
         }
         (_, "rules") => {
             let mut visited = std::collections::HashSet::new();
-            collect_rule_file(&mut paths, project.join("CLAUDE.md"), &home, &mut visited, 0);
+            collect_rule_file(
+                &mut paths,
+                project.join("CLAUDE.md"),
+                &home,
+                &mut visited,
+                0,
+            );
             collect_rule_file(
                 &mut paths,
                 project.join(".claude").join("CLAUDE.md"),
@@ -1434,11 +1460,14 @@ fn read_claude_json() -> Result<serde_json::Value, String> {
     if content.trim().is_empty() {
         return Ok(serde_json::json!({}));
     }
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
 }
 
-fn extract_mcp_servers(data: &serde_json::Value, scope: &str, working_dir: &str) -> serde_json::Value {
+fn extract_mcp_servers(
+    data: &serde_json::Value,
+    scope: &str,
+    working_dir: &str,
+) -> serde_json::Value {
     match scope {
         "user" => data
             .get("mcpServers")
@@ -1659,21 +1688,33 @@ mod tests {
     fn resolve_skill_skill_user_scope() {
         let path = resolve_config_path("user", "", "skill:skill:my-skill").unwrap();
         let s = path.to_string_lossy().replace('\\', "/");
-        assert!(s.ends_with("/.claude/skills/my-skill/SKILL.md"), "got {}", s);
+        assert!(
+            s.ends_with("/.claude/skills/my-skill/SKILL.md"),
+            "got {}",
+            s
+        );
     }
 
     #[test]
     fn resolve_skill_command_project_scope() {
         let path = resolve_config_path("project", "/tmp/proj", "skill:command:bar").unwrap();
         let s = path.to_string_lossy().replace('\\', "/");
-        assert!(s.ends_with("/tmp/proj/.claude/commands/bar.md"), "got {}", s);
+        assert!(
+            s.ends_with("/tmp/proj/.claude/commands/bar.md"),
+            "got {}",
+            s
+        );
     }
 
     #[test]
     fn resolve_skill_delete_skill() {
         let path = resolve_config_path("project", "/tmp/proj", "skill-delete:skill:s1").unwrap();
         let s = path.to_string_lossy().replace('\\', "/");
-        assert!(s.ends_with("/tmp/proj/.claude/skills/s1/SKILL.md"), "got {}", s);
+        assert!(
+            s.ends_with("/tmp/proj/.claude/skills/s1/SKILL.md"),
+            "got {}",
+            s
+        );
     }
 
     #[test]
@@ -1686,7 +1727,11 @@ mod tests {
     fn resolve_skill_missing_kind() {
         // Old format ("skill:foo") should be rejected now.
         let err = resolve_config_path("user", "", "skill:foo").unwrap_err();
-        assert!(err.contains("Invalid kind") || err.contains("expected"), "got {}", err);
+        assert!(
+            err.contains("Invalid kind") || err.contains("expected"),
+            "got {}",
+            err
+        );
     }
 
     #[test]
@@ -1736,7 +1781,10 @@ mod tests {
         std::fs::write(&nested_skill, "---\nname: plugin-skill\n---\nbody").unwrap();
 
         assert!(skill_file_matches(&alpha_skill, &["alpha".to_string()]));
-        assert!(skill_file_matches(&nested_skill, &["plugin-skill".to_string()]));
+        assert!(skill_file_matches(
+            &nested_skill,
+            &["plugin-skill".to_string()]
+        ));
         assert!(!skill_file_matches(&nested_skill, &["missing".to_string()]));
 
         std::fs::remove_dir_all(&tmp).ok();
@@ -1755,8 +1803,16 @@ mod tests {
         let mut visited = std::collections::HashSet::new();
         collect_rule_file(&mut paths, claude_md.clone(), &tmp, &mut visited, 0);
 
-        assert!(paths.iter().any(|p| p.ends_with("CLAUDE.md")), "got {:?}", paths);
-        assert!(paths.iter().any(|p| p.ends_with("RTK.md")), "got {:?}", paths);
+        assert!(
+            paths.iter().any(|p| p.ends_with("CLAUDE.md")),
+            "got {:?}",
+            paths
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("RTK.md")),
+            "got {:?}",
+            paths
+        );
 
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -1787,7 +1843,10 @@ mod tests {
     #[test]
     fn extract_mcp_missing_keys_yield_empty_object() {
         let data = serde_json::json!({});
-        assert_eq!(extract_mcp_servers(&data, "user", ""), serde_json::json!({}));
+        assert_eq!(
+            extract_mcp_servers(&data, "user", ""),
+            serde_json::json!({})
+        );
         assert_eq!(
             extract_mcp_servers(&data, "project", "/tmp/p"),
             serde_json::json!({})

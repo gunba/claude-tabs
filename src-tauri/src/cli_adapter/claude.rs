@@ -12,8 +12,8 @@ use crate::commands::detect_claude_cli_sync;
 use crate::session::types::SessionConfig;
 
 use super::{
-    CliAdapter, DetectedBinary, EffortOption, LaunchOptions, ModelOption,
-    PermissionOption, SpawnSpec,
+    CliAdapter, DetectedBinary, EffortOption, LaunchOptions, ModelOption, PermissionOption,
+    SpawnSpec,
 };
 
 pub struct ClaudeAdapter;
