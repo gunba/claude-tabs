@@ -41,6 +41,7 @@
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  height: 72px;
 }
 
 .tab-bar-scroll {
@@ -343,6 +344,7 @@
   justify-content: center;
   width: 54px;
   height: 54px;
+  align-self: flex-end;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: var(--accent);
@@ -364,6 +366,7 @@
   justify-content: center;
   width: 54px;
   height: 54px;
+  align-self: flex-end;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--accent-secondary) 12%, var(--bg-surface));
@@ -385,6 +388,7 @@
   justify-content: center;
   width: 54px;
   height: 54px;
+  align-self: flex-end;
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--accent-tertiary) 10%, var(--bg-surface));
@@ -400,26 +404,41 @@
   color: var(--accent-tertiary);
 }
 
-/* ── Tab group separators ────────────────────────────────────── */
+/* ── Tab groups ──────────────────────────────────────────────── */
 
-.tab-group-separator {
+.tab-group {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: relative;
+  padding-top: 18px;
+}
+
+.tab-group-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 18px;
   display: flex;
   align-items: center;
-  padding: 0 4px;
-  flex-shrink: 0;
+  padding: 0 8px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 6%, var(--bg-surface));
+  border-bottom: 1px solid var(--border-subtle);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+  user-select: none;
 }
 
-.tab-group-pip {
-  width: 2px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--text-muted);
-  opacity: 0.3;
-  transition: opacity 0.15s;
-}
-
-.tab-group-separator:hover .tab-group-pip {
-  opacity: 0.6;
+.tab-group-tabs {
+  display: flex;
+  align-items: stretch;
 }
 
 /* ── Tab reorder arrows ─────────────────────────────────────── */

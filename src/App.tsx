@@ -445,11 +445,13 @@ export default function App() {
       {/* [LO-01] Main window layout: tab bar (here), subagent bar, terminal area, CommandBar (slash commands + skill pills + history), StatusBar. */}
       <div className="tab-bar">
           <div className="tab-bar-scroll">
-            {groups.flatMap((group, gi) => [
-              ...(gi > 0 ? [<div key={`sep-${group.key}`} className="tab-group-separator" title={group.fullPath}>
-                <span className="tab-group-pip" />
-              </div>] : []),
-              ...group.sessions.map((session, si) => {
+            {groups.map((group) => (
+              <div key={group.key} className="tab-group">
+                <div className="tab-group-header" title={group.fullPath}>
+                  {group.label}
+                </div>
+                <div className="tab-group-tabs">
+                  {group.sessions.map((session, si) => {
               const isActive = session.id === activeTabId;
               const fullName = session.name || dirToTabName(session.config.workingDir);
               const isDead = session.state === "dead";
@@ -632,8 +634,10 @@ export default function App() {
                   </span>
                 </div>
               );
-              }),
-            ])}
+              })}
+                </div>
+              </div>
+            ))}
           </div>
           <button
             className="tab-resume"
