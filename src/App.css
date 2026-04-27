@@ -36,12 +36,15 @@
 /* ── Tab bar ─────────────────────────────────────────────────── */
 
 .tab-bar {
+  --tab-height: 54px;
+  --tab-group-header-height: 18px;
+  --tab-bar-height: calc(var(--tab-height) + var(--tab-group-header-height));
   display: flex;
   align-items: stretch;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  height: 72px;
+  height: var(--tab-bar-height);
 }
 
 .tab-bar-scroll {
@@ -73,7 +76,7 @@
   flex: 0 1 200px;
   min-width: 90px;
   max-width: 200px;
-  height: 54px;
+  height: var(--tab-height);
   overflow: hidden;
   box-sizing: border-box;
   /* [CV-03] Per-tab provider scope keeps inactive tab metadata colored by its own CLI. */
@@ -342,9 +345,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 54px;
-  align-self: flex-end;
+  width: var(--tab-bar-height);
+  height: var(--tab-bar-height);
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: var(--accent);
@@ -364,9 +366,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 54px;
-  align-self: flex-end;
+  width: var(--tab-bar-height);
+  height: var(--tab-bar-height);
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--accent-secondary) 12%, var(--bg-surface));
@@ -386,9 +387,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 54px;
-  align-self: flex-end;
+  width: var(--tab-bar-height);
+  height: var(--tab-bar-height);
   border: none;
   border-left: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--accent-tertiary) 10%, var(--bg-surface));
@@ -411,7 +411,7 @@
   flex-direction: column;
   flex-shrink: 0;
   position: relative;
-  padding-top: 18px;
+  padding-top: var(--tab-group-header-height);
 }
 
 .tab-group-header {
@@ -419,7 +419,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 18px;
+  height: var(--tab-group-header-height);
   display: flex;
   align-items: center;
   padding: 0 8px;
