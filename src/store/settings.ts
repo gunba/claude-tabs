@@ -712,12 +712,21 @@ export const useSettingsStore = create<SettingsState>()(
             schema = JSON.parse(raw) as JsonSchema;
           } else {
             const path = cliPath ?? useSessionStore.getState().codexPath;
-            schema = await traceAsync("discovery.discover_codex_settings_schema", () => invoke<JsonSchema>("discover_codex_settings_schema", { cliPath: path ?? null }), {
-              module: "discovery",
-              event: "discovery.settings_json_schema_perf",
-              warnAboveMs: 5000,
-              data: { cli, cliPath: path ?? null },
-            });
+            // Backend returns CodexSchemaResult { schema, source }; unwrap to the schema.
+            const result = await traceAsync(
+              "discovery.discover_codex_settings_schema",
+              () => invoke<{ schema: JsonSchema; source: "binary" | "bundled" }>(
+                "discover_codex_settings_schema",
+                { cliPath: path ?? null },
+              ),
+              {
+                module: "discovery",
+                event: "discovery.settings_json_schema_perf",
+                warnAboveMs: 5000,
+                data: { cli, cliPath: path ?? null },
+              },
+            );
+            schema = result.schema;
           }
           set((s) => ({
             settingsSchemaByCli: { ...s.settingsSchemaByCli, [cli]: schema },
