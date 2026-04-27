@@ -24,9 +24,30 @@
   text-overflow: ellipsis;
 }
 
+.app-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-header-brand-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
 .app-header-name {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.app-header-cli {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-header-cli-logo {
+  flex-shrink: 0;
 }
 
 .app-header-sep {

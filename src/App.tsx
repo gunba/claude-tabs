@@ -26,8 +26,11 @@ import { killPty, writeToPty } from "./lib/ptyRegistry";
 import { getInspectorPort, disconnectInspectorForSession, reconnectInspectorForSession } from "./lib/inspectorPort";
 import { focusTerminal } from "./lib/terminalRegistry";
 import { dlog, flushDebugLog } from "./lib/debugLog";
-import { IconStop, IconClose, IconReturn, IconGear } from "./components/Icons/Icons";
+import { IconStop, IconClose, IconReturn, IconGear, IconFolder } from "./components/Icons/Icons";
 import { Header } from "./components/Header/Header";
+import { ProviderLogo } from "./components/ProviderLogo/ProviderLogo";
+import { AgentTypeIcon } from "./components/AgentTypeIcon/AgentTypeIcon";
+import { HeaderActivityViz } from "./components/HeaderActivityViz/HeaderActivityViz";
 import { groupSessionsByDir, swapWithinGroup, parseWorktreePath, worktreeAcronym, IS_LINUX } from "./lib/paths";
 import type { CliKind, Session, Subagent } from "./types/session";
 import { isSubagentActive } from "./types/session";
@@ -446,14 +449,16 @@ export default function App() {
       {/* [LO-01] Main window layout: tab bar (here), subagent bar, terminal area, CommandBar (slash commands + skill pills + history), StatusBar. */}
       <div className="tab-bar">
           <div className="tab-bar-scroll">
-            {groups.flatMap((group) => [
+            {/* [CV-06] Folder header: IconFolder prefix + alternating tint via tab-group-header-alt class. */}
+            {groups.flatMap((group, gi) => [
               <div
                 key={`hdr-${group.key}`}
-                className="tab-group-header"
+                className={`tab-group-header${gi % 2 === 1 ? " tab-group-header-alt" : ""}`}
                 style={{ ["--tab-count" as string]: group.sessions.length }}
                 title={group.fullPath}
               >
-                {group.label}
+                <IconFolder size={10} className="tab-group-header-icon" />
+                <span className="tab-group-header-label">{group.label}</span>
               </div>,
               ...group.sessions.map((session, si) => {
               const isActive = session.id === activeTabId;
@@ -585,7 +590,7 @@ export default function App() {
                         className={`tab-cli-row tab-cli-row-${session.config.cli}`}
                         title={session.config.cli === "codex" ? "Codex" : "Claude Code"}
                       >
-                        {session.config.cli === "codex" ? "Codex" : "Claude"}
+                        <ProviderLogo cli={session.config.cli} size={12} />
                       </span>
                       {activity && (
                         <span className="tab-activity" style={{ color: activityColor ?? "var(--text-secondary)" }}>
@@ -643,6 +648,7 @@ export default function App() {
               }),
             ])}
           </div>
+          <HeaderActivityViz />
           <button
             className="tab-resume"
             onClick={() => setShowResumePicker(true)}
@@ -704,7 +710,10 @@ export default function App() {
                   }
                   <span className="subagent-label">
                     <span className="subagent-name">{sub.description}</span>
-                    <span className="subagent-type">{typeLabel ?? "Agent"}</span>
+                    <span className="subagent-type">
+                      <AgentTypeIcon type={typeLabel} size={10} className="subagent-type-icon" />
+                      {typeLabel ?? "Agent"}
+                    </span>
                     <span className="subagent-status-row">
                       <span style={{ color: subStatusColor }}>
                         {subStatusText}

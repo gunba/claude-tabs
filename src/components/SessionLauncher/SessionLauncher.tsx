@@ -16,6 +16,7 @@ import {
   ANTHROPIC_MODELS,
 } from "../../types/session";
 import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, IconSkull, IconBulldozer, IconDocument } from "../Icons/Icons";
+import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import { PillGroup } from "../PillGroup/PillGroup";
 import { Dropdown } from "../Dropdown/Dropdown";
 import "./SessionLauncher.css";
@@ -572,7 +573,9 @@ export function SessionLauncher() {
                 className={`launcher-cli-choice launcher-cli-choice--claude${config.cli === "claude" ? " launcher-cli-choice--active" : ""}`}
                 onClick={() => updateConfig("cli", "claude")}
                 disabled={isNonSessionCommand}
+                title="Claude Code"
               >
+                <ProviderLogo cli="claude" size={16} className="launcher-cli-choice-logo" />
                 Claude Code
               </button>
             )}
@@ -582,7 +585,9 @@ export function SessionLauncher() {
                 className={`launcher-cli-choice launcher-cli-choice--codex${config.cli === "codex" ? " launcher-cli-choice--active" : ""}`}
                 onClick={() => updateConfig("cli", "codex")}
                 disabled={isNonSessionCommand}
+                title="Codex"
               >
+                <ProviderLogo cli="codex" size={16} className="launcher-cli-choice-logo" />
                 Codex
               </button>
             )}

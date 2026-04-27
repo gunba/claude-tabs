@@ -2,6 +2,8 @@ import { useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "../../store/settings";
 import { useVersionStore } from "../../store/version";
+import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
+import { IconCode } from "../Icons/Icons";
 // [DR-04] Components live in src/components/<Name>/<Name>.tsx with co-located <Name>.css. Header is the canonical example: Header.tsx + Header.css side by side.
 import "./Header.css";
 
@@ -59,16 +61,21 @@ export function Header() {
     >
       <div className="app-header-title">
         {/* [BR-01] Brand: 'Code Tabs'; shows both Claude and Codex versions */}
-        <span className="app-header-name">
-          Code Tabs{appVersion ? ` v${appVersion}` : ""}
+        <span className="app-header-brand">
+          <IconCode size={14} className="app-header-brand-icon" />
+          <span className="app-header-name">
+            Code Tabs{appVersion ? ` v${appVersion}` : ""}
+          </span>
         </span>
         <span className="app-header-sep">&middot;</span>
         <span className={`app-header-cli${!cliVersions.claude ? " app-header-cli-missing" : ""}`}>
-          Claude {cliVersions.claude ?? "not installed"}
+          <ProviderLogo cli="claude" size={14} className="app-header-cli-logo" />
+          {cliVersions.claude ?? "not installed"}
         </span>
         <span className="app-header-sep">&middot;</span>
         <span className={`app-header-cli${!cliVersions.codex ? " app-header-cli-missing" : ""}`}>
-          Codex {cliVersions.codex ?? "not installed"}
+          <ProviderLogo cli="codex" size={14} className="app-header-cli-logo" />
+          {cliVersions.codex ?? "not installed"}
         </span>
       </div>
       <div className="app-header-controls">

@@ -39,6 +39,8 @@ interface AgentOnFile {
   isSubagent: boolean;
   agentId: string | null;
   isCompleted?: boolean;
+  /** Subagent type (e.g. "Explore", "Plan") — drives the AgentTypeIcon choice. */
+  subagentType?: string | null;
 }
 
 
@@ -67,6 +69,7 @@ function FileTreeRow({
   onFileClick,
   showMascotInline,
   activeSubagentIds,
+  cli,
 }: {
   node: FileTreeNode;
   depth: number;
@@ -79,6 +82,8 @@ function FileTreeRow({
   showMascotInline: boolean;
   /** Subagent ids currently tracked for this session (used to suppress stale 'searched' color). */
   activeSubagentIds: Set<string>;
+  /** Active session CLI — picks the right mascot artwork. */
+  cli: "claude" | "codex";
 }) {
   const indent = depth * INDENT_STEP;
   const primaryMascot = agents.length > 0 ? agents[0] : null;
@@ -115,7 +120,9 @@ function FileTreeRow({
           {inlineMascot ? (
             <AgentMascot
               state={mascotState!}
+              cli={cli}
               isSubagent={primaryMascot!.isSubagent}
+              subagentType={primaryMascot!.subagentType}
               isCompleted={primaryMascot!.isCompleted}
               size={16}
             />
@@ -163,7 +170,9 @@ function FileTreeRow({
         {inlineMascot ? (
           <AgentMascot
             state={mascotState!}
+            cli={cli}
             isSubagent={primaryMascot!.isSubagent}
+            subagentType={primaryMascot!.subagentType}
             isCompleted={primaryMascot!.isCompleted}
             size={16}
           />
@@ -280,12 +289,19 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
 
     // Subagents — active tool calls
     const subs = activeTabId ? storeSubagents.get(activeTabId) ?? [] : [];
+    const typeOf = (sub: { subagentType?: string | null; agentType?: string | null }) =>
+      sub.subagentType ?? sub.agentType ?? null;
     for (const sub of subs) {
       if (!isSubagentActive(sub.state)) continue;
       if (sub.currentAction && sub.currentToolName && FILE_TOOLS.has(sub.currentToolName)) {
         const path = extractPathFromAction(sub.currentAction);
         if (path) {
-          pushAgent(canonicalizePath(path), { toolName: sub.currentToolName, isSubagent: true, agentId: sub.id });
+          pushAgent(canonicalizePath(path), {
+            toolName: sub.currentToolName,
+            isSubagent: true,
+            agentId: sub.id,
+            subagentType: typeOf(sub),
+          });
         }
       }
     }
@@ -300,7 +316,12 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
           agents.some((a) => a.agentId === sub.id),
         );
         if (!hasActive) {
-          pushAgent(lastFile.path, { toolName: lastFile.toolName ?? "Read", isSubagent: true, agentId: sub.id });
+          pushAgent(lastFile.path, {
+            toolName: lastFile.toolName ?? "Read",
+            isSubagent: true,
+            agentId: sub.id,
+            subagentType: typeOf(sub),
+          });
         }
       }
     }
@@ -319,6 +340,7 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
             isSubagent: true,
             agentId: sub.id,
             isCompleted: true,
+            subagentType: typeOf(sub),
           });
         }
       }
@@ -506,6 +528,7 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
                   onFileClick={handleFileClick}
                   showMascotInline={!isFloatingTarget}
                   activeSubagentIds={activeSubagentIds}
+                  cli={activeSession.config.cli}
                 />
               );
             })}
@@ -516,6 +539,7 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
               >
                 <AgentMascot
                   state={mascot.state}
+                  cli={activeSession.config.cli}
                   isSubagent={mascot.isSubagent}
                   size={16}
                 />

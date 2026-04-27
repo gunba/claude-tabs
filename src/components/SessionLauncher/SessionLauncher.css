@@ -162,6 +162,13 @@
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.launcher-cli-choice-logo {
+  flex-shrink: 0;
 }
 
 .launcher-cli-choice:hover:not(:disabled) {

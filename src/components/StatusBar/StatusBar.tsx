@@ -11,6 +11,7 @@ import {
   IconWarning, IconHook, IconCircleFilled, IconCircleOutline,
   IconGitBranch, IconCpu, IconMemory,
 } from "../Icons/Icons";
+import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 
 import type { Session, PermissionMode } from "../../types/session";
 import { isSessionIdle } from "../../types/session";
@@ -106,7 +107,7 @@ function SessionStatus({
           className={`status-item status-cli status-cli-${session.config.cli}`}
           title={`CLI: ${session.config.cli === "codex" ? "Codex" : "Claude Code"}`}
         >
-          {session.config.cli === "codex" ? "Codex" : "Claude"}
+          <ProviderLogo cli={session.config.cli} size={12} />
         </span>
         <span className="status-item status-model" title={
           (m.apiRegion || m.pingRttMs > 0)

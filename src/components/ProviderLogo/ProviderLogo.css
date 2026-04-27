@@ -1,0 +1,8 @@
+.provider-logo {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+  user-select: none;
+  -webkit-user-drag: none;
+  object-fit: contain;
+}

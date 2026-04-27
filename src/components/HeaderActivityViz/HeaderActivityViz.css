@@ -1,0 +1,55 @@
+/* Ambient activity scene that fills the gap between the tab strip and the
+   right-side action buttons. Pure decoration — pointer-events disabled,
+   aria-hidden, easy to ignore. */
+.header-activity-viz {
+  /* Take all leftover space after .tab-bar-scroll claims its grid width.
+     Shrink to zero when tabs need the room (basis 0 means we never claim
+     more than the slack between tabs and the right-side buttons). */
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.header-activity-viz-wave {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 2px 6px;
+  box-sizing: border-box;
+}
+
+.header-activity-viz-bar {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+  background: var(--text-muted);
+  opacity: 0.16;
+  border-radius: 999px;
+  transform-origin: bottom;
+  transform: scaleY(0.12);
+  will-change: transform;
+}
+
+.header-activity-viz-mascot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.4));
+}
+
+/* No room? min-width: 0 + flex-shrink: 1 lets the visualizer collapse to
+   zero width when tabs need every pixel — at which point the wave bars have
+   no space and the rAF tick simply has nothing to paint. */

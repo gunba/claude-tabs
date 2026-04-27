@@ -93,6 +93,12 @@
   color: inherit;
 }
 
+.changelog-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .changelog-tab span:last-child {
   min-width: 0;
   overflow: hidden;

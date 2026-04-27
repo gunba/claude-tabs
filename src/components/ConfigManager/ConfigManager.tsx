@@ -15,6 +15,7 @@ import { PromptsTab } from "./PromptsTab";
 import { SkillsEditor } from "./SkillsEditor";
 import { Dropdown } from "../Dropdown/Dropdown";
 import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconBraces, IconClose, IconCircleFilled, IconServer } from "../Icons/Icons";
+import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import { RecordingPane } from "./RecordingPane";
 import { parseWorktreePath } from "../../lib/paths";
 import type { StatusMessage } from "../../lib/settingsSchema";
@@ -360,8 +361,9 @@ export function ConfigManager() {
                     if (configCli !== "claude") runWithUnsavedEditorGuard(() => setConfigCli("claude"));
                   }}
                   type="button"
+                  title="Claude"
                 >
-                  Claude
+                  <ProviderLogo cli="claude" size={16} />
                 </button>
                 <button
                   className={`config-cli-switch-btn config-cli-switch-btn-codex${configCli === "codex" ? " active" : ""}`}
@@ -369,12 +371,15 @@ export function ConfigManager() {
                     if (configCli !== "codex") runWithUnsavedEditorGuard(() => setConfigCli("codex"));
                   }}
                   type="button"
+                  title="Codex"
                 >
-                  Codex
+                  <ProviderLogo cli="codex" size={16} />
                 </button>
               </div>
             ) : (
-              <span className={`config-cli-label config-cli-label-${configCli}`}>{configCli === "codex" ? "Codex" : "Claude"}</span>
+              <span className={`config-cli-label config-cli-label-${configCli}`} title={configCli === "codex" ? "Codex" : "Claude"}>
+                <ProviderLogo cli={configCli} size={16} />
+              </span>
             )}
           </div>
           <div className="config-tabs">

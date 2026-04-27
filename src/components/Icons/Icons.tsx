@@ -442,3 +442,54 @@ export function IconMemory(props: IconProps) {
     </Icon>
   );
 }
+
+/** Compass — circle + needle, for the Explore agent */
+export function IconCompass(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 3.5L10.2 8L8 12.5L5.8 8z" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** Two four-pointed stars — general-purpose / sparkle */
+export function IconSparkles(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.5 2L10.5 5.5L14 6.5L10.5 7.5L9.5 11L8.5 7.5L5 6.5L8.5 5.5z" fill="currentColor" stroke="none" />
+      <path d="M4 9L4.5 10.8L6.3 11.3L4.5 11.8L4 13.5L3.5 11.8L1.7 11.3L3.5 10.8z" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/** Open book — claude-code-guide */
+export function IconBookOpen(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M1.5 3.5h5a1.5 1.5 0 011.5 1.5v8a1.5 1.5 0 00-1.5-1.5h-5z" />
+      <path d="M14.5 3.5h-5A1.5 1.5 0 008 5v8a1.5 1.5 0 011.5-1.5h5z" />
+    </Icon>
+  );
+}
+
+/** Shield with check — verification agent */
+export function IconShieldCheck(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 1.5L13.5 3.5V8.5C13.5 11.2 11.1 13.6 8 14.5C4.9 13.6 2.5 11.2 2.5 8.5V3.5z" />
+      <path d="M5.5 8L7.5 10L10.5 6" />
+    </Icon>
+  );
+}
+
+/** Angle brackets and slash — code/brand mark */
+export function IconCode(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 4.5L1.5 8L5 11.5" />
+      <path d="M11 4.5L14.5 8L11 11.5" />
+      <path d="M9.5 3L6.5 13" />
+    </Icon>
+  );
+}

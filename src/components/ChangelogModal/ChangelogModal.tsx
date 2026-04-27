@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { CliKind } from "../../types/session";
 import { ModalOverlay } from "../ModalOverlay/ModalOverlay";
 import { IconClose } from "../Icons/Icons";
+import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import type { ChangelogEntry, ChangelogRequest, CliChangelog } from "../../lib/changelog";
 import "./ChangelogModal.css";
 
@@ -146,7 +147,10 @@ export function ChangelogModal({ request, currentVersions, onClose }: ChangelogM
               role="tab"
               aria-selected={activeCli === cli}
             >
-              <span>{cliLabel(cli)}</span>
+              <span className="changelog-tab-label">
+                <ProviderLogo cli={cli} size={14} />
+                {cliLabel(cli)}
+              </span>
               <span>{range?.fromVersion ? `${range.fromVersion} -> ${range.toVersion}` : (version ? `v${version}` : "not installed")}</span>
             </button>
           );

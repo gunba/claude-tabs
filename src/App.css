@@ -52,7 +52,9 @@
   grid-auto-flow: column dense;
   grid-auto-columns: minmax(90px, 200px);
   grid-template-rows: var(--tab-group-header-height) 1fr;
-  flex: 1;
+  /* Shrink to content when there's room so HeaderActivityViz can fill the
+     leftover space; still scrolls horizontally when tabs overflow. */
+  flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -422,18 +424,40 @@
   height: var(--tab-group-header-height);
   display: flex;
   align-items: center;
+  gap: 5px;
   padding: 0 8px;
   font-size: 9px;
   font-weight: 600;
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-muted) 6%, var(--bg-surface));
   border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
   letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: default;
   user-select: none;
+}
+
+/* Alternating tint so adjacent folders read as separate. The class is
+   applied to every other group in App.tsx because :nth-of-type cannot
+   distinguish header divs from tab divs (both are <div> children of
+   .tab-bar-scroll). */
+.tab-group-header-alt {
+  background: color-mix(in srgb, var(--text-muted) 12%, var(--bg-surface));
+}
+
+.tab-group-header-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.tab-group-header-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* ── Tab reorder arrows ─────────────────────────────────────── */
@@ -646,13 +670,21 @@
 }
 
 .subagent-type {
-  color: var(--accent-secondary);
+  color: var(--cli-claude);
   font-size: 9px;
   font-weight: 700;
   line-height: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subagent-type-icon {
+  flex-shrink: 0;
+  color: var(--cli-claude);
 }
 
 /* Mirrors .tab-status-row, scaled down */
