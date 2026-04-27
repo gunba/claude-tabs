@@ -39,6 +39,11 @@ const DEDICATED_FLAGS = new Set([
   "--dangerously-bypass-approvals-and-sandbox", "--add-dir",
 ]);
 
+// Mirror of the Codex `model_reasoning_effort` enum. Used to drop stale
+// Claude-side values (e.g. "max") from the displayed Codex command so it
+// matches what the backend will actually send.
+const CODEX_EFFORT_VALUES = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+
 // [SL-14] Non-session flags rendered in separate Utility Commands section
 const NON_SESSION_FLAGS = new Set([
   "--version", "-V", "--help", "-h",
@@ -113,7 +118,9 @@ export function SessionLauncher() {
       if (cfg.resumeSession) parts.push("resume", cfg.resumeSession);
       if (cfg.workingDir) parts.push("--cd", cfg.workingDir);
       if (cfg.model) parts.push("--model", cfg.model);
-      if (cfg.effort) parts.push("-c", `model_reasoning_effort="${cfg.effort}"`);
+      if (cfg.effort && CODEX_EFFORT_VALUES.has(cfg.effort)) {
+        parts.push("-c", `model_reasoning_effort="${cfg.effort}"`);
+      }
       if (cfg.dangerouslySkipPermissions || cfg.permissionMode === "bypassPermissions") {
         parts.push("--dangerously-bypass-approvals-and-sandbox");
       } else if (cfg.permissionMode === "planMode") {
@@ -232,6 +239,12 @@ export function SessionLauncher() {
       setAdapterEfforts(ANTHROPIC_EFFORTS.map((e) => ({ value: e.value, label: e.label })));
       return () => { cancelled = true; };
     }
+    // Clear synchronously so the validator below can't accept a stale
+    // value (e.g. Claude's "max") while the new CLI's options are still
+    // in flight. config.effort/model gets reset to null by the existing
+    // validator effect once the fetch resolves.
+    setAdapterModels([]);
+    setAdapterEfforts([]);
     invoke<{ models: Array<{ id: string; displayName: string }>; effortLevels: Array<{ id: string; displayName: string }> }>(
       "cli_launch_options",
       { cli: config.cli }

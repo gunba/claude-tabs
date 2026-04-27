@@ -22,6 +22,12 @@ use super::{
 
 pub struct CodexAdapter;
 
+// Mirrors the `model_reasoning_effort` enum in Codex's ConfigToml schema
+// (see src-tauri/src/discovery/codex_schema.json:1916). Used to gate
+// values passed via `-c model_reasoning_effort=...` so a stale Claude-
+// side effort never crashes Codex at config load.
+const CODEX_EFFORT_VALUES: &[&str] = &["none", "minimal", "low", "medium", "high", "xhigh"];
+
 impl CliAdapter for CodexAdapter {
     fn detect(&self) -> Result<DetectedBinary, String> {
         let path = codex_cli::detect_codex_cli_sync()?;
@@ -83,9 +89,12 @@ impl CliAdapter for CodexAdapter {
             }
         }
 
-        // Reasoning effort: Codex has no direct flag; pass via -c.
+        // Reasoning effort: Codex has no direct flag; pass via -c. Drop
+        // unknown values (e.g. "max" from a prior Claude session) so they
+        // don't reach Codex's config.toml parser, which would error out
+        // at launch.
         if let Some(ref effort) = cfg.effort {
-            if !effort.is_empty() {
+            if !effort.is_empty() && CODEX_EFFORT_VALUES.contains(&effort.as_str()) {
                 args.push("-c".into());
                 args.push(format!(
                     "model_reasoning_effort={}",
@@ -481,6 +490,22 @@ mod tests {
             ),
             "developer_instructions=\"Be precise.\\nUse short answers.\""
         );
+    }
+
+    #[test]
+    fn unknown_effort_is_dropped() {
+        // A stale Claude-side value like "max" must not reach Codex's
+        // config parser as `-c model_reasoning_effort="max"`.
+        let mut args: Vec<String> = Vec::new();
+        let mut c = cfg();
+        c.effort = Some("max".into());
+        if let Some(ref e) = c.effort {
+            if !e.is_empty() && CODEX_EFFORT_VALUES.contains(&e.as_str()) {
+                args.push("-c".into());
+                args.push(format!("model_reasoning_effort={}", quote_toml_value(e)));
+            }
+        }
+        assert!(args.is_empty(), "expected no -c override for unknown effort");
     }
 
     #[test]
