@@ -29,7 +29,7 @@ if (!globalThis.crypto?.randomUUID) {
   });
 }
 
-import { DEFAULT_RECORDING_CONFIG, useSettingsStore } from "../settings";
+import { DEFAULT_RECORDING_CONFIG, DEFAULT_RECORDING_CONFIGS_BY_CLI, useSettingsStore } from "../settings";
 
 function resetStore() {
   useSettingsStore.setState({
@@ -67,6 +67,7 @@ describe("recording defaults", () => {
     expect(DEFAULT_RECORDING_CONFIG.taps.categories.stringify).toBe(true);
     expect(DEFAULT_RECORDING_CONFIG.taps.categories.envproxy).toBe(false);
     expect(DEFAULT_RECORDING_CONFIG.taps.categories.console).toBe(false);
+    expect(DEFAULT_RECORDING_CONFIGS_BY_CLI.codex.noisyEventKinds).toContain("CodexTokenCount");
   });
 });
 

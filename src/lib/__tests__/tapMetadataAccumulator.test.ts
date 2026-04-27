@@ -109,6 +109,30 @@ describe("TapMetadataAccumulator", () => {
     expect(diff?.sevenDayPercent).toBe(24);
   });
 
+  it("does not surface Codex token counts as current activity for Codex sessions", () => {
+    const acc = new TapMetadataAccumulator("codex");
+    const diff = acc.process({
+      kind: "CodexTokenCount", ts: 0,
+      totalInputTokens: 1000,
+      cachedInputTokens: 700,
+      outputTokens: 80,
+      reasoningOutputTokens: 20,
+      totalTokens: 1080,
+      lastInputTokens: 300,
+      lastCachedInputTokens: 250,
+      lastOutputTokens: 10,
+      lastReasoningOutputTokens: 5,
+      lastTotalTokens: 310,
+      contextWindow: 258400,
+      primaryUsedPercent: null,
+      primaryResetsAt: null,
+      secondaryUsedPercent: null,
+      secondaryResetsAt: null,
+    });
+    expect(diff?.currentEventKind).toBeNull();
+    expect(diff?.contextDebug?.source).toBe("codexTokenCount");
+  });
+
   it("sets runtimeModel from TurnStart", () => {
     const acc = new TapMetadataAccumulator();
     const diff = acc.process({

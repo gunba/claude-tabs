@@ -1,16 +1,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useSettingsStore, DEFAULT_NOISY_EVENT_KINDS } from "../../store/settings";
+import { useSettingsStore, DEFAULT_CODEX_NOISY_EVENT_KINDS, DEFAULT_NOISY_EVENT_KINDS } from "../../store/settings";
 import { getNoisyEventKinds } from "../noisyEventKinds";
 
 describe("getNoisyEventKinds", () => {
   beforeEach(() => {
     const base = useSettingsStore.getState().recordingConfigsByCli.claude;
+    const codexBase = useSettingsStore.getState().recordingConfigsByCli.codex;
     useSettingsStore.setState({
       recordingConfigsByCli: {
         ...useSettingsStore.getState().recordingConfigsByCli,
         claude: {
           ...base,
           noisyEventKinds: DEFAULT_NOISY_EVENT_KINDS,
+        },
+        codex: {
+          ...codexBase,
+          noisyEventKinds: DEFAULT_CODEX_NOISY_EVENT_KINDS,
         },
       },
       recordingConfig: {
@@ -79,5 +84,9 @@ describe("getNoisyEventKinds", () => {
     });
     expect(getNoisyEventKinds("codex").has("CodexTokenCount")).toBe(true);
     expect(getNoisyEventKinds("claude").has("CodexTokenCount")).toBe(false);
+  });
+
+  it("includes CodexTokenCount in the Codex defaults", () => {
+    expect(getNoisyEventKinds("codex").has("CodexTokenCount")).toBe(true);
   });
 });

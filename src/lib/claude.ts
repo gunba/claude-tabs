@@ -147,6 +147,7 @@ export function toolCategoryColor(toolName: string): string {
 export const EVENT_KIND_COLORS: Record<string, string> = {
   // Session lifecycle
   TurnStart: "var(--success)", TurnEnd: "var(--success)", SessionResume: "var(--success)", IdlePrompt: "var(--success)",
+  CodexTaskStarted: "var(--accent)", CodexTaskComplete: "var(--success)", CodexTurnContext: "var(--success)",
   // Thinking (matches thinking state → orange/clay)
   ThinkingStart: "var(--accent)",
   // Plan / mode (action-needed signal → purple)
@@ -156,7 +157,9 @@ export const EVENT_KIND_COLORS: Record<string, string> = {
   // Tool execution
   ToolCallStart: "var(--accent-secondary)", ToolInput: "var(--accent-secondary)",
   // Tool results
-  ToolResult: "var(--text-muted)",
+  ToolResult: "var(--text-muted)", CodexToolCallComplete: "var(--text-muted)",
+  // Accounting / context updates
+  CodexTokenCount: "var(--text-muted)",
   // Permission flow
   PermissionPromptShown: "var(--accent-tertiary)", PermissionApproved: "var(--success)", PermissionRejected: "var(--error)",
   // User interaction
@@ -176,13 +179,28 @@ export function eventKindColor(eventKind: string): string {
   return EVENT_KIND_COLORS[eventKind] ?? "var(--text-muted)";
 }
 
+const EMPTY_NOISY_EVENT_KINDS: ReadonlySet<string> = new Set();
+
 /** Derive activity display from current event kind or tool name.
  *  Returns null when there is nothing to show. */
 export function getActivityText(
   currentToolName: string | null,
   currentEventKind?: string | null,
+  noisyEventKinds: ReadonlySet<string> = EMPTY_NOISY_EVENT_KINDS,
 ): string | null {
-  return currentEventKind ?? currentToolName ?? null;
+  if (currentEventKind && !noisyEventKinds.has(currentEventKind)) return currentEventKind;
+  return currentToolName ?? null;
+}
+
+/** Color matching getActivityText(): event phase first, tool category as fallback. */
+export function getActivityColor(
+  currentToolName: string | null,
+  currentEventKind?: string | null,
+  noisyEventKinds: ReadonlySet<string> = EMPTY_NOISY_EVENT_KINDS,
+): string | null {
+  if (currentEventKind && !noisyEventKinds.has(currentEventKind)) return eventKindColor(currentEventKind);
+  if (currentToolName) return toolCategoryColor(currentToolName);
+  return null;
 }
 
 /** Session colors — assigned sequentially, no collisions until wrap-around. */

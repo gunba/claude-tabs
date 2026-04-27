@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
-import { dirToTabName, effectiveModel, getResumeId, getLaunchWorkingDir, modelLabel, modelColor, effortColor, canResumeSession, stripWorktreeFlags, formatTokenCount, eventKindColor, getActivityText } from "./lib/claude";
+import { dirToTabName, effectiveModel, getResumeId, getLaunchWorkingDir, modelLabel, modelColor, effortColor, canResumeSession, stripWorktreeFlags, formatTokenCount, getActivityColor, getActivityText } from "./lib/claude";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 
 import { SessionLauncher } from "./components/SessionLauncher/SessionLauncher";
@@ -33,6 +33,7 @@ import type { CliKind, Session, Subagent } from "./types/session";
 import { isSubagentActive } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
 import { settledStateManager, type SettledKind } from "./lib/settledState";
+import { getNoisyEventKinds } from "./lib/noisyEventKinds";
 import { useRuntimeStore } from "./store/runtime";
 import { isCliVersionIncrease, type ChangelogRequest } from "./lib/changelog";
 import "./App.css";
@@ -456,10 +457,11 @@ export default function App() {
               const fullName = session.name || dirToTabName(session.config.workingDir);
               const isDead = session.state === "dead";
               // [TA-01] Tab activity: raw event kind from TAP, colored by event phase
-              const activity = getActivityText(session.metadata.currentToolName, session.metadata.currentEventKind);
-              const activityColor = activity ? eventKindColor(session.metadata.currentEventKind ?? session.metadata.currentToolName!) : undefined;
+              const noisyEventKinds = getNoisyEventKinds(session.config.cli);
+              const activity = getActivityText(session.metadata.currentToolName, session.metadata.currentEventKind, noisyEventKinds);
+              const activityColor = getActivityColor(session.metadata.currentToolName, session.metadata.currentEventKind, noisyEventKinds);
 
-              // Status row: event/state | model | effort | agents | worktree | context
+              // Status row: model | effort | agents | worktree | context
               const m = effectiveModel(session);
               const wt = parseWorktreePath(session.config.workingDir);
               const statusSpans: { text: string; color: string; title?: string }[] = [];
@@ -474,7 +476,6 @@ export default function App() {
               if (effort) statusSpans.push({ text: effort.charAt(0).toUpperCase() + effort.slice(1), color: effortColor(effort) });
               const subs = subagentMap.get(session.id) || [];
               const effectiveState = getEffectiveState(session.state, subs);
-              const activityText = activity ?? effectiveState;
               const liveAgents = subs.filter((s) => isSubagentActive(s.state)).length;
               if (liveAgents > 0) statusSpans.push({ text: `${liveAgents} agent${liveAgents > 1 ? "s" : ""}`, color: "var(--text-secondary)" });
               if (wt) statusSpans.push({ text: worktreeAcronym(wt.worktreeName), color: "var(--accent-tertiary)", title: wt.worktreeName });
@@ -583,9 +584,11 @@ export default function App() {
                       >
                         {session.config.cli === "codex" ? "Codex" : "Claude"}
                       </span>
-                      <span className="tab-activity" style={{ color: activityColor ?? "var(--text-secondary)" }}>
-                        {activityText}
-                      </span>
+                      {activity && (
+                        <span className="tab-activity" style={{ color: activityColor ?? "var(--text-secondary)" }}>
+                          {activity}
+                        </span>
+                      )}
                     </span>
                     <span className="tab-status-row">
                       {statusSpans.map((s, i) => (
@@ -675,8 +678,9 @@ export default function App() {
               const isInterrupted = sub.state === "interrupted";
               const isSelected = inspectedSubagent?.subagentId === sub.id && inspectedSubagent?.sessionId === activeTabId;
               // [TA-06] Subagent activity: same display as parent tabs
-              const subActivity = getActivityText(sub.currentToolName, sub.currentEventKind);
-              const subActivityColor = subActivity ? eventKindColor(sub.currentEventKind ?? sub.currentToolName!) : undefined;
+              const subNoisyEventKinds = getNoisyEventKinds(activeProvider);
+              const subActivity = getActivityText(sub.currentToolName, sub.currentEventKind, subNoisyEventKinds);
+              const subActivityColor = getActivityColor(sub.currentToolName, sub.currentEventKind, subNoisyEventKinds);
               const typeLabel = sub.subagentType || sub.agentType;
               const subStatusText = subActivity ?? (isCompleted ? "Completed" : sub.state);
               const subStatusColor = subActivityColor ?? (isCompleted ? "var(--success)" : "var(--text-secondary)");

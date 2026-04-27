@@ -27,6 +27,10 @@ export type RecordingConfigsByCli = Record<CliKind, RecordingConfig>;
 export const DEFAULT_NOISY_EVENT_KINDS: string[] = [
   "ApiTelemetry", "ProcessHealth", "EnvAccess", "TextDecoderChunk",
 ];
+export const DEFAULT_CODEX_NOISY_EVENT_KINDS: string[] = [
+  ...DEFAULT_NOISY_EVENT_KINDS,
+  "CodexTokenCount",
+];
 
 // [CI-05] Recording defaults: TAP/traffic disabled, all high-volume tap categories off, parse/stringify and codex-* categories on. v6 backfilled added categories with stdout/stderr forced off; v21 force-quiets persisted configs into recordingConfigsByCli.
 // [CI-06] RecordingConfig.debugCapture field controls DEBUG-level capture (default false). v8 backfilled debugCapture=true for older states; v21 force-quiets it back to false alongside the other recording defaults.
@@ -59,6 +63,16 @@ export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
   noisyEventKinds: DEFAULT_NOISY_EVENT_KINDS,
 };
 
+export const DEFAULT_CODEX_RECORDING_CONFIG: RecordingConfig = {
+  ...DEFAULT_RECORDING_CONFIG,
+  taps: {
+    ...DEFAULT_RECORDING_CONFIG.taps,
+    categories: { ...DEFAULT_RECORDING_CONFIG.taps.categories },
+  },
+  traffic: { ...DEFAULT_RECORDING_CONFIG.traffic },
+  noisyEventKinds: DEFAULT_CODEX_NOISY_EVENT_KINDS,
+};
+
 const HIGH_VOLUME_TAP_CATEGORIES = [
   "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr",
   "require", "bun", "websocket", "net", "stream", "fspromises", "bunfile",
@@ -89,6 +103,14 @@ function quietRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG
   return cloned;
 }
 
+function ensureNoisyEventKind(config: RecordingConfig, kind: string): RecordingConfig {
+  if (config.noisyEventKinds.includes(kind)) return config;
+  return {
+    ...config,
+    noisyEventKinds: [...config.noisyEventKinds, kind].sort(),
+  };
+}
+
 function mergeRecordingConfig(base: RecordingConfig, patch: Partial<RecordingConfig>): RecordingConfig {
   return {
     ...base,
@@ -110,7 +132,7 @@ function mergeRecordingConfig(base: RecordingConfig, patch: Partial<RecordingCon
 
 export const DEFAULT_RECORDING_CONFIGS_BY_CLI: RecordingConfigsByCli = {
   claude: cloneRecordingConfig(),
-  codex: cloneRecordingConfig(),
+  codex: cloneRecordingConfig(DEFAULT_CODEX_RECORDING_CONFIG),
 };
 
 export function getRecordingConfigForCliFromState(
@@ -320,7 +342,7 @@ export const useSettingsStore = create<SettingsState>()(
       recordingConfig: cloneRecordingConfig(),
       recordingConfigsByCli: {
         claude: cloneRecordingConfig(),
-        codex: cloneRecordingConfig(),
+        codex: cloneRecordingConfig(DEFAULT_CODEX_RECORDING_CONFIG),
       },
 
       addRecentDir: (dir) =>
@@ -898,7 +920,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "code-tabs-settings",
-      version: 22,
+      version: 23,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -1073,6 +1095,18 @@ export const useSettingsStore = create<SettingsState>()(
           if (!state.knownEnvVarsByCli) {
             state.knownEnvVarsByCli = { claude: legacyEnvVars, codex: [] };
           }
+        }
+        if (version < 23) {
+          const byCli = state.recordingConfigsByCli as Partial<RecordingConfigsByCli> | undefined;
+          const claude = cloneRecordingConfig(
+            byCli?.claude ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG,
+          );
+          const codex = ensureNoisyEventKind(
+            cloneRecordingConfig(byCli?.codex ?? DEFAULT_CODEX_RECORDING_CONFIG),
+            "CodexTokenCount",
+          );
+          state.recordingConfigsByCli = { claude, codex };
+          state.recordingConfig = claude;
         }
         return state;
       },

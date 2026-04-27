@@ -19,6 +19,7 @@ import {
   findNearestLiveTab,
   toolCategoryColor,
   eventKindColor,
+  getActivityColor,
   getActivityText,
   TOOL_COLORS,
   EVENT_KIND_COLORS,
@@ -547,6 +548,11 @@ describe("getActivityText", () => {
   it("returns currentEventKind when toolName is null", () => {
     expect(getActivityText(null, "ThinkingStart")).toBe("ThinkingStart");
   });
+
+  it("filters noisy event kinds", () => {
+    expect(getActivityText(null, "CodexTokenCount", new Set(["CodexTokenCount"]))).toBeNull();
+    expect(getActivityText("Bash", "CodexTokenCount", new Set(["CodexTokenCount"]))).toBe("Bash");
+  });
 });
 
 describe("eventKindColor", () => {
@@ -554,7 +560,25 @@ describe("eventKindColor", () => {
     expect(eventKindColor("ToolCallStart")).toBe(EVENT_KIND_COLORS["ToolCallStart"]);
   });
 
+  it("returns mapped colors for Codex event kinds", () => {
+    expect(eventKindColor("CodexTaskStarted")).toBe(EVENT_KIND_COLORS["CodexTaskStarted"]);
+    expect(eventKindColor("CodexTaskComplete")).toBe(EVENT_KIND_COLORS["CodexTaskComplete"]);
+    expect(eventKindColor("CodexTokenCount")).toBe(EVENT_KIND_COLORS["CodexTokenCount"]);
+    expect(eventKindColor("CodexToolCallComplete")).toBe(EVENT_KIND_COLORS["CodexToolCallComplete"]);
+    expect(eventKindColor("CodexTurnContext")).toBe(EVENT_KIND_COLORS["CodexTurnContext"]);
+  });
+
   it("returns muted fallback for unknown event kind", () => {
     expect(eventKindColor("SomeUnknownEvent")).toBe("var(--text-muted)");
+  });
+});
+
+describe("getActivityColor", () => {
+  it("uses event colors before tool colors", () => {
+    expect(getActivityColor("Bash", "ToolCallStart")).toBe(EVENT_KIND_COLORS["ToolCallStart"]);
+  });
+
+  it("uses tool colors when the event is noisy", () => {
+    expect(getActivityColor("Bash", "CodexTokenCount", new Set(["CodexTokenCount"]))).toBe(TOOL_COLORS.Bash);
   });
 });
