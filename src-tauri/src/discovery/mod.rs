@@ -129,16 +129,31 @@ pub(crate) fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<
         .trim_start_matches('\r')
         .trim_start_matches('\n');
 
-    let extract = |key: &str| -> Option<String> {
-        meta.lines()
-            .map(|l| l.trim())
-            .find(|l| l.starts_with(&format!("{}:", key)))
-            .and_then(|l| l.splitn(2, ':').nth(1))
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-    };
+    (
+        yaml_frontmatter_field(meta, "name"),
+        yaml_frontmatter_field(meta, "description"),
+        body,
+    )
+}
 
-    (extract("name"), extract("description"), body)
+fn yaml_frontmatter_field(meta: &str, key: &str) -> Option<String> {
+    let value = serde_yml::from_str::<serde_yml::Value>(meta).ok()?;
+    let mapping = value.as_mapping()?;
+    let key = serde_yml::Value::String(key.to_string());
+    let value = mapping.get(&key)?;
+    let text = yaml_scalar_to_string(value)?;
+    (!text.is_empty()).then_some(text)
+}
+
+fn yaml_scalar_to_string(value: &serde_yml::Value) -> Option<String> {
+    let text = match value {
+        serde_yml::Value::String(s) => s.trim().to_string(),
+        serde_yml::Value::Number(n) => n.to_string(),
+        serde_yml::Value::Bool(b) => b.to_string(),
+        serde_yml::Value::Tagged(tagged) => return yaml_scalar_to_string(&tagged.value),
+        _ => return None,
+    };
+    Some(text)
 }
 
 /// Validate a directory name is usable as a slash-command identifier.
@@ -172,7 +187,24 @@ mod tests {
         let input = "---\ndescription: \"Only desc\"\n---\nbody\n";
         let (name, desc, _body) = parse_skill_frontmatter(input);
         assert!(name.is_none());
-        assert_eq!(desc.as_deref(), Some("\"Only desc\""));
+        assert_eq!(desc.as_deref(), Some("Only desc"));
+    }
+
+    #[test]
+    fn frontmatter_yaml_comments_and_block_scalars() {
+        let input = "---\nname: my-skill # inline comment\ndescription: >\n  First line\n  second line\n---\nbody\n";
+        let (name, desc, body) = parse_skill_frontmatter(input);
+        assert_eq!(name.as_deref(), Some("my-skill"));
+        assert_eq!(desc.as_deref(), Some("First line second line"));
+        assert_eq!(body, "body\n");
+    }
+
+    #[test]
+    fn frontmatter_yaml_tags() {
+        let input = "---\nname: !str tagged-skill\ndescription: true\n---\n";
+        let (name, desc, _body) = parse_skill_frontmatter(input);
+        assert_eq!(name.as_deref(), Some("tagged-skill"));
+        assert_eq!(desc.as_deref(), Some("true"));
     }
 
     #[test]

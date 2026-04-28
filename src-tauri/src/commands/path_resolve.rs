@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
 
 use ignore::WalkBuilder;
 use regex::Regex;
 
-const INDEX_TTL: Duration = Duration::from_secs(60);
 const MAX_INDEXED_FILES: usize = 100_000;
 const MAX_WALK_DEPTH: usize = 12;
-const MAX_CACHED_INDICES: usize = 16;
 
 // Dirs skipped even if not gitignored. Hidden dirs (.git, .next, .cache)
 // are already filtered by WalkBuilder::hidden(true), so keep this list to
@@ -23,16 +20,12 @@ const EXTRA_IGNORED_DIRS: &[&str] = &[
     "__pycache__",
 ];
 
-static INDEX_CACHE: LazyLock<Mutex<HashMap<String, Arc<CwdIndex>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-
 static LINE_SUFFIX_RE: OnceLock<Regex> = OnceLock::new();
 fn line_suffix_re() -> &'static Regex {
     LINE_SUFFIX_RE.get_or_init(|| Regex::new(r"^(.+?)(:\d+(?::\d+)?)$").unwrap())
 }
 
 struct CwdIndex {
-    built_at: Instant,
     by_basename: HashMap<String, Vec<PathBuf>>, // lowercase basename -> paths
     files: Vec<PathBuf>,
 }
@@ -84,7 +77,7 @@ fn build_index(cwd: &Path) -> CwdIndex {
         .hidden(true)
         .git_ignore(true)
         .git_exclude(true)
-        .git_global(false)
+        .git_global(true)
         .require_git(false)
         .max_depth(Some(MAX_WALK_DEPTH))
         .filter_entry(|dent| {
@@ -121,43 +114,7 @@ fn build_index(cwd: &Path) -> CwdIndex {
         );
     }
 
-    CwdIndex {
-        built_at: Instant::now(),
-        by_basename,
-        files,
-    }
-}
-
-fn get_or_build_index(cwd: &str) -> Arc<CwdIndex> {
-    {
-        let cache = INDEX_CACHE.lock().unwrap();
-        if let Some(existing) = cache.get(cwd) {
-            if existing.built_at.elapsed() < INDEX_TTL {
-                return Arc::clone(existing);
-            }
-        }
-    }
-    let fresh = Arc::new(build_index(Path::new(cwd)));
-    let mut cache = INDEX_CACHE.lock().unwrap();
-    cache.insert(cwd.to_string(), Arc::clone(&fresh));
-    // Bound memory: drop expired entries, then if still over the cap, evict
-    // the entry with the oldest built_at. A long-running app navigating many
-    // worktrees would otherwise accumulate one ~100k-entry index per unique cwd.
-    if cache.len() > MAX_CACHED_INDICES {
-        cache.retain(|_, v| v.built_at.elapsed() < INDEX_TTL);
-    }
-    while cache.len() > MAX_CACHED_INDICES {
-        if let Some(oldest) = cache
-            .iter()
-            .min_by_key(|(_, v)| v.built_at)
-            .map(|(k, _)| k.clone())
-        {
-            cache.remove(&oldest);
-        } else {
-            break;
-        }
-    }
-    fresh
+    CwdIndex { by_basename, files }
 }
 
 fn lookup_in_index(candidate: &str, index: &CwdIndex) -> Option<PathBuf> {
@@ -189,7 +146,7 @@ fn resolve_candidate(
     candidate: &str,
     cwd: Option<&str>,
     home: Option<&Path>,
-    index: &mut Option<Arc<CwdIndex>>,
+    index: &mut Option<CwdIndex>,
 ) -> ResolvedPath {
     let no_suffix = split_suffix(candidate);
     let none = || ResolvedPath {
@@ -231,7 +188,7 @@ fn resolve_candidate(
         return none();
     }
     let Some(cwd_str) = cwd else { return none() };
-    let idx = index.get_or_insert_with(|| get_or_build_index(cwd_str));
+    let idx = index.get_or_insert_with(|| build_index(Path::new(cwd_str)));
     match lookup_in_index(&no_suffix, idx) {
         Some(hit) => {
             let is_dir = std::fs::metadata(&hit).map(|m| m.is_dir()).unwrap_or(false);
@@ -247,16 +204,17 @@ fn resolve_candidate(
 
 /// Resolve terminal-derived path tokens against a session cwd. For each
 /// candidate: try literal (~ expansion / absolute / cwd-joined) and, if
-/// that misses, search a TTL-cached file index rooted at cwd. Returns one
-/// entry per input candidate in input order; `absPath` is None when no
-/// unambiguous match is found.
-// [RT-03] resolve_paths: literal + TTL-cached subtree index (60s), WalkBuilder respects gitignore + extra ignored dirs
+/// that misses, search a per-call file index rooted at cwd. Strategy order:
+/// literal path first, then basename/suffix lookup within the cwd tree.
+/// Returns one entry per input candidate in input order; `absPath` is None
+/// when no unambiguous match is found.
+// [RT-03] resolve_paths: literal + per-call subtree index, WalkBuilder respects gitignore + global git excludes + extra ignored dirs
 #[tauri::command]
 pub async fn resolve_paths(cwd: Option<String>, candidates: Vec<String>) -> Vec<ResolvedPath> {
     tokio::task::spawn_blocking(move || {
         let home = dirs::home_dir();
         let normalized_cwd = cwd.as_deref().map(normalize_cwd);
-        let mut index: Option<Arc<CwdIndex>> = None;
+        let mut index: Option<CwdIndex> = None;
 
         candidates
             .iter()
@@ -287,7 +245,7 @@ mod tests {
     fn resolve_sync(cwd: Option<&str>, candidates: &[&str]) -> Vec<ResolvedPath> {
         let home = dirs::home_dir();
         let normalized = cwd.map(normalize_cwd);
-        let mut index: Option<Arc<CwdIndex>> = None;
+        let mut index: Option<CwdIndex> = None;
         candidates
             .iter()
             .map(|c| resolve_candidate(c, normalized.as_deref(), home.as_deref(), &mut index))
@@ -425,12 +383,10 @@ mod tests {
     }
 
     #[test]
-    fn index_built_once_per_batch() {
-        // Proxy check: two candidates that both miss literal resolution and hit
-        // the subtree lookup should reuse the same index. If a rebuild happened
-        // we'd see it via build_at timestamps, but we just confirm both resolve
-        // correctly — the `index: Option` guard in resolve_candidate prevents
-        // rebuilding.
+    fn index_reused_within_batch() {
+        // Two candidates that both miss literal resolution and hit the subtree
+        // lookup reuse the same per-call index through the `index: Option`
+        // passed across resolve_candidate calls.
         let tmp = tempdir().unwrap();
         let a = touch(tmp.path(), "nested/first.ts");
         let b = touch(tmp.path(), "deeper/still/second.ts");
@@ -443,30 +399,10 @@ mod tests {
     }
 
     #[test]
-    fn index_cache_bounded_by_max_cached_indices() {
-        // Push MAX_CACHED_INDICES + 8 unique cwd indices through the cache.
-        // Oldest entries must be evicted; final size must be <= MAX_CACHED_INDICES.
-        let base = tempdir().unwrap();
-        let entries_to_push = MAX_CACHED_INDICES + 8;
-        let mut cwds = Vec::with_capacity(entries_to_push);
-        for i in 0..entries_to_push {
-            let sub = base.path().join(format!("cwd_{i}"));
-            std::fs::create_dir_all(&sub).unwrap();
-            let cwd = sub.to_string_lossy().into_owned();
-            let _ = get_or_build_index(&cwd);
-            cwds.push(cwd);
-        }
-        let size = INDEX_CACHE.lock().unwrap().len();
-        assert!(
-            size <= MAX_CACHED_INDICES,
-            "cache grew to {size}, expected <= {MAX_CACHED_INDICES}"
-        );
-        // Drop our own keys so later tests share the bound without leftovers.
-        {
-            let mut cache = INDEX_CACHE.lock().unwrap();
-            for k in &cwds {
-                cache.remove(k);
-            }
-        }
+    fn missing_absolute_path_returns_none() {
+        let tmp = tempdir().unwrap();
+        let missing = tmp.path().join("missing.txt");
+        let out = resolve_sync(None, &[missing.to_str().unwrap()]);
+        assert!(out[0].abs_path.is_none());
     }
 }

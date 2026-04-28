@@ -46,8 +46,7 @@ pub fn reorder_tabs(order: Vec<String>, manager: State<'_, SessionManager>) -> R
 /// so this command lets the frontend persist its own authoritative data.
 #[tauri::command]
 pub fn persist_sessions_json(json: String) -> Result<(), String> {
-    let path = persistence::sessions_file_path();
-    std::fs::write(path, json).map_err(|e| format!("Failed to write sessions: {}", e))
+    persistence::save_sessions_json(&json)
 }
 
 #[tauri::command]

@@ -57,7 +57,12 @@ fn parse_porcelain(stdout: &[u8], working_dir: &str) -> Vec<GitChange> {
         }
         let xy = &bytes[i..i + 2];
         if bytes[i + 2] != b' ' {
-            break;
+            log::debug!("git status parser skipped malformed byte at offset {i}");
+            match bytes[i..].iter().position(|&b| b == 0) {
+                Some(offset) => i += offset + 1,
+                None => break,
+            }
+            continue;
         }
         let mut j = i + 3;
         while j < bytes.len() && bytes[j] != 0 {
@@ -98,8 +103,17 @@ fn derive_status(xy: &[u8]) -> String {
         (b'A', _) | (_, b'A') => 'A',
         (b'R', _) | (_, b'R') => 'R',
         (b'C', _) | (_, b'C') => 'C',
+        (b'U', _) | (_, b'U') => 'U',
+        (b'T', _) | (_, b'T') => 'T',
         (b'M', _) | (_, b'M') => 'M',
-        _ => 'M',
+        _ => {
+            log::debug!(
+                "git status parser mapped unknown XY code {:?}{:?} to modified",
+                x as char,
+                y as char
+            );
+            'M'
+        }
     };
     ch.to_string()
 }
@@ -135,6 +149,23 @@ mod tests {
     fn empty_input_returns_empty() {
         assert!(parse_porcelain(b"", "/proj").is_empty());
     }
+
+    #[test]
+    fn parses_conflict_and_typechange_statuses() {
+        let stdout = b"UU conflicted.rs\0 T typechanged.rs\0";
+        let changes = parse_porcelain(stdout, "/proj");
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].status, "U");
+        assert_eq!(changes[1].status, "T");
+    }
+
+    #[test]
+    fn malformed_entry_does_not_abort_parse() {
+        let stdout = b"bad\0 M good.rs\0";
+        let changes = parse_porcelain(stdout, "/proj");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "/proj/good.rs");
+    }
 }
 
 // [RC-19] git worktree remove --force (always forced — dialog is the confirmation)
@@ -142,6 +173,7 @@ mod tests {
 #[tauri::command]
 pub async fn prune_worktree(worktree_path: String, project_root: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
+        validate_worktree_member(&project_root, &worktree_path)?;
         let args = vec!["worktree", "remove", "--force", &worktree_path];
 
         let mut cmd = std::process::Command::new("git");
@@ -162,4 +194,36 @@ pub async fn prune_worktree(worktree_path: String, project_root: String) -> Resu
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn validate_worktree_member(project_root: &str, worktree_path: &str) -> Result<(), String> {
+    let target = std::fs::canonicalize(worktree_path)
+        .map_err(|e| format!("canonicalize worktree path: {e}"))?;
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["worktree", "list", "--porcelain"])
+        .current_dir(project_root);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to list worktrees: {e}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let Some(path) = line.strip_prefix("worktree ") else {
+            continue;
+        };
+        if std::fs::canonicalize(path)
+            .map(|candidate| candidate == target)
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+    }
+    Err("refusing to prune path that is not listed as a git worktree".into())
 }

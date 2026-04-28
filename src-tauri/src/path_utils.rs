@@ -64,6 +64,14 @@ fn decode_project_dir_heuristic(encoded: &str) -> String {
         return prefix;
     }
 
+    let mut direct = PathBuf::from(&prefix);
+    for part in parts.iter().copied().filter(|part| !part.is_empty()) {
+        direct.push(part);
+    }
+    if direct.exists() {
+        return direct.to_string_lossy().to_string();
+    }
+
     // Greedy filesystem walk: at each position, try joining multiple parts
     // with non-slash separators (period, hyphen, space) and check if the
     // resulting directory exists. Uses longest match first to handle names
@@ -152,6 +160,19 @@ mod tests {
         // bogus path. Detectors then fall through to env / fallback candidates.
         let stdout = "C:\\does-not-exist\\codex\nC:\\also-not\\codex.cmd\n";
         assert!(pick_runnable_from_which_output(stdout).is_none());
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn decode_project_dir_fast_paths_simple_existing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let leaf = dir.path().join("a").join("b").join("c");
+        std::fs::create_dir_all(&leaf).unwrap();
+        let encoded = leaf.to_string_lossy().replace(['/', '\\'], "-");
+        assert_eq!(
+            decode_project_dir_heuristic(&encoded),
+            leaf.to_string_lossy()
+        );
     }
 
     #[test]

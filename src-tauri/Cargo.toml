@@ -46,9 +46,11 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yml = "0.0.12"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time", "macros", "io-util", "process"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
 # Cross-platform filesystem-event watcher used to tail Codex's rollout JSONL.
 notify = "6"
 dirs = "6"

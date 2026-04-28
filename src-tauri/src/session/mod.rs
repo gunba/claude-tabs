@@ -2,28 +2,30 @@ pub mod persistence;
 pub mod types;
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use types::{Session, SessionSnapshot, SessionState};
 
+#[derive(Default)]
+struct SessionRegistry {
+    sessions: HashMap<String, Session>,
+    tab_order: Vec<String>,
+    active_tab: Option<String>,
+}
+
 pub struct SessionManager {
-    sessions: Mutex<HashMap<String, Session>>,
-    tab_order: Mutex<Vec<String>>,
-    active_tab: Mutex<Option<String>>,
+    state: RwLock<SessionRegistry>,
 }
 
 impl SessionManager {
     pub fn new() -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
-            tab_order: Mutex::new(Vec::new()),
-            active_tab: Mutex::new(None),
+            state: RwLock::new(SessionRegistry::default()),
         }
     }
 
     pub fn restore_from_snapshots(&self, snapshots: Vec<SessionSnapshot>) {
-        let mut sessions = self.sessions.lock().unwrap();
-        let mut order = self.tab_order.lock().unwrap();
+        let mut state = self.state.write().unwrap();
 
         for snap in snapshots {
             let session = Session {
@@ -35,54 +37,54 @@ impl SessionManager {
                 created_at: snap.created_at,
                 last_active: snap.last_active,
             };
-            order.push(snap.id.clone());
-            sessions.insert(snap.id, session);
+            state.tab_order.push(snap.id.clone());
+            state.sessions.insert(snap.id, session);
         }
     }
 
     pub fn add_session(&self, session: Session) -> String {
         let id = session.id.clone();
-        let mut sessions = self.sessions.lock().unwrap();
-        let mut order = self.tab_order.lock().unwrap();
-        let mut active = self.active_tab.lock().unwrap();
+        let mut state = self.state.write().unwrap();
 
-        sessions.insert(id.clone(), session);
-        order.push(id.clone());
-        *active = Some(id.clone());
+        state.sessions.insert(id.clone(), session);
+        state.tab_order.push(id.clone());
+        state.active_tab = Some(id.clone());
         id
     }
 
     pub fn remove_session(&self, id: &str) -> Option<Session> {
-        let mut sessions = self.sessions.lock().unwrap();
-        let mut order = self.tab_order.lock().unwrap();
-        let mut active = self.active_tab.lock().unwrap();
+        let mut state = self.state.write().unwrap();
 
-        order.retain(|x| x != id);
+        state.tab_order.retain(|x| x != id);
 
-        if active.as_deref() == Some(id) {
-            *active = order.last().cloned();
+        if state.active_tab.as_deref() == Some(id) {
+            state.active_tab = state.tab_order.last().cloned();
         }
 
-        sessions.remove(id)
+        state.sessions.remove(id)
     }
 
     pub fn set_active(&self, id: &str) {
-        let sessions = self.sessions.lock().unwrap();
-        if sessions.contains_key(id) {
-            *self.active_tab.lock().unwrap() = Some(id.to_string());
+        let mut state = self.state.write().unwrap();
+        if state.sessions.contains_key(id) {
+            state.active_tab = Some(id.to_string());
         }
     }
 
     pub fn reorder_tabs(&self, new_order: Vec<String>) {
-        *self.tab_order.lock().unwrap() = new_order;
+        let mut state = self.state.write().unwrap();
+        state.tab_order = new_order
+            .into_iter()
+            .filter(|id| state.sessions.contains_key(id))
+            .collect();
     }
 
     pub fn list_sessions(&self) -> Vec<Session> {
-        let sessions = self.sessions.lock().unwrap();
-        let order = self.tab_order.lock().unwrap();
-        order
+        let state = self.state.read().unwrap();
+        state
+            .tab_order
             .iter()
-            .filter_map(|id| sessions.get(id).cloned())
+            .filter_map(|id| state.sessions.get(id).cloned())
             .collect()
     }
 }

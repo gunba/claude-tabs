@@ -85,6 +85,7 @@ fn setup_job_object() {
     unsafe {
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
         if job.is_null() {
+            log::error!("Failed to create job object");
             eprintln!("Failed to create job object");
             return;
         }
@@ -99,6 +100,7 @@ fn setup_job_object() {
             mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
         );
         if ok == 0 {
+            log::error!("Failed to set job object limits");
             eprintln!("Failed to set job object limits");
             CloseHandle(job);
             return;
@@ -107,6 +109,7 @@ fn setup_job_object() {
         let current = GetCurrentProcess();
         let ok = AssignProcessToJobObject(job, current);
         if ok == 0 {
+            log::error!("Failed to assign process to job object");
             eprintln!("Failed to assign process to job object");
             CloseHandle(job);
             return;
@@ -126,6 +129,7 @@ fn setup_job_object() {
 fn setup_child_reaper() {
     let ret = unsafe { libc::prctl(36, 1, 0, 0, 0) }; // PR_SET_CHILD_SUBREAPER
     if ret != 0 {
+        log::error!("Failed to set child subreaper (prctl returned {})", ret);
         eprintln!("Failed to set child subreaper (prctl returned {})", ret);
     }
 }
@@ -365,33 +369,38 @@ pub fn run() {
         .expect("error while building Code Tabs")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                record_backend_event(
-                    &app_handle,
-                    "LOG",
-                    "app",
-                    None,
-                    "app.exit",
-                    "Application exit requested",
-                    serde_json::json!({}),
-                );
-                // Flush traffic logs and stop API proxy.
-                let proxy_state = app_handle.state::<ProxyState>();
-                proxy_state.stop_and_flush();
-                observability::shutdown_observability();
-                // Stop all TCP tap server threads
-                let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
-                let tap_ports = tap_state
-                    .lock()
-                    .map(|mut s| s.stop_all())
-                    .unwrap_or_default();
-                for port in tap_ports {
-                    tap_server::wake_tap_listener(port);
-                }
-                // [RC-11] Kill all active PTY process trees to prevent orphaned CLI processes
-                let active = app_handle.state::<ActivePids>();
-                let pids: Vec<u32> = active.drain();
-                for pid in pids {
-                    let _ = commands::kill_process_tree_sync(pid);
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    record_backend_event(
+                        &app_handle,
+                        "LOG",
+                        "app",
+                        None,
+                        "app.exit",
+                        "Application exit requested",
+                        serde_json::json!({}),
+                    );
+                    // Flush traffic logs and stop API proxy.
+                    let proxy_state = app_handle.state::<ProxyState>();
+                    proxy_state.stop_and_flush();
+                    observability::shutdown_observability();
+                    // Stop all TCP tap server threads
+                    let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
+                    let tap_ports = tap_state
+                        .lock()
+                        .map(|mut s| s.stop_all())
+                        .unwrap_or_default();
+                    for port in tap_ports {
+                        tap_server::wake_tap_listener(port);
+                    }
+                    // [RC-11] Kill all active PTY process trees to prevent orphaned CLI processes
+                    let active = app_handle.state::<ActivePids>();
+                    let pids: Vec<u32> = active.drain();
+                    for pid in pids {
+                        let _ = commands::kill_process_tree_sync(pid);
+                    }
+                }));
+                if result.is_err() {
+                    log::error!("panic while handling app exit cleanup");
                 }
             }
         });

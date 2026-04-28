@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use clap::{Parser, Subcommand, ValueEnum};
 use code_tabs_lib::discovery::{
     discover_builtin_commands_sync, discover_env_vars_sync, discover_plugin_commands_sync,
     discover_settings_schema_sync,
@@ -36,7 +37,7 @@ const SETTINGS_URL: &str = "https://code.claude.com/docs/en/settings";
 const COMMANDS_URL: &str = "https://code.claude.com/docs/en/commands";
 const ENV_VARS_URL: &str = "https://code.claude.com/docs/en/env-vars";
 
-// ---------------- argv parsing (minimal, no clap dep) ----------------
+// ---------------- argv parsing ----------------
 
 struct Args {
     cli_path: Option<String>,
@@ -45,9 +46,10 @@ struct Args {
     docs_dir: Option<PathBuf>,
     docs_url_override: Option<String>,
     out_dir: Option<PathBuf>,
+    strict_extras: bool,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, ValueEnum)]
 enum What {
     Settings,
     Commands,
@@ -55,118 +57,111 @@ enum What {
     All,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, ValueEnum)]
 enum Format {
     Json,
     Pretty,
 }
 
-fn parse_args(raw: &[String]) -> Result<Args, String> {
-    let mut args = Args {
-        cli_path: None,
-        what: What::All,
-        format: Format::Json,
-        docs_dir: None,
-        docs_url_override: None,
-        out_dir: None,
-    };
-    let mut i = 0;
-    while i < raw.len() {
-        match raw[i].as_str() {
-            "--cli-path" => {
-                args.cli_path = Some(raw.get(i + 1).cloned().ok_or("--cli-path needs a value")?);
-                i += 2;
-            }
-            "--what" => {
-                let v = raw.get(i + 1).ok_or("--what needs a value")?.as_str();
-                args.what = match v {
-                    "settings" => What::Settings,
-                    "commands" => What::Commands,
-                    "env-vars" => What::EnvVars,
-                    "all" => What::All,
-                    other => return Err(format!("--what: unknown value {:?}", other)),
-                };
-                i += 2;
-            }
-            "--format" => {
-                let v = raw.get(i + 1).ok_or("--format needs a value")?.as_str();
-                args.format = match v {
-                    "json" => Format::Json,
-                    "pretty" => Format::Pretty,
-                    other => return Err(format!("--format: unknown value {:?}", other)),
-                };
-                i += 2;
-            }
-            "--docs-dir" => {
-                args.docs_dir = Some(PathBuf::from(
-                    raw.get(i + 1).ok_or("--docs-dir needs a value")?,
-                ));
-                i += 2;
-            }
-            "--docs-url" => {
-                args.docs_url_override =
-                    Some(raw.get(i + 1).cloned().ok_or("--docs-url needs a value")?);
-                i += 2;
-            }
-            "--out" => {
-                args.out_dir = Some(PathBuf::from(raw.get(i + 1).ok_or("--out needs a value")?));
-                i += 2;
-            }
-            other => return Err(format!("unknown argument: {}", other)),
+#[derive(Parser)]
+#[command(
+    name = "discover_audit",
+    about = "Test Claude discovery against docs.claude.com fixtures",
+    after_long_help = "Exit codes:\n  0 = success\n  1 = audit found missing items, or extras with --strict-extras\n  2 = usage / invocation error\n  3 = runtime error (discovery / network / parse)"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Print what the discovery pipeline finds.
+    Dump(CommonArgs),
+    /// Diff discovery output against cached docs pages.
+    Audit(AuditArgs),
+    /// Download docs.claude.com pages for offline audit.
+    FetchDocs(FetchDocsArgs),
+}
+
+#[derive(clap::Args)]
+struct CommonArgs {
+    #[arg(long)]
+    cli_path: Option<String>,
+    #[arg(long, value_enum, default_value = "all")]
+    what: What,
+    #[arg(long, value_enum, default_value = "json")]
+    format: Format,
+}
+
+#[derive(clap::Args)]
+struct AuditArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    #[arg(long)]
+    docs_dir: Option<PathBuf>,
+    #[arg(long)]
+    docs_url: Option<String>,
+    #[arg(long)]
+    strict_extras: bool,
+}
+
+#[derive(clap::Args)]
+struct FetchDocsArgs {
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+impl From<CommonArgs> for Args {
+    fn from(common: CommonArgs) -> Self {
+        Self {
+            cli_path: common.cli_path,
+            what: common.what,
+            format: common.format,
+            docs_dir: None,
+            docs_url_override: None,
+            out_dir: None,
+            strict_extras: false,
         }
     }
-    Ok(args)
+}
+
+impl From<AuditArgs> for Args {
+    fn from(args: AuditArgs) -> Self {
+        Self {
+            cli_path: args.common.cli_path,
+            what: args.common.what,
+            format: args.common.format,
+            docs_dir: args.docs_dir,
+            docs_url_override: args.docs_url,
+            out_dir: None,
+            strict_extras: args.strict_extras,
+        }
+    }
+}
+
+impl From<FetchDocsArgs> for Args {
+    fn from(args: FetchDocsArgs) -> Self {
+        Self {
+            cli_path: None,
+            what: What::All,
+            format: Format::Json,
+            docs_dir: None,
+            docs_url_override: None,
+            out_dir: args.out,
+            strict_extras: false,
+        }
+    }
 }
 
 // ---------------- main dispatcher ----------------
 
 fn main() -> ExitCode {
-    let argv: Vec<String> = std::env::args().collect();
-    if argv.len() < 2 {
-        print_usage();
-        return ExitCode::from(2);
+    match Cli::parse().command {
+        Command::Dump(args) => cmd_dump(&args.into()),
+        Command::Audit(args) => cmd_audit(&args.into()),
+        Command::FetchDocs(args) => cmd_fetch_docs(&args.into()),
     }
-    let subcommand = argv[1].clone();
-    let rest = &argv[2..];
-    let args = match parse_args(rest) {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            print_usage();
-            return ExitCode::from(2);
-        }
-    };
-    match subcommand.as_str() {
-        "dump" => cmd_dump(&args),
-        "audit" => cmd_audit(&args),
-        "fetch-docs" => cmd_fetch_docs(&args),
-        "-h" | "--help" | "help" => {
-            print_usage();
-            ExitCode::SUCCESS
-        }
-        other => {
-            eprintln!("unknown subcommand: {}", other);
-            print_usage();
-            ExitCode::from(2)
-        }
-    }
-}
-
-fn print_usage() {
-    eprintln!(
-        "discover_audit — test discovery against docs.claude.com\n\
-         \n\
-         USAGE:\n    \
-         discover_audit <subcommand> [--cli-path PATH] [--what WHAT] [--format FORMAT] ...\n\
-         \n\
-         SUBCOMMANDS:\n    \
-         dump       Print what the discovery pipeline finds (JSON).\n    \
-         audit      Diff discovery output against cached docs pages; exit 1 if anything is missing.\n    \
-         fetch-docs Download docs.claude.com pages for offline audit; refresh when docs change.\n\
-         \n\
-         WHAT    = settings | commands | env-vars | all     (default: all)\n\
-         FORMAT  = json | pretty                            (default: json)"
-    );
 }
 
 // ---------------- subcommands ----------------
@@ -217,7 +212,7 @@ fn cmd_audit(args: &Args) -> ExitCode {
         Format::Pretty => report.print_pretty(),
     }
 
-    if report.total_missing() > 0 {
+    if report.total_missing() > 0 || (args.strict_extras && report.total_extra() > 0) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
@@ -589,6 +584,10 @@ impl AuditReport {
         self.settings_missing.len() + self.commands_missing.len() + self.env_vars_missing.len()
     }
 
+    fn total_extra(&self) -> usize {
+        self.settings_extra.len() + self.commands_extra.len() + self.env_vars_extra.len()
+    }
+
     fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "settings": {
@@ -607,6 +606,7 @@ impl AuditReport {
                 "extra": self.env_vars_extra,
             },
             "totalMissing": self.total_missing(),
+            "totalExtra": self.total_extra(),
         })
     }
 
@@ -649,7 +649,11 @@ impl AuditReport {
             &self.env_vars_missing,
             &self.env_vars_extra,
         );
-        println!("\ntotal missing: {}", self.total_missing());
+        println!(
+            "\ntotal missing: {}, total extra: {}",
+            self.total_missing(),
+            self.total_extra()
+        );
     }
 }
 

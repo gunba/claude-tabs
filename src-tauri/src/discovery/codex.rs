@@ -144,28 +144,29 @@ fn mine_schema_from_binary(native_binary_path: &Path) -> Result<Value, BinaryMin
     let bytes = read_binary_capped(native_binary_path)?;
     let mut best: Option<(usize, Value)> = None;
 
+    let mut probe_hits = 0usize;
     for hit in memchr::memmem::find_iter(&bytes, SCHEMA_PROBE) {
+        probe_hits += 1;
         // The opening `{` is within ~16 bytes of the marker since `"$schema"`
         // is the first key. 256 is a safety margin (allows for whitespace
-        // padding from `serde_json::to_string_pretty`).
+        // padding from `serde_json::to_string_pretty`). If Codex starts
+        // embedding schemas with a long prefix before "$schema", this miner
+        // should grow the window or switch to a forward JSON object scanner.
         let lookback = hit.saturating_sub(256);
         for try_start in (lookback..hit).rev() {
             if bytes[try_start] != b'{' {
                 continue;
             }
             // Streaming parse — stops cleanly at the first complete value.
-            let mut stream = serde_json::Deserializer::from_slice(&bytes[try_start..])
-                .into_iter::<Value>();
+            let mut stream =
+                serde_json::Deserializer::from_slice(&bytes[try_start..]).into_iter::<Value>();
             let parsed = match stream.next() {
                 Some(Ok(v)) => v,
                 _ => continue, // not a valid JSON object here, walk back further
             };
 
             // Verify it's the ConfigToml schema, not a sub-schema.
-            let Some(props) = parsed
-                .get("properties")
-                .and_then(|p| p.as_object())
-            else {
+            let Some(props) = parsed.get("properties").and_then(|p| p.as_object()) else {
                 continue;
             };
             let has_signature = CONFIG_TOML_SIGNATURE
@@ -185,7 +186,12 @@ fn mine_schema_from_binary(native_binary_path: &Path) -> Result<Value, BinaryMin
         }
     }
 
-    best.map(|(_, v)| v).ok_or(BinaryMineError::NoMatches)
+    best.map(|(_, v)| v).ok_or_else(|| {
+        log::debug!(
+            "Codex settings schema binary mine found no ConfigToml matches after {probe_hits} probe hit(s)"
+        );
+        BinaryMineError::NoMatches
+    })
 }
 
 // [CY-02] discover_codex_env_vars_sync: mine_codex_env_var_names walks raw bytes (no UTF-8 decode of ~196 MiB binary) using memchr on b"CODEX_"; merge with codex_env_var_catalog (~45 curated entries with categories/descriptions); is_noise_env_var filters Codex internals (test/dev overrides). Sort documented-first then category, then name.
@@ -235,7 +241,7 @@ pub fn discover_codex_env_vars_sync(
 }
 
 /// Walk the binary as raw bytes and pull out ASCII identifiers matching
-/// `CODEX_[A-Z][A-Z0-9_]{2,40}`. Doesn't depend on the `regex` crate
+/// `CODEX_[A-Z][A-Z0-9_]{2,80}`. Doesn't depend on the `regex` crate
 /// because the pattern is dead simple and we don't want to allocate a
 /// 196 MiB UTF-8 string just to run a regex on it.
 fn mine_codex_env_var_names(bytes: &[u8]) -> Vec<String> {
@@ -259,10 +265,10 @@ fn mine_codex_env_var_names(bytes: &[u8]) -> Vec<String> {
         if !bytes[after].is_ascii_uppercase() {
             continue;
         }
-        // Walk forward collecting [A-Z0-9_], cap at 40 bytes after the prefix
+        // Walk forward collecting [A-Z0-9_], cap at 80 bytes after the prefix
         // to prevent run-on into unrelated interned strings.
         let mut end = after + 1;
-        let cap = (after + 40).min(bytes.len());
+        let cap = (after + 80).min(bytes.len());
         while end < cap {
             let b = bytes[end];
             if b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_' {
@@ -446,9 +452,8 @@ mod tests {
 
     #[test]
     fn falls_back_to_bundled_when_binary_missing() {
-        let result = discover_codex_settings_schema_sync(Path::new(
-            "/nonexistent/codex/binary/path/codex",
-        ));
+        let result =
+            discover_codex_settings_schema_sync(Path::new("/nonexistent/codex/binary/path/codex"));
         assert_eq!(result.source, "bundled");
         assert!(result.schema.get("properties").is_some());
     }
@@ -463,6 +468,14 @@ mod tests {
         assert!(mined.contains(&"CODEX_SANDBOX".to_string()));
         assert!(mined.contains(&"CODEX_OK_THING_1".to_string()));
         assert!(!mined.iter().any(|n| n.contains("XCODEX")));
+    }
+
+    #[test]
+    fn mines_long_codex_env_var_names() {
+        let name = "CODEX_NETWORK_ALLOW_LOCAL_BINDING_FOR_OFFLINE_WORKFLOW";
+        let bytes = format!("\0{name}\0");
+        let mined = mine_codex_env_var_names(bytes.as_bytes());
+        assert!(mined.contains(&name.to_string()));
     }
 
     #[test]
@@ -481,13 +494,16 @@ mod tests {
         assert!(home.description.contains("home directory"));
 
         // Mined-only entry should be present, marked undocumented.
-        let future = merged.iter().find(|v| v.name == "CODEX_FUTURE_VAR").unwrap();
+        let future = merged
+            .iter()
+            .find(|v| v.name == "CODEX_FUTURE_VAR")
+            .unwrap();
         assert!(!future.documented);
 
         // Sort order: documented first.
-        let first_undoc = names.iter().position(|n| {
-            merged.iter().any(|v| v.name == *n && !v.documented)
-        });
+        let first_undoc = names
+            .iter()
+            .position(|n| merged.iter().any(|v| v.name == *n && !v.documented));
         let last_doc = names
             .iter()
             .rposition(|n| merged.iter().any(|v| v.name == *n && v.documented));
