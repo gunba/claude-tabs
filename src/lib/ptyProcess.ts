@@ -55,6 +55,21 @@ function escapeDataPreview(data: string): string {
     .slice(0, 240);
 }
 
+function formatPtyError(err: unknown): string {
+  if (typeof err === "object" && err !== null && "kind" in err) {
+    const value = err as { kind?: unknown; message?: unknown; pid?: unknown };
+    const kind = typeof value.kind === "string" ? value.kind : "ptyError";
+    if (typeof value.message === "string" && value.message.length > 0) {
+      return `${kind}: ${value.message}`;
+    }
+    if (typeof value.pid === "number") {
+      return `${kind}: ${value.pid}`;
+    }
+    return kind;
+  }
+  return String(err);
+}
+
 // ── PTY Spawn ────────────────────────────────────────────────────
 
 export async function spawnPty(
@@ -132,9 +147,10 @@ export async function spawnPty(
         const bytes = new Uint8Array(raw);
         dataCallback?.(bytes);
       } catch (err) {
-        dlog("pty", sessionId, `pty_read ended pid=${pid}: ${err}`, "DEBUG", {
+        const error = formatPtyError(err);
+        dlog("pty", sessionId, `pty_read ended pid=${pid}: ${error}`, "DEBUG", {
           event: "pty.read_end",
-          data: { pid, error: String(err) },
+          data: { pid, error },
         });
         // EOF or error — session ended
         break;

@@ -5,7 +5,7 @@
 /// even on spawn failure paths.
 use std::io::{self, Read, Write};
 use std::ptr;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, BOOL, FALSE, HANDLE, INVALID_HANDLE_VALUE,
@@ -158,9 +158,9 @@ impl ConPtyHandle {
 
 /// Result of a successful ConPTY spawn.
 pub struct SpawnResult {
-    pub handle: ConPtyHandle,
+    pub backend: ConPtyHandle,
     pub writer: PipeWriter,
-    pub output_rx: mpsc::Receiver<Vec<u8>>,
+    pub output_rx: mpsc::Receiver<Result<Vec<u8>, String>>,
     pub process_id: u32,
 }
 
@@ -350,11 +350,11 @@ pub fn spawn(
     let writer = PipeWriter(unsafe { std::fs::File::from_raw_handle(pty_input_write.0 as *mut _) });
     std::mem::forget(pty_input_write); // File now owns the handle
 
-    // [PT-15] Background reader thread: OS thread reads ConPTY pipe (8 KiB) into sync_channel(64)
+    // [PT-15] Background reader thread: OS thread reads ConPTY pipe (8 KiB) into a bounded async channel.
     let reader = PipeReader(unsafe { std::fs::File::from_raw_handle(pty_output_read.0 as *mut _) });
     std::mem::forget(pty_output_read); // File now owns the handle
 
-    let (output_tx, output_rx) = mpsc::sync_channel::<Vec<u8>>(64);
+    let (output_tx, output_rx) = mpsc::channel::<Result<Vec<u8>, String>>(64);
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = vec![0u8; 8192];
@@ -362,17 +362,20 @@ pub fn spawn(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    if output_tx.send(buf[..n].to_vec()).is_err() {
+                    if output_tx.blocking_send(Ok(buf[..n].to_vec())).is_err() {
                         break;
                     }
                 }
-                Err(_) => break,
+                Err(err) => {
+                    let _ = output_tx.blocking_send(Err(err.to_string()));
+                    break;
+                }
             }
         }
     });
 
     Ok(SpawnResult {
-        handle,
+        backend: handle,
         writer,
         output_rx,
         process_id,

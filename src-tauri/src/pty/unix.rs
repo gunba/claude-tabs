@@ -8,13 +8,13 @@ use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 
 /// Writer that wraps a dup'd master fd for PTY stdin.
 /// Does NOT own the fd -- UnixPty owns the master fd.
 pub struct FdWriter(RawFd);
 
-// SAFETY: FdWriter is only accessed under mutex in Session.
+// SAFETY: FdWriter is only accessed under the session writer mutex.
 unsafe impl Send for FdWriter {}
 
 impl Write for FdWriter {
@@ -85,7 +85,7 @@ impl UnixPty {
     /// CLI) that inherited the session — ConPTY tears down its tree on the
     /// Windows side; this matches that semantic. ESRCH (whole group already
     /// gone) is treated as success since the goal — no live processes — is met.
-    pub fn kill(&mut self) -> Result<(), String> {
+    pub fn kill(&self) -> Result<(), String> {
         let pgid = self.pid as i32;
         let ret = unsafe { libc::kill(-pgid, libc::SIGKILL) };
         if ret < 0 {
@@ -98,9 +98,13 @@ impl UnixPty {
         Ok(())
     }
 
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
+        resize_fd(self.master_fd, cols, rows)
+    }
+
     // [PT-26] wait() uses stdlib ExitStatusExt: signal N -> 128+N; Mutex<Option<Child>> take() guards double-wait.
     /// Wait for the child to exit (blocking). Returns exit code.
-    pub fn wait(&mut self) -> Result<u32, String> {
+    pub fn wait(&self) -> Result<u32, String> {
         let mut slot = self.child.lock().unwrap();
         let mut child = slot
             .take()
@@ -158,13 +162,10 @@ fn openpty_pair(cols: u16, rows: u16) -> Result<(OwnedFd, OwnedFd), String> {
 
 /// Result of a successful PTY spawn.
 pub struct SpawnResult {
-    pub pty: UnixPty,
+    pub backend: UnixPty,
     pub writer: FdWriter,
-    pub output_rx: mpsc::Receiver<Vec<u8>>,
+    pub output_rx: mpsc::Receiver<Result<Vec<u8>, String>>,
     pub process_id: u32,
-    /// Duplicate of the master fd for lock-free ioctl (resize) paths.
-    /// UnixPty remains the sole owner that closes on Drop.
-    pub master_fd: RawFd,
 }
 
 /// Spawn a process attached to a new PTY via the standard stdlib
@@ -204,16 +205,11 @@ pub fn spawn(
     }
     let slave_stderr = unsafe { OwnedFd::from_raw_fd(slave_stderr_raw) };
 
-    // [PT-19] TERM/COLORTERM defaults injected before caller env so caller wins on conflict.
-    // [PT-23] Advertise as xterm-ghostty so Claude Code's TUI uses sync output.
     let mut cmd = Command::new(file);
     cmd.args(args);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
-    cmd.env("TERM", "xterm-ghostty");
-    cmd.env("TERM_PROGRAM", "ghostty");
-    cmd.env("COLORTERM", "truecolor");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -259,9 +255,9 @@ pub fn spawn(
     let master_fd = master.into_raw_fd();
     let writer = FdWriter(master_fd);
 
-    // [PT-15] [DF-02] Background reader thread: OS thread reads PTY fd (8 KiB) into sync_channel(64). Downstream pty_read drains the channel before responding (PT-27); xterm.js 6.0 handles DEC 2026 sync output on the frontend.
+    // [PT-15] [DF-02] Background reader thread: OS thread reads PTY fd (8 KiB) into a bounded async channel. Downstream pty_read drains the channel before responding (PT-27); xterm.js 6.0 handles DEC 2026 sync output on the frontend.
     let reader_fd = master_fd;
-    let (output_tx, output_rx) = mpsc::sync_channel::<Vec<u8>>(64);
+    let (output_tx, output_rx) = mpsc::channel::<Result<Vec<u8>, String>>(64);
     std::thread::spawn(move || {
         let mut reader = FdReader(reader_fd);
         let mut buf = vec![0u8; 8192];
@@ -269,11 +265,14 @@ pub fn spawn(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    if output_tx.send(buf[..n].to_vec()).is_err() {
+                    if output_tx.blocking_send(Ok(buf[..n].to_vec())).is_err() {
                         break;
                     }
                 }
-                Err(_) => break,
+                Err(err) => {
+                    let _ = output_tx.blocking_send(Err(err.to_string()));
+                    break;
+                }
             }
         }
     });
@@ -285,10 +284,9 @@ pub fn spawn(
     };
 
     Ok(SpawnResult {
-        pty,
+        backend: pty,
         writer,
         output_rx,
         process_id: pid,
-        master_fd,
     })
 }
