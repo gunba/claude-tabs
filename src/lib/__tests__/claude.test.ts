@@ -11,8 +11,6 @@ import {
   assignSessionColor,
   sessionColor,
   releaseSessionColor,
-  getSessionColorIndex,
-  forceSessionColor,
   getResumeId,
   effectiveModel,
   stripWorktreeFlags,
@@ -273,27 +271,9 @@ describe("session color assignment", () => {
     releaseSessionColor("x");
   });
 
-  it("releaseSessionColor frees the color", () => {
-    assignSessionColor("r", []);
-    expect(getSessionColorIndex("r")).toBeGreaterThanOrEqual(0);
-    releaseSessionColor("r");
-    expect(getSessionColorIndex("r")).toBe(-1);
-  });
-
-  it("forceSessionColor overrides assignment", () => {
-    assignSessionColor("f", []);
-    forceSessionColor("f", 3);
-    expect(sessionColor("f")).toBe(SESSION_COLORS[3]);
-    releaseSessionColor("f");
-  });
-
   it("sessionColor falls back to hash for unassigned sessions", () => {
     const color = sessionColor("never-assigned-session-id");
     expect(SESSION_COLORS).toContain(color);
-  });
-
-  it("getSessionColorIndex returns -1 for unassigned", () => {
-    expect(getSessionColorIndex("nonexistent")).toBe(-1);
   });
 
   it("SESSION_COLORS has 8 entries", () => {

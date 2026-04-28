@@ -80,9 +80,10 @@ export function useCliWatcher(): void {
               },
             });
           } catch {
-            // Help failed but version succeeded — still update version
-            useSettingsStore.getState().setCliCapabilitiesForCli("claude", version, emptyCapabilities());
-            dlog("discovery", null, "CLI help parsing failed; stored empty capabilities", "WARN", {
+            // Help failed but version succeeded — update version without wiping last known capabilities.
+            const previousCapabilities = useSettingsStore.getState().cliCapabilitiesByCli.claude;
+            useSettingsStore.getState().setCliCapabilitiesForCli("claude", version, previousCapabilities);
+            dlog("discovery", null, "CLI help parsing failed; preserved existing capabilities", "WARN", {
               event: "discovery.cli_capabilities_failed",
               data: { cli: "claude", version },
             });
@@ -158,7 +159,8 @@ export function useCliWatcher(): void {
           useSettingsStore.getState().loadSettingsSchemaForCli("codex");
           useSettingsStore.getState().loadKnownEnvVarsForCli("codex");
         } catch (err) {
-          useSettingsStore.getState().setCliCapabilitiesForCli("codex", version, capabilities);
+          const previousCapabilities = useSettingsStore.getState().cliCapabilitiesByCli.codex;
+          useSettingsStore.getState().setCliCapabilitiesForCli("codex", version, previousCapabilities);
           dlog("discovery", null, `Codex capabilities failed: ${err}`, "WARN", {
             event: "discovery.cli_capabilities_failed",
             data: { cli: "codex", version, error: String(err) },

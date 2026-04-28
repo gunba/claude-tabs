@@ -153,16 +153,6 @@ export function resolveModelId(
   return family;
 }
 
-/** Extract the model family keyword from a full or short model string. */
-export function extractModelFamily(model: string | null): string | null {
-  return resolveModelFamily(model)?.keyword ?? null;
-}
-
-/** Whether a model string represents the 1M context variant. */
-export function isModel1m(model: string | null): boolean {
-  return !!model && model.includes("[1m]");
-}
-
 /** Model display label */
 export function modelLabel(model: string | null): string {
   return resolveModelFamily(model)?.label ?? model ?? "Default";
@@ -320,16 +310,6 @@ export function sessionColor(sessionId: string): string {
 /** Remove a color assignment (frees the color for reuse). */
 export function releaseSessionColor(sessionId: string): void {
   colorAssignments.delete(sessionId);
-}
-
-/** Get the saved color index for a session so it can be restored after close+create. */
-export function getSessionColorIndex(sessionId: string): number {
-  return colorAssignments.get(sessionId) ?? -1;
-}
-
-/** Force-assign a specific color index to a session. */
-export function forceSessionColor(sessionId: string, colorIndex: number): void {
-  colorAssignments.set(sessionId, colorIndex % SESSION_COLORS.length);
 }
 
 export type HeatLevel = -1 | 0 | 1 | 2 | 3 | 4;

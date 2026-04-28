@@ -11,6 +11,9 @@ import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
 import { settledStateManager } from "../lib/settledState";
 
+type NotificationKind = "idle" | "actionNeeded" | "waitingPermission" | "error";
+type NotificationPayload = { title: string; body: string };
+
 /**
  * Sends native desktop notifications when background sessions
  * need attention — response completed, permission required, or error.
@@ -25,7 +28,7 @@ export function useNotifications() {
   const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
   const permissionCheckedRef = useRef(false);
   const permissionGrantedRef = useRef(false);
-  const lastNotifyRef = useRef<Record<string, number>>({});
+  const lastNotifyRef = useRef(new Map<string, number>());
   const windowFocusedRef = useRef(true);
 
   // Check/request permission once on mount
@@ -73,73 +76,80 @@ export function useNotifications() {
     if (!notificationsEnabled) return;
 
     const COOLDOWN_MS = 30_000;
+    const notifySession = (
+      sessionId: string,
+      kind: NotificationKind,
+      buildPayload: (session: { name: string; metadata: { currentAction: string | null } }) => NotificationPayload | null,
+    ) => {
+      if (!permissionGrantedRef.current) return;
+
+      const state = useSessionStore.getState();
+      const session = state.sessions.find((s) => s.id === sessionId);
+      if (!session || session.isMetaAgent) return;
+      if (session.id === state.activeTabId) return;
+
+      const now = Date.now();
+      const lastNotifiedAt = lastNotifyRef.current.get(session.id);
+      if (lastNotifiedAt && now - lastNotifiedAt < COOLDOWN_MS) return;
+
+      const payload = buildPayload(session);
+      if (!payload) return;
+
+      lastNotifyRef.current.set(session.id, now);
+      invoke("send_notification", { ...payload, sessionId: session.id });
+
+      // [WN-04] Flash OS taskbar when window is not focused
+      // [DR-08] Record notification-attention flashes in structured debug logs.
+      if (!windowFocusedRef.current) {
+        dlog("notify", session.id, `taskbar flash: ${kind}`);
+        getCurrentWindow()
+          .requestUserAttention(UserAttentionType.Informational)
+          .catch(() => {});
+      }
+    };
 
     const unsub = settledStateManager.subscribe(
       (sessionId, kind) => {
-        if (!permissionGrantedRef.current) return;
-
-        const state = useSessionStore.getState();
-        const session = state.sessions.find((s) => s.id === sessionId);
-        if (!session || session.isMetaAgent) return;
-        if (session.id === state.activeTabId) return;
-
-        const now = Date.now();
-        if (lastNotifyRef.current[sessionId] && now - lastNotifyRef.current[sessionId] < COOLDOWN_MS) return;
-
-        let title: string | null = null;
-        let body: string | null = null;
-
-        if (kind === "idle") {
-          title = `${session.name} — Response Complete`;
-          body = session.metadata.currentAction || "Session is ready for input.";
-        } else if (kind === "actionNeeded") {
-          title = `${session.name} — Action Needed`;
-          body = "A session needs your input.";
-        } else if (kind === "waitingPermission") {
-          title = `${session.name} — Permission Required`;
-          body = "A session needs your permission to continue.";
-        }
-
-        if (title && body) {
-          lastNotifyRef.current[sessionId] = now;
-          invoke("send_notification", { title, body, sessionId });
-
-          // [WN-04] Flash OS taskbar when window is not focused
-          // [DR-08] Record notification-attention flashes in structured debug logs.
-          if (!windowFocusedRef.current) {
-            dlog("notify", sessionId, `taskbar flash: ${kind}`);
-            getCurrentWindow()
-              .requestUserAttention(UserAttentionType.Informational)
-              .catch(() => {});
+        notifySession(sessionId, kind, (session) => {
+          if (kind === "idle") {
+            return {
+              title: `${session.name} — Response Complete`,
+              body: session.metadata.currentAction || "Session is ready for input.",
+            };
           }
-        }
+          if (kind === "actionNeeded") {
+            return {
+              title: `${session.name} — Action Needed`,
+              body: "A session needs your input.",
+            };
+          }
+          if (kind === "waitingPermission") {
+            return {
+              title: `${session.name} — Permission Required`,
+              body: "A session needs your permission to continue.",
+            };
+          }
+          return null;
+        });
       },
       () => {}, // No action on clear
     );
 
     // Separate subscription for error state (not a settled kind)
     const unsubError = useSessionStore.subscribe((state) => {
-      if (!permissionGrantedRef.current) return;
-      const now = Date.now();
+      const liveSessionIds = new Set(state.sessions.map((session) => session.id));
+      for (const sessionId of lastNotifyRef.current.keys()) {
+        if (!liveSessionIds.has(sessionId)) lastNotifyRef.current.delete(sessionId);
+      }
 
       for (const session of state.sessions) {
-        if (session.isMetaAgent || session.id === state.activeTabId) continue;
         if (session.state !== "error") continue;
-        if (lastNotifyRef.current[session.id] && now - lastNotifyRef.current[session.id] < COOLDOWN_MS) continue;
-
-        lastNotifyRef.current[session.id] = now;
-        invoke("send_notification", {
-          title: `${session.name} — Error`,
-          body: "A session encountered an error.",
-          sessionId: session.id,
+        notifySession(session.id, "error", (target) => {
+          return {
+            title: `${target.name} — Error`,
+            body: "A session encountered an error.",
+          };
         });
-
-        if (!windowFocusedRef.current) {
-          dlog("notify", session.id, "taskbar flash: error");
-          getCurrentWindow()
-            .requestUserAttention(UserAttentionType.Informational)
-            .catch(() => {});
-        }
       }
     });
 
