@@ -11,9 +11,8 @@
 //!   - `codex --version`                      → version string
 //!   - `codex debug models`                   → JSON model catalog
 //!   - `codex --help`, `codex <sub> --help`   → flag pills
-//!   - `codex completion bash`                → exhaustive subcommand/flag list
 //!   - `codex features list`                  → feature flag catalog
-//!   - `codex mcp list`                       → configured MCP servers
+//!   - `codex mcp list --json`                → configured MCP servers
 
 use std::path::{Path, PathBuf};
 
@@ -21,6 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::discovery::DiscoveredEnvVar;
 use crate::observability::record_backend_event;
+
+const MAX_OPTION_DESCRIPTION_CHARS: usize = 200;
 
 // ── Detection ────────────────────────────────────────────────────────
 
@@ -134,7 +135,11 @@ fn run_codex(args: &[&str]) -> Result<String, String> {
 /// key auth; otherwise the file represents ChatGPT auth. Missing or malformed
 /// files return `None`.
 pub(crate) fn read_codex_auth_mode_sync() -> Option<String> {
-    let path = crate::commands::data::codex_home_dir()?.join("auth.json");
+    read_codex_auth_mode_at(&crate::commands::data::codex_home_dir()?)
+}
+
+fn read_codex_auth_mode_at(codex_home: &Path) -> Option<String> {
+    let path = codex_home.join("auth.json");
     let raw = std::fs::read_to_string(&path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
     if let Some(mode) = json.get("auth_mode").and_then(|v| v.as_str()) {
@@ -280,11 +285,19 @@ fn parse_help_options(help: &str) -> Vec<CodexCliOption> {
                 // flag's continuation (e.g. a section header like
                 // "Arguments:").
                 last_flag_idx = None;
-            } else if !line.starts_with("  -") && out[idx].description.len() < 200 {
+            } else if !line.starts_with("  -")
+                && out[idx].description.len() < MAX_OPTION_DESCRIPTION_CHARS
+            {
                 if !out[idx].description.is_empty() {
                     out[idx].description.push(' ');
                 }
                 out[idx].description.push_str(trimmed);
+                if out[idx].description.len() > MAX_OPTION_DESCRIPTION_CHARS {
+                    let end = out[idx]
+                        .description
+                        .floor_char_boundary(MAX_OPTION_DESCRIPTION_CHARS);
+                    out[idx].description.truncate(end);
+                }
             }
         }
     }
@@ -314,8 +327,8 @@ pub struct CodexFeature {
     pub enabled: bool,
 }
 
-/// Parse `codex features list` output. The current shape is one flag
-/// per line, columns separated by whitespace: `<name> <stage> <state>`.
+/// Parse `codex features list` output. Codex pads columns with at least two
+/// spaces: `<name>  <stage>  <true|false>`. Stage itself may contain spaces.
 /// Tolerant of header lines and blank lines.
 fn parse_features(stdout: &str) -> Vec<CodexFeature> {
     let mut out = Vec::new();
@@ -324,22 +337,22 @@ fn parse_features(stdout: &str) -> Vec<CodexFeature> {
         if trimmed.is_empty() {
             continue;
         }
-        // Skip header rows
-        if trimmed.starts_with('-') || trimmed.to_ascii_uppercase() == trimmed {
-            // best-effort header detection: ALL_CAPS or leading dashes
-            if trimmed.contains("FEATURE") || trimmed.contains("STAGE") || trimmed.starts_with('-')
-            {
-                continue;
-            }
-        }
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() < 3 {
+        let parts: Vec<&str> = trimmed
+            .split("  ")
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .collect();
+        if parts.len() != 3 {
             continue;
         }
         let name = parts[0].to_string();
         let stage = parts[1].to_string();
         let state = parts[2].to_ascii_lowercase();
-        let enabled = matches!(state.as_str(), "on" | "enabled" | "true");
+        let enabled = match state.as_str() {
+            "true" => true,
+            "false" => false,
+            _ => continue,
+        };
         out.push(CodexFeature {
             name,
             stage,
@@ -366,72 +379,71 @@ pub async fn discover_codex_features() -> Result<Vec<CodexFeature>, String> {
 pub struct CodexMcpServer {
     pub name: String,
     #[serde(default)]
+    pub transport: String,
+    #[serde(default)]
     pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
     #[serde(default)]
     pub url: Option<String>,
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub disabled_reason: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub auth_status: Option<String>,
 }
 
-/// Parse `codex mcp list`. The output may be tabular text (one server
-/// per line: `name  command/url  enabled`) or structured JSON when a
-/// future Codex flag asks for it. Tolerant of either.
-fn parse_mcp_list(stdout: &str) -> Vec<CodexMcpServer> {
-    // Try JSON first (in case Codex grows a `--json` flag we can pass).
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stdout) {
-        if let Some(arr) = v.as_array() {
-            return arr
+fn parse_mcp_server(item: &serde_json::Value) -> Option<CodexMcpServer> {
+    let name = item["name"].as_str()?.to_string();
+    let enabled = item["enabled"].as_bool().unwrap_or(true);
+    let disabled_reason = item["disabled_reason"].as_str().map(str::to_string);
+    let auth_status = item["auth_status"].as_str().map(str::to_string);
+    let transport = &item["transport"];
+    let transport_type = transport["type"].as_str().unwrap_or("").to_string();
+    let command = transport["command"].as_str().map(str::to_string);
+    let args = transport["args"]
+        .as_array()
+        .map(|items| {
+            items
                 .iter()
-                .filter_map(|item| serde_json::from_value::<CodexMcpServer>(item.clone()).ok())
-                .collect();
-        }
-        if let Some(obj) = v.get("servers").and_then(|x| x.as_array()) {
-            return obj
-                .iter()
-                .filter_map(|item| serde_json::from_value::<CodexMcpServer>(item.clone()).ok())
-                .collect();
-        }
-    }
-    // Fall back to whitespace-tabular parse.
-    let mut out = Vec::new();
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if trimmed.starts_with('-') || trimmed.contains("NAME") || trimmed.contains("COMMAND") {
-            continue;
-        }
-        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.is_empty() {
-            continue;
-        }
-        let name = parts[0].to_string();
-        let target = parts.get(1).map(|s| s.to_string());
-        let enabled_str = parts
-            .get(2)
-            .map(|s| s.trim().to_ascii_lowercase())
-            .unwrap_or_default();
-        let enabled = matches!(enabled_str.as_str(), "" | "on" | "enabled" | "true");
-        let (command, url) = match target {
-            Some(t) if t.starts_with("http://") || t.starts_with("https://") => (None, Some(t)),
-            t => (t, None),
-        };
-        out.push(CodexMcpServer {
-            name,
-            command,
-            url,
-            enabled,
-        });
-    }
-    out
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let cwd = transport["cwd"].as_str().map(str::to_string);
+    let url = transport["url"].as_str().map(str::to_string);
+
+    Some(CodexMcpServer {
+        name,
+        transport: transport_type,
+        command,
+        args,
+        url,
+        enabled,
+        disabled_reason,
+        cwd,
+        auth_status,
+    })
+}
+
+/// Parse `codex mcp list --json`.
+fn parse_mcp_list(stdout: &str) -> Result<Vec<CodexMcpServer>, String> {
+    let v = serde_json::from_str::<serde_json::Value>(stdout)
+        .map_err(|e| format!("Invalid codex mcp list --json output: {e}"))?;
+    let arr = v
+        .as_array()
+        .ok_or_else(|| "codex mcp list --json did not return an array".to_string())?;
+    Ok(arr.iter().filter_map(parse_mcp_server).collect())
 }
 
 #[tauri::command]
 pub async fn discover_codex_mcp_servers() -> Result<Vec<CodexMcpServer>, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<Vec<CodexMcpServer>, String> {
-        let raw = run_codex(&["mcp", "list"])?;
-        Ok(parse_mcp_list(&raw))
+        let raw = run_codex(&["mcp", "list", "--json"])?;
+        parse_mcp_list(&raw)
     })
     .await
     .map_err(|e| format!("join error: {e}"))?
@@ -481,35 +493,19 @@ pub(crate) fn discover_codex_skills_sync(
         }
     }
 
-    let global_roots = [home.join(".agents").join("skills")];
-    for root in &global_roots {
+    let mut roots = Vec::new();
+    roots.push(home.join(".agents").join("skills"));
+    for dir in extra_dirs {
+        roots.push(std::path::Path::new(dir).join(".agents").join("skills"));
+    }
+    roots.push(home.join(".codex").join("skills"));
+    for dir in extra_dirs {
+        roots.push(std::path::Path::new(dir).join(".codex").join("skills"));
+    }
+
+    for root in &roots {
         if root.exists() {
             scan_dir(root, &mut commands, &mut rejections);
-        }
-    }
-
-    for dir in extra_dirs {
-        let project_roots = [std::path::Path::new(dir).join(".agents").join("skills")];
-        for root in &project_roots {
-            if root.exists() {
-                scan_dir(root, &mut commands, &mut rejections);
-            }
-        }
-    }
-
-    let compat_global_roots = [home.join(".codex").join("skills")];
-    for root in &compat_global_roots {
-        if root.exists() {
-            scan_dir(root, &mut commands, &mut rejections);
-        }
-    }
-
-    for dir in extra_dirs {
-        let compat_project_roots = [std::path::Path::new(dir).join(".codex").join("skills")];
-        for root in &compat_project_roots {
-            if root.exists() {
-                scan_dir(root, &mut commands, &mut rejections);
-            }
         }
     }
 
@@ -817,7 +813,7 @@ pub async fn discover_codex_slash_commands() -> Result<Vec<CodexSlashCommand>, S
 // which case we fall back to the full vendored list rather than show nothing.
 fn discover_codex_slash_commands_sync() -> Vec<CodexSlashCommand> {
     let filtered = resolve_codex_native_binary_path()
-        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|path| crate::discovery::codex::read_binary_capped(&path).ok())
         .map(|bytes| {
             CODEX_SLASH_COMMANDS
                 .iter()
@@ -939,10 +935,7 @@ const TITLE_MAX_CHARS: usize = 64;
 const TITLE_PROMPT_MAX_CHARS: usize = 4_000;
 
 #[tauri::command]
-pub async fn generate_codex_session_title(
-    prompt: String,
-    model: String,
-) -> Result<String, String> {
+pub async fn generate_codex_session_title(prompt: String, model: String) -> Result<String, String> {
     let prompt = prompt.trim();
     let model = model.trim();
     if prompt.is_empty() {
@@ -1004,12 +997,19 @@ pub async fn generate_codex_session_title(
         .arg("approval_policy=never")
         .arg(&user_prompt)
         .current_dir(&workdir)
+        .kill_on_drop(true)
         .output();
 
-    let output = tokio::time::timeout(std::time::Duration::from_secs(TITLE_TIMEOUT_SECS), exec)
-        .await
-        .map_err(|_| "timeout".to_string())?
-        .map_err(|e| format!("spawn: {e}"))?;
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(TITLE_TIMEOUT_SECS),
+        exec,
+    )
+    .await
+    {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => return Err(format!("codex exec spawn failed: {e}")),
+        Err(_) => return Err(format!("codex exec timed out after {TITLE_TIMEOUT_SECS}s")),
+    };
 
     if !output.status.success() {
         return Err(format!(
@@ -1019,8 +1019,7 @@ pub async fn generate_codex_session_title(
         ));
     }
 
-    let raw = std::fs::read_to_string(&tmpfile_path)
-        .map_err(|e| format!("read tempfile: {e}"))?;
+    let raw = std::fs::read_to_string(&tmpfile_path).map_err(|e| format!("read tempfile: {e}"))?;
     cleanup_title(&raw).ok_or_else(|| "empty title".to_string())
 }
 
@@ -1067,11 +1066,7 @@ fn cleanup_title(raw: &str) -> Option<String> {
             .to_string();
     }
 
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 #[cfg(test)]
@@ -1082,9 +1077,11 @@ mod tests {
     fn parse_help_options_picks_long_and_short() {
         let help = "Usage: codex [OPTIONS]\n\nOptions:\n  -c, --config <key=value>\n          Override a configuration value\n\n      --enable <FEATURE>\n          Enable a feature (repeatable)\n\n  -h, --help\n          Print help\n";
         let parsed = parse_help_options(help);
-        assert!(parsed
-            .iter()
-            .any(|o| o.flag == "--config" && o.short == "-c" && o.takes_value));
+        assert!(
+            parsed
+                .iter()
+                .any(|o| o.flag == "--config" && o.short == "-c" && o.takes_value)
+        );
         assert!(parsed.iter().any(|o| o.flag == "--enable" && o.takes_value));
         assert!(parsed.iter().any(|o| o.flag == "--help" && o.short == "-h"));
     }
@@ -1127,35 +1124,83 @@ mod tests {
     }
 
     #[test]
+    fn parse_help_options_caps_continuation_description() {
+        let long = "x".repeat(MAX_OPTION_DESCRIPTION_CHARS + 50);
+        let help = format!("Options:\n  --foo <X>\n          {long}\n");
+        let parsed = parse_help_options(&help);
+        let foo = parsed.iter().find(|o| o.flag == "--foo").expect("foo opt");
+
+        assert_eq!(foo.description.len(), MAX_OPTION_DESCRIPTION_CHARS);
+    }
+
+    #[test]
     fn parse_features_extracts_tabular_rows() {
-        let stdout = "FEATURE       STAGE   STATE\n----------    -----   -----\njs_repl       beta    off\nweb_search    ga      on\n";
+        let stdout = "js_repl     under development  false\nweb_search  stable             true\n";
         let feats = parse_features(stdout);
         assert_eq!(feats.len(), 2);
         let js = feats.iter().find(|f| f.name == "js_repl").unwrap();
-        assert_eq!(js.stage, "beta");
+        assert_eq!(js.stage, "under development");
         assert!(!js.enabled);
         let ws = feats.iter().find(|f| f.name == "web_search").unwrap();
+        assert_eq!(ws.stage, "stable");
         assert!(ws.enabled);
     }
 
     #[test]
-    fn parse_mcp_list_handles_text() {
-        let stdout = "NAME       COMMAND       ENABLED\nfilesys    fs-server     on\nweb        https://x.io  off\n";
-        let servers = parse_mcp_list(stdout);
+    fn parse_mcp_list_handles_codex_json() {
+        let stdout = r#"[
+          {
+            "name": "fs",
+            "enabled": true,
+            "disabled_reason": null,
+            "transport": {
+              "type": "stdio",
+              "command": "fs-server",
+              "args": ["--root", "/tmp/project"],
+              "env": null,
+              "env_vars": [],
+              "cwd": "/tmp/project"
+            },
+            "startup_timeout_sec": 10.0,
+            "tool_timeout_sec": 60.0,
+            "auth_status": "unsupported"
+          },
+          {
+            "name": "web",
+            "enabled": false,
+            "disabled_reason": "disabled in config",
+            "transport": {
+              "type": "streamable_http",
+              "url": "https://x.io",
+              "bearer_token_env_var": "TOKEN",
+              "http_headers": {},
+              "env_http_headers": {}
+            },
+            "startup_timeout_sec": null,
+            "tool_timeout_sec": null,
+            "auth_status": "unsupported"
+          }
+        ]"#;
+        let servers = parse_mcp_list(stdout).unwrap();
         assert_eq!(servers.len(), 2);
-        assert_eq!(servers[0].name, "filesys");
+        assert_eq!(servers[0].name, "fs");
+        assert_eq!(servers[0].transport, "stdio");
         assert_eq!(servers[0].command.as_deref(), Some("fs-server"));
+        assert_eq!(servers[0].args, vec!["--root", "/tmp/project"]);
+        assert_eq!(servers[0].cwd.as_deref(), Some("/tmp/project"));
         assert!(servers[0].enabled);
+        assert_eq!(servers[1].transport, "streamable_http");
         assert_eq!(servers[1].url.as_deref(), Some("https://x.io"));
         assert!(!servers[1].enabled);
+        assert_eq!(
+            servers[1].disabled_reason.as_deref(),
+            Some("disabled in config")
+        );
     }
 
     #[test]
-    fn parse_mcp_list_handles_json_array() {
-        let stdout = r#"[{"name":"fs","command":"fs-server","enabled":true}]"#;
-        let servers = parse_mcp_list(stdout);
-        assert_eq!(servers.len(), 1);
-        assert_eq!(servers[0].name, "fs");
+    fn parse_mcp_list_rejects_non_json() {
+        assert!(parse_mcp_list("NAME COMMAND ENABLED").is_err());
     }
 
     #[test]
@@ -1302,55 +1347,43 @@ mod tests {
         assert!(cleanup_title("\".\"").is_none());
     }
 
-    // CODEX_HOME is process-global, so all auth.json read cases live in a
-    // single test to avoid racing against parallel test threads.
     #[test]
     fn read_codex_auth_mode_handles_chatgpt_apikey_missing_and_malformed() {
-        let tmp = std::env::temp_dir().join(format!("ct-auth-mode-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-
-        let prev = std::env::var_os("CODEX_HOME");
-        std::env::set_var("CODEX_HOME", &tmp);
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
 
         // Missing auth.json
-        assert!(read_codex_auth_mode_sync().is_none());
+        assert!(read_codex_auth_mode_at(home).is_none());
 
         // chatgpt mode (the shape we observed in the user's auth.json)
         std::fs::write(
-            tmp.join("auth.json"),
+            home.join("auth.json"),
             r#"{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{}}"#,
         )
         .unwrap();
-        assert_eq!(read_codex_auth_mode_sync().as_deref(), Some("chatgpt"));
+        assert_eq!(read_codex_auth_mode_at(home).as_deref(), Some("chatgpt"));
 
         // apikey mode
         std::fs::write(
-            tmp.join("auth.json"),
+            home.join("auth.json"),
             r#"{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test"}"#,
         )
         .unwrap();
-        assert_eq!(read_codex_auth_mode_sync().as_deref(), Some("apikey"));
+        assert_eq!(read_codex_auth_mode_at(home).as_deref(), Some("apikey"));
 
         // Malformed JSON
-        std::fs::write(tmp.join("auth.json"), "{not json").unwrap();
-        assert!(read_codex_auth_mode_sync().is_none());
+        std::fs::write(home.join("auth.json"), "{not json").unwrap();
+        assert!(read_codex_auth_mode_at(home).is_none());
 
         // Valid JSON without auth_mode key resolves the way Codex does:
         // OPENAI_API_KEY present => apikey, otherwise ChatGPT.
-        std::fs::write(tmp.join("auth.json"), r#"{"OPENAI_API_KEY":null}"#).unwrap();
-        assert_eq!(read_codex_auth_mode_sync().as_deref(), Some("chatgpt"));
+        std::fs::write(home.join("auth.json"), r#"{"OPENAI_API_KEY":null}"#).unwrap();
+        assert_eq!(read_codex_auth_mode_at(home).as_deref(), Some("chatgpt"));
         std::fs::write(
-            tmp.join("auth.json"),
+            home.join("auth.json"),
             r#"{"OPENAI_API_KEY":"sk-test-without-auth-mode"}"#,
         )
         .unwrap();
-        assert_eq!(read_codex_auth_mode_sync().as_deref(), Some("apikey"));
-
-        match prev {
-            Some(p) => std::env::set_var("CODEX_HOME", p),
-            None => std::env::remove_var("CODEX_HOME"),
-        }
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(read_codex_auth_mode_at(home).as_deref(), Some("apikey"));
     }
 }

@@ -55,7 +55,7 @@ pub struct CodexSchemaResult {
 /// API always returns at least the bundled schema, so this never reaches
 /// the frontend.
 #[derive(Debug)]
-enum BinaryMineError {
+pub(crate) enum BinaryMineError {
     NoBinary,
     IoError(String),
     NoMatches,
@@ -100,7 +100,7 @@ const CONFIG_TOML_SIGNATURE: &[&str] = &[
 /// Read a binary file into memory with a hard cap. Codex's native binary is
 /// ~196 MiB on Linux; the cap protects against an unexpectedly huge file
 /// (corrupt download, wrong binary picked) or a runaway memory allocation.
-fn read_binary_capped(path: &Path) -> Result<Vec<u8>, BinaryMineError> {
+pub(crate) fn read_binary_capped(path: &Path) -> Result<Vec<u8>, BinaryMineError> {
     let metadata = std::fs::metadata(path)
         .map_err(|e| BinaryMineError::IoError(format!("metadata({}): {}", path.display(), e)))?;
     if metadata.len() > MAX_BINARY_BYTES {
