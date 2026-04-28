@@ -11,6 +11,10 @@ export interface UnsavedTextEditorChange {
 
 type UnsavedTextEditorSnapshot = Omit<UnsavedTextEditorChange, "id"> | null;
 
+function normaliseLineEndings(s: string): string {
+  return s.replace(/\r\n?/g, "\n");
+}
+
 export interface UnsavedTextEditorRegistry {
   register: (id: string, getChange: () => UnsavedTextEditorSnapshot) => () => void;
   getChanges: () => UnsavedTextEditorChange[];
@@ -33,10 +37,17 @@ export function useUnsavedTextEditorRegistry(): UnsavedTextEditorRegistry {
   const getChanges = useCallback(() => {
     const changes: UnsavedTextEditorChange[] = [];
     for (const [id, getChange] of entriesRef.current) {
-      const change = getChange();
-      if (change && change.before !== change.after) {
-        changes.push({ id, ...change });
-      }
+      const raw = getChange();
+      if (!raw) continue;
+      // Browsers normalise textarea \r\n -> \n in .value, but a file read
+      // from disk keeps whatever line endings it had. Compare and render
+      // the diff in the normalised form so CRLF files don't trip the
+      // guard with no edits — and so the diff preview doesn't paint
+      // every line as a change for the same reason.
+      const before = normaliseLineEndings(raw.before);
+      const after = normaliseLineEndings(raw.after);
+      if (before === after) continue;
+      changes.push({ id, title: raw.title, before, after });
     }
     return changes;
   }, []);
