@@ -110,6 +110,10 @@ pub async fn detect_codex_cli(app: tauri::AppHandle) -> Result<String, String> {
 
 fn run_codex(args: &[&str]) -> Result<String, String> {
     let bin = detect_codex_cli_sync()?;
+    run_codex_at(std::path::Path::new(&bin), args)
+}
+
+fn run_codex_at(bin: &Path, args: &[&str]) -> Result<String, String> {
     let out = std::process::Command::new(&bin)
         .args(args)
         .output()
@@ -213,7 +217,12 @@ struct CodexModelsRaw {
 
 // [CO-01] discover_codex_models: 'codex debug models' JSON; filters visibility!='list'; drives model picker
 pub(crate) fn discover_codex_models_sync() -> Result<Vec<CodexModel>, String> {
-    let raw = run_codex(&["debug", "models"])?;
+    let bin = detect_codex_cli_sync()?;
+    discover_codex_models_at_sync(std::path::Path::new(&bin))
+}
+
+pub(crate) fn discover_codex_models_at_sync(bin: &Path) -> Result<Vec<CodexModel>, String> {
+    let raw = run_codex_at(bin, &["debug", "models"])?;
     let parsed: CodexModelsRaw =
         serde_json::from_str(&raw).map_err(|e| format!("codex debug models: invalid JSON: {e}"))?;
     Ok(parsed
@@ -313,7 +322,14 @@ pub async fn discover_codex_cli_options() -> Result<Vec<CodexCliOption>, String>
 
 // [CO-02] discover_codex_cli_options: 'codex --help' regex parse; picks up long/short flags + continuation lines; max 200 char desc
 pub(crate) fn discover_codex_cli_options_sync() -> Result<Vec<CodexCliOption>, String> {
-    let help = run_codex(&["--help"])?;
+    let bin = detect_codex_cli_sync()?;
+    discover_codex_cli_options_at_sync(std::path::Path::new(&bin))
+}
+
+pub(crate) fn discover_codex_cli_options_at_sync(
+    bin: &Path,
+) -> Result<Vec<CodexCliOption>, String> {
+    let help = run_codex_at(bin, &["--help"])?;
     Ok(parse_help_options(&help))
 }
 
@@ -1066,7 +1082,11 @@ fn cleanup_title(raw: &str) -> Option<String> {
             .to_string();
     }
 
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 #[cfg(test)]
@@ -1077,11 +1097,9 @@ mod tests {
     fn parse_help_options_picks_long_and_short() {
         let help = "Usage: codex [OPTIONS]\n\nOptions:\n  -c, --config <key=value>\n          Override a configuration value\n\n      --enable <FEATURE>\n          Enable a feature (repeatable)\n\n  -h, --help\n          Print help\n";
         let parsed = parse_help_options(help);
-        assert!(
-            parsed
-                .iter()
-                .any(|o| o.flag == "--config" && o.short == "-c" && o.takes_value)
-        );
+        assert!(parsed
+            .iter()
+            .any(|o| o.flag == "--config" && o.short == "-c" && o.takes_value));
         assert!(parsed.iter().any(|o| o.flag == "--enable" && o.takes_value));
         assert!(parsed.iter().any(|o| o.flag == "--help" && o.short == "-h"));
     }

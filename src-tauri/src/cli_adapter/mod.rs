@@ -4,7 +4,7 @@
 //! Their detection, version probing, args building, and launch-option
 //! discovery differ; everything else (PTY layer, observability sink,
 //! tab UI) is shared. A `CliAdapter` is the single seam that holds the
-//! per-CLI specifics. Enum-dispatched (no dyn-trait churn).
+//! per-CLI specifics.
 
 use std::path::PathBuf;
 
@@ -95,6 +95,13 @@ pub struct FlagPill {
     pub description: Option<String>,
 }
 
+pub struct SpawnContext<'a> {
+    pub app: &'a tauri::AppHandle,
+    pub working_dir: &'a str,
+    pub session_id: &'a str,
+    pub proxy_port: Option<u16>,
+}
+
 /// Per-CLI behavior. Implementations are stateless; runtime caches
 /// (e.g. last-known binary path) live in the calling layer.
 // [CC-01] CliAdapter trait: detect/version/build_spawn/launch_options; adapter_for(CliKind) returns Box<dyn CliAdapter>
@@ -113,6 +120,13 @@ pub trait CliAdapter {
     /// stripping, inspector hook injection (Claude only), and any
     /// CLI-specific arg building.
     fn build_spawn(&self, cfg: &SessionConfig) -> Result<SpawnSpec, String>;
+
+    /// Optional adapter-owned mutations that require app state not
+    /// available inside `build_spawn` (for example Codex spawn-env
+    /// sidecars and proxy provider args).
+    fn post_build(&self, _ctx: &SpawnContext<'_>, _spec: &mut SpawnSpec) -> Result<(), String> {
+        Ok(())
+    }
 
     /// User-facing launch options surfaced by the launcher. Adapters
     /// fetch these at runtime from the binary; the result is cached
@@ -147,32 +161,21 @@ pub async fn build_cli_spawn(
             .await
             .map_err(|e| format!("join error: {e}"))??;
 
-    if cli == CliKind::Codex {
-        let merged = crate::commands::merged_codex_spawn_env(&app, &working_dir);
-        for (k, v) in merged {
-            // Only add if the adapter didn't already set this var. Adapters
-            // that need a fixed value win (none currently for Codex, but
-            // future-proofs the precedence order).
-            if !spec
-                .env_overrides
-                .iter()
-                .any(|(existing, _)| existing == &k)
-            {
-                spec.env_overrides.push((k, Some(v)));
-            }
-        }
-
-        let proxy_port = proxy_state.port();
-        if let Some(port) = proxy_port {
-            let auth_mode = crate::commands::codex_cli::read_codex_auth_mode_sync();
-            append_codex_proxy_config(&mut spec.args, port, &session_id, auth_mode.as_deref());
-        }
-    }
+    let ctx = SpawnContext {
+        app: &app,
+        working_dir: &working_dir,
+        session_id: &session_id,
+        proxy_port: proxy_state.port(),
+    };
+    adapter_for(cli).post_build(&ctx, &mut spec)?;
 
     Ok(spec)
 }
 
 const CODE_TABS_CODEX_PROXY_PROVIDER_ID: &str = "code-tabs-proxy";
+const CODE_TABS_PROXY_DISABLED: &str = "CODE_TABS_PROXY_DISABLED";
+const CODE_TABS_PROXY_PROVIDER_ID_ENV: &str = "CODE_TABS_PROXY_PROVIDER_ID";
+const CODE_TABS_PROXY_HEADERS: &str = "CODE_TABS_PROXY_HEADERS";
 
 fn codex_auth_mode_uses_chatgpt_backend(auth_mode: Option<&str>) -> bool {
     matches!(
@@ -190,18 +193,90 @@ fn push_codex_config(args: &mut Vec<String>, key: &str, value: String) {
     args.push(format!("{key}={value}"));
 }
 
-fn append_codex_proxy_config(
-    args: &mut Vec<String>,
+fn reserved_proxy_env(key: &str) -> bool {
+    matches!(
+        key,
+        CODE_TABS_PROXY_DISABLED | CODE_TABS_PROXY_PROVIDER_ID_ENV | CODE_TABS_PROXY_HEADERS
+    )
+}
+
+fn proxy_control_env_keys() -> &'static [&'static str] {
+    &[
+        CODE_TABS_PROXY_DISABLED,
+        CODE_TABS_PROXY_PROVIDER_ID_ENV,
+        CODE_TABS_PROXY_HEADERS,
+    ]
+}
+
+fn env_value<'a>(env: &'a [(String, Option<String>)], key: &str) -> Option<&'a str> {
+    env.iter()
+        .rev()
+        .find(|(k, _)| k == key)
+        .and_then(|(_, v)| v.as_deref())
+}
+
+fn env_truthy(env: &[(String, Option<String>)], key: &str) -> bool {
+    env_value(env, key)
+        .map(|value| matches!(value, "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn valid_bare_toml_key(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
+fn proxy_provider_id(env: &[(String, Option<String>)]) -> String {
+    env_value(env, CODE_TABS_PROXY_PROVIDER_ID_ENV)
+        .filter(|value| valid_bare_toml_key(value))
+        .unwrap_or(CODE_TABS_CODEX_PROXY_PROVIDER_ID)
+        .to_string()
+}
+
+fn proxy_headers(env: &[(String, Option<String>)]) -> Vec<(String, String)> {
+    let mut headers = vec![
+        (
+            "OpenAI-Organization".to_string(),
+            "OPENAI_ORGANIZATION".to_string(),
+        ),
+        ("OpenAI-Project".to_string(), "OPENAI_PROJECT".to_string()),
+    ];
+    let Some(raw) = env_value(env, CODE_TABS_PROXY_HEADERS) else {
+        return headers;
+    };
+    for item in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
+        let Some((header, env_var)) = item.split_once(':') else {
+            continue;
+        };
+        let header = header.trim();
+        let env_var = env_var.trim();
+        if valid_bare_toml_key(header) && valid_bare_toml_key(env_var) {
+            headers.push((header.to_string(), env_var.to_string()));
+        }
+    }
+    headers
+}
+
+fn codex_proxy_config_args(
+    existing_args: &[String],
+    env: &[(String, Option<String>)],
     port: u16,
     session_id: &str,
     auth_mode: Option<&str>,
-) {
+) -> Vec<String> {
     if session_id.is_empty()
         || auth_mode.is_none()
-        || has_codex_config_override(args, "openai_base_url")
-        || has_codex_config_override(args, "model_provider")
+        || env_truthy(env, CODE_TABS_PROXY_DISABLED)
+        || has_codex_config_override(existing_args, "openai_base_url")
+        || has_codex_config_override(existing_args, "model_provider")
     {
-        return;
+        return Vec::new();
     }
 
     let base_path = if codex_auth_mode_uses_chatgpt_backend(auth_mode) {
@@ -210,44 +285,43 @@ fn append_codex_proxy_config(
         "v1"
     };
     let url = format!("http://127.0.0.1:{port}/s/{session_id}/{base_path}");
-    let provider = CODE_TABS_CODEX_PROXY_PROVIDER_ID;
+    let provider = proxy_provider_id(env);
+    let mut args = Vec::new();
 
     push_codex_config(
-        args,
+        &mut args,
         &format!("model_providers.{provider}.name"),
         quote_toml_string("OpenAI"),
     );
     push_codex_config(
-        args,
+        &mut args,
         &format!("model_providers.{provider}.base_url"),
         quote_toml_string(&url),
     );
     push_codex_config(
-        args,
+        &mut args,
         &format!("model_providers.{provider}.wire_api"),
         quote_toml_string("responses"),
     );
     push_codex_config(
-        args,
+        &mut args,
         &format!("model_providers.{provider}.requires_openai_auth"),
         "true".into(),
     );
+    for (header, env_var) in proxy_headers(env) {
+        push_codex_config(
+            &mut args,
+            &format!("model_providers.{provider}.env_http_headers.{header}"),
+            quote_toml_string(&env_var),
+        );
+    }
     push_codex_config(
-        args,
-        &format!("model_providers.{provider}.env_http_headers.OpenAI-Organization"),
-        quote_toml_string("OPENAI_ORGANIZATION"),
-    );
-    push_codex_config(
-        args,
-        &format!("model_providers.{provider}.env_http_headers.OpenAI-Project"),
-        quote_toml_string("OPENAI_PROJECT"),
-    );
-    push_codex_config(
-        args,
+        &mut args,
         &format!("model_providers.{provider}.supports_websockets"),
         "false".into(),
     );
-    push_codex_config(args, "model_provider", quote_toml_string(provider));
+    push_codex_config(&mut args, "model_provider", quote_toml_string(&provider));
+    args
 }
 
 /// Returns true if the Codex argv already pins `<key>=...` via `-c`/`--config`.
@@ -290,10 +364,16 @@ pub async fn cli_launch_options(cli: CliKind) -> Result<LaunchOptions, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_codex_proxy_config, has_codex_config_override};
+    use super::{codex_proxy_config_args, has_codex_config_override};
 
     fn args(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()
+    }
+
+    fn env(s: &[(&str, &str)]) -> Vec<(String, Option<String>)> {
+        s.iter()
+            .map(|(k, v)| (k.to_string(), Some(v.to_string())))
+            .collect()
     }
 
     #[test]
@@ -348,8 +428,7 @@ mod tests {
 
     #[test]
     fn codex_proxy_config_uses_chatgpt_backend_and_disables_websockets() {
-        let mut argv = Vec::new();
-        append_codex_proxy_config(&mut argv, 4567, "sid-1", Some("chatgpt"));
+        let argv = codex_proxy_config_args(&[], &[], 4567, "sid-1", Some("chatgpt"));
         let joined = argv.join("\n");
 
         assert!(joined.contains("model_provider=\"code-tabs-proxy\""));
@@ -365,8 +444,7 @@ mod tests {
 
     #[test]
     fn codex_proxy_config_uses_v1_for_api_key_auth() {
-        let mut argv = Vec::new();
-        append_codex_proxy_config(&mut argv, 4567, "sid-1", Some("apikey"));
+        let argv = codex_proxy_config_args(&[], &[], 4567, "sid-1", Some("apikey"));
         let joined = argv.join("\n");
 
         assert!(joined.contains("http://127.0.0.1:4567/s/sid-1/v1"));
@@ -374,25 +452,55 @@ mod tests {
 
     #[test]
     fn codex_proxy_config_skips_when_auth_mode_is_unknown() {
-        let mut argv = Vec::new();
-        append_codex_proxy_config(&mut argv, 4567, "sid-1", None);
+        let argv = codex_proxy_config_args(&[], &[], 4567, "sid-1", None);
 
         assert!(argv.is_empty());
     }
 
     #[test]
     fn codex_proxy_config_respects_user_provider_overrides() {
-        let mut argv = args(&["-c", "model_provider=\"custom\""]);
-        append_codex_proxy_config(&mut argv, 4567, "sid-1", Some("chatgpt"));
+        let existing = args(&["-c", "model_provider=\"custom\""]);
+        let argv = codex_proxy_config_args(&existing, &[], 4567, "sid-1", Some("chatgpt"));
 
-        assert_eq!(argv, args(&["-c", "model_provider=\"custom\""]));
+        assert!(argv.is_empty());
     }
 
     #[test]
     fn codex_proxy_config_respects_user_base_url_overrides() {
-        let mut argv = args(&["--config=openai_base_url=http://x"]);
-        append_codex_proxy_config(&mut argv, 4567, "sid-1", Some("chatgpt"));
+        let existing = args(&["--config=openai_base_url=http://x"]);
+        let argv = codex_proxy_config_args(&existing, &[], 4567, "sid-1", Some("chatgpt"));
 
-        assert_eq!(argv, args(&["--config=openai_base_url=http://x"]));
+        assert!(argv.is_empty());
+    }
+
+    #[test]
+    fn codex_proxy_config_can_be_disabled_by_env() {
+        let argv = codex_proxy_config_args(
+            &[],
+            &env(&[("CODE_TABS_PROXY_DISABLED", "1")]),
+            4567,
+            "sid-1",
+            Some("chatgpt"),
+        );
+
+        assert!(argv.is_empty());
+    }
+
+    #[test]
+    fn codex_proxy_config_accepts_provider_and_header_env() {
+        let argv = codex_proxy_config_args(
+            &[],
+            &env(&[
+                ("CODE_TABS_PROXY_PROVIDER_ID", "custom-proxy"),
+                ("CODE_TABS_PROXY_HEADERS", "OpenAI-Beta:OPENAI_BETA"),
+            ]),
+            4567,
+            "sid-1",
+            Some("chatgpt"),
+        );
+        let joined = argv.join("\n");
+
+        assert!(joined.contains("model_provider=\"custom-proxy\""));
+        assert!(joined.contains("model_providers.custom-proxy.env_http_headers.OpenAI-Beta"));
     }
 }

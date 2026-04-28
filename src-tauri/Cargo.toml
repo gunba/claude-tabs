@@ -53,6 +53,9 @@ chrono = { version = "0.4", features = ["serde"] }
 notify = "6"
 dirs = "6"
 regex = "1"
+semver = "1"
+shlex = "1"
+wait-timeout = "0.2"
 log = "0.4"
 open = { version = "5", features = ["shellexecute-on-windows"] }
 reqwest = { version = "0.12", features = ["blocking", "stream", "socks", "json"] }

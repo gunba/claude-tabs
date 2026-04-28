@@ -1,6 +1,9 @@
 // [VA-03] Rust version commands: build info, CLI version check, CLI update with install method detection
 use regex::Regex;
+use scraper::{Html, Selector};
+use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,102 +60,58 @@ pub struct CliChangelog {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ParsedVersion {
-    nums: Vec<u64>,
-    pre: Option<String>,
+fn version_re() -> &'static Regex {
+    static VERSION_RE: OnceLock<Regex> = OnceLock::new();
+    VERSION_RE.get_or_init(|| {
+        Regex::new(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
+            .expect("version regex must compile")
+    })
 }
 
 fn normalize_cli_version(version: &str) -> Option<String> {
-    let re = Regex::new(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?").unwrap();
-    re.find(version).map(|m| m.as_str().to_string())
+    version_re().find(version).map(|m| m.as_str().to_string())
 }
 
-fn parse_version(version: &str) -> Option<ParsedVersion> {
+fn parse_version(version: &str) -> Option<Version> {
     let normalized = normalize_cli_version(version)?;
-    let mut parts = normalized.splitn(2, ['-', '+']);
-    let core = parts.next()?;
-    let pre = parts.next().filter(|s| !s.is_empty()).map(str::to_string);
-    let nums = core
-        .split('.')
-        .map(|part| part.parse::<u64>().unwrap_or(0))
-        .collect::<Vec<_>>();
-    Some(ParsedVersion { nums, pre })
+    Version::parse(&normalized).ok()
 }
 
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    let Some(pa) = parse_version(a) else {
-        return std::cmp::Ordering::Equal;
-    };
-    let Some(pb) = parse_version(b) else {
-        return std::cmp::Ordering::Equal;
-    };
-    let len = pa.nums.len().max(pb.nums.len());
-    for i in 0..len {
-        let av = *pa.nums.get(i).unwrap_or(&0);
-        let bv = *pb.nums.get(i).unwrap_or(&0);
-        match av.cmp(&bv) {
-            std::cmp::Ordering::Equal => {}
-            other => return other,
-        }
-    }
-    match (&pa.pre, &pb.pre) {
+    match (parse_version(a), parse_version(b)) {
+        (Some(pa), Some(pb)) => pa.cmp(&pb),
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
         (None, None) => std::cmp::Ordering::Equal,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (Some(a), Some(b)) => compare_prerelease(a, b),
     }
-}
-
-fn compare_prerelease(a: &str, b: &str) -> std::cmp::Ordering {
-    let aa = a.split('.').collect::<Vec<_>>();
-    let bb = b.split('.').collect::<Vec<_>>();
-    let len = aa.len().max(bb.len());
-    for i in 0..len {
-        let av = aa.get(i);
-        let bv = bb.get(i);
-        let Some(av) = av else {
-            return std::cmp::Ordering::Less;
-        };
-        let Some(bv) = bv else {
-            return std::cmp::Ordering::Greater;
-        };
-        let an = av.parse::<u64>().ok();
-        let bn = bv.parse::<u64>().ok();
-        match (an, bn) {
-            (Some(an), Some(bn)) => match an.cmp(&bn) {
-                std::cmp::Ordering::Equal => {}
-                other => return other,
-            },
-            (Some(_), None) => return std::cmp::Ordering::Less,
-            (None, Some(_)) => return std::cmp::Ordering::Greater,
-            (None, None) => match av.cmp(bv) {
-                std::cmp::Ordering::Equal => {}
-                other => return other,
-            },
-        }
-    }
-    std::cmp::Ordering::Equal
 }
 
 fn is_prerelease(version: &str) -> bool {
     parse_version(version)
-        .and_then(|parsed| parsed.pre)
-        .is_some()
+        .map(|parsed| !parsed.pre.is_empty())
+        .unwrap_or(false)
 }
 
 fn is_version_after(version: &str, after: &Option<String>) -> bool {
-    after
-        .as_deref()
-        .map(|a| compare_versions(version, a).is_gt())
-        .unwrap_or(true)
+    if parse_version(version).is_none() {
+        return false;
+    }
+    after.as_deref().map_or(true, |a| {
+        parse_version(a)
+            .map(|_| compare_versions(version, a).is_gt())
+            .unwrap_or(true)
+    })
 }
 
 fn is_version_at_or_before(version: &str, before: &Option<String>) -> bool {
-    before
-        .as_deref()
-        .map(|b| compare_versions(version, b).is_le())
-        .unwrap_or(true)
+    if parse_version(version).is_none() {
+        return false;
+    }
+    before.as_deref().map_or(true, |b| {
+        parse_version(b)
+            .map(|_| compare_versions(version, b).is_le())
+            .unwrap_or(true)
+    })
 }
 
 fn truncate_body(body: &str) -> (String, bool) {
@@ -272,86 +231,73 @@ fn fetch_claude_changelog(
     })
 }
 
-fn decode_xml_entities(input: &str) -> String {
-    input
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&#39;", "'")
-        .replace("&amp;", "&")
-}
-
 fn collapse_text(input: &str) -> String {
     input.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn html_fragment_to_markdown(input: &str) -> String {
-    let mut text = decode_xml_entities(input);
-    let h_re = Regex::new(r"(?is)<h[1-6][^>]*>(.*?)</h[1-6]>").unwrap();
-    text = h_re
-        .replace_all(&text, |caps: &regex::Captures| {
-            format!("\n### {}\n", collapse_text(&strip_html_tags(&caps[1])))
-        })
-        .to_string();
-    let li_re = Regex::new(r"(?is)<li[^>]*>(.*?)</li>").unwrap();
-    text = li_re
-        .replace_all(&text, |caps: &regex::Captures| {
-            format!("\n- {}", collapse_text(&strip_html_tags(&caps[1])))
-        })
-        .to_string();
-    let p_re = Regex::new(r"(?is)<p[^>]*>(.*?)</p>").unwrap();
-    text = p_re
-        .replace_all(&text, |caps: &regex::Captures| {
-            format!("\n{}\n", collapse_text(&strip_html_tags(&caps[1])))
-        })
-        .to_string();
-    text = Regex::new(r"(?is)<br\s*/?>")
-        .unwrap()
-        .replace_all(&text, "\n")
-        .to_string();
-    strip_html_tags(&text)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn strip_html_tags(input: &str) -> String {
-    let without_tags = Regex::new(r"(?is)<[^>]+>")
-        .unwrap()
-        .replace_all(input, " ")
-        .to_string();
-    decode_xml_entities(&without_tags)
-}
-
-fn capture_tag(block: &str, tag: &str) -> Option<String> {
-    let re = Regex::new(&format!(r"(?is)<{tag}[^>]*>(.*?)</{tag}>")).ok()?;
-    re.captures(block)
-        .map(|caps| decode_xml_entities(caps[1].trim()).trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn capture_link(block: &str) -> Option<String> {
-    let re = Regex::new(r#"(?is)<link[^>]*href="([^"]+)""#).ok()?;
-    re.captures(block)
-        .map(|caps| decode_xml_entities(&caps[1]))
-        .filter(|s| !s.is_empty())
+    let fragment = Html::parse_fragment(input);
+    let selector = Selector::parse("h1, h2, h3, h4, h5, h6, li, p").unwrap();
+    let mut lines = Vec::new();
+    for node in fragment.select(&selector) {
+        let text = collapse_text(&node.text().collect::<Vec<_>>().join(" "));
+        if text.is_empty() {
+            continue;
+        }
+        match node.value().name() {
+            "li" => lines.push(format!("- {text}")),
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => lines.push(format!("### {text}")),
+            _ => lines.push(text),
+        }
+    }
+    if lines.is_empty() {
+        let text = collapse_text(&fragment.root_element().text().collect::<Vec<_>>().join(" "));
+        if !text.is_empty() {
+            lines.push(text);
+        }
+    }
+    lines.join("\n")
 }
 
 fn parse_codex_atom(raw: &str) -> Vec<ChangelogEntry> {
-    let entry_re = Regex::new(r"(?is)<entry>(.*?)</entry>").unwrap();
-    entry_re
-        .captures_iter(raw)
-        .filter_map(|caps| {
-            let block = &caps[1];
-            let title = capture_tag(block, "title")?;
+    let document = Html::parse_document(raw);
+    let entry_selector = Selector::parse("entry").unwrap();
+    let title_selector = Selector::parse("title").unwrap();
+    let updated_selector = Selector::parse("updated").unwrap();
+    let link_selector = Selector::parse("link[href]").unwrap();
+    let content_selector = Selector::parse("content").unwrap();
+    document
+        .select(&entry_selector)
+        .filter_map(|entry| {
+            let title = entry
+                .select(&title_selector)
+                .next()
+                .map(|node| collapse_text(&node.text().collect::<Vec<_>>().join(" ")))?;
             let version = normalize_cli_version(&title)?;
-            let date = capture_tag(block, "updated");
-            let url = capture_link(block);
-            let raw_body =
-                capture_tag(block, "content").unwrap_or_else(|| format!("Release {version}"));
+            let date = entry
+                .select(&updated_selector)
+                .next()
+                .map(|node| collapse_text(&node.text().collect::<Vec<_>>().join(" ")))
+                .filter(|s| !s.is_empty());
+            let url = entry
+                .select(&link_selector)
+                .next()
+                .and_then(|node| node.value().attr("href"))
+                .map(str::to_string)
+                .filter(|s| !s.is_empty());
+            let raw_body = entry
+                .select(&content_selector)
+                .next()
+                .map(|node| {
+                    let inner = node.inner_html();
+                    if inner.contains("&lt;") {
+                        node.text().collect::<Vec<_>>().join("")
+                    } else {
+                        inner
+                    }
+                })
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| format!("Release {version}"));
             let body = html_fragment_to_markdown(&raw_body);
             let (body, _) = truncate_body(&body);
             Some(ChangelogEntry {
@@ -494,24 +440,87 @@ pub async fn check_latest_cli_version() -> Result<String, String> {
 
 /// Detect how Claude Code CLI was installed from its resolved path.
 /// Normalizes path separators so Windows backslash paths match correctly.
-fn detect_install_method(cli_path: &str) -> &'static str {
-    let normalized = cli_path.replace('\\', "/").to_lowercase();
-    if normalized.contains("homebrew") || normalized.contains("linuxbrew") {
+fn normalized_install_paths(cli_path: &str) -> Vec<String> {
+    let mut paths = vec![cli_path.replace('\\', "/").to_lowercase()];
+    if let Ok(canonical) = std::fs::canonicalize(cli_path) {
+        let canonical = canonical
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_lowercase();
+        if !paths.iter().any(|path| path == &canonical) {
+            paths.push(canonical);
+        }
+    }
+    paths
+}
+
+fn detect_install_method_from_normalized(lower: &str) -> &'static str {
+    let components = lower.split('/').collect::<Vec<_>>();
+    if components
+        .iter()
+        .any(|part| matches!(*part, "homebrew" | "linuxbrew"))
+    {
         "brew"
-    } else if normalized.contains("volta") {
+    } else if components.iter().any(|part| *part == "volta") {
         "volta"
-    } else if normalized.contains("node_modules")
-        || normalized.ends_with(".cmd")
-        || normalized.ends_with(".ps1")
+    } else if components.iter().any(|part| *part == "node_modules")
+        || lower.ends_with(".cmd")
+        || lower.ends_with(".ps1")
     {
         "npm"
-    } else if normalized.contains(".local/share/claude/versions")
-        || normalized.contains("claude/versions")
+    } else if lower.contains("/.local/share/claude/versions/")
+        || components
+            .windows(2)
+            .any(|window| window == ["claude", "versions"])
     {
         "binary"
     } else {
         "unknown"
     }
+}
+
+fn detect_install_method(cli_path: &str) -> &'static str {
+    for lower in normalized_install_paths(cli_path) {
+        let method = detect_install_method_from_normalized(&lower);
+        if method != "unknown" {
+            return method;
+        }
+    }
+    "unknown"
+}
+
+fn detect_codex_install_method_from_normalized(lower: &str) -> &'static str {
+    let components = lower.split('/').collect::<Vec<_>>();
+    if components
+        .iter()
+        .any(|part| matches!(*part, "homebrew" | "linuxbrew"))
+    {
+        "brew"
+    } else if components.iter().any(|part| *part == "node_modules")
+        || lower.ends_with(".cmd")
+        || lower.ends_with(".ps1")
+    {
+        "npm"
+    } else if components
+        .windows(2)
+        .any(|window| window == [".cargo", "bin"])
+    {
+        "cargo"
+    } else if components.iter().any(|part| *part == ".codex") {
+        "binary"
+    } else {
+        "unknown"
+    }
+}
+
+fn detect_codex_install_method(cli_path: &str) -> &'static str {
+    for lower in normalized_install_paths(cli_path) {
+        let method = detect_codex_install_method_from_normalized(&lower);
+        if method != "unknown" {
+            return method;
+        }
+    }
+    "unknown"
 }
 
 #[derive(Serialize)]
@@ -592,6 +601,33 @@ pub async fn update_cli() -> Result<CliUpdateResult, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn update_codex_cli() -> Result<CliUpdateResult, String> {
+    tokio::task::spawn_blocking(|| {
+        let cli_path = super::codex_cli::detect_codex_cli_sync()?;
+        let method = detect_codex_install_method(&cli_path);
+
+        let result = match method {
+            "brew" => run_update_command("brew", &["upgrade", "codex"]),
+            "npm" => run_update_command("npm", &["update", "-g", "@openai/codex"]),
+            "cargo" => run_update_command("cargo", &["install", "codex-cli"]),
+            _ => CliUpdateResult {
+                method: method.to_string(),
+                success: false,
+                message: "Codex update is only supported for Homebrew, npm, and cargo installs"
+                    .into(),
+            },
+        };
+
+        Ok(CliUpdateResult {
+            method: method.to_string(),
+            ..result
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,17 +638,19 @@ mod tests {
         assert!(compare_versions("codex-cli 0.126.0-alpha.1", "0.125.0").is_gt());
         assert!(compare_versions("0.126.0", "0.126.0-alpha.2").is_gt());
         assert!(compare_versions("0.126.0-alpha.10", "0.126.0-alpha.2").is_gt());
+        assert!(compare_versions("2.0.0-rc.1", "2.0.0-beta.9").is_gt());
+        assert!(compare_versions("garbage", "2.1.119").is_lt());
     }
 
     #[test]
     fn codex_atom_parser_extracts_release_entries() {
         let raw = r#"
         <feed>
-          <entry>
+            <entry>
             <updated>2026-04-24T18:29:40Z</updated>
             <link rel="alternate" type="text/html" href="https://github.com/openai/codex/releases/tag/rust-v0.124.0"/>
             <title>0.124.0</title>
-            <content type="html">&lt;h2&gt;New Features&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;Added app-server work.&lt;/li&gt;&lt;/ul&gt;</content>
+            <content type="html">&lt;h2&gt;New Features&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;Added app-server work &#x2014; and &amp;copy; text.&lt;/li&gt;&lt;/ul&gt;</content>
           </entry>
         </feed>
         "#;
@@ -620,7 +658,8 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].version, "0.124.0");
         assert!(entries[0].body.contains("### New Features"));
-        assert!(entries[0].body.contains("- Added app-server work."));
+        assert!(entries[0].body.contains("app-server work"));
+        assert!(entries[0].body.contains("and \u{00a9} text."));
     }
 
     #[test]
@@ -654,6 +693,43 @@ mod tests {
                 .map(|e| e.version.as_str())
                 .collect::<Vec<_>>(),
             vec!["2.1.119", "2.1.118"],
+        );
+    }
+
+    #[test]
+    fn install_detection_matches_path_components_not_substrings() {
+        assert_eq!(
+            detect_install_method("/tmp/homebrewery/bin/claude"),
+            "unknown"
+        );
+        assert_eq!(detect_install_method("/opt/homebrew/bin/claude"), "brew");
+        assert_eq!(
+            detect_install_method("/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"),
+            "npm"
+        );
+        assert_eq!(
+            detect_install_method(r"C:\Users\me\AppData\Roaming\npm\claude.cmd"),
+            "npm"
+        );
+    }
+
+    #[test]
+    fn codex_install_detection_handles_supported_installers() {
+        assert_eq!(
+            detect_codex_install_method("/tmp/linuxbrewery/bin/codex"),
+            "unknown"
+        );
+        assert_eq!(
+            detect_codex_install_method("/home/linuxbrew/.linuxbrew/bin/codex"),
+            "brew"
+        );
+        assert_eq!(
+            detect_codex_install_method("/usr/lib/node_modules/@openai/codex/bin/codex.js"),
+            "npm"
+        );
+        assert_eq!(
+            detect_codex_install_method(r"C:\Users\me\.cargo\bin\codex.exe"),
+            "cargo"
         );
     }
 }

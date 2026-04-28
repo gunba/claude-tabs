@@ -3,6 +3,46 @@ use crate::session::types::SessionConfig;
 use serde_json::json;
 use tauri::AppHandle;
 
+const CLAUDE_CLI_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const STDERR_CAPTURE_LIMIT: u64 = 64 * 1024;
+
+struct TempCliOutputFile {
+    path: std::path::PathBuf,
+}
+
+impl TempCliOutputFile {
+    fn new(kind: &str) -> Self {
+        Self {
+            path: std::env::temp_dir().join(format!(
+                "code-tabs-cli-{}-{}-{}.out",
+                kind,
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            )),
+        }
+    }
+}
+
+impl Drop for TempCliOutputFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn read_file_prefix(path: &std::path::Path, limit: u64) -> Vec<u8> {
+    let Ok(file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let mut buf = Vec::new();
+    use std::io::Read;
+    let _ = file.take(limit).read_to_end(&mut buf);
+    buf
+}
+
+fn parse_extra_flags(extra: &str) -> Result<Vec<String>, String> {
+    shlex::split(extra).ok_or_else(|| "Invalid shell quoting in extra flags".to_string())
+}
+
 // Discovery primitives live in `crate::discovery` so the standalone
 // `discover_audit` binary can invoke the exact same code as the Tauri app.
 pub use crate::discovery::DiscoveredEnvVar;
@@ -168,40 +208,35 @@ fn run_claude_cli(args: &[&str], label: &str) -> Result<String, String> {
     // `claude plugin list --available --json | wc -c` returns varying
     // counts (32k / 49k / 71k), while the same command redirected to
     // a file (`> out.json`) returns 71k consistently. Windows is
-    // unaffected. Using a file FD avoids the pipe path entirely and
-    // preserves all output. Stderr stays on a pipe so we can surface
-    // errors; stderr volume is small and never hits the buffering race.
-    let stdout_path = std::env::temp_dir().join(format!(
-        "code-tabs-cli-{}-{}.out",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    let stdout_file = std::fs::File::create(&stdout_path)
+    // unaffected. Using file FDs avoids pipe buffering races entirely.
+    let stdout_temp = TempCliOutputFile::new("stdout");
+    let stdout_file = std::fs::File::create(&stdout_temp.path)
         .map_err(|e| format!("{}: create stdout tempfile: {}", label, e))?;
     cmd.stdout(stdout_file);
-    cmd.stderr(std::process::Stdio::piped());
+    let stderr_temp = TempCliOutputFile::new("stderr");
+    let stderr_file = std::fs::File::create(&stderr_temp.path)
+        .map_err(|e| format!("{}: create stderr tempfile: {}", label, e))?;
+    cmd.stderr(stderr_file);
 
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to run {}: {}", label, e))?;
-    let stderr_bytes = child
-        .stderr
-        .take()
-        .map(|mut s| {
-            let mut buf = Vec::new();
-            use std::io::Read;
-            let _ = s.read_to_end(&mut buf);
-            buf
-        })
-        .unwrap_or_default();
-    let status = child
-        .wait()
-        .map_err(|e| format!("Failed to wait for {}: {}", label, e))?;
-    let stdout_bytes = std::fs::read(&stdout_path).unwrap_or_default();
-    let _ = std::fs::remove_file(&stdout_path);
+    let status = match wait_timeout::ChildExt::wait_timeout(&mut child, CLAUDE_CLI_TIMEOUT)
+        .map_err(|e| format!("Failed to wait for {}: {}", label, e))?
+    {
+        Some(status) => status,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "{} timed out after {}s",
+                label,
+                CLAUDE_CLI_TIMEOUT.as_secs()
+            ));
+        }
+    };
+    let stderr_bytes = read_file_prefix(&stderr_temp.path, STDERR_CAPTURE_LIMIT);
+    let stdout_bytes = std::fs::read(&stdout_temp.path).unwrap_or_default();
 
     log::info!(
         "{}: exit_status={:?} stdout_bytes={} stderr_bytes={} success={}",
@@ -631,9 +666,7 @@ pub fn build_claude_args(config: SessionConfig) -> Result<Vec<String>, String> {
     if let Some(ref extra) = config.extra_flags {
         let extra = extra.trim();
         if !extra.is_empty() {
-            for flag in extra.split_whitespace() {
-                args.push(flag.to_string());
-            }
+            args.extend(parse_extra_flags(extra)?);
         }
     }
 
@@ -686,24 +719,30 @@ fn scan_command_usage_from_roots(
     Ok(counts)
 }
 
-fn collect_jsonl_files(
-    dir: &std::path::Path,
+fn walk_jsonl_files(
+    root: &std::path::Path,
     max_depth: usize,
-    files: &mut Vec<(std::time::SystemTime, std::path::PathBuf)>,
-) {
-    if max_depth == 0 {
-        return;
+) -> Vec<(std::time::SystemTime, std::path::PathBuf)> {
+    if !root.exists() {
+        return Vec::new();
     }
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_jsonl_files(&path, max_depth - 1, files);
+    let mut files = Vec::new();
+    let walker = ignore::WalkBuilder::new(root)
+        .follow_links(false)
+        .max_depth(Some(max_depth))
+        .hidden(false)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .build();
+    for entry in walker.flatten() {
+        let Some(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
             continue;
         }
+        let path = entry.into_path();
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
             continue;
         }
@@ -712,6 +751,7 @@ fn collect_jsonl_files(
             files.push((mtime, path));
         }
     }
+    files
 }
 
 fn scan_claude_command_usage(
@@ -722,26 +762,7 @@ fn scan_claude_command_usage(
         return Ok(());
     }
 
-    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
-    let entries = std::fs::read_dir(&projects_dir).map_err(|e| e.to_string())?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        if let Ok(dir_entries) = std::fs::read_dir(&path) {
-            for file in dir_entries.flatten() {
-                let fpath = file.path();
-                if fpath.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                if let Ok(meta) = std::fs::metadata(&fpath) {
-                    let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                    files.push((mtime, fpath));
-                }
-            }
-        }
-    }
+    let mut files = walk_jsonl_files(projects_dir, 3);
 
     // Sort by mtime desc, cap at 200
     files.sort_by(|a, b| b.0.cmp(&a.0));
@@ -774,8 +795,7 @@ fn scan_codex_command_usage(
         return Ok(());
     }
 
-    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
-    collect_jsonl_files(sessions_dir, 6, &mut files);
+    let mut files = walk_jsonl_files(sessions_dir, 6);
     files.sort_by(|a, b| b.0.cmp(&a.0));
     files.truncate(200);
 
@@ -813,6 +833,9 @@ fn slash_command_from_text(text: &str) -> Option<String> {
 }
 
 fn extract_codex_slash_command(line: &str) -> Option<String> {
+    if !line.contains("\"user_message\"") {
+        return None;
+    }
     let parsed: serde_json::Value = serde_json::from_str(line).ok()?;
     let message = if parsed.get("type").and_then(|v| v.as_str()) == Some("event_msg") {
         let payload = parsed.get("payload")?;
@@ -923,6 +946,17 @@ mod tests {
             dir_arg, "\\home\\user\\project",
             "Windows should normalize to backslashes"
         );
+    }
+
+    #[test]
+    fn build_args_preserves_quoted_extra_flags() {
+        let config = SessionConfig {
+            extra_flags: Some(r#"--config=instructions="be precise" --debug"#.into()),
+            ..Default::default()
+        };
+        let args = build_claude_args(config).unwrap();
+        assert!(args.contains(&"--config=instructions=be precise".to_string()));
+        assert!(args.contains(&"--debug".to_string()));
     }
 
     #[test]

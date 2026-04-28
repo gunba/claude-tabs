@@ -267,6 +267,7 @@ pub fn run() {
             commands::fetch_cli_changelog,
             commands::check_latest_cli_version,
             commands::update_cli,
+            commands::update_codex_cli,
             weather::get_current_weather,
             observability::append_observability_data,
             observability::get_observability_info,

@@ -17,7 +17,7 @@ use crate::session::types::{PermissionMode, SessionConfig};
 
 use super::{
     CliAdapter, DetectedBinary, EffortOption, FlagPill, LaunchOptions, ModelOption,
-    PermissionOption, SpawnSpec,
+    PermissionOption, SpawnContext, SpawnSpec,
 };
 
 pub struct CodexAdapter;
@@ -135,9 +135,7 @@ impl CliAdapter for CodexAdapter {
         if let Some(ref extra) = cfg.extra_flags {
             let extra = extra.trim();
             if !extra.is_empty() {
-                for flag in extra.split_whitespace() {
-                    args.push(flag.to_string());
-                }
+                args.extend(parse_extra_flags(extra)?);
             }
         }
 
@@ -162,10 +160,59 @@ impl CliAdapter for CodexAdapter {
         })
     }
 
+    fn post_build(&self, ctx: &SpawnContext<'_>, spec: &mut SpawnSpec) -> Result<(), String> {
+        let merged = crate::commands::merged_codex_spawn_env(ctx.app, ctx.working_dir);
+        let mut proxy_env = super::proxy_control_env_keys()
+            .iter()
+            .filter_map(|key| {
+                std::env::var(key)
+                    .ok()
+                    .map(|value| ((*key).to_string(), Some(value)))
+            })
+            .collect::<Vec<_>>();
+        for (k, v) in &merged {
+            if super::reserved_proxy_env(k) {
+                proxy_env.push((k.clone(), Some(v.clone())));
+                continue;
+            }
+            if !spec.env_overrides.iter().any(|(existing, _)| existing == k) {
+                spec.env_overrides.push((k.clone(), Some(v.clone())));
+            }
+        }
+        spec.env_overrides
+            .retain(|(key, _)| !super::reserved_proxy_env(key));
+        for key in super::proxy_control_env_keys() {
+            spec.env_overrides.push(((*key).to_string(), None));
+        }
+
+        if let Some(port) = ctx.proxy_port {
+            let auth_mode = crate::commands::codex_cli::read_codex_auth_mode_sync();
+            let proxy_args = super::codex_proxy_config_args(
+                &spec.args,
+                &proxy_env,
+                port,
+                ctx.session_id,
+                auth_mode.as_deref(),
+            );
+            spec.args.extend(proxy_args);
+        }
+        Ok(())
+    }
+
     fn launch_options(&self) -> Result<LaunchOptions, String> {
-        // All three fields come straight from the running binary.
-        let raw_models = codex_cli::discover_codex_models_sync()?;
-        let raw_options = codex_cli::discover_codex_cli_options_sync()?;
+        let detected = self.detect()?;
+        let model_bin = detected.path.clone();
+        let options_bin = detected.path;
+        let models_thread =
+            std::thread::spawn(move || codex_cli::discover_codex_models_at_sync(&model_bin));
+        let options_thread =
+            std::thread::spawn(move || codex_cli::discover_codex_cli_options_at_sync(&options_bin));
+        let raw_models = models_thread
+            .join()
+            .map_err(|_| "codex model discovery thread panicked".to_string())??;
+        let raw_options = options_thread
+            .join()
+            .map_err(|_| "codex option discovery thread panicked".to_string())??;
 
         let mut effort_set: Vec<String> = Vec::new();
         let models = raw_models
@@ -246,6 +293,10 @@ impl CliAdapter for CodexAdapter {
             flag_pills,
         })
     }
+}
+
+fn parse_extra_flags(extra: &str) -> Result<Vec<String>, String> {
+    shlex::split(extra).ok_or_else(|| "Invalid shell quoting in extra flags".to_string())
 }
 
 // [CC-05] system_prompt -> instructions and append_system_prompt -> developer_instructions via -c overrides; quote_toml_value uses serde_json::to_string for correct Unicode/newline escaping
@@ -478,7 +529,12 @@ mod tests {
         push_codex_perm_args(&mut args, &c);
         assert_eq!(
             args,
-            vec!["--sandbox", "workspace-write", "--ask-for-approval", "never"]
+            vec![
+                "--sandbox",
+                "workspace-write",
+                "--ask-for-approval",
+                "never"
+            ]
         );
     }
 
@@ -592,7 +648,10 @@ mod tests {
                 args.push(format!("model_reasoning_effort={}", quote_toml_value(e)));
             }
         }
-        assert!(args.is_empty(), "expected no -c override for unknown effort");
+        assert!(
+            args.is_empty(),
+            "expected no -c override for unknown effort"
+        );
     }
 
     #[test]
@@ -606,5 +665,11 @@ mod tests {
         assert_eq!(quote_toml_value("true"), "true");
         assert_eq!(quote_toml_value("false"), "false");
         assert_eq!(quote_toml_value("[1,2]"), "[1,2]");
+    }
+
+    #[test]
+    fn extra_flags_preserve_shell_quoted_values() {
+        let flags = parse_extra_flags(r#"--config=instructions="be precise" --json"#).unwrap();
+        assert_eq!(flags, vec!["--config=instructions=be precise", "--json"]);
     }
 }
