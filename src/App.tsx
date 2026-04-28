@@ -1,14 +1,13 @@
-import { lazy, Suspense, useEffect, useState, useRef, useCallback } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "./store/sessions";
 import { useSettingsStore } from "./store/settings";
-import { dirToTabName, getResumeId, resolveResumeId, getLaunchWorkingDir, canResumeSession, stripWorktreeFlags } from "./lib/claude";
+import { getResumeId, getLaunchWorkingDir, canResumeSession } from "./lib/claude";
 import { TerminalPanel } from "./components/Terminal/TerminalPanel";
 
 import { SessionLauncher } from "./components/SessionLauncher/SessionLauncher";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { CommandBar } from "./components/CommandBar/CommandBar";
-import { CONFIG_MANAGER_CLOSE_REQUEST_EVENT } from "./components/ConfigManager/events";
 import { RightPanel } from "./components/RightPanel/RightPanel";
 
 import { useCliWatcher } from "./hooks/useCliWatcher";
@@ -16,26 +15,27 @@ import { useNotifications } from "./hooks/useNotifications";
 import { useCommandDiscovery } from "./hooks/useCommandDiscovery";
 import { useProcessMetrics } from "./hooks/useProcessMetrics";
 import { useCtrlKey } from "./hooks/useCtrlKey";
-import { useUiConfigStore } from "./lib/uiConfig";
-import { useVersionStore } from "./store/version";
-import { useWeatherStore } from "./store/weather";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { killAllActivePtys } from "./lib/ptyProcess";
-import { killPty, writeToPty } from "./lib/ptyRegistry";
-import { focusTerminal } from "./lib/terminalRegistry";
-import { dlog, flushDebugLog } from "./lib/debugLog";
+import { useStartupBootstrap } from "./hooks/useStartupBootstrap";
+import { useSessionPersistence } from "./hooks/useSessionPersistence";
+import { useWindowTitle } from "./hooks/useWindowTitle";
+import { useChangelogOnVersionBump } from "./hooks/useChangelogOnVersionBump";
+import { useNativeChrome as useNativeChromeHook } from "./hooks/useNativeChrome";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { killPty } from "./lib/ptyRegistry";
+import { dlog } from "./lib/debugLog";
 import { Header } from "./components/Header/Header";
 import { groupSessionsByDir, parseWorktreePath, IS_LINUX } from "./lib/paths";
-import type { CliKind, Session, Subagent } from "./types/session";
+import type { Session, Subagent } from "./types/session";
 import { getEffectiveState } from "./lib/claude";
 import { settledStateManager, type SettledKind } from "./lib/settledState";
 import { useRuntimeStore } from "./store/runtime";
-import { isCliVersionIncrease, type ChangelogRequest } from "./lib/changelog";
+import type { ChangelogRequest } from "./lib/changelog";
 import { TabBar } from "./components/TabBar/TabBar";
 import { SubagentBar } from "./components/SubagentBar/SubagentBar";
 import { TabContextMenu, type TabContextMenuRequest } from "./components/TabContextMenu/TabContextMenu";
 import { PruneDialog, type PruneRequest } from "./components/PruneDialog/PruneDialog";
-import { cycleTabId, jumpTabId } from "./lib/tabCycle";
+import { quickLaunchSession } from "./lib/quickLaunch";
+import { relaunchDeadSession } from "./lib/sessionRelaunch";
 import "./App.css";
 
 const ChangelogModal = lazy(() => import("./components/ChangelogModal/ChangelogModal").then((m) => ({ default: m.ChangelogModal })));
@@ -77,13 +77,16 @@ export default function App() {
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuRequest | null>(null);
   const [settledTabs, setSettledTabs] = useState<Map<string, SettledKind>>(new Map());
   const ctrlHeld = useCtrlKey();
-  const initRef = useRef(false);
-  const handledCliVersionRef = useRef<Partial<Record<CliKind, string>>>({});
   const [pruneConfirm, setPruneConfirm] = useState<PruneRequest | null>(null);
   useCliWatcher();
   useNotifications();
   useCommandDiscovery();
   useProcessMetrics();
+  useStartupBootstrap({ init, loadRuntimeInfo });
+  useSessionPersistence({ sessions, persist });
+  useWindowTitle();
+  useChangelogOnVersionBump({ changelogRequest, setChangelogRequest });
+  const nativeChrome = useNativeChromeHook();
 
   // Feed settled-state manager from effective state changes.
   // Replaces per-consumer ad-hoc debounce with a unified hysteresis system.
@@ -109,171 +112,15 @@ export default function App() {
     );
   }, []);
 
-  // Initialize once
-  useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-    void (async () => {
-      await loadRuntimeInfo();
-      await init();
-      useUiConfigStore.getState().loadConfig();
-      useSettingsStore.getState().loadPastSessions();
-      useSettingsStore.getState().pruneRecentDirs();
-      invoke("migrate_legacy_data").catch(() => {});
-      // [HM-11] Startup intentionally does not install or mutate Claude hook
-      // settings; hook changes are user-managed via the Hooks UI only.
-      invoke("cleanup_session_data", { maxAgeHours: 72 }).catch(() => {});
-      // Version + update checks: fire after init (non-blocking, failures ignored)
-      useVersionStore.getState().loadBuildInfo();
-      useVersionStore.getState().checkForAppUpdate();
-      useVersionStore.getState().checkLatestCliVersion();
-      // [WX-01] Hydrate ambient-viz weather from cache + subscribe to updates.
-      void useWeatherStore.getState().init();
-    })();
-  }, [init, loadRuntimeInfo]);
-
-  // Dynamic window title with version info
-  const appVersion = useVersionStore((s) => s.appVersion);
   const cliVersions = useSettingsStore((s) => s.cliVersions);
-  const lastOpenedCliVersions = useSettingsStore((s) => s.lastOpenedCliVersions);
-  const setLastOpenedCliVersion = useSettingsStore((s) => s.setLastOpenedCliVersion);
-  useEffect(() => {
-    const parts = ["Code Tabs"];
-    if (appVersion) parts[0] += ` v${appVersion}`;
-    parts.push(`Claude ${cliVersions.claude ?? "not installed"}`);
-    parts.push(`Codex ${cliVersions.codex ?? "not installed"}`);
-    getCurrentWindow().setTitle(parts.join(" · ")).catch(() => {});
-  }, [appVersion, cliVersions]);
-
-  useEffect(() => {
-    const ranges: ChangelogRequest["ranges"] = {};
-    for (const cli of ["claude", "codex"] as const) {
-      const current = cliVersions[cli];
-      if (!current) continue;
-      if (handledCliVersionRef.current[cli] === current) continue;
-      handledCliVersionRef.current[cli] = current;
-
-      const previous = lastOpenedCliVersions[cli];
-      if (previous && isCliVersionIncrease(current, previous)) {
-        ranges[cli] = { fromVersion: previous, toVersion: current };
-      }
-      if (previous !== current) {
-        setLastOpenedCliVersion(cli, current);
-      }
-    }
-
-    const changedCli = (["claude", "codex"] as const).find((cli) => ranges[cli]);
-    if (changedCli && !changelogRequest) {
-      setChangelogRequest({
-        kind: "startup",
-        initialCli: changedCli,
-        ranges,
-      });
-    }
-  }, [changelogRequest, cliVersions, lastOpenedCliVersions, setLastOpenedCliVersion]);
-
-  // [PL-01] Linux custom titlebar: tauri.conf.json sets decorations:false globally so non-KDE
-  // Wayland compositors honor it at window creation. Non-Linux re-enables native decorations
-  // at runtime. KDE+Wayland is a known upstream Tauri bug (issues #6162/#6562 — KWin ignores
-  // decorations:false from wry's GTK-Wayland window), so on that combo we restore native
-  // decorations and skip our custom Header to avoid a duplicated titlebar.
-  const [useNativeChrome, setUseNativeChrome] = useState(false);
-  useEffect(() => {
-    (async () => {
-      const native = IS_LINUX ? await invoke<boolean>("linux_use_native_chrome").catch(() => false) : true;
-      setUseNativeChrome(native);
-      if (native) {
-        await getCurrentWindow().setDecorations(true).catch(() => {});
-      }
-    })();
-  }, []);
 
   // [SL-02] Quick launch: Ctrl+Click "+" or Ctrl+Shift+T, uses saved defaults or last config
   const quickLaunch = useCallback(async () => {
-    const { savedDefaults, lastConfig } = useSettingsStore.getState();
-    const defaults = (savedDefaults && savedDefaults.workingDir.trim()) ? savedDefaults : lastConfig;
-    if (!defaults || !defaults.workingDir.trim()) {
-      setShowLauncher(true);
-      return;
-    }
-    // [RS-04] One-shot flags cleared: resumeSession, continueSession never persist in lastConfig
-    const cleanConfig = { ...defaults, resumeSession: null, continueSession: false, sessionId: null, runMode: false };
-    const { claudePath, codexPath } = useSessionStore.getState();
-    const installedCli = [
-      ...(claudePath ? ["claude" as const] : []),
-      ...(codexPath ? ["codex" as const] : []),
-    ];
-    if (installedCli.length === 0) {
-      setShowLauncher(true);
-      return;
-    }
-    if (!installedCli.includes(cleanConfig.cli)) {
-      cleanConfig.cli = installedCli[0];
-    }
-    const name = dirToTabName(cleanConfig.workingDir);
-    useSettingsStore.getState().addRecentDir(cleanConfig.workingDir);
-    useSettingsStore.getState().setLastConfig(cleanConfig);
-    try {
-      await createSession(name, cleanConfig);
-    } catch {
-      // Fall back to modal on failure
-      setShowLauncher(true);
-    }
+    await quickLaunchSession({
+      createSession,
+      openLauncher: () => setShowLauncher(true),
+    });
   }, [createSession, setShowLauncher]);
-
-  // [PS-03] Debounced auto-persist every 2s on session array changes
-  useEffect(() => {
-    if (sessions.length > 0) {
-      const timer = setTimeout(() => persist(), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [sessions, persist]);
-
-  // [PS-02] [PS-04] beforeunload: kill all active PTY trees + flush persist
-  useEffect(() => {
-    const handler = () => {
-      killAllActivePtys();
-      void flushDebugLog();
-      persist();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [persist]);
-
-  const relaunchDeadSession = useCallback(async (session: Session) => {
-    // [RS-09] Auto-resolve: if the dead tab's stored sessionId lost touch
-    // with the actual JSONL on disk (e.g. TAP missed the rename, or the
-    // fallback id is the Code Tabs app UUID which is never a real CLI
-    // session id), pick the right JSONL by cwd + closest lastActive.
-    // Falls through to getResumeId() when pastSessions is empty / not
-    // yet loaded so we don't regress the common path.
-    const pastSessions = useSettingsStore.getState().pastSessions;
-    const resolvedId = resolveResumeId(session, pastSessions);
-    const resumeId = resolvedId ?? getResumeId(session);
-
-    const resumeConfig = {
-      ...session.config,
-      workingDir: getLaunchWorkingDir(session),
-      launchWorkingDir: getLaunchWorkingDir(session),
-      resumeSession: resumeId,
-      continueSession: false,
-      extraFlags: stripWorktreeFlags(session.config.extraFlags),
-    };
-    const insertAtIndex = sessions.findIndex((s) => s.id === session.id);
-    const name = session.name || dirToTabName(getLaunchWorkingDir(session));
-
-    try {
-      await createSession(
-        name,
-        resumeConfig,
-        insertAtIndex >= 0 ? { insertAtIndex } : undefined,
-      );
-      await closeSession(session.id);
-    } catch (err) {
-      dlog("session", session.id, `dead tab relaunch failed: ${err}`, "ERR");
-      setActiveTab(session.id);
-    }
-  }, [closeSession, createSession, sessions, setActiveTab]);
 
   // Activate tab — dead tabs relaunch explicitly, live tabs are focused.
   const handleTabActivate = useCallback(
@@ -287,7 +134,13 @@ export default function App() {
       if (!session) return;
 
       if (session.state === "dead" && canResumeSession(session)) {
-        void relaunchDeadSession(session);
+        void relaunchDeadSession({
+          session,
+          sessions,
+          createSession,
+          closeSession,
+          setActiveTab,
+        });
         return;
       }
 
@@ -314,104 +167,33 @@ export default function App() {
     closeSession(id);
   }, [sessions, closeSession]);
 
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "t") {
-        e.preventDefault();
-        if (e.shiftKey) {
-          // [SL-02] Ctrl+Shift+T: quick launch without modal
-          quickLaunch();
-        } else {
-          // [KB-01] [SL-01] Ctrl+T: open new session (clears resume/continue)
-          const lc = useSettingsStore.getState().lastConfig;
-          if (lc.resumeSession || lc.continueSession) {
-            setLastConfig({ ...lc, resumeSession: null, continueSession: false });
-          }
-          setShowLauncher(true);
-        }
-      }
-
-      // [KB-02] Ctrl+W: close active tab
-      if (e.ctrlKey && e.key === "w") {
-        e.preventDefault();
-        if (activeTabId) handleCloseSession(activeTabId);
-      }
-
-      // [KB-06] Ctrl+K: command palette
-      if (e.ctrlKey && e.key === "k") {
-        e.preventDefault();
-        setShowPalette((v) => !v);
-      }
-
-      // [KB-03] Ctrl+Shift+R: resume picker
-      // [DS-05] Resume picker opens regardless of current session state.
-      if (e.ctrlKey && e.shiftKey && e.key === "R") {
-        e.preventDefault();
-        setShowResumePicker(true);
-      }
-
-      // [KB-11] Ctrl+Shift+F: open RightPanel search tab (cross-session terminal search)
-      if (e.ctrlKey && e.shiftKey && e.key === "F") {
-        e.preventDefault();
-        useSettingsStore.getState().setRightPanelTab("search");
-      }
-
-      // [KB-07] Ctrl+,: config manager
-      if (e.ctrlKey && e.key === ",") {
-        e.preventDefault();
-        if (showConfigManager) {
-          window.dispatchEvent(new Event(CONFIG_MANAGER_CLOSE_REQUEST_EVENT));
-        } else {
-          setShowConfigManager("settings");
-        }
-      }
-
-      if (devtoolsAvailable && e.ctrlKey && e.shiftKey && e.key === "I") {
-        e.preventDefault();
-        openMainDevtools().catch(() => {});
-      }
-
-      // [KB-09] Escape dismissal chain: contextMenu -> palette -> changelog -> contextViewer -> config -> resume -> launcher -> inspector
-      if (e.key === "Escape") {
-        if (tabContextMenu) { setTabContextMenu(null); return; }
-        if (showPalette) return;
-        if (changelogRequest) { setChangelogRequest(null); return; }
-        if (showContextViewer) { setShowContextViewer(false); return; }
-        if (showConfigManager) { window.dispatchEvent(new Event(CONFIG_MANAGER_CLOSE_REQUEST_EVENT)); return; }
-        if (showResumePicker) { setShowResumePicker(false); return; }
-        if (showLauncher) { setShowLauncher(false); return; }
-        if (inspectedSubagent) { e.preventDefault(); setInspectedSubagent(null); return; }
-        const el = document.activeElement as HTMLElement | null;
-        if (el && !el.closest('.xterm')) {
-          e.preventDefault();
-          el.blur();
-          if (activeTabId) {
-            requestAnimationFrame(() => focusTerminal(activeTabId));
-          }
-        } else if (activeTabId) {
-          writeToPty(activeTabId, '\x1b');
-        }
-      }
-
-      // [KB-04] Ctrl+Tab/Ctrl+Shift+Tab: cycle live tabs only
-      if (e.ctrlKey && e.key === "Tab") {
-        e.preventDefault();
-        const nextId = cycleTabId(sessions, activeTabId, e.shiftKey ? "previous" : "next");
-        if (nextId) setActiveTab(nextId);
-      }
-
-      // [KB-05] Alt+1-9: jump to tab N
-      if (e.altKey && e.key >= "1" && e.key <= "9") {
-        e.preventDefault();
-        const targetId = jumpTabId(sessions, parseInt(e.key, 10));
-        if (targetId) setActiveTab(targetId);
-      }
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [activeTabId, sessions, setActiveTab, closeSession, handleCloseSession, setShowLauncher, showPalette, showLauncher, showResumePicker, showConfigManager, setShowConfigManager, changelogRequest, showContextViewer, inspectedSubagent, tabContextMenu, quickLaunch, devtoolsAvailable, openMainDevtools]);
+  useKeyboardShortcuts({
+    activeTabId,
+    sessions,
+    showPalette,
+    showLauncher,
+    showResumePicker,
+    showConfigManager,
+    changelogRequest,
+    showContextViewer,
+    inspectedSubagent,
+    tabContextMenu,
+    devtoolsAvailable,
+  }, {
+    quickLaunch: () => void quickLaunch(),
+    closeActiveTab: handleCloseSession,
+    setActiveTab,
+    setLastConfig,
+    setShowPalette,
+    setShowLauncher,
+    setShowResumePicker,
+    setShowConfigManager,
+    setChangelogRequest,
+    setShowContextViewer,
+    setInspectedSubagent,
+    setTabContextMenu,
+    openMainDevtools,
+  });
 
   const regularSessions = sessions.filter((s) => !s.isMetaAgent);
   const groups = groupSessionsByDir(regularSessions);
@@ -464,7 +246,7 @@ export default function App() {
 
   return (
     <div className={`app app-provider-${activeProvider}${ctrlHeld ? " ctrl-held" : ""}`}>
-      {IS_LINUX && !useNativeChrome && <Header />}
+      {IS_LINUX && !nativeChrome && <Header />}
       {/* [LO-01] Main window layout: tab bar, subagent bar, terminal area, CommandBar (slash commands + skill pills + history), StatusBar. */}
       <TabBar
         groups={groups}

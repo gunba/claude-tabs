@@ -33,9 +33,8 @@ async function scrollToTuiEdge(
   signal: AbortSignal,
 ): Promise<boolean> {
   let prevViewport = getSessionViewport(sessionId) ?? "";
-  const MAX_SCROLLS = 500;
 
-  for (let i = 0; i < MAX_SCROLLS; i++) {
+  while (!signal.aborted) {
     if (signal.aborted) return false;
     writeToPty(sessionId, key);
     await waitForRender(sessionId);
@@ -87,10 +86,11 @@ export async function scrollTuiToText(
   }
 
   let prevViewport = "";
-  const MAX_SCROLLS = 500; // Safety limit
+  let scrollCount = 0;
 
-  for (let i = 0; i < MAX_SCROLLS; i++) {
+  while (!signal.aborted) {
     if (signal.aborted) return false;
+    scrollCount++;
 
     // Send Page Up
     writeToPty(sessionId, PAGE_UP);
@@ -103,13 +103,13 @@ export async function scrollTuiToText(
 
     // Check if target text is now visible
     if (normalizedTargets.some((target) => normalized.includes(target))) {
-      dlog("search", sessionId, `scrollTuiToText: found after ${i + 1} scrolls`);
+      dlog("search", sessionId, `scrollTuiToText: found after ${scrollCount} scrolls`);
       return true;
     }
 
     // Edge detection: viewport unchanged means we hit top
     if (viewport === prevViewport) {
-      dlog("search", sessionId, `scrollTuiToText: hit edge after ${i + 1} scrolls`);
+      dlog("search", sessionId, `scrollTuiToText: hit edge after ${scrollCount} scrolls`);
       if (!signal.aborted) {
         await scrollToTuiEdge(sessionId, PAGE_DOWN, [], signal);
       }
@@ -119,9 +119,5 @@ export async function scrollTuiToText(
     prevViewport = viewport;
   }
 
-  dlog("search", sessionId, "scrollTuiToText: hit scroll limit", "WARN");
-  if (!signal.aborted) {
-    await scrollToTuiEdge(sessionId, PAGE_DOWN, [], signal);
-  }
   return false;
 }
