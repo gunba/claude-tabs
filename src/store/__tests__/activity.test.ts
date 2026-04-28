@@ -45,6 +45,59 @@ describe("activity store", () => {
     });
   });
 
+  describe("file activity precedence", () => {
+    it("keeps created when the same path is later modified", () => {
+      const store = useActivityStore.getState();
+      store.addFileActivity(SID, "/p/new.txt", "created", { toolName: "Write" });
+      store.addFileActivity(SID, "/p/new.txt", "modified", { toolName: "Edit" });
+
+      const activity = useActivityStore.getState().sessions[SID];
+      expect(activity.turns[0].files[0].kind).toBe("created");
+      expect(activity.allFiles["/p/new.txt"].kind).toBe("created");
+    });
+
+    it("does not downgrade a real change to read", () => {
+      const store = useActivityStore.getState();
+      store.addFileActivity(SID, "/p/edit.txt", "modified", { toolName: "Edit" });
+      store.addFileActivity(SID, "/p/edit.txt", "read", { toolName: "Read" });
+
+      const activity = useActivityStore.getState().sessions[SID];
+      expect(activity.turns[0].files[0].kind).toBe("modified");
+      expect(activity.allFiles["/p/edit.txt"].kind).toBe("modified");
+    });
+
+    it("does not downgrade a real change to searched in allFiles", () => {
+      const store = useActivityStore.getState();
+      store.addFileActivity(SID, "/p/edit.txt", "modified", { toolName: "Edit", agentId: null });
+      store.addFileActivity(SID, "/p/edit.txt", "searched", { toolName: "Glob", agentId: "agent-1" });
+
+      const activity = useActivityStore.getState().sessions[SID];
+      expect(activity.turns[0].files[0].kind).toBe("modified");
+      expect(activity.allFiles["/p/edit.txt"].kind).toBe("modified");
+      expect(activity.allFiles["/p/edit.txt"].agentId).toBe("agent-1");
+    });
+
+    it("keeps main-agent searched entries over subagent searches", () => {
+      const store = useActivityStore.getState();
+      store.addFileActivity(SID, "/p/search.txt", "searched", { toolName: "Glob", agentId: null });
+      store.addFileActivity(SID, "/p/search.txt", "searched", { toolName: "Glob", agentId: "agent-1" });
+
+      const activity = useActivityStore.getState().sessions[SID];
+      expect(activity.turns[0].files[0].agentId).toBeNull();
+      expect(activity.allFiles["/p/search.txt"].agentId).toBeNull();
+    });
+
+    it("lets main-agent searched entries replace subagent searches", () => {
+      const store = useActivityStore.getState();
+      store.addFileActivity(SID, "/p/search.txt", "searched", { toolName: "Glob", agentId: "agent-1" });
+      store.addFileActivity(SID, "/p/search.txt", "searched", { toolName: "Glob", agentId: null });
+
+      const activity = useActivityStore.getState().sessions[SID];
+      expect(activity.turns[0].files[0].agentId).toBeNull();
+      expect(activity.allFiles["/p/search.txt"].agentId).toBeNull();
+    });
+  });
+
   describe("confirmEntries", () => {
     it("removes a created entry that does not exist on disk", () => {
       const store = useActivityStore.getState();

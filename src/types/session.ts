@@ -15,7 +15,7 @@ export function isSessionIdle(state: SessionState): boolean {
   return state === "idle" || state === "interrupted";
 }
 
-/** True if a subagent state indicates active work (not dead/idle/interrupted). */
+/** True when a subagent should visually keep its parent active. Only dead, idle, and interrupted are inactive. */
 export function isSubagentActive(state: SessionState): boolean {
   return state !== "dead" && state !== "idle" && state !== "interrupted";
 }

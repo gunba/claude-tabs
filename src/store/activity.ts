@@ -92,6 +92,33 @@ function recomputeStats(activity: SessionActivity): void {
   activity.stats = computeStats(merged);
 }
 
+function mergeFileActivity(
+  prev: FileActivity,
+  next: FileActivity,
+  options: { refreshSearchedMetadataForRealKind?: boolean } = {},
+): FileActivity | null {
+  if (next.kind === "searched" && prev.kind !== "searched") {
+    return options.refreshSearchedMetadataForRealKind
+      ? { ...prev, agentId: next.agentId, timestamp: next.timestamp }
+      : null;
+  }
+  if (
+    next.kind === "searched" &&
+    prev.kind === "searched" &&
+    prev.agentId == null &&
+    next.agentId != null
+  ) {
+    return null;
+  }
+  if (next.kind === "read" && prev.kind !== "read" && prev.kind !== "searched") {
+    return null;
+  }
+  if (prev.kind === "created" && next.kind === "modified") {
+    return { ...next, kind: "created" };
+  }
+  return next;
+}
+
 export const useActivityStore = create<ActivityState>()((set) => ({
   sessions: {},
 
@@ -175,27 +202,8 @@ export const useActivityStore = create<ActivityState>()((set) => ({
         // Deduplicate: update existing entry for same path in current turn
         if (existing >= 0) {
           const existingEntry = turn.files[existing];
-          // [AP-03] Kind precedence: created > modified > read > searched; never downgrade
-          // "searched" is lowest: never overwrites any existing kind
-          if (kind === "searched" && existingEntry.kind !== "searched") {
-            // Don't downgrade — skip
-          } else if (
-            // [AP-06] Searched agentId precedence: main agent (agentId=null)
-            // already recorded wins over a subagent searching the same path.
-            // Without this, a subagent search would overwrite the main agent's
-            // turn entry and repaint the folder with the subagent's color.
-            kind === "searched" &&
-            existingEntry.kind === "searched" &&
-            existingEntry.agentId == null &&
-            entry.agentId != null
-          ) {
-            // Skip — keep main agent entry
-          } else if (kind !== "read" || existingEntry.kind === "read" || existingEntry.kind === "searched") {
-            if (existingEntry.kind === "created" && kind === "modified") {
-              entry.kind = "created";
-            }
-            turn.files[existing] = entry;
-          }
+          const merged = mergeFileActivity(existingEntry, entry);
+          if (merged) turn.files[existing] = merged;
         } else {
           turn.files.push(entry);
         }
@@ -203,23 +211,9 @@ export const useActivityStore = create<ActivityState>()((set) => ({
       // Track in session-wide indices — preserve "created" over "modified", and any real kind over "searched"
       activity.visitedPaths.add(path);
       const prev = activity.allFiles[path];
-      if (prev?.kind === "created" && entry.kind === "modified") {
-        entry.kind = "created";
-      }
-      // Don't downgrade from a real kind to "searched"
-      if (entry.kind === "searched" && prev && prev.kind !== "searched") {
-        // Keep prev in allFiles, but still update agentId/timestamp for mascot tracking
-        activity.allFiles[path] = { ...prev, agentId: entry.agentId, timestamp: entry.timestamp };
-      } else if (
-        // [AP-06] Main agent (agentId=null) searched entry wins over a
-        // subagent searching the same path. Applies equally to allFiles
-        // so that the folder keeps the main agent's color.
-        entry.kind === "searched" &&
-        prev?.kind === "searched" &&
-        prev.agentId == null &&
-        entry.agentId != null
-      ) {
-        // Skip — keep main agent entry
+      if (prev) {
+        const merged = mergeFileActivity(prev, entry, { refreshSearchedMetadataForRealKind: true });
+        if (merged) activity.allFiles[path] = merged;
       } else {
         activity.allFiles[path] = entry;
       }

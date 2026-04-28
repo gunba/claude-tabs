@@ -3,9 +3,13 @@ import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
 import { useSessionStore } from "../../store/sessions";
 import { computeHeatLevel, heatClassName } from "../../lib/claude";
+import type { CommandHistoryEntry, SkillInvocation } from "../../types/session";
 import "./CommandBar.css";
 
 // ── Component ───────────────────────────────────────────────────────
+
+const EMPTY_COMMAND_HISTORY: CommandHistoryEntry[] = [];
+const EMPTY_SKILL_INVOCATIONS: SkillInvocation[] = [];
 
 interface CommandBarProps {
   sessionId: string | null;
@@ -26,8 +30,8 @@ export function CommandBar({ sessionId, sessionState, ctrlHeld }: CommandBarProp
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const expanded = useSettingsStore((s) => s.commandBarExpanded);
   const setExpanded = useSettingsStore((s) => s.setCommandBarExpanded);
-  const history = useSessionStore((s) => sessionId ? s.commandHistory.get(sessionId) : undefined) ?? [];
-  const skillInvocations = useSessionStore((s) => sessionId ? s.skillInvocations.get(sessionId) : undefined) ?? [];
+  const history = useSessionStore((s) => sessionId ? s.commandHistory.get(sessionId) ?? EMPTY_COMMAND_HISTORY : EMPTY_COMMAND_HISTORY);
+  const skillInvocations = useSessionStore((s) => sessionId ? s.skillInvocations.get(sessionId) ?? EMPTY_SKILL_INVOCATIONS : EMPTY_SKILL_INVOCATIONS);
 
   /** Send a slash command immediately. History recorded via PTY input and tap events. */
   const sendCommand = useCallback(

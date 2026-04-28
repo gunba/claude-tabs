@@ -16,7 +16,8 @@ vi.mock("../../lib/claude", async (importOriginal) => {
   };
 });
 
-import { useSessionStore } from "../sessions";
+import { MAX_SESSION_HISTORY, useSessionStore } from "../sessions";
+import type { ProcessTreeMetrics } from "../sessions";
 import { DEFAULT_SESSION_CONFIG } from "../../types/session";
 import type { Session, Subagent } from "../../types/session";
 
@@ -168,6 +169,13 @@ describe("addCommandHistory", () => {
     useSessionStore.getState().addCommandHistory("s1", "/review", 1000);
     const mapAfter = useSessionStore.getState().commandHistory;
     expect(mapBefore).not.toBe(mapAfter);
+  });
+
+  it("caps command history at MAX_SESSION_HISTORY", () => {
+    for (let i = 0; i < MAX_SESSION_HISTORY + 1; i++) {
+      useSessionStore.getState().addCommandHistory("s1", `/cmd-${i}`, i);
+    }
+    expect(useSessionStore.getState().commandHistory.get("s1")).toHaveLength(MAX_SESSION_HISTORY);
   });
 });
 
@@ -402,7 +410,7 @@ describe("simple state actions", () => {
   });
 
   it("updateProcessTreeMetrics is a no-op when values are unchanged", () => {
-    const tree = {
+    const tree: ProcessTreeMetrics = {
       parentCpu: 1,
       parentMemBytes: 100,
       childrenCpu: 2,
@@ -416,6 +424,58 @@ describe("simple state actions", () => {
     const before = useSessionStore.getState();
     useSessionStore.getState().updateProcessTreeMetrics("s1", tree);
     expect(useSessionStore.getState()).toBe(before);
+  });
+
+  it("updateProcessTreeMetrics treats top children as order-insensitive", () => {
+    const tree: ProcessTreeMetrics = {
+      parentCpu: 1,
+      parentMemBytes: 100,
+      childrenCpu: 2,
+      childrenMemBytes: 300,
+      childCount: 2,
+      topChildren: [
+        { pid: 42, name: "node", command: "node app.js", memBytes: 200 },
+        { pid: 43, name: "bash", command: "bash -lc test", memBytes: 100 },
+      ],
+    };
+    const reordered: ProcessTreeMetrics = {
+      ...tree,
+      topChildren: [...tree.topChildren].reverse(),
+    };
+    useSessionStore.setState({
+      processHealth: new Map([["s1", { rss: 10, heapUsed: 5, uptime: 2, tree }]]),
+    });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateProcessTreeMetrics("s1", reordered);
+    expect(useSessionStore.getState()).toBe(before);
+  });
+
+  it("updateProcessTreeMetrics updates when a child metric changes", () => {
+    const tree: ProcessTreeMetrics = {
+      parentCpu: 1,
+      parentMemBytes: 100,
+      childrenCpu: 2,
+      childrenMemBytes: 300,
+      childCount: 2,
+      topChildren: [
+        { pid: 42, name: "node", command: "node app.js", memBytes: 200 },
+        { pid: 43, name: "bash", command: "bash -lc test", memBytes: 100 },
+      ],
+    };
+    useSessionStore.setState({
+      processHealth: new Map([["s1", { rss: 10, heapUsed: 5, uptime: 2, tree }]]),
+    });
+    const before = useSessionStore.getState();
+    useSessionStore.getState().updateProcessTreeMetrics("s1", {
+      ...tree,
+      topChildren: [
+        tree.topChildren[0],
+        { ...tree.topChildren[1], memBytes: 101 },
+      ],
+    });
+    const after = useSessionStore.getState();
+    expect(after).not.toBe(before);
+    expect(after.processHealth.get("s1")?.tree?.topChildren[1].memBytes).toBe(101);
   });
 
   it("reorderTabs reorders sessions array", () => {
@@ -456,11 +516,11 @@ describe("skillInvocation actions", () => {
     expect(list[1].id).toBe("skill-100");
   });
 
-  it("addSkillInvocation caps at 50", () => {
-    for (let i = 0; i < 51; i++) {
+  it("addSkillInvocation caps at MAX_SESSION_HISTORY", () => {
+    for (let i = 0; i < MAX_SESSION_HISTORY + 1; i++) {
       useSessionStore.getState().addSkillInvocation("s1", makeSkill(`skill-${i}`, "commit", i));
     }
-    expect(useSessionStore.getState().skillInvocations.get("s1")).toHaveLength(50);
+    expect(useSessionStore.getState().skillInvocations.get("s1")).toHaveLength(MAX_SESSION_HISTORY);
   });
 
   it("removeSkillInvocation removes matching invocation", () => {

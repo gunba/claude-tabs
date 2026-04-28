@@ -28,6 +28,8 @@ interface VersionState {
   appUpdate: Update | null;
   appUpdateDownloading: boolean;
   appUpdateProgress: number;
+  appUpdateDownloadContentLength: number;
+  appUpdateDownloaded: number;
 
   // CLI update state
   cliUpdating: boolean;
@@ -47,6 +49,8 @@ export const useVersionStore = create<VersionState>((set, get) => ({
   appUpdate: null,
   appUpdateDownloading: false,
   appUpdateProgress: 0,
+  appUpdateDownloadContentLength: 0,
+  appUpdateDownloaded: 0,
   cliUpdating: false,
 
   loadBuildInfo: async () => {
@@ -87,21 +91,35 @@ export const useVersionStore = create<VersionState>((set, get) => ({
     const { appUpdate } = get();
     if (!appUpdate) return;
 
-    set({ appUpdateDownloading: true, appUpdateProgress: 0 });
+    set({
+      appUpdateDownloading: true,
+      appUpdateProgress: 0,
+      appUpdateDownloadContentLength: 0,
+      appUpdateDownloaded: 0,
+    });
     try {
-      let contentLength = 0;
-      let downloaded = 0;
       await appUpdate.downloadAndInstall((event) => {
         switch (event.event) {
-          case "Started":
-            contentLength = event.data.contentLength ?? 0;
+          case "Started": {
+            const contentLength = event.data.contentLength ?? 0;
+            set({
+              appUpdateDownloadContentLength: contentLength,
+              appUpdateDownloaded: 0,
+              appUpdateProgress: 0,
+            });
             dlog("version", null, `Update download started: ${contentLength} bytes`, "LOG");
             break;
+          }
           case "Progress":
-            downloaded += event.data.chunkLength;
-            if (contentLength > 0) {
-              set({ appUpdateProgress: Math.round((downloaded / contentLength) * 100) });
-            }
+            set((state) => {
+              const downloaded = state.appUpdateDownloaded + event.data.chunkLength;
+              return {
+                appUpdateDownloaded: downloaded,
+                appUpdateProgress: state.appUpdateDownloadContentLength > 0
+                  ? Math.round((downloaded / state.appUpdateDownloadContentLength) * 100)
+                  : state.appUpdateProgress,
+              };
+            });
             break;
           case "Finished":
             set({ appUpdateProgress: 100 });
@@ -112,7 +130,12 @@ export const useVersionStore = create<VersionState>((set, get) => ({
       dlog("version", null, "Update installed, relaunching", "LOG");
       await relaunch();
     } catch (err) {
-      set({ appUpdateDownloading: false, appUpdateProgress: 0 });
+      set({
+        appUpdateDownloading: false,
+        appUpdateProgress: 0,
+        appUpdateDownloadContentLength: 0,
+        appUpdateDownloaded: 0,
+      });
       dlog("version", null, `Update download/install failed: ${err}`, "ERR", {
         event: "version.app_update_failed",
         data: { error: String(err) },

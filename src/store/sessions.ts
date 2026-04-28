@@ -16,6 +16,8 @@ import type {
 } from "../types/session";
 import { useSettingsStore } from "./settings";
 
+export const MAX_SESSION_HISTORY = 50;
+
 interface SessionsState {
   sessions: Session[];
   activeTabId: string | null;
@@ -106,13 +108,13 @@ function processTreeMetricsEqual(a: ProcessTreeMetrics, b: ProcessTreeMetrics): 
   ) {
     return false;
   }
-  return a.topChildren.every((child, index) => {
-    const other = b.topChildren[index];
-    return child.pid === other.pid
-      && child.name === other.name
-      && child.command === other.command
-      && child.memBytes === other.memBytes;
-  });
+  const aChildren = a.topChildren.map(processTreeChildKey).sort();
+  const bChildren = b.topChildren.map(processTreeChildKey).sort();
+  return aChildren.every((child, index) => child === bChildren[index]);
+}
+
+function processTreeChildKey(child: ProcessTreeMetrics["topChildren"][number]): string {
+  return `${child.pid}\0${child.name}\0${child.command}\0${child.memBytes}`;
 }
 
 export const useSessionStore = create<SessionsState>((set) => ({
@@ -519,7 +521,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
       // Dedup by id
       if (existing.some((si) => si.id === invocation.id)) return s;
       const updated = [invocation, ...existing];
-      map.set(sessionId, updated.length > 50 ? updated.slice(0, 50) : updated);
+      map.set(sessionId, updated.length > MAX_SESSION_HISTORY ? updated.slice(0, MAX_SESSION_HISTORY) : updated);
       return { skillInvocations: map };
     });
   },
@@ -545,7 +547,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
       // (suppresses duplicates from PTY + tap dual detection)
       if (existing[0]?.cmd === normalized) return s;
       const updated = [{ cmd: normalized, ts }, ...existing];
-      map.set(sessionId, updated.length > 50 ? updated.slice(0, 50) : updated);
+      map.set(sessionId, updated.length > MAX_SESSION_HISTORY ? updated.slice(0, MAX_SESSION_HISTORY) : updated);
       return { commandHistory: map };
     });
   },

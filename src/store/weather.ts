@@ -29,9 +29,7 @@ interface WeatherState {
   init: () => Promise<void>;
 }
 
-let listenerInstalled = false;
-
-export const useWeatherStore = create<WeatherState>((set) => ({
+export const useWeatherStore = create<WeatherState>((set, get) => ({
   country: null,
   label: null,
   weatherCode: null,
@@ -41,8 +39,8 @@ export const useWeatherStore = create<WeatherState>((set) => ({
   updatedAt: null,
   initialized: false,
   init: async () => {
-    if (listenerInstalled) return;
-    listenerInstalled = true;
+    if (get().initialized) return;
+    set({ initialized: true });
 
     try {
       const cached = await invoke<WeatherPayload | null>("get_current_weather");
@@ -55,13 +53,10 @@ export const useWeatherStore = create<WeatherState>((set) => ({
           windKph: cached.windKph,
           precipMm: cached.precipMm,
           updatedAt: cached.updatedAt,
-          initialized: true,
         });
-      } else {
-        set({ initialized: true });
       }
     } catch {
-      set({ initialized: true });
+      // Stay on null weather values; the event listener can still fill them later.
     }
 
     listen<WeatherPayload>("weather-changed", (event) => {

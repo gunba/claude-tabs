@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isSubagentActive } from "../../types/session";
+import { isSessionIdle, isSubagentActive } from "../../types/session";
 import type { SessionState, Subagent } from "../../types/session";
 import { getEffectiveState } from "../claude";
 import { TapSubagentTracker } from "../tapSubagentTracker";
@@ -7,6 +7,16 @@ import { TapMetadataAccumulator } from "../tapMetadataAccumulator";
 import type { TapEvent } from "../../types/tapEvents";
 
 // ── isSubagentActive ──
+
+describe("isSessionIdle", () => {
+  it("returns true only for idle and interrupted", () => {
+    const idleStates: SessionState[] = ["idle", "interrupted"];
+    const nonIdleStates: SessionState[] = ["starting", "thinking", "toolUse", "actionNeeded", "waitingPermission", "error", "dead"];
+
+    for (const state of idleStates) expect(isSessionIdle(state)).toBe(true);
+    for (const state of nonIdleStates) expect(isSessionIdle(state)).toBe(false);
+  });
+});
 
 describe("isSubagentActive", () => {
   it("returns true for active states", () => {
