@@ -14,8 +14,11 @@
 //! provider router, an OAuth client, a compression engine. All of
 //! that lived in `proxy/codex/` and `proxy/compress/` and is gone.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::io::Read;
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -32,35 +35,168 @@ use crate::session::types::SystemPromptRule;
 
 // ── Proxy state ──────────────────────────────────────────────────────
 
-pub struct ProxyInner {
-    pub rules: Vec<SystemPromptRule>,
-    pub port: Option<u16>,
-    pub shutdown_tx: Option<oneshot::Sender<()>>,
-    pub default_client: reqwest::Client,
-    pub traffic_log_files: HashMap<String, std::io::BufWriter<std::fs::File>>,
-    pub traffic_log_paths: HashMap<String, std::path::PathBuf>,
-    pub rule_match_counts: HashMap<String, u64>,
+#[derive(Clone, Default)]
+struct CompiledRules {
+    rules: Vec<CompiledRule>,
+    set: Option<regex::RegexSet>,
 }
 
-pub struct ProxyState(pub Arc<Mutex<ProxyInner>>);
+#[derive(Clone)]
+struct CompiledRule {
+    id: String,
+    replacement: String,
+    regex: regex::Regex,
+}
 
-impl ProxyState {
-    pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(ProxyInner {
-            rules: Vec::new(),
+impl CompiledRules {
+    fn compile(rules: &[SystemPromptRule]) -> Result<Self, String> {
+        let mut compiled = Vec::new();
+        let mut patterns = Vec::new();
+        for rule in rules {
+            if !rule.enabled || rule.pattern.is_empty() {
+                continue;
+            }
+            let pattern = compile_pattern(rule);
+            let regex = regex::Regex::new(&pattern)
+                .map_err(|e| format!("Invalid regex '{}': {}", rule.pattern, e))?;
+            patterns.push(pattern);
+            compiled.push(CompiledRule {
+                id: rule.id.clone(),
+                replacement: rule.replacement.clone(),
+                regex,
+            });
+        }
+        let set = if patterns.is_empty() {
+            None
+        } else {
+            Some(regex::RegexSet::new(patterns).map_err(|e| format!("Invalid regex set: {e}"))?)
+        };
+        Ok(Self {
+            rules: compiled,
+            set,
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+
+    fn matches(&self, text: &str) -> bool {
+        self.set.as_ref().map_or(false, |set| set.is_match(text))
+    }
+}
+
+fn compile_pattern(rule: &SystemPromptRule) -> String {
+    let inline_flags: String = rule.flags.chars().filter(|c| *c != 'g').collect();
+    if inline_flags.is_empty() {
+        rule.pattern.clone()
+    } else {
+        format!("(?{}){}", inline_flags, rule.pattern)
+    }
+}
+
+#[derive(Default)]
+struct RuleStore {
+    compiled: CompiledRules,
+}
+
+struct ProxyLifecycle {
+    port: Option<u16>,
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    default_client: reqwest::Client,
+}
+
+impl ProxyLifecycle {
+    fn new() -> Self {
+        Self {
             port: None,
             shutdown_tx: None,
             default_client: build_plain_client(),
-            traffic_log_files: HashMap::new(),
-            traffic_log_paths: HashMap::new(),
-            rule_match_counts: HashMap::new(),
-        })))
+        }
+    }
+}
+
+#[derive(Default)]
+struct TrafficLogs {
+    files: HashMap<String, std::io::BufWriter<std::fs::File>>,
+    paths: HashMap<String, std::path::PathBuf>,
+}
+
+#[derive(Clone)]
+pub struct ProxyState {
+    lifecycle: Arc<Mutex<ProxyLifecycle>>,
+    rules: Arc<RwLock<RuleStore>>,
+    traffic_logs: Arc<Mutex<TrafficLogs>>,
+    rule_match_counts: Arc<Mutex<HashMap<String, u64>>>,
+}
+
+impl ProxyState {
+    pub fn new() -> Self {
+        Self {
+            lifecycle: Arc::new(Mutex::new(ProxyLifecycle::new())),
+            rules: Arc::new(RwLock::new(RuleStore::default())),
+            traffic_logs: Arc::new(Mutex::new(TrafficLogs::default())),
+            rule_match_counts: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn port(&self) -> Option<u16> {
+        self.lifecycle.lock().ok().and_then(|s| s.port)
+    }
+
+    pub fn stop_and_flush(&self) {
+        if let Ok(mut logs) = self.traffic_logs.lock() {
+            for writer in logs.files.values_mut() {
+                use std::io::Write;
+                let _ = writer.flush();
+            }
+            logs.files.clear();
+            logs.paths.clear();
+        }
+        if let Ok(mut lifecycle) = self.lifecycle.lock() {
+            if let Some(tx) = lifecycle.shutdown_tx.take() {
+                let _ = tx.send(());
+            }
+            lifecycle.port = None;
+        }
+    }
+
+    fn default_client(&self) -> Option<reqwest::Client> {
+        self.lifecycle.lock().ok().map(|s| s.default_client.clone())
+    }
+
+    fn compiled_rules(&self) -> CompiledRules {
+        self.rules
+            .read()
+            .map(|s| s.compiled.clone())
+            .unwrap_or_default()
+    }
+
+    fn is_traffic_logging(&self, session_id: &str) -> bool {
+        self.traffic_logs
+            .lock()
+            .map(|logs| logs.files.contains_key(session_id))
+            .unwrap_or(false)
+    }
+
+    fn record_rule_matches(&self, matched_ids: &[String]) -> Option<HashMap<String, u64>> {
+        let mut counts = self.rule_match_counts.lock().ok()?;
+        for id in matched_ids {
+            *counts.entry(id.clone()).or_insert(0) += 1;
+        }
+        Some(counts.clone())
     }
 }
 
 fn build_plain_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(180))
+        .pool_idle_timeout(Duration::from_secs(90))
+        .no_gzip()
+        .no_brotli()
+        .no_zstd()
+        .no_deflate()
         .build()
         .expect("plain reqwest client must build")
 }
@@ -72,7 +208,7 @@ pub async fn start_api_proxy(
     proxy_state: State<'_, ProxyState>,
     app: tauri::AppHandle,
 ) -> Result<u16, String> {
-    let inner = proxy_state.0.clone();
+    let proxy_state = proxy_state.inner().clone();
     let span_start = std::time::Instant::now();
     let span_data = serde_json::json!({});
     record_backend_perf_start(
@@ -93,10 +229,10 @@ pub async fn start_api_proxy(
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
 
         {
-            let mut s = inner.lock().map_err(|e| e.to_string())?;
-            s.port = Some(port);
-            s.shutdown_tx = Some(shutdown_tx);
-            s.default_client = default_client.clone();
+            let mut lifecycle = proxy_state.lifecycle.lock().map_err(|e| e.to_string())?;
+            lifecycle.port = Some(port);
+            lifecycle.shutdown_tx = Some(shutdown_tx);
+            lifecycle.default_client = default_client.clone();
         }
 
         record_backend_event(
@@ -109,7 +245,7 @@ pub async fn start_api_proxy(
             serde_json::json!({ "port": port }),
         );
 
-        let state = inner.clone();
+        let state = proxy_state.clone();
         let app_for_loop = app.clone();
         tokio::spawn(async move {
             loop {
@@ -126,10 +262,11 @@ pub async fn start_api_proxy(
                                     "Accepted proxy client connection",
                                     serde_json::json!({ "remoteAddr": addr.to_string() }),
                                 );
-                                let (default_client, rules) = match state.lock() {
-                                    Ok(s) => (s.default_client.clone(), s.rules.clone()),
-                                    Err(_) => continue,
+                                let default_client = match state.default_client() {
+                                    Some(client) => client,
+                                    None => continue,
                                 };
+                                let rules = state.compiled_rules();
                                 let a = app_for_loop.clone();
                                 let st = state.clone();
                                 tokio::spawn(async move {
@@ -222,24 +359,18 @@ pub fn update_system_prompt_rules(
         span_data.clone(),
     );
     let result = (|| -> Result<(), String> {
-        // Validate all enabled rule patterns at config time
-        for rule in &rules {
-            if rule.enabled && !rule.pattern.is_empty() {
-                let inline_flags: String = rule.flags.chars().filter(|c| *c != 'g').collect();
-                let pattern = if inline_flags.is_empty() {
-                    rule.pattern.clone()
-                } else {
-                    format!("(?{}){}", inline_flags, rule.pattern)
-                };
-                let _ = regex::Regex::new(&pattern)
-                    .map_err(|e| format!("Invalid regex '{}': {}", rule.pattern, e))?;
-            }
-        }
-        let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
+        let compiled = CompiledRules::compile(&rules)?;
         let active_ids: std::collections::HashSet<String> =
             rules.iter().map(|r| r.id.clone()).collect();
-        s.rule_match_counts.retain(|id, _| active_ids.contains(id));
-        s.rules = rules;
+        let mut counts = proxy_state
+            .rule_match_counts
+            .lock()
+            .map_err(|e| e.to_string())?;
+        counts.retain(|id, _| active_ids.contains(id));
+        drop(counts);
+
+        let mut store = proxy_state.rules.write().map_err(|e| e.to_string())?;
+        store.compiled = compiled;
         Ok(())
     })();
     match result {
@@ -288,8 +419,11 @@ pub fn update_system_prompt_rules(
 pub fn get_rule_match_counts(
     proxy_state: State<'_, ProxyState>,
 ) -> Result<HashMap<String, u64>, String> {
-    let s = proxy_state.0.lock().map_err(|e| e.to_string())?;
-    Ok(s.rule_match_counts.clone())
+    let counts = proxy_state
+        .rule_match_counts
+        .lock()
+        .map_err(|e| e.to_string())?;
+    Ok(counts.clone())
 }
 
 #[tauri::command]
@@ -316,9 +450,9 @@ pub fn start_traffic_log(
             .open(&path)
             .map_err(|e| format!("Failed to create traffic log: {}", e))?;
         let writer = std::io::BufWriter::new(file);
-        let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
-        s.traffic_log_files.insert(session_id.clone(), writer);
-        s.traffic_log_paths.insert(session_id.clone(), path.clone());
+        let mut logs = proxy_state.traffic_logs.lock().map_err(|e| e.to_string())?;
+        logs.files.insert(session_id.clone(), writer);
+        logs.paths.insert(session_id.clone(), path.clone());
         Ok(path.to_string_lossy().to_string())
     })();
     match result {
@@ -376,13 +510,13 @@ pub fn stop_traffic_log(
         span_data.clone(),
     );
     let result = (|| -> Result<(), String> {
-        let mut s = proxy_state.0.lock().map_err(|e| e.to_string())?;
-        if let Some(ref mut writer) = s.traffic_log_files.get_mut(&session_id) {
+        let mut logs = proxy_state.traffic_logs.lock().map_err(|e| e.to_string())?;
+        if let Some(ref mut writer) = logs.files.get_mut(&session_id) {
             use std::io::Write;
             let _ = writer.flush();
         }
-        s.traffic_log_files.remove(&session_id);
-        s.traffic_log_paths.remove(&session_id);
+        logs.files.remove(&session_id);
+        logs.paths.remove(&session_id);
         Ok(())
     })();
     match result {
@@ -429,6 +563,7 @@ pub fn stop_traffic_log(
 const ANTHROPIC_UPSTREAM_BASE_URL: &str = "https://api.anthropic.com";
 const OPENAI_UPSTREAM_BASE_URL: &str = "https://api.openai.com";
 const CHATGPT_UPSTREAM_BASE_URL: &str = "https://chatgpt.com";
+const LARGE_REWRITE_BODY_BYTES: usize = 64 * 1024;
 
 // [SP-02] Per-request upstream resolver: anthropic / openai / chatgpt routing + path matchers + Responses API instructions rewrite (Codex/OpenAI Responses analog of Claude system field). ChatGpt covers the chatgpt.com/backend-api/codex endpoints used by Codex sessions authenticated via ChatGPT subscription; OpenAi covers api.openai.com/v1 used by API-key-authenticated sessions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -478,24 +613,31 @@ fn is_chatgpt_responses_endpoint(path: &str) -> bool {
     path_matches_endpoint(path, "/backend-api/codex/responses")
 }
 
-fn resolve_upstream(path: &str) -> UpstreamKind {
-    if is_anthropic_endpoint(path) {
-        UpstreamKind::Anthropic
-    } else if path.starts_with("/backend-api/codex/") || path == "/backend-api/codex" {
-        UpstreamKind::ChatGpt
-    } else if path.starts_with("/v1/") {
-        UpstreamKind::OpenAi
-    } else {
-        UpstreamKind::Anthropic
-    }
+fn is_chatgpt_codex_path(path: &str) -> bool {
+    path.starts_with("/backend-api/codex/") || path == "/backend-api/codex"
+}
+
+fn is_openai_v1_path(path: &str) -> bool {
+    path.starts_with("/v1/")
+}
+
+fn resolve_upstream(path: &str) -> Option<UpstreamKind> {
+    const ROUTES: &[(fn(&str) -> bool, UpstreamKind)] = &[
+        (is_anthropic_endpoint, UpstreamKind::Anthropic),
+        (is_chatgpt_codex_path, UpstreamKind::ChatGpt),
+        (is_openai_v1_path, UpstreamKind::OpenAi),
+    ];
+    ROUTES
+        .iter()
+        .find_map(|(matcher, upstream)| matcher(path).then_some(*upstream))
 }
 
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     default_client: reqwest::Client,
-    rules: Vec<SystemPromptRule>,
+    rules: CompiledRules,
     app: tauri::AppHandle,
-    proxy_state: Arc<Mutex<ProxyInner>>,
+    proxy_state: ProxyState,
 ) -> std::io::Result<()> {
     // Read the request (headers + body) up to 50 MiB.
     let mut buf = Vec::with_capacity(8192);
@@ -508,7 +650,7 @@ async fn handle_connection(
         buf.extend_from_slice(&tmp[..n]);
 
         if let Some(hend) = find_header_end(&buf) {
-            if let Some(cl) = extract_content_length(&String::from_utf8_lossy(&buf[..hend])) {
+            if let Some(cl) = extract_content_length_bytes(&buf[..hend]) {
                 if buf.len() >= hend + cl {
                     break;
                 }
@@ -523,7 +665,12 @@ async fn handle_connection(
         }
     }
 
-    let (method, raw_path, headers, body) = match parse_request(&buf) {
+    let Some(header_end) = find_header_end(&buf) else {
+        send_error(&mut stream, 400, "Bad request").await;
+        return Ok(());
+    };
+
+    let (method, raw_path, headers, body) = match parse_request(&buf, header_end) {
         Some(r) => r,
         None => {
             send_error(&mut stream, 400, "Bad request").await;
@@ -535,45 +682,62 @@ async fn handle_connection(
     // but kept around for traffic-log lookup.
     let (session_id, path) = extract_session_id(&raw_path);
 
-    let should_log = session_id.as_ref().map_or(false, |id| {
-        proxy_state
-            .lock()
-            .ok()
-            .map_or(false, |s| s.traffic_log_files.contains_key(id))
-    });
+    let should_log = session_id.map_or(false, |id| proxy_state.is_traffic_logging(id));
 
     let model = extract_model(&body);
 
-    let upstream = resolve_upstream(&path);
+    let Some(upstream) = resolve_upstream(path) else {
+        record_backend_event(
+            &app,
+            "WARN",
+            "proxy",
+            session_id,
+            "proxy.route_not_found",
+            "Proxy route not found",
+            serde_json::json!({
+                "method": method,
+                "rawPath": raw_path.as_str(),
+                "path": path,
+                "sessionScoped": session_id.is_some(),
+            }),
+        );
+        send_error(&mut stream, 404, "No proxy route for request path").await;
+        return Ok(());
+    };
     let rewritable_prompt_endpoint = match upstream {
-        UpstreamKind::Anthropic => is_anthropic_endpoint(&path),
-        UpstreamKind::OpenAi => is_openai_responses_endpoint(&path),
-        UpstreamKind::ChatGpt => is_chatgpt_responses_endpoint(&path),
+        UpstreamKind::Anthropic => is_anthropic_endpoint(path),
+        UpstreamKind::OpenAi => is_openai_responses_endpoint(path),
+        UpstreamKind::ChatGpt => is_chatgpt_responses_endpoint(path),
     };
 
     // Apply prompt rewrite rules to the provider-native prompt field:
     // Claude/Anthropic => `system`, OpenAI / ChatGPT Responses => `instructions`
     // (same wire shape on both endpoints).
     let (final_body, matched_ids) = if rules.is_empty() || !rewritable_prompt_endpoint {
-        (body.to_vec(), Vec::new())
-    } else {
-        match upstream {
-            UpstreamKind::Anthropic => rewrite_system_prompt_in_body(&body, &rules),
-            UpstreamKind::OpenAi | UpstreamKind::ChatGpt => {
-                rewrite_openai_instructions_in_body(&body, &rules)
+        (body, Vec::new())
+    } else if body.len() > LARGE_REWRITE_BODY_BYTES {
+        let rules = rules.clone();
+        match tokio::task::spawn_blocking(move || {
+            rewrite_body_for_upstream(&body, upstream, &rules)
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                send_error(
+                    &mut stream,
+                    500,
+                    &format!("Prompt rewrite task failed: {e}"),
+                )
+                .await;
+                return Ok(());
             }
         }
+    } else {
+        rewrite_body_for_upstream(&body, upstream, &rules)
     };
     if !matched_ids.is_empty() {
-        let counts = if let Ok(mut s) = proxy_state.lock() {
-            for id in &matched_ids {
-                *s.rule_match_counts.entry(id.clone()).or_insert(0) += 1;
-            }
-            Some(s.rule_match_counts.clone())
-        } else {
-            None
-        };
-        if let Some(counts) = counts {
+        if let Some(counts) = proxy_state.record_rule_matches(&matched_ids) {
             let _ = app.emit("rule_match_counts", counts);
         }
     }
@@ -582,12 +746,12 @@ async fn handle_connection(
         &app,
         "DEBUG",
         "proxy",
-        session_id.as_deref(),
+        session_id,
         "proxy.route_resolved",
         "Resolved proxy route",
         serde_json::json!({
             "method": method,
-            "rawPath": raw_path,
+            "rawPath": raw_path.as_str(),
             "path": path,
             "upstream": upstream.label(),
             "sessionScoped": session_id.is_some(),
@@ -606,7 +770,7 @@ async fn handle_connection(
     let mut req = default_client.request(http_method, &url);
     for (k, v) in &headers {
         let lower = k.to_lowercase();
-        if lower == "host" || lower == "content-length" {
+        if lower == "host" || lower == "content-length" || lower == "accept-encoding" {
             continue;
         }
         req = req.header(k.as_str(), v.as_str());
@@ -623,8 +787,8 @@ async fn handle_connection(
         .unwrap_or_default()
         .as_secs_f64();
     let log_method = method.clone();
-    let log_path = path.clone();
-    let log_session_id = session_id.clone();
+    let log_path = path.to_string();
+    let log_session_id = session_id.map(str::to_string);
     let log_model = model.clone();
     let route_span_data = serde_json::json!({
         "method": log_method,
@@ -650,7 +814,7 @@ async fn handle_connection(
             if should_log {
                 write_traffic_entry(
                     &proxy_state,
-                    &log_session_id,
+                    log_session_id.as_deref(),
                     req_ts,
                     req_start,
                     &log_method,
@@ -658,6 +822,7 @@ async fn handle_connection(
                     &log_model,
                     &final_body_for_log,
                     502,
+                    None,
                     b"",
                 );
             }
@@ -694,6 +859,11 @@ async fn handle_connection(
 
     let status_code = resp.status().as_u16();
     let status_text = resp.status().canonical_reason().unwrap_or("Unknown");
+    let response_content_encoding = resp
+        .headers()
+        .get("content-encoding")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
 
     // [WX-01] Cloudflare's edge tags every Anthropic / OpenAI response with
     // `cf-ipcountry`. Forward the value to the weather module for ambient-
@@ -738,7 +908,7 @@ async fn handle_connection(
     if let Some(resp_bytes) = resp_buf {
         write_traffic_entry(
             &proxy_state,
-            &log_session_id,
+            log_session_id.as_deref(),
             req_ts,
             req_start,
             &log_method,
@@ -746,6 +916,7 @@ async fn handle_connection(
             &log_model,
             &final_body_for_log,
             status_code,
+            response_content_encoding.as_deref(),
             &resp_bytes,
         );
     }
@@ -782,16 +953,71 @@ async fn handle_connection(
 
 // ── Traffic log helpers ─────────────────────────────────────────────
 
-fn decompress_if_gzip(bytes: &[u8]) -> String {
-    if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
-        use std::io::Read;
-        let mut decoder = flate2::read::GzDecoder::new(bytes);
-        let mut decoded = String::new();
-        if decoder.read_to_string(&mut decoded).is_ok() {
-            return decoded;
+fn read_all<R: Read>(mut reader: R) -> Option<Vec<u8>> {
+    let mut decoded = Vec::new();
+    reader.read_to_end(&mut decoded).ok()?;
+    Some(decoded)
+}
+
+fn decompress_gzip(bytes: &[u8]) -> Option<Vec<u8>> {
+    read_all(flate2::read::GzDecoder::new(bytes))
+}
+
+fn decompress_deflate(bytes: &[u8]) -> Option<Vec<u8>> {
+    read_all(flate2::read::ZlibDecoder::new(bytes))
+        .or_else(|| read_all(flate2::read::DeflateDecoder::new(bytes)))
+}
+
+fn decompress_response(content_encoding: Option<&str>, bytes: &[u8]) -> String {
+    let Some(content_encoding) = content_encoding
+        .map(str::trim)
+        .filter(|encoding| !encoding.is_empty())
+    else {
+        if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
+            if let Some(decoded) = decompress_gzip(bytes) {
+                return String::from_utf8_lossy(&decoded).into_owned();
+            }
+        }
+        return String::from_utf8_lossy(bytes).into_owned();
+    };
+
+    let mut decoded = bytes.to_vec();
+    for encoding in content_encoding.split(',').map(|s| s.trim()).rev() {
+        if encoding.eq_ignore_ascii_case("identity") || encoding.is_empty() {
+            continue;
+        } else if encoding.eq_ignore_ascii_case("gzip") || encoding.eq_ignore_ascii_case("x-gzip") {
+            let Some(next) = decompress_gzip(&decoded) else {
+                return format!(
+                    "(gzip body, failed to decode; {} encoded bytes)",
+                    bytes.len()
+                );
+            };
+            decoded = next;
+        } else if encoding.eq_ignore_ascii_case("deflate") {
+            let Some(next) = decompress_deflate(&decoded) else {
+                return format!(
+                    "(deflate body, failed to decode; {} encoded bytes)",
+                    bytes.len()
+                );
+            };
+            decoded = next;
+        } else if encoding.eq_ignore_ascii_case("br")
+            || encoding.eq_ignore_ascii_case("brotli")
+            || encoding.eq_ignore_ascii_case("zstd")
+            || encoding.eq_ignore_ascii_case("zstandard")
+        {
+            return format!(
+                "({encoding} body, not decoded; {} encoded bytes)",
+                bytes.len()
+            );
+        } else {
+            return format!(
+                "({encoding} body, unsupported content-encoding; {} encoded bytes)",
+                bytes.len()
+            );
         }
     }
-    String::from_utf8_lossy(bytes).into_owned()
+    String::from_utf8_lossy(&decoded).into_owned()
 }
 
 fn build_traffic_entry_json(
@@ -803,13 +1029,14 @@ fn build_traffic_entry_json(
     model: &Option<String>,
     req_body: &Option<Vec<u8>>,
     status: u16,
+    resp_content_encoding: Option<&str>,
     resp_bytes: &[u8],
 ) -> Value {
     let req_str = req_body
         .as_ref()
         .map(|b| String::from_utf8_lossy(b).into_owned())
         .unwrap_or_default();
-    let resp_str = decompress_if_gzip(resp_bytes);
+    let resp_str = decompress_response(resp_content_encoding, resp_bytes);
     let req_len = req_body.as_ref().map(|b| b.len()).unwrap_or(0);
 
     serde_json::json!({
@@ -828,8 +1055,8 @@ fn build_traffic_entry_json(
 }
 
 pub(crate) fn write_traffic_entry(
-    proxy_state: &Arc<Mutex<ProxyInner>>,
-    session_id: &Option<String>,
+    proxy_state: &ProxyState,
+    session_id: Option<&str>,
     req_ts: f64,
     req_start: std::time::Instant,
     method: &str,
@@ -837,6 +1064,7 @@ pub(crate) fn write_traffic_entry(
     model: &Option<String>,
     req_body: &Option<Vec<u8>>,
     status: u16,
+    resp_content_encoding: Option<&str>,
     resp_bytes: &[u8],
 ) {
     let sid = match session_id {
@@ -845,29 +1073,43 @@ pub(crate) fn write_traffic_entry(
     };
     let dur_ms = req_start.elapsed().as_millis() as u64;
     let line = build_traffic_entry_json(
-        req_ts, dur_ms, sid, method, path, model, req_body, status, resp_bytes,
+        req_ts,
+        dur_ms,
+        sid,
+        method,
+        path,
+        model,
+        req_body,
+        status,
+        resp_content_encoding,
+        resp_bytes,
     );
 
-    if let Ok(mut s) = proxy_state.lock() {
-        if let Some(ref mut writer) = s.traffic_log_files.get_mut(sid) {
+    if let Ok(mut logs) = proxy_state.traffic_logs.lock() {
+        if let Some(ref mut writer) = logs.files.get_mut(sid) {
             use std::io::Write;
             let _ = writeln!(writer, "{}", line);
-            let _ = writer.flush();
         }
     }
 }
 
 // ── System prompt rule application ──────────────────────────────────
 
-fn rewrite_system_prompt_in_body(
+fn rewrite_body_for_upstream(
     body: &[u8],
-    rules: &[SystemPromptRule],
+    upstream: UpstreamKind,
+    rules: &CompiledRules,
 ) -> (Vec<u8>, Vec<String>) {
-    let enabled: Vec<&SystemPromptRule> = rules
-        .iter()
-        .filter(|r| r.enabled && !r.pattern.is_empty())
-        .collect();
-    if enabled.is_empty() {
+    match upstream {
+        UpstreamKind::Anthropic => rewrite_system_prompt_in_body(body, rules),
+        UpstreamKind::OpenAi | UpstreamKind::ChatGpt => {
+            rewrite_openai_instructions_in_body(body, rules)
+        }
+    }
+}
+
+fn rewrite_system_prompt_in_body(body: &[u8], rules: &CompiledRules) -> (Vec<u8>, Vec<String>) {
+    if rules.is_empty() {
         return (body.to_vec(), Vec::new());
     }
     let mut json = match serde_json::from_slice::<serde_json::Value>(body) {
@@ -884,7 +1126,7 @@ fn rewrite_system_prompt_in_body(
         }
     };
     let mut matched: Vec<String> = Vec::new();
-    apply_rules_to_system_value(system, &enabled, &mut matched);
+    apply_rules_to_system_value(system, rules, &mut matched);
     (
         serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec()),
         matched,
@@ -893,13 +1135,9 @@ fn rewrite_system_prompt_in_body(
 
 fn rewrite_openai_instructions_in_body(
     body: &[u8],
-    rules: &[SystemPromptRule],
+    rules: &CompiledRules,
 ) -> (Vec<u8>, Vec<String>) {
-    let enabled: Vec<&SystemPromptRule> = rules
-        .iter()
-        .filter(|r| r.enabled && !r.pattern.is_empty())
-        .collect();
-    if enabled.is_empty() {
+    if rules.is_empty() {
         return (body.to_vec(), Vec::new());
     }
     let mut json = match serde_json::from_slice::<serde_json::Value>(body) {
@@ -911,7 +1149,7 @@ fn rewrite_openai_instructions_in_body(
         _ => return (body.to_vec(), Vec::new()),
     };
     let mut matched: Vec<String> = Vec::new();
-    *instructions = apply_rules_to_text(instructions, &enabled, &mut matched);
+    *instructions = apply_rules_to_text(instructions, rules, &mut matched);
     (
         serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec()),
         matched,
@@ -920,7 +1158,7 @@ fn rewrite_openai_instructions_in_body(
 
 fn apply_rules_to_system_value(
     system: &mut serde_json::Value,
-    rules: &[&SystemPromptRule],
+    rules: &CompiledRules,
     matched: &mut Vec<String>,
 ) {
     match system {
@@ -944,67 +1182,94 @@ fn apply_rules_to_system_value(
     }
 }
 
-fn apply_rules_to_text(
-    text: &str,
-    rules: &[&SystemPromptRule],
-    matched: &mut Vec<String>,
-) -> String {
-    let mut result = text.to_string();
-    for rule in rules {
-        let inline_flags: String = rule.flags.chars().filter(|c| *c != 'g').collect();
-        let pattern = if inline_flags.is_empty() {
-            rule.pattern.clone()
-        } else {
-            format!("(?{}){}", inline_flags, rule.pattern)
-        };
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            let replaced = re.replace_all(&result, &rule.replacement).into_owned();
-            if replaced != result {
-                if !matched.contains(&rule.id) {
-                    matched.push(rule.id.clone());
-                }
-                result = replaced;
+fn apply_rules_to_text(text: &str, rules: &CompiledRules, matched: &mut Vec<String>) -> String {
+    if text.is_empty() || !rules.matches(text) {
+        return text.to_string();
+    }
+
+    let mut result = Cow::Borrowed(text);
+    for rule in &rules.rules {
+        let replaced = rule
+            .regex
+            .replace_all(result.as_ref(), rule.replacement.as_str());
+        if let Cow::Owned(next) = replaced {
+            if !matched.contains(&rule.id) {
+                matched.push(rule.id.clone());
             }
+            result = Cow::Owned(next);
         }
     }
-    result
+    result.into_owned()
 }
 
 // ── HTTP parsing helpers ────────────────────────────────────────────
 
-fn extract_session_id(path: &str) -> (Option<String>, String) {
+fn extract_session_id(path: &str) -> (Option<&str>, &str) {
     if let Some(rest) = path.strip_prefix("/s/") {
         if let Some(slash_pos) = rest.find('/') {
             let id = &rest[..slash_pos];
             let remaining = &rest[slash_pos..];
-            return (Some(id.to_string()), remaining.to_string());
+            return (Some(id), remaining);
         }
     }
-    (None, path.to_string())
+    (None, path)
 }
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
-    for i in 0..buf.len().saturating_sub(3) {
-        if buf[i..i + 4] == [b'\r', b'\n', b'\r', b'\n'] {
-            return Some(i + 4);
+    memchr::memmem::find(buf, b"\r\n\r\n").map(|i| i + 4)
+}
+
+fn trim_ascii(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|b| !b.is_ascii_whitespace())
+        .map_or(start, |idx| idx + 1);
+    &bytes[start..end]
+}
+
+fn split_once_byte(bytes: &[u8], needle: u8) -> Option<(&[u8], &[u8])> {
+    let pos = memchr::memchr(needle, bytes)?;
+    Some((&bytes[..pos], &bytes[pos + 1..]))
+}
+
+fn parse_usize_ascii(bytes: &[u8]) -> Option<usize> {
+    let mut value = 0usize;
+    for b in bytes {
+        if !b.is_ascii_digit() {
+            return None;
+        }
+        value = value.checked_mul(10)?.checked_add((b - b'0') as usize)?;
+    }
+    Some(value)
+}
+
+fn extract_content_length_bytes(headers: &[u8]) -> Option<usize> {
+    for line in headers.split(|b| *b == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        let Some((name, value)) = split_once_byte(line, b':') else {
+            continue;
+        };
+        if trim_ascii(name).eq_ignore_ascii_case(b"content-length") {
+            return parse_usize_ascii(trim_ascii(value));
         }
     }
     None
 }
 
+#[cfg(test)]
 fn extract_content_length(headers: &str) -> Option<usize> {
-    for line in headers.lines() {
-        let lower = line.to_lowercase();
-        if lower.starts_with("content-length:") {
-            return line.split(':').nth(1)?.trim().parse().ok();
-        }
-    }
-    None
+    extract_content_length_bytes(headers.as_bytes())
 }
 
-fn parse_request(buf: &[u8]) -> Option<(String, String, Vec<(String, String)>, Vec<u8>)> {
-    let hend = find_header_end(buf)?;
-    let hdr = String::from_utf8_lossy(&buf[..hend - 4]);
+fn parse_request(
+    buf: &[u8],
+    header_end: usize,
+) -> Option<(String, String, Vec<(String, String)>, Vec<u8>)> {
+    let hdr = String::from_utf8_lossy(&buf[..header_end - 4]);
     let mut lines = hdr.lines();
     let req_line = lines.next()?;
     let mut parts = req_line.split_whitespace();
@@ -1016,7 +1281,7 @@ fn parse_request(buf: &[u8]) -> Option<(String, String, Vec<(String, String)>, V
             headers.push((k.trim().to_string(), v.trim().to_string()));
         }
     }
-    Some((method, path, headers, buf[hend..].to_vec()))
+    Some((method, path, headers, buf[header_end..].to_vec()))
 }
 
 fn extract_model(body: &[u8]) -> Option<String> {
@@ -1032,6 +1297,7 @@ async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) 
     .to_string();
     let reason = match status {
         400 => "Bad Request",
+        404 => "Not Found",
         413 => "Too Large",
         500 => "Internal Error",
         502 => "Bad Gateway",
@@ -1058,6 +1324,10 @@ mod tests {
             replacement: replacement.into(),
             enabled,
         }
+    }
+
+    fn compile_rules(rules: Vec<SystemPromptRule>) -> CompiledRules {
+        CompiledRules::compile(&rules).unwrap()
     }
 
     #[test]
@@ -1087,7 +1357,7 @@ mod tests {
     #[test]
     fn test_extract_session_id_present() {
         let (sid, p) = extract_session_id("/s/abc123/v1/messages");
-        assert_eq!(sid.as_deref(), Some("abc123"));
+        assert_eq!(sid, Some("abc123"));
         assert_eq!(p, "/v1/messages");
     }
 
@@ -1101,8 +1371,8 @@ mod tests {
     #[test]
     fn test_rewrite_system_prompt_string() {
         let body = br#"{"model":"x","system":"hello world","messages":[]}"#;
-        let rule = make_rule("r1", "hello", "goodbye", true);
-        let (out, matched) = rewrite_system_prompt_in_body(body, &[rule]);
+        let rules = compile_rules(vec![make_rule("r1", "hello", "goodbye", true)]);
+        let (out, matched) = rewrite_system_prompt_in_body(body, &rules);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["system"], "goodbye world");
         assert_eq!(matched, vec!["r1".to_string()]);
@@ -1111,18 +1381,30 @@ mod tests {
     #[test]
     fn test_rewrite_system_prompt_array() {
         let body = br#"{"model":"x","system":[{"type":"text","text":"alpha beta"}],"messages":[]}"#;
-        let rule = make_rule("r1", "alpha", "ALPHA", true);
-        let (out, matched) = rewrite_system_prompt_in_body(body, &[rule]);
+        let rules = compile_rules(vec![make_rule("r1", "alpha", "ALPHA", true)]);
+        let (out, matched) = rewrite_system_prompt_in_body(body, &rules);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["system"][0]["text"], "ALPHA beta");
         assert_eq!(matched, vec!["r1".to_string()]);
     }
 
     #[test]
+    fn test_rewrite_system_prompt_array_skips_non_text_items() {
+        let body =
+            br#"{"model":"x","system":[{"type":"image","text":"alpha"},{"type":"text","text":"alpha"}],"messages":[]}"#;
+        let rules = compile_rules(vec![make_rule("r1", "alpha", "ALPHA", true)]);
+        let (out, matched) = rewrite_system_prompt_in_body(body, &rules);
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["system"][0]["text"], "alpha");
+        assert_eq!(v["system"][1]["text"], "ALPHA");
+        assert_eq!(matched, vec!["r1".to_string()]);
+    }
+
+    #[test]
     fn test_rewrite_system_prompt_disabled_rule_skipped() {
         let body = br#"{"model":"x","system":"hello","messages":[]}"#;
-        let rule = make_rule("r1", "hello", "goodbye", false);
-        let (out, matched) = rewrite_system_prompt_in_body(body, &[rule]);
+        let rules = compile_rules(vec![make_rule("r1", "hello", "goodbye", false)]);
+        let (out, matched) = rewrite_system_prompt_in_body(body, &rules);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["system"], "hello");
         assert!(matched.is_empty());
@@ -1131,7 +1413,8 @@ mod tests {
     #[test]
     fn test_rewrite_system_prompt_empty_rules() {
         let body = br#"{"model":"x","system":"hello","messages":[]}"#;
-        let (out, matched) = rewrite_system_prompt_in_body(body, &[]);
+        let rules = CompiledRules::default();
+        let (out, matched) = rewrite_system_prompt_in_body(body, &rules);
         assert_eq!(out, body);
         assert!(matched.is_empty());
     }
@@ -1139,10 +1422,10 @@ mod tests {
     #[test]
     fn test_rewrite_system_prompt_multiple_rules() {
         let body = br#"{"model":"x","system":"foo bar baz","messages":[]}"#;
-        let rules = vec![
+        let rules = compile_rules(vec![
             make_rule("r1", "foo", "FOO", true),
             make_rule("r2", "baz", "BAZ", true),
-        ];
+        ]);
         let (out, matched) = rewrite_system_prompt_in_body(body, &rules);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["system"], "FOO bar BAZ");
@@ -1154,8 +1437,8 @@ mod tests {
     #[test]
     fn test_rewrite_openai_instructions_prompt() {
         let body = br#"{"model":"gpt-5.2","instructions":"hello world","input":[]}"#;
-        let rule = make_rule("r1", "hello", "goodbye", true);
-        let (out, matched) = rewrite_openai_instructions_in_body(body, &[rule]);
+        let rules = compile_rules(vec![make_rule("r1", "hello", "goodbye", true)]);
+        let (out, matched) = rewrite_openai_instructions_in_body(body, &rules);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["instructions"], "goodbye world");
         assert_eq!(matched, vec!["r1".to_string()]);
@@ -1164,34 +1447,64 @@ mod tests {
     #[test]
     fn test_rewrite_openai_instructions_missing_is_noop() {
         let body = br#"{"model":"gpt-5.2","input":[]}"#;
-        let rule = make_rule("r1", "hello", "goodbye", true);
-        let (out, matched) = rewrite_openai_instructions_in_body(body, &[rule]);
+        let rules = compile_rules(vec![make_rule("r1", "hello", "goodbye", true)]);
+        let (out, matched) = rewrite_openai_instructions_in_body(body, &rules);
         assert_eq!(out, body);
         assert!(matched.is_empty());
     }
 
     #[test]
+    fn test_invalid_regex_rejected_at_compile_time() {
+        let rule = make_rule("r1", "[", "x", true);
+        assert!(CompiledRules::compile(&[rule]).is_err());
+    }
+
+    #[test]
     fn test_resolve_upstream_routes_provider_native_endpoints() {
-        assert_eq!(resolve_upstream("/v1/messages"), UpstreamKind::Anthropic);
+        assert_eq!(
+            resolve_upstream("/v1/messages"),
+            Some(UpstreamKind::Anthropic)
+        );
         assert_eq!(
             resolve_upstream("/v1/messages/count_tokens"),
-            UpstreamKind::Anthropic
+            Some(UpstreamKind::Anthropic)
         );
-        assert_eq!(resolve_upstream("/v1/responses"), UpstreamKind::OpenAi);
-        assert_eq!(resolve_upstream("/v1/models"), UpstreamKind::OpenAi);
+        assert_eq!(
+            resolve_upstream("/v1/responses"),
+            Some(UpstreamKind::OpenAi)
+        );
+        assert_eq!(resolve_upstream("/v1/models"), Some(UpstreamKind::OpenAi));
         assert_eq!(
             resolve_upstream("/backend-api/codex/responses"),
-            UpstreamKind::ChatGpt
+            Some(UpstreamKind::ChatGpt)
         );
         assert_eq!(
             resolve_upstream("/backend-api/codex/account"),
-            UpstreamKind::ChatGpt
+            Some(UpstreamKind::ChatGpt)
         );
+        assert_eq!(resolve_upstream("/v2/messages"), None);
+    }
+
+    #[test]
+    fn test_path_matches_endpoint_rejects_adjacent_prefixes() {
+        assert!(path_matches_endpoint("/v1/messages", "/v1/messages"));
+        assert!(path_matches_endpoint(
+            "/v1/messages?stream=true",
+            "/v1/messages"
+        ));
+        assert!(path_matches_endpoint(
+            "/v1/messages/count_tokens",
+            "/v1/messages"
+        ));
+        assert!(!path_matches_endpoint("/v1/messagesXY", "/v1/messages"));
+        assert!(path_matches_endpoint("/v1/messages//", "/v1/messages"));
     }
 
     #[test]
     fn test_is_chatgpt_responses_endpoint_is_exact_match() {
-        assert!(is_chatgpt_responses_endpoint("/backend-api/codex/responses"));
+        assert!(is_chatgpt_responses_endpoint(
+            "/backend-api/codex/responses"
+        ));
         assert!(is_chatgpt_responses_endpoint(
             "/backend-api/codex/responses?stream=true"
         ));
@@ -1200,9 +1513,7 @@ mod tests {
         ));
         // Non-responses paths under the same prefix must NOT match — they
         // should pass through to chatgpt.com without prompt-rewrite.
-        assert!(!is_chatgpt_responses_endpoint(
-            "/backend-api/codex/account"
-        ));
+        assert!(!is_chatgpt_responses_endpoint("/backend-api/codex/account"));
         assert!(!is_chatgpt_responses_endpoint("/backend-api/codex"));
         assert!(!is_chatgpt_responses_endpoint("/v1/responses"));
     }
@@ -1213,7 +1524,7 @@ mod tests {
         // Responses endpoint runs through the same instructions-rewrite
         // path as the api.openai.com Responses endpoint.
         let path = "/backend-api/codex/responses";
-        let upstream = resolve_upstream(path);
+        let upstream = resolve_upstream(path).unwrap();
         assert_eq!(upstream, UpstreamKind::ChatGpt);
         let rewritable = match upstream {
             UpstreamKind::Anthropic => is_anthropic_endpoint(path),
@@ -1223,11 +1534,50 @@ mod tests {
         assert!(rewritable);
 
         let body = br#"{"model":"gpt-5.2","instructions":"hello world","input":[]}"#;
-        let rule = make_rule("r1", "hello", "goodbye", true);
-        let (out, matched) = rewrite_openai_instructions_in_body(body, &[rule]);
+        let rules = compile_rules(vec![make_rule("r1", "hello", "goodbye", true)]);
+        let (out, matched) = rewrite_openai_instructions_in_body(body, &rules);
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["instructions"], "goodbye world");
         assert_eq!(matched, vec!["r1".to_string()]);
+    }
+
+    #[test]
+    fn test_rewrite_large_body_uses_linear_regex_engine() {
+        let system = "a".repeat(1024 * 1024);
+        let body = serde_json::json!({
+            "model": "x",
+            "system": system,
+            "messages": [],
+        })
+        .to_string();
+        let rules = compile_rules(vec![make_rule("r1", "a{4}", "bbbb", true)]);
+        let (out, matched) = rewrite_system_prompt_in_body(body.as_bytes(), &rules);
+        let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["system"].as_str().unwrap().len(), 1024 * 1024);
+        assert_eq!(matched, vec!["r1".to_string()]);
+    }
+
+    #[test]
+    fn test_decompress_response_gzip_by_header() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"{\"ok\":true}").unwrap();
+        let bytes = encoder.finish().unwrap();
+
+        assert_eq!(
+            decompress_response(Some("gzip"), &bytes),
+            "{\"ok\":true}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_decompress_response_reports_unsupported_encoding() {
+        let decoded = decompress_response(Some("br"), b"encoded");
+        assert!(decoded.contains("not decoded"));
+        assert!(decoded.contains("encoded bytes"));
     }
 
     #[test]
@@ -1241,6 +1591,7 @@ mod tests {
             &Some("sonnet".into()),
             &Some(b"{}".to_vec()),
             200,
+            None,
             b"hello",
         );
         assert_eq!(entry["session_id"], "sid-1");

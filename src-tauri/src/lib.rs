@@ -325,20 +325,9 @@ pub fn run() {
                     "Application exit requested",
                     serde_json::json!({}),
                 );
-                // Flush traffic logs and stop API proxy (single lock acquisition)
+                // Flush traffic logs and stop API proxy.
                 let proxy_state = app_handle.state::<ProxyState>();
-                if let Ok(mut s) = proxy_state.0.lock() {
-                    for writer in s.traffic_log_files.values_mut() {
-                        use std::io::Write;
-                        let _ = writer.flush();
-                    }
-                    s.traffic_log_files.clear();
-                    s.traffic_log_paths.clear();
-                    if let Some(tx) = s.shutdown_tx.take() {
-                        let _ = tx.send(());
-                    }
-                    s.port = None;
-                }
+                proxy_state.stop_and_flush();
                 // Stop all TCP tap server threads
                 let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
                 let tap_ports = tap_state

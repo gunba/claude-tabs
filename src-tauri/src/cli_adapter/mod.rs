@@ -162,7 +162,7 @@ pub async fn build_cli_spawn(
             }
         }
 
-        let proxy_port = proxy_state.0.lock().ok().and_then(|s| s.port);
+        let proxy_port = proxy_state.port();
         if let Some(port) = proxy_port {
             let auth_mode = crate::commands::codex_cli::read_codex_auth_mode_sync();
             append_codex_proxy_config(&mut spec.args, port, &session_id, auth_mode.as_deref());
