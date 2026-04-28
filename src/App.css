@@ -429,7 +429,18 @@
   font-size: 9px;
   font-weight: 600;
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--text-muted) 6%, var(--bg-surface));
+  /* Width-invariant L→R gradient: fixed pixel background-size so the
+     gradient progresses at the same rate per pixel regardless of how many
+     tabs a folder spans. Past the gradient, the solid background-color
+     (matching the end stop) extends seamlessly. */
+  background-color: color-mix(in srgb, var(--text-muted) 4%, var(--bg-surface));
+  background-image: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--text-muted) 12%, var(--bg-surface)),
+    color-mix(in srgb, var(--text-muted) 4%, var(--bg-surface))
+  );
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
   border-bottom: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   letter-spacing: 0;
@@ -438,14 +449,6 @@
   text-overflow: ellipsis;
   cursor: default;
   user-select: none;
-}
-
-/* Alternating tint so adjacent folders read as separate. The class is
-   applied to every other group in App.tsx because :nth-of-type cannot
-   distinguish header divs from tab divs (both are <div> children of
-   .tab-bar-scroll). */
-.tab-group-header-alt {
-  background: color-mix(in srgb, var(--text-muted) 12%, var(--bg-surface));
 }
 
 .tab-group-header-icon {

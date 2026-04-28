@@ -462,11 +462,11 @@ export default function App() {
       {/* [LO-01] Main window layout: tab bar (here), subagent bar, terminal area, CommandBar (slash commands + skill pills + history), StatusBar. */}
       <div className="tab-bar">
           <div className="tab-bar-scroll">
-            {/* [CV-06] Folder header: IconFolder prefix + alternating tint via tab-group-header-alt class. */}
-            {groups.flatMap((group, gi) => [
+            {/* [CV-06] Folder header: IconFolder prefix + uniform width-invariant L→R gradient (fixed-pixel background-size). */}
+            {groups.flatMap((group) => [
               <div
                 key={`hdr-${group.key}`}
-                className={`tab-group-header${gi % 2 === 1 ? " tab-group-header-alt" : ""}`}
+                className="tab-group-header"
                 style={{ ["--tab-count" as string]: group.sessions.length }}
                 title={group.fullPath}
               >
