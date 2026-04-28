@@ -272,6 +272,7 @@ pub fn run() {
             observability::get_observability_info,
             observability::open_observability_log,
             observability::open_main_devtools,
+            observability::set_observability_enabled,
             tap_server::start_tap_server,
             tap_server::stop_tap_server,
             proxy::start_api_proxy,
@@ -328,6 +329,7 @@ pub fn run() {
                 // Flush traffic logs and stop API proxy.
                 let proxy_state = app_handle.state::<ProxyState>();
                 proxy_state.stop_and_flush();
+                observability::shutdown_observability();
                 // Stop all TCP tap server threads
                 let tap_state = app_handle.state::<Arc<Mutex<TapServerState>>>();
                 let tap_ports = tap_state

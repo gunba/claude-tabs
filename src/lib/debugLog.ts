@@ -7,8 +7,12 @@ export type DebugLogSource = "frontend" | "backend";
 export interface ObservabilityInfo {
   debugBuild: boolean;
   observabilityEnabled: boolean;
+  runtimeOverride?: boolean;
   devtoolsAvailable: boolean;
   globalLogPath: string | null;
+  globalLogSize?: number;
+  globalRotationCount?: number;
+  minLevel?: LogLevel;
 }
 
 export interface DebugLogMeta {
@@ -52,8 +56,12 @@ let debugCaptureResolver: ((sessionId: string | null) => boolean) | null = null;
 let observabilityInfo: ObservabilityInfo = {
   debugBuild: false,
   observabilityEnabled: false,
+  runtimeOverride: false,
   devtoolsAvailable: false,
   globalLogPath: null,
+  globalLogSize: 0,
+  globalRotationCount: 0,
+  minLevel: "DEBUG",
 };
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let bridgeStarted = false;

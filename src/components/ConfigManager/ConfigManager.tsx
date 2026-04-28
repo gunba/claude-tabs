@@ -19,7 +19,6 @@ import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import { RecordingPane } from "./RecordingPane";
 import { parseWorktreePath } from "../../lib/paths";
 import type { StatusMessage } from "../../lib/settingsSchema";
-import { useRuntimeStore } from "../../store/runtime";
 import type { CliKind } from "../../types/session";
 import { diffLines } from "../../lib/promptDiff";
 import type { DiffLine } from "../../lib/promptDiff";
@@ -198,7 +197,6 @@ export function ConfigManager() {
   const codexPath = useSessionStore((s) => s.codexPath);
   const showConfigManager = useSettingsStore((s) => s.showConfigManager);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
-  const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
   const [tab, setTab] = useState<Tab>((showConfigManager || "settings") as Tab);
   const [configCli, setConfigCli] = useState<CliKind>(() => {
     const active = sessions.find((s) => s.id === activeTabId)?.config.cli;
@@ -227,7 +225,6 @@ export function ConfigManager() {
 
   const visibleTabs = useMemo(
     () => TABS.filter((t) => {
-      if (!debugBuild && t.id === "recording") return false;
       if (configCli === "codex") {
         // Codex now has an env-vars editor too (Code Tabs spawn-env sidecar,
         // injected at process launch). `agents` remains hidden (different
@@ -236,7 +233,7 @@ export function ConfigManager() {
       }
       return true;
     }),
-    [debugBuild, configCli],
+    [configCli],
   );
 
   // Sync tab from store when opened with a specific tab
@@ -252,7 +249,7 @@ export function ConfigManager() {
     }
   }, [showConfigManager, visibleTabs]);
 
-  // If the active tab becomes unavailable (release build hides observability), fall back.
+  // If the active tab becomes unavailable for the selected CLI, fall back.
   useEffect(() => {
     if (!visibleTabs.some((t) => t.id === tab)) {
       setTab("settings");
@@ -442,7 +439,7 @@ export function ConfigManager() {
           {tab === "skills" && (
             <ThreePaneEditor component={SkillsEditor} projectDir={projectDir} cli={configCli} onStatus={setStatusMsg} tabId="skills" scopes={["user", "project"]} />
           )}
-          {debugBuild && tab === "recording" && (
+          {tab === "recording" && (
             <RecordingPane cli={configCli} onStatus={setStatusMsg} />
           )}
         </div>

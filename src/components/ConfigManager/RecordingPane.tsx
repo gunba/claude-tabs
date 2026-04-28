@@ -21,8 +21,11 @@ export function RecordingPane({ cli, onStatus }: RecordingPaneProps) {
   const setRecordingConfigForCli = useSettingsStore((s) => s.setRecordingConfigForCli);
   const toggleNoisyEventKindForCli = useSettingsStore((s) => s.toggleNoisyEventKindForCli);
   const seenEventKinds = useSessionStore((s) => s.seenEventKinds);
-  const globalLogPath = useRuntimeStore((s) => s.observabilityInfo.globalLogPath);
+  const observabilityInfo = useRuntimeStore((s) => s.observabilityInfo);
+  const setObservabilityEnabled = useRuntimeStore((s) => s.setObservabilityEnabled);
+  const globalLogPath = observabilityInfo.globalLogPath;
   const [cleaning, setCleaning] = useState(false);
+  const [updatingObservability, setUpdatingObservability] = useState(false);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevSeenCountRef = useRef(0);
 
@@ -137,15 +140,42 @@ export function RecordingPane({ cli, onStatus }: RecordingPaneProps) {
     }
   }, [onStatus]);
 
+  const toggleObservability = useCallback(async () => {
+    setUpdatingObservability(true);
+    try {
+      await setObservabilityEnabled(!observabilityInfo.observabilityEnabled);
+      onStatus({
+        type: "success",
+        text: !observabilityInfo.observabilityEnabled
+          ? "Observability enabled"
+          : "Observability disabled",
+      });
+    } catch {
+      onStatus({ type: "error", text: "Could not update observability" });
+    } finally {
+      setUpdatingObservability(false);
+    }
+  }, [observabilityInfo.observabilityEnabled, onStatus, setObservabilityEnabled]);
+
   const discoveredCount = allKinds.filter((k) => !seedSet.has(k)).length;
 
   return (
     <div className="recording-pane">
       <div className="recording-section">
-        <div className="recording-section-title">Debug Build Observability</div>
-        <span className="recording-hint">
-          This panel is only available in debug builds. These controls apply to {cli === "codex" ? "Codex" : "Claude"} sessions.
-        </span>
+        <label className="recording-master-toggle">
+          <input
+            type="checkbox"
+            checked={observabilityInfo.observabilityEnabled}
+            onChange={toggleObservability}
+            disabled={observabilityInfo.debugBuild || updatingObservability}
+          />
+          <span className="recording-section-title">App Observability</span>
+          <span className="recording-hint">
+            {observabilityInfo.debugBuild
+              ? "Always enabled in debug builds"
+              : "Persist backend and frontend diagnostic events"}
+          </span>
+        </label>
         <div className="recording-data-row">
           <button className="recording-btn" onClick={openAppLog}>
             Open App Log
@@ -154,6 +184,11 @@ export function RecordingPane({ cli, onStatus }: RecordingPaneProps) {
             <span className="recording-hint">{globalLogPath}</span>
           )}
         </div>
+        <span className="recording-hint">
+          Level {observabilityInfo.minLevel ?? "DEBUG"} |{" "}
+          {Math.round((observabilityInfo.globalLogSize ?? 0) / 1024)} KiB |{" "}
+          {observabilityInfo.globalRotationCount ?? 0} rotated
+        </span>
       </div>
 
       {/* TAP Recording */}

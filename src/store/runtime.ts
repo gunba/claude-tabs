@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   configureObservability,
   startObservabilityBridge,
+  stopObservabilityBridge,
   type ObservabilityInfo,
 } from "../lib/debugLog";
 import { startFrontendPerfTelemetry, stopFrontendPerfTelemetry } from "../lib/perfTelemetry";
@@ -10,8 +11,12 @@ import { startFrontendPerfTelemetry, stopFrontendPerfTelemetry } from "../lib/pe
 const DEFAULT_OBSERVABILITY_INFO: ObservabilityInfo = {
   debugBuild: false,
   observabilityEnabled: false,
+  runtimeOverride: false,
   devtoolsAvailable: false,
   globalLogPath: null,
+  globalLogSize: 0,
+  globalRotationCount: 0,
+  minLevel: "DEBUG",
 };
 
 interface RuntimeState {
@@ -19,6 +24,7 @@ interface RuntimeState {
   loaded: boolean;
   loadRuntimeInfo: () => Promise<void>;
   openMainDevtools: () => Promise<void>;
+  setObservabilityEnabled: (enabled: boolean) => Promise<void>;
 }
 
 export const useRuntimeStore = create<RuntimeState>((set) => ({
@@ -28,16 +34,10 @@ export const useRuntimeStore = create<RuntimeState>((set) => ({
   loadRuntimeInfo: async () => {
     try {
       const info = await invoke<ObservabilityInfo>("get_observability_info");
-      configureObservability(info);
-      set({ observabilityInfo: info, loaded: true });
-      if (info.observabilityEnabled) {
-        await startObservabilityBridge();
-        startFrontendPerfTelemetry();
-      } else {
-        stopFrontendPerfTelemetry();
-      }
+      await applyObservabilityInfo(info, set);
     } catch {
       configureObservability(DEFAULT_OBSERVABILITY_INFO);
+      stopObservabilityBridge();
       stopFrontendPerfTelemetry();
       set({ observabilityInfo: DEFAULT_OBSERVABILITY_INFO, loaded: true });
     }
@@ -46,4 +46,24 @@ export const useRuntimeStore = create<RuntimeState>((set) => ({
   openMainDevtools: async () => {
     await invoke("open_main_devtools");
   },
+
+  setObservabilityEnabled: async (enabled: boolean) => {
+    const info = await invoke<ObservabilityInfo>("set_observability_enabled", { enabled });
+    await applyObservabilityInfo(info, set);
+  },
 }));
+
+async function applyObservabilityInfo(
+  info: ObservabilityInfo,
+  set: (partial: Partial<RuntimeState>) => void,
+): Promise<void> {
+  configureObservability(info);
+  set({ observabilityInfo: info, loaded: true });
+  if (info.observabilityEnabled) {
+    await startObservabilityBridge();
+    startFrontendPerfTelemetry();
+  } else {
+    stopObservabilityBridge();
+    stopFrontendPerfTelemetry();
+  }
+}

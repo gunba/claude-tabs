@@ -25,8 +25,11 @@
 //!     | "event_msg" | "compacted" | "turn_context", "payload": {...} }
 
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::SystemTime;
 
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -34,9 +37,113 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 
 use crate::observability::record_backend_event;
+
+const MAX_CONCURRENT_TAILS: usize = 64;
+const MAX_QUARANTINE_LINE_BYTES: usize = 1024;
+static TAIL_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn tail_semaphore() -> Arc<Semaphore> {
+    TAIL_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_TAILS)))
+        .clone()
+}
+
+struct RolloutDirWatcher {
+    tx: tokio::sync::mpsc::UnboundedSender<RolloutDirWatcherCommand>,
+    next_interest_id: AtomicU64,
+}
+
+enum RolloutDirWatcherCommand {
+    Register {
+        id: u64,
+        spawn_time: SystemTime,
+        reply: tokio::sync::oneshot::Sender<PathBuf>,
+    },
+    Unregister {
+        id: u64,
+    },
+    Notify {
+        paths: Vec<PathBuf>,
+    },
+}
+
+impl RolloutDirWatcher {
+    fn start(
+        dir: PathBuf,
+        claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    ) -> Result<Arc<Self>, String> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RolloutDirWatcherCommand>();
+        let tx_for_notify = tx.clone();
+        let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Ok(ev) = res {
+                if matches!(ev.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                    let _ =
+                        tx_for_notify.send(RolloutDirWatcherCommand::Notify { paths: ev.paths });
+                }
+            }
+        })
+        .map_err(|e| format!("notify watcher: {e}"))?;
+        watcher
+            .watch(&dir, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("notify watch {dir:?}: {e}"))?;
+
+        tokio::spawn(run_rollout_dir_watcher(rx, watcher, claimed_rollouts));
+        Ok(Arc::new(Self {
+            tx,
+            next_interest_id: AtomicU64::new(1),
+        }))
+    }
+
+    fn next_id(&self) -> u64 {
+        self.next_interest_id.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+async fn run_rollout_dir_watcher(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<RolloutDirWatcherCommand>,
+    _watcher: notify::RecommendedWatcher,
+    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+) {
+    let mut interests: HashMap<u64, (SystemTime, tokio::sync::oneshot::Sender<PathBuf>)> =
+        HashMap::new();
+    while let Some(command) = rx.recv().await {
+        match command {
+            RolloutDirWatcherCommand::Register {
+                id,
+                spawn_time,
+                reply,
+            } => {
+                interests.insert(id, (spawn_time, reply));
+            }
+            RolloutDirWatcherCommand::Unregister { id } => {
+                interests.remove(&id);
+            }
+            RolloutDirWatcherCommand::Notify { paths } => {
+                let ids: Vec<u64> = interests.keys().copied().collect();
+                for id in ids {
+                    let Some((spawn_time, _)) = interests.get(&id) else {
+                        continue;
+                    };
+                    let Some(path) = claim_unclaimed_rollout_paths(
+                        paths.clone(),
+                        *spawn_time,
+                        &claimed_rollouts,
+                    )
+                    .await
+                    else {
+                        continue;
+                    };
+                    if let Some((_, reply)) = interests.remove(&id) {
+                        let _ = reply.send(path);
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct RolloutLine {
@@ -46,6 +153,55 @@ struct RolloutLine {
     kind: String,
     #[serde(default)]
     payload: Value,
+}
+
+#[derive(Debug)]
+enum RolloutParseError {
+    BadJson(String),
+    MissingType,
+    MissingPayload,
+}
+
+impl RolloutParseError {
+    fn kind(&self) -> &'static str {
+        match self {
+            RolloutParseError::BadJson(_) => "bad_json",
+            RolloutParseError::MissingType => "missing_type",
+            RolloutParseError::MissingPayload => "missing_payload",
+        }
+    }
+
+    fn message(&self) -> String {
+        match self {
+            RolloutParseError::BadJson(error) => error.clone(),
+            RolloutParseError::MissingType => "missing rollout type".into(),
+            RolloutParseError::MissingPayload => "missing rollout payload".into(),
+        }
+    }
+}
+
+fn parse_rollout_line(line: &str) -> Result<RolloutLine, RolloutParseError> {
+    let value: Value =
+        serde_json::from_str(line).map_err(|e| RolloutParseError::BadJson(e.to_string()))?;
+    let timestamp = value
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let kind = value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(RolloutParseError::MissingType)?
+        .to_string();
+    let payload = value
+        .get("payload")
+        .cloned()
+        .ok_or(RolloutParseError::MissingPayload)?;
+    Ok(RolloutLine {
+        timestamp,
+        kind,
+        payload,
+    })
 }
 
 /// Resolve `$CODEX_HOME` honoring the env override; default to
@@ -107,13 +263,76 @@ fn find_unclaimed_rollout(
     best.map(|(p, _)| p)
 }
 
-fn claim_unclaimed_rollout(
+async fn claim_unclaimed_rollout(
     dir: &Path,
     spawn_time: SystemTime,
-    claimed_rollouts: &Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
 ) -> Option<PathBuf> {
-    let mut claimed = claimed_rollouts.lock().ok()?;
-    let path = find_unclaimed_rollout(dir, spawn_time, &claimed)?;
+    let dir = dir.to_path_buf();
+    let claimed_snapshot = claimed_rollouts.lock().await.clone();
+    let path = tokio::task::spawn_blocking(move || {
+        find_unclaimed_rollout(&dir, spawn_time, &claimed_snapshot)
+    })
+    .await
+    .ok()
+    .flatten()?;
+    let mut claimed = claimed_rollouts.lock().await;
+    if claimed.contains(&path) {
+        return None;
+    }
+    claimed.insert(path.clone());
+    Some(path)
+}
+
+fn find_unclaimed_rollout_in_paths(
+    paths: &[PathBuf],
+    spawn_time: SystemTime,
+    claimed: &HashSet<PathBuf>,
+) -> Option<PathBuf> {
+    let mut best: Option<(PathBuf, SystemTime)> = None;
+    for path in paths {
+        if claimed.contains(path) {
+            continue;
+        }
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if !name.starts_with("rollout-") || !name.ends_with(".jsonl") {
+            continue;
+        }
+        let mtime = match std::fs::metadata(path).and_then(|m| m.modified()) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if mtime < spawn_time {
+            continue;
+        }
+        match &best {
+            None => best = Some((path.clone(), mtime)),
+            Some((_, prev)) if mtime > *prev => best = Some((path.clone(), mtime)),
+            _ => {}
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
+async fn claim_unclaimed_rollout_paths(
+    paths: Vec<PathBuf>,
+    spawn_time: SystemTime,
+    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
+) -> Option<PathBuf> {
+    if paths.is_empty() {
+        return None;
+    }
+    let claimed_snapshot = claimed_rollouts.lock().await.clone();
+    let path = tokio::task::spawn_blocking(move || {
+        find_unclaimed_rollout_in_paths(&paths, spawn_time, &claimed_snapshot)
+    })
+    .await
+    .ok()
+    .flatten()?;
+    let mut claimed = claimed_rollouts.lock().await;
+    if claimed.contains(&path) {
+        return None;
+    }
     claimed.insert(path.clone());
     Some(path)
 }
@@ -122,11 +341,12 @@ fn claim_unclaimed_rollout(
 /// emits normalized events into `observability.jsonl`. Returns a
 /// handle that, when dropped, stops the watcher.
 // [CR-02] notify-based watcher: find_unclaimed_rollout -> wait_for_new_rollout -> tail_rollout; handle inserted before spawn to prevent start/stop race
-pub fn start_codex_rollout_watcher(
+fn start_codex_rollout_watcher(
     app: tauri::AppHandle,
     session_id: String,
     spawn_time: SystemTime,
-    claimed_rollouts: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    dir_watchers: Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
 ) -> CodexRolloutHandle {
     // Build the channel and the handle *before* spawning so the
     // caller can put the handle into its registry before the watcher
@@ -142,6 +362,7 @@ pub fn start_codex_rollout_watcher(
             session_id_for_task.clone(),
             spawn_time,
             claimed_rollouts,
+            dir_watchers,
             stop_rx,
         )
         .await
@@ -180,8 +401,9 @@ impl CodexRolloutHandle {
 /// don't know until the rollout file is attributed).
 #[derive(Default)]
 pub struct CodexRolloutState {
-    watchers: std::sync::Mutex<HashMap<String, Arc<CodexRolloutHandle>>>,
-    claimed_rollouts: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    watchers: Mutex<HashMap<String, Arc<CodexRolloutHandle>>>,
+    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    dir_watchers: Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
 }
 
 // [CR-03] start_codex_rollout/stop_codex_rollout: CodexRolloutState registry keyed by session_id; handle inserted before spawn for stop-race safety
@@ -202,19 +424,14 @@ pub async fn start_codex_rollout(
         session_id.clone(),
         spawn_time,
         state.claimed_rollouts.clone(),
+        state.dir_watchers.clone(),
     ));
     let prior = {
-        let mut map = state
-            .watchers
-            .lock()
-            .map_err(|e| format!("watcher state poisoned: {e}"))?;
+        let mut map = state.watchers.lock().await;
         map.insert(session_id.clone(), handle)
     };
     if let Some(prev) = prior {
-        // Best-effort stop of any prior watcher for the same session
-        // (respawn case). Drop our reference; the spawned task ends.
-        let p = prev.clone();
-        tauri::async_runtime::spawn(async move { p.stop().await });
+        prev.stop().await;
     }
     Ok(())
 }
@@ -225,10 +442,7 @@ pub async fn stop_codex_rollout(
     state: tauri::State<'_, CodexRolloutState>,
 ) -> Result<(), String> {
     let handle = {
-        let mut map = state
-            .watchers
-            .lock()
-            .map_err(|e| format!("watcher state poisoned: {e}"))?;
+        let mut map = state.watchers.lock().await;
         map.remove(&session_id)
     };
     if let Some(h) = handle {
@@ -241,7 +455,8 @@ async fn run_watcher(
     app: tauri::AppHandle,
     session_id: String,
     spawn_time: SystemTime,
-    claimed_rollouts: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    dir_watchers: Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
     mut stop_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let dir = todays_sessions_dir().ok_or("could not resolve $CODEX_HOME/sessions/today")?;
@@ -249,9 +464,18 @@ async fn run_watcher(
 
     // Try to attribute an existing fresh rollout first (handles the
     // race where Codex creates the file before our watcher arms).
-    let file_path = match claim_unclaimed_rollout(&dir, spawn_time, &claimed_rollouts) {
+    let file_path = match claim_unclaimed_rollout(&dir, spawn_time, &claimed_rollouts).await {
         Some(p) => Some(p),
-        None => wait_for_new_rollout(&dir, spawn_time, &claimed_rollouts, &mut stop_rx).await?,
+        None => {
+            wait_for_new_rollout(
+                &dir,
+                spawn_time,
+                &claimed_rollouts,
+                &dir_watchers,
+                &mut stop_rx,
+            )
+            .await?
+        }
     };
     let file_path = match file_path {
         Some(p) => p,
@@ -284,40 +508,56 @@ async fn run_watcher(
 async fn wait_for_new_rollout(
     dir: &Path,
     spawn_time: SystemTime,
-    claimed_rollouts: &Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
+    dir_watchers: &Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
     stop_rx: &mut tokio::sync::oneshot::Receiver<()>,
 ) -> Result<Option<PathBuf>, String> {
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if let Ok(ev) = res {
-            if matches!(ev.kind, EventKind::Create(_) | EventKind::Modify(_)) {
-                let _ = tx.send(());
-            }
-        }
-    })
-    .map_err(|e| format!("notify watcher: {e}"))?;
+    let watcher = rollout_dir_watcher_for(dir, claimed_rollouts, dir_watchers).await?;
+    let interest_id = watcher.next_id();
+    let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<PathBuf>();
     watcher
-        .watch(dir, RecursiveMode::NonRecursive)
-        .map_err(|e| format!("notify watch {dir:?}: {e}"))?;
+        .tx
+        .send(RolloutDirWatcherCommand::Register {
+            id: interest_id,
+            spawn_time,
+            reply: reply_tx,
+        })
+        .map_err(|_| "rollout directory watcher closed".to_string())?;
 
-    loop {
-        // Re-check on every signal — a single Create event may not
-        // guarantee the file is fully created when we read.
-        if let Some(p) = claim_unclaimed_rollout(dir, spawn_time, claimed_rollouts) {
-            return Ok(Some(p));
+    if let Some(p) = claim_unclaimed_rollout(dir, spawn_time, claimed_rollouts).await {
+        let _ = watcher
+            .tx
+            .send(RolloutDirWatcherCommand::Unregister { id: interest_id });
+        return Ok(Some(p));
+    }
+
+    tokio::select! {
+        result = reply_rx => {
+            result
+                .map(Some)
+                .map_err(|_| "rollout directory watcher closed before rollout file appeared".into())
         }
-        tokio::select! {
-            recv = rx.recv() => {
-                // None means the watcher's sender was dropped; without
-                // it we cannot make progress, so bail rather than spin.
-                if recv.is_none() {
-                    return Err("notify watcher closed before rollout file appeared".into());
-                }
-                continue;
-            }
-            _ = &mut *stop_rx => return Ok(None),
+        _ = &mut *stop_rx => {
+            let _ = watcher
+                .tx
+                .send(RolloutDirWatcherCommand::Unregister { id: interest_id });
+            Ok(None)
         }
     }
+}
+
+async fn rollout_dir_watcher_for(
+    dir: &Path,
+    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
+    dir_watchers: &Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
+) -> Result<Arc<RolloutDirWatcher>, String> {
+    let mut watchers = dir_watchers.lock().await;
+    if let Some(watcher) = watchers.get(dir) {
+        return Ok(watcher.clone());
+    }
+    let watcher = RolloutDirWatcher::start(dir.to_path_buf(), claimed_rollouts.clone())?;
+    watchers.insert(dir.to_path_buf(), watcher.clone());
+    Ok(watcher)
 }
 
 async fn tail_rollout(
@@ -326,6 +566,10 @@ async fn tail_rollout(
     path: &Path,
     stop_rx: &mut tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), String> {
+    let _tail_permit = tail_semaphore()
+        .acquire_owned()
+        .await
+        .map_err(|e| format!("tail semaphore closed: {e}"))?;
     let file = tokio::fs::File::open(path)
         .await
         .map_err(|e| format!("open rollout {path:?}: {e}"))?;
@@ -377,7 +621,15 @@ async fn tail_rollout(
 #[derive(Default)]
 struct CodexPromptCaptureState {
     base_instructions: Option<String>,
-    last_capture_key: Option<String>,
+    last_capture_key: Option<u64>,
+    parse_error_count: u64,
+}
+
+impl CodexPromptCaptureState {
+    fn should_emit_parse_warn(&mut self) -> bool {
+        self.parse_error_count = self.parse_error_count.saturating_add(1);
+        self.parse_error_count <= 5 || self.parse_error_count % 100 == 0
+    }
 }
 
 fn handle_rollout_line(
@@ -389,22 +641,61 @@ fn handle_rollout_line(
     if line.is_empty() {
         return;
     }
-    let parsed: RolloutLine = match serde_json::from_str(line) {
+    let parsed = match parse_rollout_line(line) {
         Ok(p) => p,
         Err(e) => {
-            record_backend_event(
-                app,
-                "WARN",
-                "codex.rollout",
-                Some(session_id),
-                "codex.rollout.parse_failed",
-                "Failed to parse rollout line",
-                serde_json::json!({ "error": e.to_string(), "len": line.len() }),
-            );
+            let quarantine_path = append_rollout_quarantine(session_id, line, &e).ok();
+            if prompt_state.should_emit_parse_warn() {
+                record_backend_event(
+                    app,
+                    "WARN",
+                    "codex.rollout",
+                    Some(session_id),
+                    "codex.rollout.parse_failed",
+                    "Failed to parse rollout line",
+                    serde_json::json!({
+                        "errorKind": e.kind(),
+                        "error": e.message(),
+                        "len": line.len(),
+                        "quarantinePath": quarantine_path,
+                        "suppressedCount": prompt_state.parse_error_count.saturating_sub(1),
+                    }),
+                );
+            }
             return;
         }
     };
     emit_normalized(app, session_id, &parsed, prompt_state);
+}
+
+fn append_rollout_quarantine(
+    session_id: &str,
+    line: &str,
+    error: &RolloutParseError,
+) -> Result<PathBuf, String> {
+    let dir = crate::commands::data::get_session_data_dir(session_id)?;
+    let path = dir.join("codex-rollout-quarantine.jsonl");
+    let raw = if line.len() > MAX_QUARANTINE_LINE_BYTES {
+        let truncated: String = line.chars().take(MAX_QUARANTINE_LINE_BYTES).collect();
+        format!("{truncated}...")
+    } else {
+        line.to_string()
+    };
+    let entry = serde_json::json!({
+        "ts": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "errorKind": error.kind(),
+        "error": error.message(),
+        "raw": raw,
+        "rawLen": line.len(),
+    });
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open rollout quarantine: {e}"))?;
+    writeln!(file, "{entry}").map_err(|e| format!("write rollout quarantine: {e}"))?;
+    Ok(path)
 }
 
 fn rollout_ts_millis(ts: &str) -> i64 {
@@ -592,6 +883,52 @@ fn text_message(role: &str, text: &str) -> Value {
     })
 }
 
+fn hash_json_canonical<H: Hasher>(value: &Value, state: &mut H) {
+    match value {
+        Value::Null => {
+            0u8.hash(state);
+        }
+        Value::Bool(v) => {
+            1u8.hash(state);
+            v.hash(state);
+        }
+        Value::Number(v) => {
+            2u8.hash(state);
+            v.to_string().hash(state);
+        }
+        Value::String(v) => {
+            3u8.hash(state);
+            v.hash(state);
+        }
+        Value::Array(items) => {
+            4u8.hash(state);
+            items.len().hash(state);
+            for item in items {
+                hash_json_canonical(item, state);
+            }
+        }
+        Value::Object(map) => {
+            5u8.hash(state);
+            map.len().hash(state);
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            for key in keys {
+                key.hash(state);
+                if let Some(item) = map.get(key) {
+                    hash_json_canonical(item, state);
+                }
+            }
+        }
+    }
+}
+
+fn prompt_capture_key(base: &str, payload: &Value) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    base.hash(&mut hasher);
+    hash_json_canonical(payload, &mut hasher);
+    hasher.finish()
+}
+
 fn emit_codex_prompt_capture(
     app: &tauri::AppHandle,
     session_id: &str,
@@ -609,14 +946,8 @@ fn emit_codex_prompt_capture(
     let model = payload.get("model").and_then(|v| v.as_str()).unwrap_or("");
     let developer = turn_context_developer_instructions(payload);
     let user = turn_context_user_instructions(payload);
-    let capture_key = format!(
-        "{}\u{1f}{}\u{1f}{}\u{1f}{}",
-        model,
-        base,
-        developer.unwrap_or(""),
-        user.unwrap_or(""),
-    );
-    if prompt_state.last_capture_key.as_deref() == Some(capture_key.as_str()) {
+    let capture_key = prompt_capture_key(base, payload);
+    if prompt_state.last_capture_key == Some(capture_key) {
         return;
     }
     prompt_state.last_capture_key = Some(capture_key);
@@ -976,8 +1307,24 @@ fn emit_response_item(app: &tauri::AppHandle, session_id: &str, ts: &str, payloa
                 .get("call_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let arguments = payload
-                .get("arguments")
+            let argument_value = payload.get("arguments");
+            if argument_value.is_none() {
+                record_backend_event(
+                    app,
+                    "WARN",
+                    "codex.rollout",
+                    Some(session_id),
+                    "codex.rollout.tool_args_missing",
+                    "Tool call arguments field missing",
+                    serde_json::json!({
+                        "ts": ts,
+                        "callId": call_id,
+                        "name": name,
+                        "usedInputFallback": payload.get("input").is_some(),
+                    }),
+                );
+            }
+            let arguments = argument_value
                 .or_else(|| payload.get("input"))
                 .cloned()
                 .unwrap_or(Value::Null);
@@ -1109,6 +1456,48 @@ mod tests {
                 .and_then(|t| t.get("total_tokens"))
                 .and_then(|v| v.as_i64()),
             Some(120)
+        );
+    }
+
+    #[test]
+    fn parse_rollout_line_reports_missing_payload() {
+        let err =
+            parse_rollout_line(r#"{"timestamp":"2025-11-18T09:50:46.482Z","type":"event_msg"}"#)
+                .unwrap_err();
+        assert_eq!(err.kind(), "missing_payload");
+    }
+
+    #[test]
+    fn prompt_capture_key_uses_canonical_json_order() {
+        let a = serde_json::json!({
+            "model": "gpt-5.2",
+            "tools": [{ "name": "shell", "enabled": true }],
+            "sandbox_policy": "workspace-write",
+        });
+        let b = serde_json::json!({
+            "sandbox_policy": "workspace-write",
+            "tools": [{ "enabled": true, "name": "shell" }],
+            "model": "gpt-5.2",
+        });
+        assert_eq!(
+            prompt_capture_key("base", &a),
+            prompt_capture_key("base", &b)
+        );
+    }
+
+    #[test]
+    fn prompt_capture_key_changes_when_unextracted_config_changes() {
+        let a = serde_json::json!({
+            "model": "gpt-5.2",
+            "tools": [{ "name": "shell", "enabled": true }],
+        });
+        let b = serde_json::json!({
+            "model": "gpt-5.2",
+            "tools": [{ "name": "shell", "enabled": false }],
+        });
+        assert_ne!(
+            prompt_capture_key("base", &a),
+            prompt_capture_key("base", &b)
         );
     }
 

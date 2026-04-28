@@ -10,7 +10,7 @@ import "./RightPanel.css";
 
 type RightPanelTab = "search" | "response" | "session" | "notes" | "debug";
 
-// [RI-04] BASE_TABS ordered [search, response, session, notes, debug]. Activity tab was removed (8d454f3) — Response/Session render ActivityPanel with a mode prop. Debug tab filtered out unless debugBuild.
+// [RI-04] BASE_TABS ordered [search, response, session, notes, debug]. Activity tab was removed (8d454f3) — Response/Session render ActivityPanel with a mode prop. Debug tab is available when observability is active.
 const BASE_TABS = [
   { id: "search" as const, label: "Search", icon: <IconSearch size={13} /> },
   { id: "response" as const, label: "Response", icon: <IconResponse size={13} /> },
@@ -20,20 +20,20 @@ const BASE_TABS = [
 ];
 
 export const RightPanel = memo(function RightPanel() {
-  const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
+  const observabilityAvailable = useRuntimeStore((s) => s.observabilityInfo.observabilityEnabled);
   const rightPanelTab = useSettingsStore((s) => s.rightPanelTab);
   const setRightPanelTab = useSettingsStore((s) => s.setRightPanelTab);
 
   useEffect(() => {
-    if (!debugBuild && rightPanelTab === "debug") {
+    if (!observabilityAvailable && rightPanelTab === "debug") {
       setRightPanelTab("response");
     }
-  }, [debugBuild, rightPanelTab, setRightPanelTab]);
+  }, [observabilityAvailable, rightPanelTab, setRightPanelTab]);
 
-  const activeTab: RightPanelTab = !debugBuild && rightPanelTab === "debug"
+  const activeTab: RightPanelTab = !observabilityAvailable && rightPanelTab === "debug"
     ? "response"
     : rightPanelTab;
-  const tabs = BASE_TABS.filter((tab) => tab.id !== "debug" || debugBuild);
+  const tabs = BASE_TABS.filter((tab) => tab.id !== "debug" || observabilityAvailable);
 
   return (
     <aside className="right-panel">
@@ -63,8 +63,8 @@ export const RightPanel = memo(function RightPanel() {
         {activeTab === "session" && <ActivityPanel mode="session" />}
         {activeTab === "notes" && <NotesPanel />}
         {activeTab === "search" && <SearchPanel />}
-        {/* [DP-02] DebugPanel surfaced as a RightPanel tab gated on debugBuild; no global keyboard shortcut. */}
-        {activeTab === "debug" && debugBuild && <DebugPanel />}
+        {/* [DP-02] DebugPanel surfaced as a RightPanel tab gated on observability; no global keyboard shortcut. */}
+        {activeTab === "debug" && observabilityAvailable && <DebugPanel />}
       </div>
     </aside>
   );

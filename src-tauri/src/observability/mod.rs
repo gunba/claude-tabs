@@ -1,5 +1,10 @@
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{mpsc, Once, OnceLock};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -7,17 +12,275 @@ use crate::commands::data::{get_data_dir, get_session_data_dir, reveal_path};
 
 pub mod codex_rollout;
 
+const LOG_ROTATE_BYTES: u64 = 50 * 1024 * 1024;
+const LOG_ROTATE_KEEP: usize = 3;
+const WRITER_FLUSH_BYTES: usize = 64 * 1024;
+
+static OBSERVABILITY_RUNTIME_ENABLED: AtomicBool = AtomicBool::new(false);
+static OBSERVABILITY_INIT: Once = Once::new();
+static OBSERVABILITY_MIN_LEVEL: AtomicU8 = AtomicU8::new(10);
+static WRITER_POOL: OnceLock<WriterPool> = OnceLock::new();
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservabilityInfo {
     debug_build: bool,
     observability_enabled: bool,
+    runtime_override: bool,
     devtools_available: bool,
     global_log_path: Option<String>,
+    global_log_size: u64,
+    global_rotation_count: usize,
+    min_level: &'static str,
+}
+
+struct WriterPool {
+    tx: mpsc::Sender<WriterMessage>,
+}
+
+enum WriterMessage {
+    Append { path: PathBuf, bytes: Vec<u8> },
+    Flush(mpsc::Sender<()>),
+    Shutdown(mpsc::Sender<()>),
+}
+
+struct WriterState {
+    writer: std::io::BufWriter<std::fs::File>,
+    size: u64,
+    buffered: usize,
+}
+
+impl WriterPool {
+    fn new() -> Self {
+        let (tx, rx) = mpsc::channel::<WriterMessage>();
+        std::thread::Builder::new()
+            .name("code-tabs-observability-writer".into())
+            .spawn(move || writer_loop(rx))
+            .expect("observability writer thread must start");
+        Self { tx }
+    }
+
+    fn append(&self, path: PathBuf, bytes: Vec<u8>) -> Result<u64, String> {
+        let len = bytes.len() as u64;
+        self.tx
+            .send(WriterMessage::Append { path, bytes })
+            .map_err(|e| format!("observability writer closed: {e}"))?;
+        Ok(len)
+    }
+
+    fn flush(&self) {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        if self.tx.send(WriterMessage::Flush(ack_tx)).is_ok() {
+            let _ = ack_rx.recv();
+        }
+    }
+
+    fn shutdown(&self) {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        if self.tx.send(WriterMessage::Shutdown(ack_tx)).is_ok() {
+            let _ = ack_rx.recv();
+        }
+    }
+}
+
+fn writer_pool() -> &'static WriterPool {
+    WRITER_POOL.get_or_init(WriterPool::new)
+}
+
+fn writer_loop(rx: mpsc::Receiver<WriterMessage>) {
+    let mut writers: HashMap<PathBuf, WriterState> = HashMap::new();
+    while let Ok(message) = rx.recv() {
+        match message {
+            WriterMessage::Append { path, bytes } => {
+                let _ = append_with_writer(&mut writers, path, &bytes);
+            }
+            WriterMessage::Flush(ack) => {
+                flush_writers(&mut writers);
+                let _ = ack.send(());
+            }
+            WriterMessage::Shutdown(ack) => {
+                flush_writers(&mut writers);
+                writers.clear();
+                let _ = ack.send(());
+                break;
+            }
+        }
+    }
+}
+
+fn flush_writers(writers: &mut HashMap<PathBuf, WriterState>) {
+    for state in writers.values_mut() {
+        let _ = state.writer.flush();
+        state.buffered = 0;
+    }
+}
+
+fn append_with_writer(
+    writers: &mut HashMap<PathBuf, WriterState>,
+    path: PathBuf,
+    bytes: &[u8],
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create observability dir: {e}"))?;
+    }
+
+    let needs_rotation = writers
+        .get(&path)
+        .map(|state| state.size.saturating_add(bytes.len() as u64) > LOG_ROTATE_BYTES)
+        .unwrap_or_else(|| {
+            std::fs::metadata(&path)
+                .map(|meta| meta.len().saturating_add(bytes.len() as u64) > LOG_ROTATE_BYTES)
+                .unwrap_or(false)
+        });
+    if needs_rotation {
+        if let Some(mut state) = writers.remove(&path) {
+            let _ = state.writer.flush();
+        }
+        rotate_log_file(&path);
+    }
+
+    if !writers.contains_key(&path) {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|e| format!("Failed to open observability log: {e}"))?;
+        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        writers.insert(
+            path.clone(),
+            WriterState {
+                writer: std::io::BufWriter::new(file),
+                size,
+                buffered: 0,
+            },
+        );
+    }
+
+    let state = writers
+        .get_mut(&path)
+        .ok_or("observability writer missing after open")?;
+    state
+        .writer
+        .write_all(bytes)
+        .map_err(|e| format!("Failed to write observability log: {e}"))?;
+    state.size = state.size.saturating_add(bytes.len() as u64);
+    state.buffered = state.buffered.saturating_add(bytes.len());
+    if state.buffered >= WRITER_FLUSH_BYTES {
+        let _ = state.writer.flush();
+        state.buffered = 0;
+    }
+    Ok(())
+}
+
+fn rotated_path(path: &Path, index: usize) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    path.with_file_name(format!("{file_name}.{index}"))
+}
+
+fn rotate_log_file(path: &Path) {
+    let _ = std::fs::remove_file(rotated_path(path, LOG_ROTATE_KEEP));
+    for index in (1..LOG_ROTATE_KEEP).rev() {
+        let from = rotated_path(path, index);
+        let to = rotated_path(path, index + 1);
+        if from.exists() {
+            let _ = std::fs::rename(from, to);
+        }
+    }
+    if path.exists() {
+        let _ = std::fs::rename(path, rotated_path(path, 1));
+    }
+}
+
+fn rotated_file_count(path: &Path) -> usize {
+    (1..=LOG_ROTATE_KEEP)
+        .filter(|index| rotated_path(path, *index).exists())
+        .count()
+}
+
+fn level_value(level: &str) -> u8 {
+    match level {
+        "DEBUG" => 10,
+        "LOG" => 20,
+        "WARN" => 30,
+        "ERR" => 40,
+        _ => 20,
+    }
+}
+
+fn level_name(value: u8) -> &'static str {
+    match value {
+        10 => "DEBUG",
+        20 => "LOG",
+        30 => "WARN",
+        40 => "ERR",
+        _ => "LOG",
+    }
+}
+
+fn env_observability_enabled() -> bool {
+    std::env::var("CODE_TABS_OBSERVABILITY")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn env_min_level() -> u8 {
+    if let Ok(level) = std::env::var("CODE_TABS_OBSERVABILITY_LEVEL") {
+        return level_value(&level.to_ascii_uppercase());
+    }
+    if cfg!(debug_assertions) {
+        level_value("DEBUG")
+    } else {
+        level_value("LOG")
+    }
+}
+
+fn ui_config_path() -> Result<PathBuf, String> {
+    Ok(get_data_dir()?.join("ui-config.json"))
+}
+
+fn persisted_observability_enabled() -> bool {
+    let Ok(path) = ui_config_path() else {
+        return false;
+    };
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    serde_json::from_str::<Value>(&content)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("observability")
+                .and_then(|v| v.get("enabled"))
+                .and_then(|v| v.as_bool())
+        })
+        .unwrap_or(false)
+}
+
+fn init_observability_runtime() {
+    OBSERVABILITY_INIT.call_once(|| {
+        OBSERVABILITY_RUNTIME_ENABLED.store(
+            env_observability_enabled() || persisted_observability_enabled(),
+            Ordering::Relaxed,
+        );
+        OBSERVABILITY_MIN_LEVEL.store(env_min_level(), Ordering::Relaxed);
+    });
+}
+
+fn runtime_observability_enabled() -> bool {
+    init_observability_runtime();
+    OBSERVABILITY_RUNTIME_ENABLED.load(Ordering::Relaxed)
 }
 
 fn observability_enabled() -> bool {
-    cfg!(debug_assertions)
+    cfg!(debug_assertions) || runtime_observability_enabled()
+}
+
+fn observability_level_enabled(level: &str) -> bool {
+    level_value(level) >= OBSERVABILITY_MIN_LEVEL.load(Ordering::Relaxed)
 }
 
 fn observability_path(session_id: Option<&str>) -> Result<std::path::PathBuf, String> {
@@ -35,23 +298,51 @@ fn observability_path(session_id: Option<&str>) -> Result<std::path::PathBuf, St
 
 fn append_lines(session_id: Option<&str>, lines: &str) -> Result<u64, String> {
     let path = observability_path(session_id)?;
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| format!("Failed to open observability log: {e}"))?;
-    file.write_all(lines.as_bytes())
-        .map_err(|e| format!("Failed to write observability log: {e}"))?;
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    Ok(meta.len())
+    writer_pool().append(path, lines.as_bytes().to_vec())
+}
+
+fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!(
+        "{}.tmp",
+        path.extension().and_then(|s| s.to_str()).unwrap_or("json")
+    ));
+    std::fs::write(&tmp, contents)?;
+    std::fs::rename(tmp, path)
+}
+
+fn write_persisted_observability_enabled(enabled: bool) -> Result<(), String> {
+    let path = ui_config_path()?;
+    let mut root = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .unwrap_or_else(|| json!({ "version": 3 }));
+    if !root.is_object() {
+        root = json!({ "version": 3 });
+    }
+    if root.get("version").and_then(|v| v.as_u64()).unwrap_or(0) < 3 {
+        root["version"] = json!(3);
+    }
+    if !root.get("observability").is_some_and(Value::is_object) {
+        root["observability"] = json!({});
+    }
+    root["observability"]["enabled"] = json!(enabled);
+    let bytes = serde_json::to_vec_pretty(&root).map_err(|e| e.to_string())?;
+    atomic_write(&path, &bytes).map_err(|e| format!("Failed to write ui-config.json: {e}"))
 }
 
 #[tauri::command]
 pub fn get_observability_info() -> Result<ObservabilityInfo, String> {
     let enabled = observability_enabled();
+    let global_path = observability_path(None)?;
+    let global_log_size = std::fs::metadata(&global_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let global_rotation_count = rotated_file_count(&global_path);
     let global_log_path = if enabled {
-        Some(observability_path(None)?.to_string_lossy().to_string())
+        Some(global_path.to_string_lossy().to_string())
     } else {
         None
     };
@@ -59,9 +350,24 @@ pub fn get_observability_info() -> Result<ObservabilityInfo, String> {
     Ok(ObservabilityInfo {
         debug_build: cfg!(debug_assertions),
         observability_enabled: enabled,
-        devtools_available: enabled,
+        runtime_override: runtime_observability_enabled(),
+        devtools_available: cfg!(debug_assertions),
         global_log_path,
+        global_log_size,
+        global_rotation_count,
+        min_level: level_name(OBSERVABILITY_MIN_LEVEL.load(Ordering::Relaxed)),
     })
+}
+
+#[tauri::command]
+pub fn set_observability_enabled(enabled: bool) -> Result<ObservabilityInfo, String> {
+    init_observability_runtime();
+    OBSERVABILITY_RUNTIME_ENABLED.store(enabled, Ordering::Relaxed);
+    write_persisted_observability_enabled(enabled)?;
+    if !enabled {
+        writer_pool().flush();
+    }
+    get_observability_info()
 }
 
 #[tauri::command]
@@ -128,7 +434,7 @@ pub fn record_backend_event(
     message: &str,
     data: Value,
 ) {
-    if !observability_enabled() {
+    if !observability_enabled() || !observability_level_enabled(level) {
         return;
     }
 
@@ -145,10 +451,19 @@ pub fn record_backend_event(
         "data": data,
     });
 
-    if let Ok(line) = serde_json::to_string(&entry) {
-        let _ = append_lines(session_id, &(line + "\n"));
+    if let Ok(mut line) = serde_json::to_vec(&entry) {
+        line.push(b'\n');
+        if let Ok(path) = observability_path(session_id) {
+            let _ = writer_pool().append(path, line);
+        }
     }
     let _ = app.emit("observability-entry", entry);
+}
+
+pub fn shutdown_observability() {
+    if let Some(pool) = WRITER_POOL.get() {
+        pool.shutdown();
+    }
 }
 
 // [DP-15] Backend perf.span helpers mirror the frontend perfTrace schema so

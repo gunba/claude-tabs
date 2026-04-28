@@ -19,10 +19,14 @@ export interface UiConfig {
     showSize: boolean;
     showRelativeDate: boolean;
   };
+
+  observability: {
+    enabled: boolean;
+  };
 }
 
 export const DEFAULT_UI_CONFIG: UiConfig = {
-  version: 2,
+  version: 3,
 
   deadSessions: {
     maxAge: 7,
@@ -32,6 +36,10 @@ export const DEFAULT_UI_CONFIG: UiConfig = {
     maxItems: 12,
     showSize: true,
     showRelativeDate: true,
+  },
+
+  observability: {
+    enabled: false,
   },
 };
 
