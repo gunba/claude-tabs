@@ -17,7 +17,14 @@ import {
 } from "../../types/session";
 import { ConversationViewer } from "../ConversationViewer/ConversationViewer";
 import { IconFolder } from "../Icons/Icons";
+import claudeMascot from "../../assets/claude-mascot.png";
+import codexMascot from "../../assets/codex-mascot.png";
 import "./ResumePicker.css";
+
+const PROVIDER_MASCOT: Record<"claude" | "codex", string> = {
+  claude: claudeMascot,
+  codex: codexMascot,
+};
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -580,7 +587,14 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
                 <div className="resume-picker-card-top">
                   <span className="resume-picker-card-heading">
                     <span className={`resume-picker-provider-mark resume-picker-provider-mark-${provider}`} title={`Provider: ${providerTitle}`}>
-                      {providerLabel}
+                      <img
+                        className="resume-picker-provider-mascot"
+                        src={PROVIDER_MASCOT[provider]}
+                        alt={providerLabel}
+                        width={14}
+                        height={14}
+                        draggable={false}
+                      />
                     </span>
                     <span className="resume-picker-card-name">
                       {chain.displayName ? (

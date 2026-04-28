@@ -284,26 +284,26 @@
 .resume-picker-provider-mark {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 16px;
-  padding: 0 6px;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--resume-provider-color) 48%, transparent);
   border-radius: 4px;
   color: var(--resume-provider-color);
   background: color-mix(in srgb, var(--resume-provider-color) 14%, var(--bg-primary));
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
+  line-height: 0;
   flex-shrink: 0;
 }
 
-.resume-picker-provider-mark::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: currentColor;
+.resume-picker-provider-mascot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.3));
 }
 
 .resume-picker-card-name {
