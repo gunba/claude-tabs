@@ -14,12 +14,16 @@
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 const WEATHER_CACHE_FILE: &str = "weather.json";
 const POLL_INTERVAL: Duration = Duration::from_secs(30 * 60);
 const RETRY_INTERVAL: Duration = Duration::from_secs(60);
+const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const SUCCESS_JITTER_MAX: Duration = Duration::from_secs(60);
+const RETRY_JITTER_MAX: Duration = Duration::from_secs(30);
 
 static COUNTRY: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static CACHE: OnceLock<Mutex<Option<WeatherPayload>>> = OnceLock::new();
@@ -40,10 +44,10 @@ pub struct WeatherPayload {
     pub updated_at: u64,
 }
 
-/// (lat, lon, label) for ~50 frequent countries. Unknown codes fall back
-/// to Sydney so the scene always has something plausible to render.
-pub fn coords_for(cc: &str) -> (f64, f64, &'static str) {
-    match cc {
+/// (lat, lon, label) for frequent countries. Unknown codes return None
+/// so we do not show weather for the wrong city.
+pub fn coords_for(cc: &str) -> Option<(f64, f64, &'static str)> {
+    let coords = match cc {
         "AU" => (-33.87, 151.21, "Sydney"),
         "NZ" => (-41.29, 174.78, "Wellington"),
         "US" => (38.90, -77.04, "Washington D.C."),
@@ -96,8 +100,25 @@ pub fn coords_for(cc: &str) -> (f64, f64, &'static str) {
         "ZA" => (-25.75, 28.19, "Pretoria"),
         "NG" => (9.08, 7.40, "Abuja"),
         "KE" => (-1.29, 36.82, "Nairobi"),
-        _ => (-33.87, 151.21, "Sydney"),
+        _ => return None,
+    };
+    Some(coords)
+}
+
+fn jitter(max: Duration) -> Duration {
+    if max.as_secs() == 0 {
+        return Duration::ZERO;
     }
+    Duration::from_secs(rand::thread_rng().gen_range(0..=max.as_secs()))
+}
+
+fn retry_delay(retries: u32) -> Duration {
+    let multiplier = 1u64 << retries.min(5);
+    let secs = RETRY_INTERVAL
+        .as_secs()
+        .saturating_mul(multiplier)
+        .min(MAX_RETRY_INTERVAL.as_secs());
+    Duration::from_secs(secs) + jitter(RETRY_JITTER_MAX)
 }
 
 fn country_slot() -> &'static Mutex<Option<String>> {
@@ -119,6 +140,9 @@ pub fn set_country(cc: &str) {
         return;
     }
     if let Ok(mut guard) = country_slot().lock() {
+        if guard.as_deref() == Some(upper.as_str()) {
+            return;
+        }
         *guard = Some(upper);
     }
 }
@@ -157,7 +181,9 @@ async fn fetch_open_meteo(lat: f64, lon: f64) -> Result<(i32, f64, f64, f64), St
         .error_for_status()
         .map_err(|e| e.to_string())?;
     let body: OpenMeteoResp = resp.json().await.map_err(|e| e.to_string())?;
-    let cur = body.current.ok_or_else(|| "missing current block".to_string())?;
+    let cur = body
+        .current
+        .ok_or_else(|| "missing current block".to_string())?;
     Ok((
         cur.weather_code.unwrap_or(0),
         cur.temperature_2m.unwrap_or(0.0),
@@ -187,7 +213,7 @@ fn save_cached(app: &AppHandle, payload: &WeatherPayload) {
         let _ = std::fs::create_dir_all(parent);
     }
     if let Ok(json) = serde_json::to_string(payload) {
-        let _ = std::fs::write(&path, json);
+        let _ = crate::fs_atomic::write(&path, json.as_bytes());
     }
 }
 
@@ -212,11 +238,16 @@ pub fn init(app: AppHandle) {
     }
 
     tauri::async_runtime::spawn(async move {
+        let mut retries = 0u32;
         loop {
             if let Some(cc) = current_country() {
-                let (lat, lon, label) = coords_for(&cc);
+                let Some((lat, lon, label)) = coords_for(&cc) else {
+                    tokio::time::sleep(RETRY_INTERVAL + jitter(RETRY_JITTER_MAX)).await;
+                    continue;
+                };
                 match fetch_open_meteo(lat, lon).await {
                     Ok((code, temp, wind, precip)) => {
+                        retries = 0;
                         let payload = WeatherPayload {
                             country: cc,
                             label: label.to_string(),
@@ -231,16 +262,17 @@ pub fn init(app: AppHandle) {
                         }
                         save_cached(&app, &payload);
                         let _ = app.emit("weather-changed", &payload);
-                        tokio::time::sleep(POLL_INTERVAL).await;
+                        tokio::time::sleep(POLL_INTERVAL + jitter(SUCCESS_JITTER_MAX)).await;
                         continue;
                     }
                     Err(_) => {
-                        tokio::time::sleep(RETRY_INTERVAL).await;
+                        tokio::time::sleep(retry_delay(retries)).await;
+                        retries = retries.saturating_add(1);
                         continue;
                     }
                 }
             }
-            tokio::time::sleep(RETRY_INTERVAL).await;
+            tokio::time::sleep(RETRY_INTERVAL + jitter(RETRY_JITTER_MAX)).await;
         }
     });
 }
@@ -256,15 +288,14 @@ mod tests {
 
     #[test]
     fn coords_known_country() {
-        let (lat, _, label) = coords_for("AU");
+        let (lat, _, label) = coords_for("AU").unwrap();
         assert!((lat + 33.87).abs() < 0.1);
         assert_eq!(label, "Sydney");
     }
 
     #[test]
-    fn coords_unknown_falls_back_to_sydney() {
-        let (_, _, label) = coords_for("ZZ");
-        assert_eq!(label, "Sydney");
+    fn coords_unknown_returns_none() {
+        assert!(coords_for("ZZ").is_none());
     }
 
     #[test]

@@ -84,10 +84,46 @@ fn write_backup(targets: &[PathBuf]) -> Result<PathBuf, String> {
                 .map_err(|e| format!("tar file {target:?}: {e}"))?;
         }
     }
-    tar.into_inner()
-        .and_then(|gz| gz.finish())
-        .map_err(|e| format!("finalize backup: {e}"))?;
+    tar.finish()
+        .map_err(|e| format!("finalize tar backup: {e}"))?;
+    let gz = tar
+        .into_inner()
+        .map_err(|e| format!("recover gzip writer: {e}"))?;
+    let file = gz.finish().map_err(|e| format!("finalize gzip: {e}"))?;
+    file.sync_all()
+        .map_err(|e| format!("sync backup file: {e}"))?;
+    verify_backup(&backup_path)?;
+    crate::fs_atomic::sync_parent_dir(&backup_path)?;
     Ok(backup_path)
+}
+
+fn verify_backup(path: &Path) -> Result<(), String> {
+    let file = fs::File::open(path).map_err(|e| format!("open backup for verify: {e}"))?;
+    let gz = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(gz);
+    let entries = archive
+        .entries()
+        .map_err(|e| format!("read backup archive: {e}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("read backup entry: {e}"))?;
+        entry
+            .path()
+            .map_err(|e| format!("read backup entry path: {e}"))?;
+    }
+    Ok(())
+}
+
+fn unique_sibling_path(path: &Path, label: &str) -> Result<PathBuf, String> {
+    let parent = path.parent().ok_or("path has no parent")?;
+    let name = path
+        .file_name()
+        .map(|value| value.to_string_lossy())
+        .ok_or("path has no file name")?;
+    Ok(parent.join(format!(
+        ".{name}.{label}.{}.{}",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    )))
 }
 
 // ── Skills directory copy ──────────────────────────────────────────
@@ -156,10 +192,9 @@ pub fn port_skill_sync(req: &PortSkillRequest) -> Result<PortReport, String> {
                 if !candidate.exists() {
                     break candidate;
                 }
-                suffix += 1;
-                if suffix > 99 {
-                    return Err("rename suffix overflow".into());
-                }
+                suffix = suffix
+                    .checked_add(1)
+                    .ok_or_else(|| "rename suffix overflow".to_string())?;
             }
         }
         _ => dest_root.join(&req.skill_name),
@@ -212,16 +247,10 @@ pub fn port_skill_sync(req: &PortSkillRequest) -> Result<PortReport, String> {
         None
     };
 
-    if dest.exists() {
-        if dest.is_dir() {
-            fs::remove_dir_all(&dest).map_err(|e| format!("remove dest: {e}"))?;
-        } else {
-            fs::remove_file(&dest).map_err(|e| format!("remove dest: {e}"))?;
-        }
-    }
     fs::create_dir_all(dest.parent().ok_or("dest has no parent")?)
         .map_err(|e| format!("mkdir parent: {e}"))?;
-    copy_dir_recursive(&src, &dest, &mut written)?;
+    replace_dir_atomic(&src, &dest)?;
+    collect_files_recursive(&dest, &mut written)?;
 
     Ok(PortReport {
         kind: "skill".into(),
@@ -233,17 +262,62 @@ pub fn port_skill_sync(req: &PortSkillRequest) -> Result<PortReport, String> {
     })
 }
 
-fn copy_dir_recursive(src: &Path, dest: &Path, written: &mut Vec<String>) -> Result<(), String> {
+fn replace_dir_atomic(src: &Path, dest: &Path) -> Result<(), String> {
+    let parent = dest.parent().ok_or("dest has no parent")?;
+    fs::create_dir_all(parent).map_err(|e| format!("mkdir parent: {e}"))?;
+    let tmp = unique_sibling_path(dest, "port-tmp")?;
+    let old = unique_sibling_path(dest, "port-old")?;
+    if tmp.exists() {
+        fs::remove_dir_all(&tmp).map_err(|e| format!("remove stale temp dir: {e}"))?;
+    }
+    copy_dir_recursive(src, &tmp)?;
+
+    let had_existing = dest.exists();
+    if had_existing {
+        fs::rename(dest, &old).map_err(|e| format!("move old dir aside: {e}"))?;
+    }
+
+    if let Err(err) = fs::rename(&tmp, dest) {
+        if had_existing {
+            let _ = fs::rename(&old, dest);
+        }
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(format!("install copied dir: {err}"));
+    }
+
+    if had_existing {
+        if old.is_dir() {
+            let _ = fs::remove_dir_all(&old);
+        } else {
+            let _ = fs::remove_file(&old);
+        }
+    }
+    crate::fs_atomic::sync_parent_dir(dest)
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), String> {
     fs::create_dir_all(dest).map_err(|e| format!("mkdir {dest:?}: {e}"))?;
     for entry in fs::read_dir(src).map_err(|e| format!("read_dir {src:?}: {e}"))? {
         let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
         let from = entry.path();
         let to = dest.join(entry.file_name());
         if from.is_dir() {
-            copy_dir_recursive(&from, &to, written)?;
+            copy_dir_recursive(&from, &to)?;
         } else {
             fs::copy(&from, &to).map_err(|e| format!("copy {from:?} → {to:?}: {e}"))?;
-            written.push(to.to_string_lossy().to_string());
+        }
+    }
+    Ok(())
+}
+
+fn collect_files_recursive(dir: &Path, written: &mut Vec<String>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("read_dir {dir:?}: {e}"))? {
+        let entry = entry.map_err(|e| format!("dir entry: {e}"))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursive(&path, written)?;
+        } else {
+            written.push(path.to_string_lossy().to_string());
         }
     }
     Ok(())
@@ -337,7 +411,8 @@ pub fn port_memory_sync(req: &PortMemoryRequest) -> Result<PortReport, String> {
             .map_err(|e| format!("symlink {src:?} → {dest:?}: {e}"))?;
         messages.push("symlinked".into());
     } else {
-        fs::copy(&src, &dest).map_err(|e| format!("copy: {e}"))?;
+        let bytes = fs::read(&src).map_err(|e| format!("read source: {e}"))?;
+        crate::fs_atomic::write(&dest, &bytes).map_err(|e| format!("write dest: {e}"))?;
     }
     written.push(dest.to_string_lossy().to_string());
 
@@ -392,8 +467,8 @@ pub fn port_mcp_sync(req: &PortMcpRequest) -> Result<PortReport, String> {
     let home = dirs::home_dir().ok_or("no home dir")?;
     let (claude_path, codex_path) = if req.user_scope {
         (
-            home.join(".claude").join("settings.json"),
-            home.join(".codex").join("config.toml"),
+            claude_user_settings_path(&home),
+            codex_user_config_path(&home),
         )
     } else {
         let project = PathBuf::from(req.project_dir.as_deref().unwrap_or("."));
@@ -410,12 +485,14 @@ pub fn port_mcp_sync(req: &PortMcpRequest) -> Result<PortReport, String> {
     let mut written = Vec::new();
     let mut skipped = Vec::new();
     let mut messages = Vec::new();
+    messages.push(format!("resolved Claude MCP path: {claude_path:?}"));
+    messages.push(format!("resolved Codex MCP path: {codex_path:?}"));
 
     if !src_path.exists() {
         return Err(format!("source missing: {src_path:?}"));
     }
 
-    let servers = read_mcp_from(src_path, src_kind)?;
+    let servers = read_mcp_from(src_path, src_kind, &mut messages)?;
     if servers.is_empty() {
         messages.push("no MCP servers found in source; nothing to port".into());
         return Ok(PortReport {
@@ -461,7 +538,8 @@ pub fn port_mcp_sync(req: &PortMcpRequest) -> Result<PortReport, String> {
 
     fs::create_dir_all(dest_path.parent().ok_or("dest has no parent")?)
         .map_err(|e| format!("mkdir parent: {e}"))?;
-    fs::write(dest_path, merged).map_err(|e| format!("write dest: {e}"))?;
+    crate::fs_atomic::write(dest_path, merged.as_bytes())
+        .map_err(|e| format!("write dest: {e}"))?;
     written.push(dest_path.to_string_lossy().to_string());
 
     Ok(PortReport {
@@ -474,7 +552,47 @@ pub fn port_mcp_sync(req: &PortMcpRequest) -> Result<PortReport, String> {
     })
 }
 
-fn read_mcp_from(path: &Path, kind: &str) -> Result<BTreeMap<String, McpServerEntry>, String> {
+fn claude_user_settings_path(home: &Path) -> PathBuf {
+    let primary = home.join(".claude").join("settings.json");
+    if primary.exists() {
+        return primary;
+    }
+    let legacy = home.join(".claude.json");
+    if legacy.exists() {
+        return legacy;
+    }
+    primary
+}
+
+fn codex_user_config_path(home: &Path) -> PathBuf {
+    let mut candidates = Vec::new();
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+            if !xdg.trim().is_empty() {
+                candidates.push(PathBuf::from(xdg).join("codex").join("config.toml"));
+            }
+        }
+        candidates.push(home.join(".config").join("codex").join("config.toml"));
+    }
+    candidates.push(home.join(".codex").join("config.toml"));
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.clone();
+        }
+    }
+    candidates
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| home.join(".codex").join("config.toml"))
+}
+
+fn read_mcp_from(
+    path: &Path,
+    kind: &str,
+    messages: &mut Vec<String>,
+) -> Result<BTreeMap<String, McpServerEntry>, String> {
     let raw = fs::read_to_string(path).map_err(|e| format!("read {path:?}: {e}"))?;
     match kind {
         "claude_json" => {
@@ -487,8 +605,14 @@ fn read_mcp_from(path: &Path, kind: &str) -> Result<BTreeMap<String, McpServerEn
                 .unwrap_or_default();
             let mut out = BTreeMap::new();
             for (k, v) in map {
-                if let Ok(entry) = serde_json::from_value::<McpServerEntry>(v) {
-                    out.insert(k, entry);
+                match serde_json::from_value::<McpServerEntry>(v) {
+                    Ok(entry) => {
+                        out.insert(k, entry);
+                    }
+                    Err(err) => {
+                        messages.push(format!("invalid MCP server '{k}' in {path:?}: {err}"));
+                        return Err(format!("invalid MCP server '{k}' in {path:?}: {err}"));
+                    }
                 }
             }
             Ok(out)
@@ -504,8 +628,14 @@ fn read_mcp_from(path: &Path, kind: &str) -> Result<BTreeMap<String, McpServerEn
             let mut out = BTreeMap::new();
             for (k, v) in map {
                 let json = serde_json::to_value(v).map_err(|e| format!("toml→json: {e}"))?;
-                if let Ok(entry) = serde_json::from_value::<McpServerEntry>(json) {
-                    out.insert(k, entry);
+                match serde_json::from_value::<McpServerEntry>(json) {
+                    Ok(entry) => {
+                        out.insert(k, entry);
+                    }
+                    Err(err) => {
+                        messages.push(format!("invalid MCP server '{k}' in {path:?}: {err}"));
+                        return Err(format!("invalid MCP server '{k}' in {path:?}: {err}"));
+                    }
                 }
             }
             Ok(out)
@@ -595,7 +725,7 @@ fn merge_mcp_into(
                             messages.push(format!("conflict: '{name}' renamed to '{renamed}'"));
                             let json = serde_json::to_value(entry)
                                 .map_err(|e| format!("serialize MCP entry: {e}"))?;
-                            let toml_val: toml::Value = json_to_toml(json);
+                            let toml_val: toml::Value = json_to_toml(json)?;
                             mcp_servers.insert(renamed, toml_val);
                             continue;
                         }
@@ -603,7 +733,7 @@ fn merge_mcp_into(
                 }
                 let json =
                     serde_json::to_value(entry).map_err(|e| format!("serialize MCP entry: {e}"))?;
-                let toml_val: toml::Value = json_to_toml(json);
+                let toml_val: toml::Value = json_to_toml(json)?;
                 mcp_servers.insert(name, toml_val);
             }
             Ok(toml::to_string(&existing).map_err(|e| format!("serialize TOML: {e}"))?)
@@ -612,29 +742,31 @@ fn merge_mcp_into(
     }
 }
 
-fn json_to_toml(v: serde_json::Value) -> toml::Value {
+fn json_to_toml(v: serde_json::Value) -> Result<toml::Value, String> {
     match v {
-        serde_json::Value::Null => toml::Value::String(String::new()),
-        serde_json::Value::Bool(b) => toml::Value::Boolean(b),
+        serde_json::Value::Null => Err("TOML cannot represent JSON null in MCP config".into()),
+        serde_json::Value::Bool(b) => Ok(toml::Value::Boolean(b)),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                toml::Value::Integer(i)
+                Ok(toml::Value::Integer(i))
             } else if let Some(f) = n.as_f64() {
-                toml::Value::Float(f)
+                Ok(toml::Value::Float(f))
             } else {
-                toml::Value::String(n.to_string())
+                Ok(toml::Value::String(n.to_string()))
             }
         }
-        serde_json::Value::String(s) => toml::Value::String(s),
-        serde_json::Value::Array(a) => {
-            toml::Value::Array(a.into_iter().map(json_to_toml).collect())
-        }
+        serde_json::Value::String(s) => Ok(toml::Value::String(s)),
+        serde_json::Value::Array(a) => Ok(toml::Value::Array(
+            a.into_iter()
+                .map(json_to_toml)
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
         serde_json::Value::Object(o) => {
             let mut t = toml::value::Table::new();
             for (k, v) in o {
-                t.insert(k, json_to_toml(v));
+                t.insert(k, json_to_toml(v)?);
             }
-            toml::Value::Table(t)
+            Ok(toml::Value::Table(t))
         }
     }
 }
@@ -688,6 +820,20 @@ mod tests {
         assert!(report.written.is_empty());
         assert!(report.backup_path.is_none());
         assert!(!proj.join(".agents/skills/foo/SKILL.md").exists());
+        let _ = fs::remove_dir_all(&proj);
+    }
+
+    #[test]
+    fn backup_tarball_is_readable() {
+        let proj = tmpdir("backup-valid");
+        let file = proj.join("AGENTS.md");
+        fs::write(&file, "memory").unwrap();
+
+        let backup = write_backup(&[file]).expect("backup");
+        verify_backup(&backup).expect("verify backup");
+        assert!(backup.exists());
+
+        let _ = fs::remove_file(&backup);
         let _ = fs::remove_dir_all(&proj);
     }
 
@@ -759,6 +905,30 @@ mod tests {
         assert!(codex_text.contains("[mcp_servers.fs]"));
         assert!(codex_text.contains("command = \"fs-server\""));
         assert!(codex_text.contains("--root"));
+        let _ = fs::remove_dir_all(&proj);
+    }
+
+    #[test]
+    fn mcp_port_rejects_null_values() {
+        let proj = tmpdir("mcp-null");
+        let claude = proj.join(".claude").join("settings.json");
+        fs::create_dir_all(claude.parent().unwrap()).unwrap();
+        fs::write(
+            &claude,
+            r#"{"mcpServers":{"bad":{"command":"cmd","env":{"FOO":null}}}}"#,
+        )
+        .unwrap();
+        let req = PortMcpRequest {
+            direction: PortDirection::ClaudeToCodex,
+            conflict: ConflictPolicy::Overwrite,
+            dry_run: false,
+            user_scope: false,
+            project_dir: Some(proj.to_string_lossy().to_string()),
+        };
+
+        let err = port_mcp_sync(&req).expect_err("null env value should fail");
+        assert!(err.contains("invalid MCP server 'bad'"), "{err}");
+        assert!(!proj.join(".codex/config.toml").exists());
         let _ = fs::remove_dir_all(&proj);
     }
 

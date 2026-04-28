@@ -1,6 +1,7 @@
 mod cli_adapter;
 mod commands;
 pub mod discovery;
+mod fs_atomic;
 mod metrics;
 mod observability;
 mod path_utils;
@@ -12,7 +13,7 @@ mod tap_server;
 mod weather;
 
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use tauri::Manager;
 
@@ -23,7 +24,53 @@ use tap_server::TapServerState;
 
 /// [PT-07] OS PIDs of active PTY child processes, registered by the frontend.
 /// Killed on app exit to prevent orphaned CLI child processes.
-pub struct ActivePids(pub Mutex<HashSet<u32>>);
+pub struct ActivePids {
+    pids: Mutex<HashSet<u32>>,
+    changed: Condvar,
+}
+
+impl ActivePids {
+    fn new() -> Self {
+        Self {
+            pids: Mutex::new(HashSet::new()),
+            changed: Condvar::new(),
+        }
+    }
+
+    pub fn insert(&self, pid: u32) {
+        if let Ok(mut pids) = self.pids.lock() {
+            pids.insert(pid);
+            self.changed.notify_all();
+        }
+    }
+
+    pub fn remove(&self, pid: u32) {
+        if let Ok(mut pids) = self.pids.lock() {
+            pids.remove(&pid);
+            self.changed.notify_all();
+        }
+    }
+
+    pub fn snapshot(&self) -> Vec<u32> {
+        self.pids
+            .lock()
+            .map(|pids| pids.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn drain(&self) -> Vec<u32> {
+        self.pids
+            .lock()
+            .map(|mut pids| pids.drain().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn wait_for_change(&self, timeout: std::time::Duration) {
+        if let Ok(guard) = self.pids.lock() {
+            let _ = self.changed.wait_timeout(guard, timeout);
+        }
+    }
+}
 
 /// Create a Windows Job Object and assign our process to it.
 /// All child processes (ConPTY conhost, agent CLIs, etc.) inherit the job.
@@ -181,7 +228,7 @@ pub fn run() {
             Ok(())
         })
         .manage(SessionManager::new())
-        .manage(ActivePids(Mutex::new(HashSet::new())))
+        .manage(ActivePids::new())
         .manage(Arc::new(Mutex::new(TapServerState::new())))
         .manage(pty::PtyState::default())
         .manage(ProxyState::new())
@@ -342,7 +389,7 @@ pub fn run() {
                 }
                 // [RC-11] Kill all active PTY process trees to prevent orphaned CLI processes
                 let active = app_handle.state::<ActivePids>();
-                let pids: Vec<u32> = active.0.lock().unwrap().drain().collect();
+                let pids: Vec<u32> = active.drain();
                 for pid in pids {
                     let _ = commands::kill_process_tree_sync(pid);
                 }

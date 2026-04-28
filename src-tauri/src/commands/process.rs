@@ -7,13 +7,13 @@ use crate::ActivePids;
 // [RC-11] PID registry: frontend registers PTY child PIDs; lib.rs kills on exit
 #[tauri::command]
 pub fn register_active_pid(pid: u32, pids: State<'_, ActivePids>) -> Result<(), String> {
-    pids.0.lock().unwrap().insert(pid);
+    pids.insert(pid);
     Ok(())
 }
 
 #[tauri::command]
 pub fn unregister_active_pid(pid: u32, pids: State<'_, ActivePids>) -> Result<(), String> {
-    pids.0.lock().unwrap().remove(&pid);
+    pids.remove(pid);
     Ok(())
 }
 

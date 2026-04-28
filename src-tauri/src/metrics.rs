@@ -12,7 +12,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::ActivePids;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
+const IDLE_WAIT_INTERVAL: Duration = Duration::from_secs(60);
 const TOP_CHILD_LIMIT: usize = 5;
+const DESCENDANT_VISIT_LIMIT: usize = 4096;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -82,15 +84,14 @@ pub fn spawn_collector(app: AppHandle) {
         let mut had_tracked_processes = false;
 
         loop {
-            thread::sleep(POLL_INTERVAL);
-
-            let tracked: Vec<u32> = match app.try_state::<ActivePids>() {
-                Some(state) => match state.0.lock() {
-                    Ok(set) => set.iter().copied().collect(),
-                    Err(_) => continue,
-                },
-                None => continue,
+            let active_pids = match app.try_state::<ActivePids>() {
+                Some(state) => state,
+                None => {
+                    thread::sleep(IDLE_WAIT_INTERVAL);
+                    continue;
+                }
             };
+            let tracked: Vec<u32> = active_pids.snapshot();
 
             if tracked.is_empty() {
                 if had_tracked_processes {
@@ -104,6 +105,7 @@ pub fn spawn_collector(app: AppHandle) {
                         },
                     );
                 }
+                active_pids.wait_for_change(IDLE_WAIT_INTERVAL);
                 continue;
             }
             had_tracked_processes = true;
@@ -198,6 +200,7 @@ pub fn spawn_collector(app: AppHandle) {
                 processes: overall_proc_count,
             };
             let _ = app.emit("process-metrics-overall", overall);
+            active_pids.wait_for_change(POLL_INTERVAL);
         }
     });
 }
@@ -225,6 +228,9 @@ fn sum_descendants(
     let mut visited: HashSet<u32> = HashSet::new();
     visited.insert(root_pid);
     while let Some(pid) = queue.pop() {
+        if visited.len() >= DESCENDANT_VISIT_LIMIT {
+            break;
+        }
         if !visited.insert(pid) {
             continue;
         }
@@ -242,7 +248,8 @@ fn sum_descendants(
             );
         }
         if let Some(grand) = children_of.get(&pid) {
-            queue.extend(grand.iter().copied());
+            let remaining = DESCENDANT_VISIT_LIMIT.saturating_sub(visited.len() + queue.len());
+            queue.extend(grand.iter().copied().take(remaining));
         }
     }
     top_children.sort_by(|a, b| b.mem.cmp(&a.mem));

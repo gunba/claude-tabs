@@ -1,7 +1,11 @@
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::io::{BufRead, BufReader};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tauri::{AppHandle, Emitter};
 
 use crate::observability::record_backend_event;
@@ -11,7 +15,7 @@ const TAP_EMIT_BATCH_MAX_LINES: usize = 128;
 const TAP_EMIT_BATCH_MAX_BYTES: usize = 256 * 1024;
 
 struct TapServerControl {
-    should_stop: bool,
+    stop: Arc<AtomicBool>,
     port: u16,
     client: Option<TcpStream>,
 }
@@ -31,7 +35,7 @@ impl TapServerState {
     pub fn stop_all(&mut self) -> Vec<u16> {
         let mut ports = Vec::with_capacity(self.active.len());
         for control in self.active.values_mut() {
-            control.should_stop = true;
+            control.stop.store(true, Ordering::Release);
             if let Some(client) = &control.client {
                 client.shutdown(Shutdown::Both).ok();
             }
@@ -42,7 +46,7 @@ impl TapServerState {
 
     fn stop_session(&mut self, session_id: &str) -> Option<u16> {
         let control = self.active.get_mut(session_id)?;
-        control.should_stop = true;
+        control.stop.store(true, Ordering::Release);
         if let Some(client) = &control.client {
             client.shutdown(Shutdown::Both).ok();
         }
@@ -54,15 +58,8 @@ pub(crate) fn wake_tap_listener(port: u16) {
     TcpStream::connect(("127.0.0.1", port)).ok();
 }
 
-fn should_stop(state: &Arc<Mutex<TapServerState>>, session_id: &str) -> bool {
-    match state.lock() {
-        Ok(s) => s
-            .active
-            .get(session_id)
-            .map(|control| control.should_stop)
-            .unwrap_or(true),
-        Err(_) => true,
-    }
+fn should_stop(stop: &AtomicBool) -> bool {
+    stop.load(Ordering::Acquire)
 }
 
 fn set_active_client(
@@ -104,6 +101,33 @@ fn emit_tap_batch(
     *batch_bytes = 0;
 }
 
+fn log_tap_read_error(app: &AppHandle, session_id: &str, err: &std::io::Error) {
+    let expected_close = matches!(
+        err.kind(),
+        ErrorKind::ConnectionReset
+            | ErrorKind::BrokenPipe
+            | ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionAborted
+    );
+    record_backend_event(
+        app,
+        if expected_close { "LOG" } else { "WARN" },
+        "tap-server",
+        Some(session_id),
+        if expected_close {
+            "tap.server.client_disconnected"
+        } else {
+            "tap.server.read_error"
+        },
+        if expected_close {
+            "Tap client disconnected"
+        } else {
+            "Tap client read error"
+        },
+        serde_json::json!({ "error": err.to_string() }),
+    );
+}
+
 /// Start a per-session TCP listener. Returns the OS-assigned port.
 /// The background thread accepts one connection at a time, reads JSONL lines,
 /// and emits single lines or newline-delimited batches as a session-scoped Tauri event.
@@ -122,13 +146,14 @@ pub fn start_tap_server(
 
     let sid = session_id.clone();
     let state = tap_state.inner().clone();
+    let stop = Arc::new(AtomicBool::new(false));
 
     // Mark as active
     if let Ok(mut s) = state.lock() {
         s.active.insert(
             sid.clone(),
             TapServerControl {
-                should_stop: false,
+                stop: stop.clone(),
                 port,
                 client: None,
             },
@@ -148,17 +173,18 @@ pub fn start_tap_server(
     let event_name = format!("tap-entry-{sid}");
     let sid_for_thread = sid.clone();
     let app_for_thread = app.clone();
+    let stop_for_thread = stop.clone();
 
     std::thread::spawn(move || {
         // Accept loop — one connection at a time, re-accept on disconnect
         loop {
-            if should_stop(&state, &sid) {
+            if should_stop(&stop_for_thread) {
                 break;
             }
 
             match listener.accept() {
                 Ok((stream, addr)) => {
-                    if should_stop(&state, &sid) {
+                    if should_stop(&stop_for_thread) {
                         break;
                     }
 
@@ -181,7 +207,7 @@ pub fn start_tap_server(
                     // Read loop — process JSONL lines until EOF or stop.
                     // Drain lines already in BufReader's memory into one UI event.
                     loop {
-                        if should_stop(&state, &sid) {
+                        if should_stop(&stop_for_thread) {
                             break;
                         }
 
@@ -203,15 +229,11 @@ pub fn start_tap_server(
                                             line.clear();
                                         }
                                         Err(err) => {
-                                            if !should_stop(&state, &sid) {
-                                                record_backend_event(
+                                            if !should_stop(&stop_for_thread) {
+                                                log_tap_read_error(
                                                     &app_for_thread,
-                                                    "WARN",
-                                                    "tap-server",
-                                                    Some(&sid_for_thread),
-                                                    "tap.server.read_error",
-                                                    "Tap client read error",
-                                                    serde_json::json!({ "error": err.to_string() }),
+                                                    &sid_for_thread,
+                                                    &err,
                                                 );
                                             }
                                             line.clear();
@@ -232,16 +254,8 @@ pub fn start_tap_server(
                                 );
                             }
                             Err(err) => {
-                                if !should_stop(&state, &sid) {
-                                    record_backend_event(
-                                        &app_for_thread,
-                                        "WARN",
-                                        "tap-server",
-                                        Some(&sid_for_thread),
-                                        "tap.server.read_error",
-                                        "Tap client read error",
-                                        serde_json::json!({ "error": err.to_string() }),
-                                    );
+                                if !should_stop(&stop_for_thread) {
+                                    log_tap_read_error(&app_for_thread, &sid_for_thread, &err);
                                 }
                                 break; // Connection error — re-accept
                             }
