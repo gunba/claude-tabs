@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useSessionStore } from "../../store/sessions";
 import { useWeatherStore } from "../../store/weather";
-import { isSessionIdle, type SessionState } from "../../types/session";
+import { isSessionIdle, type Session, type SessionState } from "../../types/session";
 import { sceneForCode, type WeatherScene } from "../../lib/weatherCodes";
 import "./HeaderActivityViz.css";
 
@@ -23,6 +23,8 @@ const BUBBLE_INTERVAL_MS = 320;
 const BUBBLE_LIFE_MS = 1200;
 const STORM_PERIOD_S = 7;
 const STORM_FLASH_S = 0.1;
+const BASE_INTENSITY = 0.15;
+const INTENSITY_DECAY_RETAIN_PER_500MS = 0.7;
 
 interface SlotData {
   id: string;
@@ -152,7 +154,7 @@ export function HeaderActivityViz() {
   const bubblesRef = useRef<Bubble[]>([]);
   const cloudsRef = useRef<Cloud[] | null>(null);
   const flakesRef = useRef<Flake[] | null>(null);
-  const intensityRef = useRef(0.15);
+  const intensityRef = useRef(BASE_INTENSITY);
   const themeRef = useRef<ThemeProps | null>(null);
   const sceneRef = useRef<WeatherScene>("clear");
 
@@ -224,8 +226,8 @@ export function HeaderActivityViz() {
 
   useEffect(() => {
     const lastCounts = new Map<string, number>();
-    const tick = () => {
-      const latest = useSessionStore.getState().sessions;
+
+    const updateActivity = (latest: Session[]) => {
       let delta = 0;
       const present = new Set<string>();
       for (const s of latest) {
@@ -240,11 +242,20 @@ export function HeaderActivityViz() {
         lastCounts.set(s.id, cur);
       }
       for (const id of [...lastCounts.keys()]) if (!present.has(id)) lastCounts.delete(id);
-      const burst = 1 - Math.exp(-delta / 3);
-      intensityRef.current = intensityRef.current * 0.7 + (0.15 + 0.85 * burst) * 0.3;
+      if (delta > 0) {
+        const burst = 1 - Math.exp(-delta / 3);
+        const target = BASE_INTENSITY + (1 - BASE_INTENSITY) * burst;
+        intensityRef.current =
+          intensityRef.current * INTENSITY_DECAY_RETAIN_PER_500MS +
+          target * (1 - INTENSITY_DECAY_RETAIN_PER_500MS);
+      }
     };
-    const id = window.setInterval(tick, 500);
-    return () => window.clearInterval(id);
+
+    updateActivity(useSessionStore.getState().sessions);
+    return useSessionStore.subscribe((state, prevState) => {
+      if (state.sessions === prevState.sessions) return;
+      updateActivity(state.sessions);
+    });
   }, []);
 
   const themeBumpRef = useRef(0);
@@ -337,6 +348,8 @@ export function HeaderActivityViz() {
       const dtSec = dt / 1000;
       prevMs = timeMs;
       const t = timeMs / 1000;
+      const intensityDecay = 1 - Math.pow(INTENSITY_DECAY_RETAIN_PER_500MS, dtSec / 0.5);
+      intensityRef.current += (BASE_INTENSITY - intensityRef.current) * intensityDecay;
       const intensity = intensityRef.current;
       const scene = sceneRef.current;
       const baselineRow = rows - 2;

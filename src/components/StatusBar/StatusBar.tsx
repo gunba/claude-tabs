@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
@@ -388,8 +388,6 @@ export function StatusBar({ onOpenContextViewer, onOpenChangelog }: StatusBarPro
 
   const subagentMap = useSessionStore((s) => s.subagents);
   const aliveSessions = sessions.filter((s) => s.state !== "dead");
-  const aliveCountRef = useRef(0);
-  aliveCountRef.current = aliveSessions.length;
   // Usage data and ping latency are now derived passively from TAP events
   // (StatusLineUpdate provides 5h/7d percentages, ApiFetch provides latency)
   // instead of polling disabled OAuth endpoints.

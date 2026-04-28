@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { useSettingsStore } from "../../store/settings";
 import { useRuntimeStore } from "../../store/runtime";
 import { ActivityPanel } from "../ActivityPanel/ActivityPanel";
@@ -19,7 +19,7 @@ const BASE_TABS = [
   { id: "debug" as const, label: "Debug Log", icon: <IconTerminal size={13} /> },
 ];
 
-export function RightPanel() {
+export const RightPanel = memo(function RightPanel() {
   const debugBuild = useRuntimeStore((s) => s.observabilityInfo.debugBuild);
   const rightPanelTab = useSettingsStore((s) => s.rightPanelTab);
   const setRightPanelTab = useSettingsStore((s) => s.setRightPanelTab);
@@ -68,4 +68,4 @@ export function RightPanel() {
       </div>
     </aside>
   );
-}
+});
