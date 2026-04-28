@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { PastSession, Session, SessionConfig, SessionState, Subagent } from "../types/session";
 import { isSessionIdle, isSubagentActive } from "../types/session";
-import { normalizePath } from "./paths";
+import { canonicalizePath } from "./paths";
 
 // Re-export path utilities so existing imports from claude.ts keep working
 export { dirToTabName } from "./paths";
@@ -37,13 +37,13 @@ export function resolveResumeId(
   session: Session,
   pastSessions: PastSession[]
 ): string | null {
-  const cwd = normalizePath(session.config.workingDir).toLowerCase();
+  const cwd = canonicalizePath(session.config.workingDir).toLowerCase();
   if (!cwd) return null;
 
   // Same-cwd, Claude-only candidates. Codex sessions live elsewhere on
   // disk and use a separate resume mechanism, so they shouldn't apply.
   const candidates = pastSessions.filter(
-    (p) => normalizePath(p.directory).toLowerCase() === cwd && p.cli !== "codex"
+    (p) => canonicalizePath(p.directory).toLowerCase() === cwd && p.cli !== "codex"
   );
   if (candidates.length === 0) return null;
 
