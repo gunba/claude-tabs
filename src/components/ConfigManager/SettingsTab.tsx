@@ -68,8 +68,12 @@ export function SettingsTab({ projectDir, cli, onStatus }: SettingsTabProps) {
     [],
   );
 
-  const { cliCapabilitiesByCli, binarySettingsSchema, settingsJsonSchema, settingsSchemaByCli } = useSettingsStore();
+  const cliCapabilitiesByCli = useSettingsStore((s) => s.cliCapabilitiesByCli);
+  const binarySettingsFieldsByCli = useSettingsStore((s) => s.binarySettingsFieldsByCli);
+  const settingsSchemaByCli = useSettingsStore((s) => s.settingsSchemaByCli);
   const cliCapabilities = cliCapabilitiesByCli[cli] ?? { models: [], permissionModes: [], flags: [], options: [], commands: [] };
+  const binarySettingsSchema = binarySettingsFieldsByCli.claude;
+  const settingsJsonSchema = settingsSchemaByCli.claude;
   const schema = useMemo(
     () => cli === "claude"
       ? buildSettingsSchema(cliCapabilities.options, binarySettingsSchema, settingsJsonSchema)

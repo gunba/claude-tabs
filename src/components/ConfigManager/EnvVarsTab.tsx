@@ -55,7 +55,7 @@ export function EnvVarsTab({ projectDir, cli, onStatus }: EnvVarsTabProps) {
     [],
   );
 
-  const { knownEnvVarsByCli } = useSettingsStore();
+  const knownEnvVarsByCli = useSettingsStore((s) => s.knownEnvVarsByCli);
   const envVars = knownEnvVarsByCli[cli] ?? [];
 
   return (

@@ -438,7 +438,8 @@ export function StatusBar({ onOpenContextViewer, onOpenChangelog }: StatusBarPro
                 invoke("check_cli_version")
                   .then((v) => {
                     if (typeof v === "string") {
-                      useSettingsStore.getState().setCliCapabilities(v, useSettingsStore.getState().cliCapabilities);
+                      const settings = useSettingsStore.getState();
+                      settings.setCliCapabilitiesForCli("claude", v, settings.cliCapabilitiesByCli.claude);
                     }
                   })
                   .catch(() => {});

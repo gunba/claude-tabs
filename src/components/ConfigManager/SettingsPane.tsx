@@ -239,8 +239,12 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
-  const { cliCapabilitiesByCli, binarySettingsSchema, settingsJsonSchema, settingsSchemaByCli } = useSettingsStore();
+  const cliCapabilitiesByCli = useSettingsStore((s) => s.cliCapabilitiesByCli);
+  const binarySettingsFieldsByCli = useSettingsStore((s) => s.binarySettingsFieldsByCli);
+  const settingsSchemaByCli = useSettingsStore((s) => s.settingsSchemaByCli);
   const cliCapabilities = cliCapabilitiesByCli[cli] ?? { models: [], permissionModes: [], flags: [], options: [], commands: [] };
+  const binarySettingsSchema = binarySettingsFieldsByCli.claude;
+  const settingsJsonSchema = settingsSchemaByCli.claude;
 
   const { schema, sourceInfo } = useMemo(() => ({
     schema: cli === "claude"

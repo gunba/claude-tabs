@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist, createJSONStorage, subscribeWithSelector } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import type { LaunchPreset, SessionConfig, PastSession, SystemPromptRule, CliKind } from "../types/session";
-import { DEFAULT_SESSION_CONFIG } from "../types/session";
+import { DEFAULT_SESSION_CONFIG, pickWorkspaceFields } from "../types/session";
 import { normalizePath, parseWorktreePath } from "../lib/paths";
 import type { BinarySettingField, JsonSchema } from "../lib/settingsSchema";
 import type { EnvVarEntry } from "../lib/envVars";
@@ -73,13 +73,7 @@ export const DEFAULT_CODEX_RECORDING_CONFIG: RecordingConfig = {
   noisyEventKinds: DEFAULT_CODEX_NOISY_EVENT_KINDS,
 };
 
-const HIGH_VOLUME_TAP_CATEGORIES = [
-  "console", "fs", "spawn", "fetch", "exit", "timer", "stdout", "stderr",
-  "require", "bun", "websocket", "net", "stream", "fspromises", "bunfile",
-  "abort", "fswatch", "textdecoder", "events", "envproxy",
-];
-
-function cloneRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG): RecordingConfig {
+function cloneRecordingConfig(config: RecordingConfig): RecordingConfig {
   return {
     taps: {
       enabled: config.taps.enabled,
@@ -92,15 +86,8 @@ function cloneRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG
   };
 }
 
-function quietRecordingConfig(config: RecordingConfig = DEFAULT_RECORDING_CONFIG): RecordingConfig {
-  const cloned = cloneRecordingConfig(config);
-  for (const category of HIGH_VOLUME_TAP_CATEGORIES) {
-    cloned.taps.categories[category] = false;
-  }
-  cloned.taps.enabled = false;
-  cloned.traffic.enabled = false;
-  cloned.debugCapture = false;
-  return cloned;
+function defaultRecordingConfig(cli: CliKind = "claude"): RecordingConfig {
+  return cloneRecordingConfig(cli === "codex" ? DEFAULT_CODEX_RECORDING_CONFIG : DEFAULT_RECORDING_CONFIG);
 }
 
 function ensureNoisyEventKind(config: RecordingConfig, kind: string): RecordingConfig {
@@ -131,8 +118,8 @@ function mergeRecordingConfig(base: RecordingConfig, patch: Partial<RecordingCon
 }
 
 export const DEFAULT_RECORDING_CONFIGS_BY_CLI: RecordingConfigsByCli = {
-  claude: cloneRecordingConfig(),
-  codex: cloneRecordingConfig(DEFAULT_CODEX_RECORDING_CONFIG),
+  claude: defaultRecordingConfig(),
+  codex: defaultRecordingConfig("codex"),
 };
 
 export function getRecordingConfigForCliFromState(
@@ -207,23 +194,14 @@ interface SettingsState {
   cliVersions: Record<CliKind, string | null>;
   lastOpenedCliVersions: Record<CliKind, string | null>;
   previousCliVersions: Record<CliKind, string | null>;
-  cliVersion: string | null;
-  previousCliVersion: string | null;
   cliCapabilitiesByCli: Record<CliKind, CliCapabilities>;
-  cliCapabilities: CliCapabilities;
   // [PE-02] Per-CLI schema/env-var caches. Codex schema is mined from the
   // installed native binary; Claude schema is fetched from schemastore +
-  // supplemented by binary Zod scan. Legacy mirrors (binarySettingsSchema /
-  // settingsJsonSchema / knownEnvVars) keep one-version backwards
-  // compatibility for consumers still reading the unkeyed fields.
+  // supplemented by binary Zod scan.
   binarySettingsFieldsByCli: Record<CliKind, BinarySettingField[]>;
   settingsSchemaByCli: Record<CliKind, JsonSchema | null>;
   knownEnvVarsByCli: Record<CliKind, EnvVarEntry[]>;
-  binarySettingsSchema: BinarySettingField[]; // [CM-10] Cached in localStorage to avoid re-scanning on startup
-  settingsJsonSchema: JsonSchema | null;
-  knownEnvVars: EnvVarEntry[];
   slashCommandsByCli: Record<CliKind, SlashCommand[]>;
-  slashCommands: SlashCommand[];
 
   commandUsage: Record<string, number>;
   commandBarExpanded: boolean;
@@ -260,10 +238,8 @@ interface SettingsState {
   setCodexAutoRenameLLMModel: (model: string) => void;
   setLastOpenedCliVersion: (cli: CliKind, version: string | null) => void;
   setCliCapabilitiesForCli: (cli: CliKind, version: string | null, capabilities: CliCapabilities) => void;
-  setCliCapabilities: (version: string, capabilities: CliCapabilities) => void;
   recordCommandUsage: (command: string) => void;
   setSlashCommandsForCli: (cli: CliKind, cmds: SlashCommand[]) => void;
-  setSlashCommands: (cmds: SlashCommand[]) => void;
   setReplaceSessionId: (id: string | null) => void;
   setShowConfigManager: (show: string | false) => void;
   setCommandBarExpanded: (expanded: boolean) => void;
@@ -273,11 +249,6 @@ interface SettingsState {
   setSessionName: (id: string, name: string) => void;
   cacheSessionConfig: (id: string, config: SessionConfig) => void;
   loadPastSessions: () => Promise<void>;
-  loadBinarySettingsSchema: () => Promise<void>;
-  loadSettingsJsonSchema: () => Promise<void>;
-  loadKnownEnvVars: (cliPath?: string | null) => Promise<void>;
-  // [PE-02] Per-CLI loaders. Claude variants mirror into the legacy fields
-  // for one version; Codex variants only populate the `.codex` slot.
   loadBinarySettingsFieldsForCli: (cli: CliKind, cliPath?: string | null) => Promise<void>;
   loadSettingsSchemaForCli: (cli: CliKind, cliPath?: string | null) => Promise<void>;
   loadKnownEnvVarsForCli: (cli: CliKind, cliPath?: string | null) => Promise<void>;
@@ -299,8 +270,9 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>()(
-  persist(
-    (set, get) => ({
+  subscribeWithSelector(
+    persist(
+      (set, get) => ({
       recentDirs: [],
       presets: [],
       lastConfig: DEFAULT_SESSION_CONFIG,
@@ -316,21 +288,14 @@ export const useSettingsStore = create<SettingsState>()(
       cliVersions: { claude: null, codex: null },
       lastOpenedCliVersions: { claude: null, codex: null },
       previousCliVersions: { claude: null, codex: null },
-      cliVersion: null,
-      previousCliVersion: null,
       cliCapabilitiesByCli: {
         claude: EMPTY_CLI_CAPABILITIES,
         codex: EMPTY_CLI_CAPABILITIES,
       },
-      cliCapabilities: EMPTY_CLI_CAPABILITIES,
       binarySettingsFieldsByCli: { claude: [], codex: [] },
       settingsSchemaByCli: { claude: null, codex: null },
       knownEnvVarsByCli: { claude: [], codex: [] },
-      binarySettingsSchema: [],
-      settingsJsonSchema: null,
-      knownEnvVars: [],
       slashCommandsByCli: { claude: [], codex: [] },
-      slashCommands: [],
       commandUsage: {},
       commandBarExpanded: false,
       commandRefreshTrigger: 0,
@@ -347,10 +312,10 @@ export const useSettingsStore = create<SettingsState>()(
       apiIp: null,
       systemPromptRules: [],
       modelRegistry: {},
-      recordingConfig: cloneRecordingConfig(),
+      recordingConfig: defaultRecordingConfig(),
       recordingConfigsByCli: {
-        claude: cloneRecordingConfig(),
-        codex: cloneRecordingConfig(DEFAULT_CODEX_RECORDING_CONFIG),
+        claude: defaultRecordingConfig(),
+        codex: defaultRecordingConfig("codex"),
       },
 
       addRecentDir: (dir) =>
@@ -422,25 +387,7 @@ export const useSettingsStore = create<SettingsState>()(
         const wt = parseWorktreePath(config.workingDir);
         const wsKey = normalizePath(wt ? wt.projectRoot : config.workingDir).toLowerCase();
 
-        const wsDefaults: Partial<SessionConfig> = {
-          cli: stripped.cli,
-          model: stripped.model,
-          permissionMode: stripped.permissionMode,
-          dangerouslySkipPermissions: stripped.dangerouslySkipPermissions,
-          effort: stripped.effort,
-          agent: stripped.agent,
-          maxBudget: stripped.maxBudget,
-          verbose: stripped.verbose,
-          debug: stripped.debug,
-          projectDir: stripped.projectDir,
-          extraFlags: stripped.extraFlags,
-          systemPrompt: stripped.systemPrompt,
-          appendSystemPrompt: stripped.appendSystemPrompt,
-          allowedTools: stripped.allowedTools,
-          disallowedTools: stripped.disallowedTools,
-          additionalDirs: stripped.additionalDirs,
-          mcpConfig: stripped.mcpConfig,
-        };
+        const wsDefaults = pickWorkspaceFields(stripped);
 
         return {
           savedDefaults: stripped,
@@ -476,7 +423,7 @@ export const useSettingsStore = create<SettingsState>()(
           lastOpenedCliVersions: { ...s.lastOpenedCliVersions, [cli]: version },
         })),
 
-// [PE-01] cliCapabilitiesByCli, slashCommandsByCli, cliVersions per CliKind; v17 migration backfills from legacy fields; setCliCapabilitiesForCli mirrors Claude into legacy fields; setSlashCommandsForCli rebuilds merged slashCommands
+// [PE-01] cliCapabilitiesByCli, slashCommandsByCli, cliVersions per CliKind; v17 migration backfills from legacy fields.
       setCliCapabilitiesForCli: (cli, version, capabilities) =>
         set((s) => {
           const cliVersions = { ...s.cliVersions, [cli]: version };
@@ -492,20 +439,8 @@ export const useSettingsStore = create<SettingsState>()(
             cliVersions,
             previousCliVersions,
             cliCapabilitiesByCli,
-            // Back-compat for older call sites: keep Claude mirrored into the
-            // legacy single-CLI fields until each consumer has moved over.
-            ...(cli === "claude"
-              ? {
-                  previousCliVersion: s.cliVersion,
-                  cliVersion: version,
-                  cliCapabilities: capabilities,
-                }
-              : {}),
           };
         }),
-
-      setCliCapabilities: (version, capabilities) =>
-        get().setCliCapabilitiesForCli("claude", version, capabilities),
 
       recordCommandUsage: (command) =>
         set((s) => {
@@ -521,19 +456,10 @@ export const useSettingsStore = create<SettingsState>()(
       setSlashCommandsForCli: (cli, cmds) =>
         set((s) => {
           const slashCommandsByCli = { ...s.slashCommandsByCli, [cli]: cmds };
-          const merged = [
-            ...slashCommandsByCli.claude,
-            ...slashCommandsByCli.codex,
-          ];
           return {
             slashCommandsByCli,
-            slashCommands: merged,
           };
         }),
-      setSlashCommands: (cmds) => set((s) => ({
-        slashCommands: cmds,
-        slashCommandsByCli: { ...s.slashCommandsByCli, claude: cmds },
-      })),
       setCommandBarExpanded: (expanded) => set({ commandBarExpanded: expanded }),
       setShowConfigManager: (show) => set({ showConfigManager: show }),
       setRightPanelTab: (panel) => set({ rightPanelTab: panel }),
@@ -580,28 +506,17 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       cacheSessionConfig: (id, config) =>
         set((s) => {
-          const partial: Partial<SessionConfig> = {
-            cli: config.cli === "codex" ? config.cli : undefined,
-            model: config.model,
-            permissionMode: config.permissionMode,
-            dangerouslySkipPermissions: config.dangerouslySkipPermissions,
-            effort: config.effort,
-            agent: config.agent,
-            maxBudget: config.maxBudget,
-            verbose: config.verbose,
-            debug: config.debug,
-            projectDir: config.projectDir,
-            extraFlags: config.extraFlags,
-            systemPrompt: config.systemPrompt,
-            appendSystemPrompt: config.appendSystemPrompt,
-            allowedTools: config.allowedTools.length > 0 ? config.allowedTools : undefined,
-            disallowedTools: config.disallowedTools.length > 0 ? config.disallowedTools : undefined,
-            additionalDirs: config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
-            mcpConfig: config.mcpConfig,
-          };
+          const partial = pickWorkspaceFields(config);
           // Strip undefined/null/default values to keep entries small
           for (const [k, v] of Object.entries(partial)) {
-            if (v === undefined || v === null || v === false || v === "" || v === "default") {
+            if (
+              v === undefined ||
+              v === null ||
+              v === false ||
+              v === "" ||
+              v === "default" ||
+              (Array.isArray(v) && v.length === 0)
+            ) {
               delete (partial as Record<string, unknown>)[k];
             }
           }
@@ -649,15 +564,6 @@ export const useSettingsStore = create<SettingsState>()(
           });
         }
       },
-      loadBinarySettingsSchema: async () => {
-        await get().loadBinarySettingsFieldsForCli("claude");
-      },
-      loadSettingsJsonSchema: async () => {
-        await get().loadSettingsSchemaForCli("claude");
-      },
-      loadKnownEnvVars: async (cliPath) => {
-        await get().loadKnownEnvVarsForCli("claude", cliPath);
-      },
       // [PE-02] Per-CLI binary scan for setting fields. Claude path is the
       // legacy `discover_settings_schema` (Zod regex over the .js bundle).
       // Codex emits its full schema as JSON Schema; that lives in the
@@ -683,7 +589,6 @@ export const useSettingsStore = create<SettingsState>()(
           });
           set((s) => ({
             binarySettingsFieldsByCli: { ...s.binarySettingsFieldsByCli, [cli]: fields },
-            binarySettingsSchema: fields, // Mirror into legacy field for one version
           }));
           dlog("discovery", null, `binary settings-schema discovery completed for ${cli}`, "LOG", {
             event: "discovery.settings_schema_loaded",
@@ -740,7 +645,6 @@ export const useSettingsStore = create<SettingsState>()(
           }
           set((s) => ({
             settingsSchemaByCli: { ...s.settingsSchemaByCli, [cli]: schema },
-            ...(cli === "claude" ? { settingsJsonSchema: schema } : {}),
           }));
           const schemaTitle = schema && "title" in (schema as Record<string, unknown>)
             ? ((schema as Record<string, unknown>).title as string | undefined) ?? null
@@ -784,7 +688,6 @@ export const useSettingsStore = create<SettingsState>()(
           });
           set((s) => ({
             knownEnvVarsByCli: { ...s.knownEnvVarsByCli, [cli]: vars },
-            ...(cli === "claude" ? { knownEnvVars: vars } : {}),
           }));
           dlog("discovery", null, `environment-variable discovery completed for ${cli}`, "LOG", {
             event: "discovery.env_vars_loaded",
@@ -939,7 +842,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "code-tabs-settings",
-      version: 23,
+      version: 24,
       storage: createJSONStorage(() => localStorage),
       // [CI-04] Persisted settings migrations normalize providerConfig from v0 and extend later stored fields.
       migrate: (persisted: unknown, version: number) => {
@@ -1090,9 +993,19 @@ export const useSettingsStore = create<SettingsState>()(
         }
         if (version < 21) {
           const byCli = state.recordingConfigsByCli as Partial<RecordingConfigsByCli> | undefined;
+          const quiet = (config: RecordingConfig): RecordingConfig => {
+            const cloned = cloneRecordingConfig(config);
+            for (const [category, enabled] of Object.entries(DEFAULT_RECORDING_CONFIG.taps.categories)) {
+              if (!enabled) cloned.taps.categories[category] = false;
+            }
+            cloned.taps.enabled = false;
+            cloned.traffic.enabled = false;
+            cloned.debugCapture = false;
+            return cloned;
+          };
           state.recordingConfigsByCli = {
-            claude: quietRecordingConfig(byCli?.claude ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG),
-            codex: quietRecordingConfig(byCli?.codex ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG),
+            claude: quiet(byCli?.claude ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG),
+            codex: quiet(byCli?.codex ?? (state.recordingConfig as RecordingConfig | undefined) ?? DEFAULT_RECORDING_CONFIG),
           };
           state.recordingConfig = (state.recordingConfigsByCli as RecordingConfigsByCli).claude;
         }
@@ -1127,6 +1040,15 @@ export const useSettingsStore = create<SettingsState>()(
           state.recordingConfigsByCli = { claude, codex };
           state.recordingConfig = claude;
         }
+        if (version < 24) {
+          delete state.cliVersion;
+          delete state.previousCliVersion;
+          delete state.cliCapabilities;
+          delete state.binarySettingsSchema;
+          delete state.settingsJsonSchema;
+          delete state.knownEnvVars;
+          delete state.slashCommands;
+        }
         return state;
       },
       // Don't persist transient UI state
@@ -1144,27 +1066,24 @@ export const useSettingsStore = create<SettingsState>()(
         cliVersions: state.cliVersions,
         lastOpenedCliVersions: state.lastOpenedCliVersions,
         previousCliVersions: state.previousCliVersions,
-        cliVersion: state.cliVersion,
-        previousCliVersion: state.previousCliVersion,
         cliCapabilitiesByCli: state.cliCapabilitiesByCli,
-        cliCapabilities: state.cliCapabilities,
         binarySettingsFieldsByCli: state.binarySettingsFieldsByCli,
         settingsSchemaByCli: state.settingsSchemaByCli,
         knownEnvVarsByCli: state.knownEnvVarsByCli,
-        binarySettingsSchema: state.binarySettingsSchema,
-        settingsJsonSchema: state.settingsJsonSchema,
         slashCommandsByCli: state.slashCommandsByCli,
         commandUsage: state.commandUsage,
         commandBarExpanded: state.commandBarExpanded,
         sessionNames: state.sessionNames,
         sessionConfigs: state.sessionConfigs,
+        observedPrompts: state.observedPrompts,
         savedPrompts: state.savedPrompts,
         systemPromptRules: state.systemPromptRules,
         modelRegistry: state.modelRegistry,
         recordingConfig: state.recordingConfig,
         recordingConfigsByCli: state.recordingConfigsByCli,
       }),
-    }
+      }
+    )
   )
 );
 
@@ -1181,13 +1100,9 @@ function resolveDebugCaptureForSession(sessionId: string | null): boolean {
   return getRecordingConfigForCliFromState(settings, cli).debugCapture;
 }
 
-let _prevDebugCapture = useSettingsStore.getState().recordingConfigsByCli.claude.debugCapture;
-setDebugCaptureEnabled(_prevDebugCapture);
+const selectAnyDebugCaptureEnabled = (state: SettingsState) =>
+  state.recordingConfigsByCli.claude.debugCapture || state.recordingConfigsByCli.codex.debugCapture;
+
+setDebugCaptureEnabled(selectAnyDebugCaptureEnabled(useSettingsStore.getState()));
 setDebugCaptureResolver(resolveDebugCaptureForSession);
-useSettingsStore.subscribe((state) => {
-  const next = state.recordingConfigsByCli.claude.debugCapture;
-  if (next !== _prevDebugCapture) {
-    _prevDebugCapture = next;
-    setDebugCaptureEnabled(next);
-  }
-});
+useSettingsStore.subscribe(selectAnyDebugCaptureEnabled, setDebugCaptureEnabled);

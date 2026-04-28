@@ -102,7 +102,9 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
   const ctrlHeld = useCtrlKey();
   const createSession = useSessionStore((s) => s.createSession);
   const storeSessions = useSessionStore((s) => s.sessions);
-  const { addRecentDir, setShowLauncher, setLastConfig } = useSettingsStore();
+  const addRecentDir = useSettingsStore((s) => s.addRecentDir);
+  const setShowLauncher = useSettingsStore((s) => s.setShowLauncher);
+  const setLastConfig = useSettingsStore((s) => s.setLastConfig);
 
   const pastSessions = useSettingsStore((s) => s.pastSessions);
   const pastSessionsLoading = useSettingsStore((s) => s.pastSessionsLoading);

@@ -370,3 +370,27 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
   sessionId: null,
   runMode: false,
 };
+
+export function pickWorkspaceFields(config: SessionConfig): Partial<SessionConfig> {
+  return {
+    cli: config.cli,
+    model: config.model,
+    permissionMode: config.permissionMode,
+    codexSandboxMode: config.codexSandboxMode,
+    codexApprovalPolicy: config.codexApprovalPolicy,
+    dangerouslySkipPermissions: config.dangerouslySkipPermissions,
+    effort: config.effort,
+    agent: config.agent,
+    maxBudget: config.maxBudget,
+    verbose: config.verbose,
+    debug: config.debug,
+    projectDir: config.projectDir,
+    extraFlags: config.extraFlags,
+    systemPrompt: config.systemPrompt,
+    appendSystemPrompt: config.appendSystemPrompt,
+    allowedTools: config.allowedTools,
+    disallowedTools: config.disallowedTools,
+    additionalDirs: config.additionalDirs,
+    mcpConfig: config.mcpConfig,
+  };
+}

@@ -77,19 +77,15 @@ describe("per-CLI discovery state", () => {
       cliVersions: { claude: null, codex: null },
       lastOpenedCliVersions: { claude: null, codex: null },
       previousCliVersions: { claude: null, codex: null },
-      cliVersion: null,
-      previousCliVersion: null,
       cliCapabilitiesByCli: {
         claude: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
         codex: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
       },
-      cliCapabilities: { models: [], permissionModes: [], flags: [], options: [], commands: [] },
       slashCommandsByCli: { claude: [], codex: [] },
-      slashCommands: [],
     });
   });
 
-  it("stores capabilities per CLI while mirroring Claude into legacy fields", () => {
+  it("stores capabilities per CLI", () => {
     const claudeCaps = { models: ["sonnet"], permissionModes: [], flags: ["--model"], options: [], commands: [] };
     const codexCaps = { models: ["gpt-5.1-codex"], permissionModes: [], flags: ["--cd"], options: [], commands: [] };
 
@@ -100,18 +96,15 @@ describe("per-CLI discovery state", () => {
     expect(state.cliVersions).toEqual({ claude: "claude-1", codex: "codex-1" });
     expect(state.cliCapabilitiesByCli.claude).toEqual(claudeCaps);
     expect(state.cliCapabilitiesByCli.codex).toEqual(codexCaps);
-    expect(state.cliVersion).toBe("claude-1");
-    expect(state.cliCapabilities).toEqual(claudeCaps);
   });
 
-  it("keeps slash commands separated by CLI and maintains a merged legacy list", () => {
+  it("keeps slash commands separated by CLI", () => {
     useSettingsStore.getState().setSlashCommandsForCli("claude", [{ cmd: "/doctor", desc: "Claude diagnostic" }]);
     useSettingsStore.getState().setSlashCommandsForCli("codex", [{ cmd: "/init", desc: "Codex instructions" }]);
 
     const state = useSettingsStore.getState();
     expect(state.slashCommandsByCli.claude.map((c) => c.cmd)).toEqual(["/doctor"]);
     expect(state.slashCommandsByCli.codex.map((c) => c.cmd)).toEqual(["/init"]);
-    expect(state.slashCommands.map((c) => c.cmd)).toEqual(["/doctor", "/init"]);
   });
 
   it("tracks the last app-opened version per CLI", () => {
@@ -226,16 +219,16 @@ describe("savedPrompts CRUD", () => {
   });
 });
 
-describe("loadKnownEnvVars", () => {
+describe("loadKnownEnvVarsForCli", () => {
   beforeEach(() => {
-    useSettingsStore.setState({ knownEnvVars: [] });
+    useSettingsStore.setState({ knownEnvVarsByCli: { claude: [], codex: [] } });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it("sets knownEnvVars from invoke result", async () => {
+  it("sets knownEnvVarsByCli from invoke result", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const mockVars = [
       { name: "ANTHROPIC_API_KEY", description: "API key", category: "api", documented: true },
@@ -243,18 +236,18 @@ describe("loadKnownEnvVars", () => {
     ];
     vi.mocked(invoke).mockResolvedValueOnce(mockVars);
 
-    await useSettingsStore.getState().loadKnownEnvVars(null);
+    await useSettingsStore.getState().loadKnownEnvVarsForCli("claude", null);
 
-    expect(useSettingsStore.getState().knownEnvVars).toEqual(mockVars);
+    expect(useSettingsStore.getState().knownEnvVarsByCli.claude).toEqual(mockVars);
   });
 
-  it("leaves knownEnvVars empty when invoke throws", async () => {
+  it("leaves knownEnvVarsByCli empty when invoke throws", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke).mockRejectedValueOnce(new Error("binary not found"));
 
-    await useSettingsStore.getState().loadKnownEnvVars(null);
+    await useSettingsStore.getState().loadKnownEnvVarsForCli("claude", null);
 
-    expect(useSettingsStore.getState().knownEnvVars).toEqual([]);
+    expect(useSettingsStore.getState().knownEnvVarsByCli.claude).toEqual([]);
   });
 
   it("falls back to session store claudePath when cliPath is undefined", async () => {
@@ -262,7 +255,7 @@ describe("loadKnownEnvVars", () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke).mockResolvedValueOnce([]);
 
-    await useSettingsStore.getState().loadKnownEnvVars(); // no args → reads session store
+    await useSettingsStore.getState().loadKnownEnvVarsForCli("claude"); // no path -> reads session store
 
     expect(invoke).toHaveBeenCalledWith("discover_env_vars", { cliPath: null });
   });
@@ -372,6 +365,18 @@ describe("setSavedDefaults with workspaceDefaults", () => {
     expect(ws["/projects/myapp"]).toBeDefined();
     expect(ws["/projects/myapp"].model).toBe("claude-sonnet-4-20250514");
     expect(ws["/projects/myapp"].effort).toBe("high");
+  });
+
+  it("uses the shared workspace field whitelist", () => {
+    useSettingsStore.getState().setSavedDefaults(makeConfig({
+      cli: "codex",
+      codexSandboxMode: "danger-full-access",
+      codexApprovalPolicy: "never",
+    }));
+    const entry = useSettingsStore.getState().workspaceDefaults["/projects/myapp"];
+    expect(entry.cli).toBe("codex");
+    expect(entry.codexSandboxMode).toBe("danger-full-access");
+    expect(entry.codexApprovalPolicy).toBe("never");
   });
 
   it("stores workspace-specific defaults without workingDir or transient fields", () => {
@@ -499,5 +504,22 @@ describe("cacheSessionConfig", () => {
     useSettingsStore.getState().cacheSessionConfig("codex-session-id", makeConfig());
 
     expect(useSettingsStore.getState().sessionConfigs["codex-session-id"].cli).toBe("codex");
+  });
+
+  it("keeps Claude CLI identity for resume picker fallbacks", () => {
+    useSettingsStore.getState().cacheSessionConfig("claude-session-id", makeConfig({ cli: "claude" }));
+
+    expect(useSettingsStore.getState().sessionConfigs["claude-session-id"].cli).toBe("claude");
+  });
+
+  it("uses the same workspace field whitelist as saved defaults", () => {
+    useSettingsStore.getState().cacheSessionConfig("codex-session-id", makeConfig({
+      codexSandboxMode: "read-only",
+      codexApprovalPolicy: "untrusted",
+    }));
+
+    const entry = useSettingsStore.getState().sessionConfigs["codex-session-id"];
+    expect(entry.codexSandboxMode).toBe("read-only");
+    expect(entry.codexApprovalPolicy).toBe("untrusted");
   });
 });

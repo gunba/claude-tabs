@@ -81,8 +81,15 @@ export function SessionLauncher() {
   const createSession = useSessionStore((s) => s.createSession);
   const claudePath = useSessionStore((s) => s.claudePath);
   const codexPath = useSessionStore((s) => s.codexPath);
-  const { recentDirs, lastConfig, savedDefaults, workspaceDefaults, setShowLauncher, addRecentDir, removeRecentDir, setLastConfig, setSavedDefaults } =
-    useSettingsStore();
+  const recentDirs = useSettingsStore((s) => s.recentDirs);
+  const lastConfig = useSettingsStore((s) => s.lastConfig);
+  const savedDefaults = useSettingsStore((s) => s.savedDefaults);
+  const workspaceDefaults = useSettingsStore((s) => s.workspaceDefaults);
+  const setShowLauncher = useSettingsStore((s) => s.setShowLauncher);
+  const addRecentDir = useSettingsStore((s) => s.addRecentDir);
+  const removeRecentDir = useSettingsStore((s) => s.removeRecentDir);
+  const setLastConfig = useSettingsStore((s) => s.setLastConfig);
+  const setSavedDefaults = useSettingsStore((s) => s.setSavedDefaults);
   const cliCapabilitiesByCli = useSettingsStore((s) => s.cliCapabilitiesByCli);
   const commandUsage = useSettingsStore((s) => s.commandUsage);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
