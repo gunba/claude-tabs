@@ -122,7 +122,8 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
   // Content search state (modal-scoped, not in Zustand)
   const [contentResults, setContentResults] = useState<ContentSearchMatch[]>([]);
   const [contentSearching, setContentSearching] = useState(false);
-  const searchCounterRef = useRef(0);
+  const contentSearchSeqRef = useRef(0);
+  const activeContentSearchTokenRef = useRef<string | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refresh past sessions on mount (background, non-blocking — data may already be preloaded)
@@ -133,35 +134,58 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
 
   // Debounced content search — triggers 400ms after typing stops, min 3 chars
   useEffect(() => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    const cancelActiveSearch = () => {
+      const token = activeContentSearchTokenRef.current;
+      if (!token) return;
+      activeContentSearchTokenRef.current = null;
+      void invoke("cancel_session_content_search", { cancelToken: token }).catch(() => {});
+    };
 
-    if (dirFilter.trim().length < 3) {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    cancelActiveSearch();
+
+    const query = dirFilter.trim();
+    if (query.length < 3) {
       setContentResults([]);
       setContentSearching(false);
       return;
     }
 
-    // [SR-07] Content search: 3+ chars, debounced 400ms, Rust backend JSONL scan, counter-based stale check
+    // [SR-07] Content search: 3+ chars, debounced 400ms, Rust backend JSONL scan, token-cancelled stale check
     setContentSearching(true);
-    const counter = ++searchCounterRef.current;
+    const token = `resume-content-${Date.now()}-${++contentSearchSeqRef.current}`;
 
     debounceTimerRef.current = setTimeout(async () => {
+      activeContentSearchTokenRef.current = token;
       try {
-        const results = await invoke<ContentSearchMatch[]>("search_session_content", { query: dirFilter.trim() });
-        if (searchCounterRef.current === counter) {
+        const results = await invoke<ContentSearchMatch[]>("search_session_content", { query, cancelToken: token });
+        if (activeContentSearchTokenRef.current === token) {
           setContentResults(results);
         }
       } catch (err) {
-        dlog("resume", null, `content search failed: ${err}`, "ERR");
+        if (activeContentSearchTokenRef.current === token) {
+          dlog("resume", null, `content search failed: ${err}`, "ERR");
+        }
       } finally {
-        if (searchCounterRef.current === counter) {
+        if (activeContentSearchTokenRef.current === token) {
+          activeContentSearchTokenRef.current = null;
           setContentSearching(false);
         }
       }
     }, 400);
 
     return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (activeContentSearchTokenRef.current === token) {
+        activeContentSearchTokenRef.current = null;
+        void invoke("cancel_session_content_search", { cancelToken: token }).catch(() => {});
+      }
     };
   }, [dirFilter]);
 
@@ -443,46 +467,89 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
     if (selected) setDirFilter(selected);
   }, [dirFilter]);
 
+  const keyboardStateRef = useRef({
+    onClose,
+    displayList,
+    selectedIndex,
+    handleResume,
+    handleConfigure,
+    handleRevealFile,
+    contextMenu,
+    viewingConversation,
+  });
+  useEffect(() => {
+    keyboardStateRef.current = {
+      onClose,
+      displayList,
+      selectedIndex,
+      handleResume,
+      handleConfigure,
+      handleRevealFile,
+      contextMenu,
+      viewingConversation,
+    };
+  }, [
+    onClose,
+    displayList,
+    selectedIndex,
+    handleResume,
+    handleConfigure,
+    handleRevealFile,
+    contextMenu,
+    viewingConversation,
+  ]);
+
   // Keyboard: Enter resumes, Escape closes, arrows navigate
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const {
+        onClose: close,
+        displayList: currentDisplayList,
+        selectedIndex: currentSelectedIndex,
+        handleResume: resume,
+        handleConfigure: configure,
+        handleRevealFile: revealFile,
+        contextMenu: currentContextMenu,
+        viewingConversation: currentViewingConversation,
+      } = keyboardStateRef.current;
+
       if (e.key === "Escape") {
-        if (viewingConversation) { setViewingConversation(null); return; }
-        if (contextMenu) { setContextMenu(null); return; }
-        onClose();
+        if (currentViewingConversation) { setViewingConversation(null); return; }
+        if (currentContextMenu) { setContextMenu(null); return; }
+        close();
         return;
       }
       // Skip non-Escape keys when suboverlays are open
-      if (contextMenu || viewingConversation) return;
+      if (currentContextMenu || currentViewingConversation) return;
 
-      if (e.key === "Enter" && displayList.length > 0) {
+      if (e.key === "Enter" && currentDisplayList.length > 0) {
         e.preventDefault();
-        const chain = displayList[selectedIndex] ?? displayList[0];
+        const chain = currentDisplayList[currentSelectedIndex] ?? currentDisplayList[0];
         if (e.shiftKey) {
-          handleRevealFile(chain);
+          revealFile(chain);
         } else if (e.ctrlKey) {
-          if (chain.dirExists) handleConfigure(chain);
+          if (chain.dirExists) configure(chain);
         } else {
           if (chain.dirExists) {
-            handleResume(chain);
+            resume(chain);
           } else {
             setViewingConversation(chain);
           }
         }
         return;
       }
-      if (e.key === "ArrowDown" && displayList.length > 0) {
+      if (e.key === "ArrowDown" && currentDisplayList.length > 0) {
         e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, displayList.length - 1));
+        setSelectedIndex((prev) => Math.min(prev + 1, currentDisplayList.length - 1));
       }
-      if (e.key === "ArrowUp" && displayList.length > 0) {
+      if (e.key === "ArrowUp" && currentDisplayList.length > 0) {
         e.preventDefault();
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, displayList, selectedIndex, handleResume, handleConfigure, handleRevealFile, contextMenu, viewingConversation]);
+  }, []);
 
   return (
     <div className="resume-picker-overlay" data-modal-overlay onClick={onClose}>

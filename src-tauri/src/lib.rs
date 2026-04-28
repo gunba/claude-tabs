@@ -203,6 +203,7 @@ pub fn run() {
             commands::discover_plugin_commands,
             commands::list_past_sessions,
             commands::search_session_content,
+            commands::cancel_session_content_search,
             commands::search_jsonl_files,
             commands::read_conversation,
             commands::read_codex_session_messages,

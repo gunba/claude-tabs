@@ -1,4 +1,79 @@
 use crate::path_utils;
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
+
+struct ContentSearchCancelSlot {
+    token: String,
+    cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+struct ContentSearchCancelState {
+    active: Option<ContentSearchCancelSlot>,
+    cancelled_tokens: HashSet<String>,
+}
+
+static CONTENT_SEARCH_CANCEL: LazyLock<Mutex<ContentSearchCancelState>> =
+    LazyLock::new(|| Mutex::new(ContentSearchCancelState::default()));
+
+fn content_search_cancel_guard() -> std::sync::MutexGuard<'static, ContentSearchCancelState> {
+    CONTENT_SEARCH_CANCEL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn begin_content_search(cancel_token: &str) -> Arc<AtomicBool> {
+    let mut state = content_search_cancel_guard();
+    if let Some(existing) = state.active.as_ref() {
+        existing.cancelled.store(true, Ordering::Relaxed);
+    }
+
+    let already_cancelled = state.cancelled_tokens.remove(cancel_token);
+    let cancelled = Arc::new(AtomicBool::new(already_cancelled));
+    state.active = if already_cancelled {
+        None
+    } else {
+        Some(ContentSearchCancelSlot {
+            token: cancel_token.to_string(),
+            cancelled: Arc::clone(&cancelled),
+        })
+    };
+    cancelled
+}
+
+fn finish_content_search(cancel_token: &str) {
+    let mut state = content_search_cancel_guard();
+    let should_clear = state
+        .active
+        .as_ref()
+        .map(|existing| existing.token == cancel_token)
+        .unwrap_or(false);
+    if should_clear {
+        state.active = None;
+    }
+    state.cancelled_tokens.remove(cancel_token);
+}
+
+fn cancel_content_search(cancel_token: &str) {
+    let mut state = content_search_cancel_guard();
+    let should_cancel = state
+        .active
+        .as_ref()
+        .map(|existing| existing.token == cancel_token)
+        .unwrap_or(false);
+    if should_cancel {
+        if let Some(existing) = state.active.take() {
+            existing.cancelled.store(true, Ordering::Relaxed);
+        }
+    } else {
+        state.cancelled_tokens.insert(cancel_token.to_string());
+    }
+}
+
+fn content_search_cancelled(cancelled: &AtomicBool) -> bool {
+    cancelled.load(Ordering::Relaxed)
+}
 
 pub(crate) fn codex_home_dir() -> Option<std::path::PathBuf> {
     if let Ok(p) = std::env::var("CODEX_HOME") {
@@ -893,20 +968,42 @@ fn search_codex_rollout_file(
     }
 }
 
-// [RC-17] Search session content: walks ~/.claude/projects/, skips >20MB, 50-result cap
+// [RC-17] Search session content: walks ~/.claude/projects/, skips >20MB,
+// 50-result cap, and checks cancel_token between scan steps.
 /// Search conversation content across all past sessions.
 /// Returns up to 50 matches with a snippet centered on the match.
 #[tauri::command]
-pub async fn search_session_content(query: String) -> Result<Vec<serde_json::Value>, String> {
-    tokio::task::spawn_blocking(move || search_session_content_sync(&query))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn search_session_content(
+    query: String,
+    cancel_token: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let cancelled = begin_content_search(&cancel_token);
+    let finish_token = cancel_token.clone();
+    let result =
+        tokio::task::spawn_blocking(move || search_session_content_sync(&query, &cancelled))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|inner| inner);
+    finish_content_search(&finish_token);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_session_content_search(cancel_token: String) {
+    cancel_content_search(&cancel_token);
 }
 
 const MAX_CONTENT_SEARCH_FILE_SIZE: u64 = 20 * 1024 * 1024;
 const MAX_CONTENT_SEARCH_RESULTS: usize = 50;
 
-fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, String> {
+fn search_session_content_sync(
+    query: &str,
+    cancelled: &AtomicBool,
+) -> Result<Vec<serde_json::Value>, String> {
+    if content_search_cancelled(cancelled) {
+        return Ok(Vec::new());
+    }
+
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
     let projects_dir = home.join(".claude").join("projects");
 
@@ -933,6 +1030,10 @@ fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, St
             .map_err(|e| format!("Failed to read projects dir: {}", e))?;
 
         for entry in project_dirs.flatten() {
+            if content_search_cancelled(cancelled) {
+                return Ok(Vec::new());
+            }
+
             let path = entry.path();
             if !path.is_dir() {
                 continue;
@@ -944,6 +1045,10 @@ fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, St
             };
 
             for file in dir_files.flatten() {
+                if content_search_cancelled(cancelled) {
+                    return Ok(Vec::new());
+                }
+
                 let fpath = file.path();
                 if fpath.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                     continue;
@@ -980,6 +1085,10 @@ fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, St
     }
 
     for fpath in collect_codex_rollout_files() {
+        if content_search_cancelled(cancelled) {
+            return Ok(Vec::new());
+        }
+
         let metadata = match std::fs::metadata(&fpath) {
             Ok(m) => m,
             Err(_) => continue,
@@ -1007,6 +1116,10 @@ fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, St
     let mut results: Vec<serde_json::Value> = Vec::new();
 
     for file_entry in &files {
+        if content_search_cancelled(cancelled) {
+            return Ok(Vec::new());
+        }
+
         if results.len() >= MAX_CONTENT_SEARCH_RESULTS {
             break;
         }
@@ -1020,6 +1133,10 @@ fn search_session_content_sync(query: &str) -> Result<Vec<serde_json::Value>, St
         let reader = std::io::BufReader::new(file_handle);
 
         for line in reader.lines() {
+            if content_search_cancelled(cancelled) {
+                return Ok(Vec::new());
+            }
+
             let line = match line {
                 Ok(l) => l,
                 Err(_) => continue,

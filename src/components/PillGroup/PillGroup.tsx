@@ -1,3 +1,4 @@
+import { memo } from "react";
 import "./PillGroup.css";
 
 interface PillOption<T extends string> {
@@ -15,7 +16,7 @@ interface PillGroupProps<T extends string> {
   className?: string;
 }
 
-export function PillGroup<T extends string>({
+function PillGroupInner<T extends string>({
   options,
   selected,
   onChange,
@@ -52,3 +53,5 @@ export function PillGroup<T extends string>({
     </div>
   );
 }
+
+export const PillGroup = memo(PillGroupInner) as typeof PillGroupInner;

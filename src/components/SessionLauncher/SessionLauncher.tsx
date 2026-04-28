@@ -104,6 +104,7 @@ export function SessionLauncher() {
   }));
   const isUtilityRef = useRef(false);
   const mountedRef = useRef(false);
+  const launchingRef = useRef(false);
   const [showCliOptions, setShowCliOptions] = useState(true);
   const [showUtility, setShowUtility] = useState(false);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
@@ -299,6 +300,26 @@ export function SessionLauncher() {
 
   const modelOptions = adapterModels;
   const effortOptions = adapterEfforts;
+  const modelDropdownOptions = useMemo(
+    () => [{ value: "", label: "default" }, ...modelOptions],
+    [modelOptions]
+  );
+  const effortDropdownOptions = useMemo(
+    () => [{ value: "", label: "default" }, ...effortOptions],
+    [effortOptions]
+  );
+  const promptDropdownOptions = useMemo(
+    () => [{ value: "", label: "Default Prompt" }, ...savedPrompts.map((p) => ({ value: p.id, label: p.name }))],
+    [savedPrompts]
+  );
+  const codexSandboxOptions = useMemo(
+    () => [{ value: "", label: "default" }, ...CODEX_SANDBOX_OPTIONS],
+    []
+  );
+  const codexApprovalOptions = useMemo(
+    () => [{ value: "", label: "default" }, ...CODEX_APPROVAL_OPTIONS],
+    []
+  );
 
   // When switching CLIs, the previously-selected model/effort may not exist
   // on the new CLI. Drop back to "default" instead of leaving an empty box.
@@ -320,6 +341,14 @@ export function SessionLauncher() {
 
   const handleEffortSelect = useCallback((value: string) => {
     updateConfig("effort", value || null);
+  }, [updateConfig]);
+
+  const handleCodexSandboxSelect = useCallback((value: string) => {
+    updateConfig("codexSandboxMode", (value || null) as CodexSandboxMode | null);
+  }, [updateConfig]);
+
+  const handleCodexApprovalSelect = useCallback((value: string) => {
+    updateConfig("codexApprovalPolicy", (value || null) as CodexApprovalPolicy | null);
   }, [updateConfig]);
 
   const filteredCliOptions = useMemo((): CliOption[] => {
@@ -406,45 +435,51 @@ export function SessionLauncher() {
   const closeSession = useSessionStore((s) => s.closeSession);
 
   const handleLaunch = useCallback(async () => {
-    if (!selectedCliInstalled) {
-      setLaunchError(`${launchConfig.cli === "codex" ? "Codex" : "Claude Code"} is not installed`);
-      return;
-    }
-    if (!isNonSessionCommand && !launchConfig.workingDir.trim()) return;
-    // [SL-19] Validate that the working directory actually exists on disk
-    if (!isNonSessionCommand && launchConfig.workingDir.trim()) {
-      const exists = await invoke<boolean>("dir_exists", { path: normalizePath(launchConfig.workingDir.trim()) });
-      if (!exists) {
-        setLaunchError("Directory does not exist");
+    if (launchingRef.current) return;
+    launchingRef.current = true;
+    try {
+      if (!selectedCliInstalled) {
+        setLaunchError(`${launchConfig.cli === "codex" ? "Codex" : "Claude Code"} is not installed`);
         return;
       }
-    }
-    const finalConfig: SessionConfig = isNonSessionCommand
-      ? { ...launchConfig, runMode: true, model: null, permissionMode: "default", effort: null, dangerouslySkipPermissions: false, projectDir: false }
-      : { ...launchConfig, runMode: false };
-    const storedName = finalConfig.resumeSession
-      ? useSettingsStore.getState().sessionNames[finalConfig.resumeSession]
-      : undefined;
-    const name = isNonSessionCommand
-      ? commandTokens.find(t => t !== "claude" && t !== "codex" && !t.startsWith("-"))
-        || commandTokens.find(t => t.startsWith("--"))
-        || "run"
-      : storedName || (launchConfig.workingDir ? dirToTabName(launchConfig.workingDir) : "run");
-    if (finalConfig.workingDir) addRecentDir(finalConfig.workingDir);
-    // Save config as defaults but strip one-shot resume fields and runMode —
-    // these are per-launch, not persistent defaults.
-    setLastConfig({ ...finalConfig, resumeSession: null, continueSession: false, runMode: false });
-    try {
-      // If relaunching an existing session, close it first
-      const replaceId = useSettingsStore.getState().replaceSessionId;
-      if (replaceId) {
-        await closeSession(replaceId);
-        useSettingsStore.getState().setReplaceSessionId(null);
+      if (!isNonSessionCommand && !launchConfig.workingDir.trim()) return;
+      // [SL-19] Validate that the working directory actually exists on disk
+      if (!isNonSessionCommand && launchConfig.workingDir.trim()) {
+        const exists = await invoke<boolean>("dir_exists", { path: normalizePath(launchConfig.workingDir.trim()) });
+        if (!exists) {
+          setLaunchError("Directory does not exist");
+          return;
+        }
       }
-      await createSession(name, finalConfig);
-      setShowLauncher(false);
-    } catch (err) {
-      dlog("launcher", null, `create session failed: ${err}`, "ERR");
+      const finalConfig: SessionConfig = isNonSessionCommand
+        ? { ...launchConfig, runMode: true, model: null, permissionMode: "default", effort: null, dangerouslySkipPermissions: false, projectDir: false }
+        : { ...launchConfig, runMode: false };
+      const storedName = finalConfig.resumeSession
+        ? useSettingsStore.getState().sessionNames[finalConfig.resumeSession]
+        : undefined;
+      const name = isNonSessionCommand
+        ? commandTokens.find(t => t !== "claude" && t !== "codex" && !t.startsWith("-"))
+          || commandTokens.find(t => t.startsWith("--"))
+          || "run"
+        : storedName || (launchConfig.workingDir ? dirToTabName(launchConfig.workingDir) : "run");
+      if (finalConfig.workingDir) addRecentDir(finalConfig.workingDir);
+      // Save config as defaults but strip one-shot resume fields and runMode —
+      // these are per-launch, not persistent defaults.
+      setLastConfig({ ...finalConfig, resumeSession: null, continueSession: false, runMode: false });
+      try {
+        // If relaunching an existing session, close it first
+        const replaceId = useSettingsStore.getState().replaceSessionId;
+        if (replaceId) {
+          await closeSession(replaceId);
+          useSettingsStore.getState().setReplaceSessionId(null);
+        }
+        await createSession(name, finalConfig);
+        setShowLauncher(false);
+      } catch (err) {
+        dlog("launcher", null, `create session failed: ${err}`, "ERR");
+      }
+    } finally {
+      launchingRef.current = false;
     }
   }, [selectedCliInstalled, launchConfig, isNonSessionCommand, commandTokens, createSession, closeSession, setShowLauncher, addRecentDir, setLastConfig]);
 
@@ -468,14 +503,21 @@ export function SessionLauncher() {
     setShowLauncher(false);
   }, [setShowLauncher]);
 
+  const handleLaunchRef = useRef(handleLaunch);
+  const dismissLauncherRef = useRef(dismissLauncher);
+  useEffect(() => {
+    handleLaunchRef.current = handleLaunch;
+    dismissLauncherRef.current = dismissLauncher;
+  }, [handleLaunch, dismissLauncher]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) handleLaunch();
-      if (e.key === "Escape") dismissLauncher();
+      if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) handleLaunchRef.current();
+      if (e.key === "Escape") dismissLauncherRef.current();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleLaunch, dismissLauncher]);
+  }, []);
 
   // [SL-13] Toggle behavior: clicking active pill removes flag; clicking inactive pill adds it
   const handleCliPillClick = useCallback(({ flag, argName }: CliOption) => {
@@ -630,7 +672,7 @@ export function SessionLauncher() {
               onChange={handleModelSelect}
               disabled={isNonSessionCommand}
               ariaLabel="Model"
-              options={[{ value: "", label: "default" }, ...modelOptions.map((m) => ({ value: m.value, label: m.label }))]}
+              options={modelDropdownOptions}
             />
             <span className="launcher-pill-icon" title="Effort"><IconLightning size={13} /></span>
             <Dropdown
@@ -639,7 +681,7 @@ export function SessionLauncher() {
               onChange={handleEffortSelect}
               disabled={isNonSessionCommand}
               ariaLabel="Effort"
-              options={[{ value: "", label: "default" }, ...effortOptions.map((e) => ({ value: e.value, label: e.label }))]}
+              options={effortDropdownOptions}
             />
 
             <div className="launcher-prompt-group">
@@ -654,7 +696,7 @@ export function SessionLauncher() {
                       disabled={isNonSessionCommand}
                       title={promptKindLabel}
                       ariaLabel={promptKindLabel}
-                      options={[{ value: "", label: "Default Prompt" }, ...savedPrompts.map((p) => ({ value: p.id, label: p.name }))]}
+                      options={promptDropdownOptions}
                     />
                     {selectedPromptId && (
                       <button
@@ -688,21 +730,21 @@ export function SessionLauncher() {
                 <Dropdown
                   className="launcher-select launcher-select-codex"
                   value={config.codexSandboxMode ?? ""}
-                  onChange={(v) => updateConfig("codexSandboxMode", (v || null) as CodexSandboxMode | null)}
+                  onChange={handleCodexSandboxSelect}
                   disabled={config.dangerouslySkipPermissions || isNonSessionCommand}
                   ariaLabel="Sandbox"
                   title="Codex --sandbox"
-                  options={[{ value: "", label: "default" }, ...CODEX_SANDBOX_OPTIONS]}
+                  options={codexSandboxOptions}
                 />
                 <span className="launcher-pill-icon" title="Approval"><IconLock size={13} /></span>
                 <Dropdown
                   className="launcher-select launcher-select-codex"
                   value={config.codexApprovalPolicy ?? ""}
-                  onChange={(v) => updateConfig("codexApprovalPolicy", (v || null) as CodexApprovalPolicy | null)}
+                  onChange={handleCodexApprovalSelect}
                   disabled={config.dangerouslySkipPermissions || isNonSessionCommand}
                   ariaLabel="Approval"
                   title="Codex --ask-for-approval"
-                  options={[{ value: "", label: "default" }, ...CODEX_APPROVAL_OPTIONS]}
+                  options={codexApprovalOptions}
                 />
                 <button
                   className={`launcher-toggle-pill${config.dangerouslySkipPermissions ? " launcher-toggle-pill-on launcher-toggle-bypass" : ""}`}

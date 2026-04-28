@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  memo,
   useRef,
   useState,
 } from "react";
@@ -35,7 +36,7 @@ const MAX_MENU_HEIGHT = 280;
 const ITEM_HEIGHT = 26;
 const TYPE_BUFFER_RESET_MS = 600;
 
-export function Dropdown({
+function DropdownInner({
   value,
   onChange,
   options,
@@ -290,3 +291,5 @@ export function Dropdown({
     </>
   );
 }
+
+export const Dropdown = memo(DropdownInner);
