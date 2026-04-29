@@ -5,6 +5,7 @@ import { dlog } from "../../lib/debugLog";
 import { insertTextAtCursor } from "../../lib/domEdit";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
+import { useAbortableEffect } from "../../hooks/useAbortableEffect";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
 import { useFlashStatus } from "./useFlashStatus";
 
@@ -81,7 +82,7 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
   // On every state transition (new entry, load complete, error) we bump seedKey
   // so the textarea remounts and `defaultValue` reseeds while keeping the
   // browser's native undo stack intact mid-edit.
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (!selected || isNew) {
       setContent("");
       setSavedContent("");
@@ -93,24 +94,22 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
     const exists = entries.some((e) => e.name === parsed.name && entryKind(e) === parsed.kind);
     if (!exists) return;
 
-    let cancelled = false;
     invoke<string>("read_config_file", {
       scope,
       workingDir,
       fileType: cli === "codex" ? `codex-skill:${parsed.name}` : `skill:${parsed.kind}:${parsed.name}`,
     }).then((result) => {
-      if (cancelled) return;
+      if (signal.aborted) return;
       setContent(result);
       setSavedContent(result);
       setSeedKey((k) => k + 1);
     }).catch((err) => {
       dlog("config", null, `read ${parsed.kind} failed: ${err}`, "ERR");
-      if (cancelled) return;
+      if (signal.aborted) return;
       setContent("");
       setSavedContent("");
       setSeedKey((k) => k + 1);
     });
-    return () => { cancelled = true; };
   }, [selected, isNew, entries, scope, workingDir, cli]);
 
   const handleSave = useCallback(async () => {

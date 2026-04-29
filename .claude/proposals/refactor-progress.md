@@ -17,7 +17,7 @@ Updated: 2026-04-29
 - [x] R9-F13 broader weather country mapping
 - [x] F2-6 split settings.ts into coherent slices
 - [x] F4-01 full useTerminal decomposition
-- [ ] F10 useAbortableEffect
+- [x] F10 useAbortableEffect
 - [ ] R10-F8 configurable diff context radius
 - [ ] R5-F12 move weather forwarding out of proxy hot path
 - [ ] F4-05 unify terminal write/writeBytes paths

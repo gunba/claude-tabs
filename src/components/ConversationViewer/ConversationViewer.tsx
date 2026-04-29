@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ModalOverlay } from "../ModalOverlay/ModalOverlay";
 import { MessageEntry } from "../ContextViewer/blocks";
 import { IconClose } from "../Icons/Icons";
 import { useExpandableSet } from "../../hooks/useExpandableSet";
+import { useAbortableEffect } from "../../hooks/useAbortableEffect";
 import type { CapturedMessage } from "../../types/session";
 import "./ConversationViewer.css";
 
@@ -19,23 +20,21 @@ export function ConversationViewer({ filePath, displayName, directory, onClose }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  useAbortableEffect((signal) => {
     (async () => {
       try {
         const result = await invoke<CapturedMessage[]>("read_conversation", { filePath });
-        if (!cancelled) {
+        if (!signal.aborted) {
           setMessages(result);
           setLoading(false);
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!signal.aborted) {
           setError(String(err));
           setLoading(false);
         }
       }
     })();
-    return () => { cancelled = true; };
   }, [filePath]);
 
   const allKeys = useMemo(

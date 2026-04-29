@@ -21,6 +21,7 @@ import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, Icon
 import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import { PillGroup } from "../PillGroup/PillGroup";
 import { Dropdown } from "../Dropdown/Dropdown";
+import { useAbortableEffect } from "../../hooks/useAbortableEffect";
 import { useSessionConfig } from "./useSessionConfig";
 import "./SessionLauncher.css";
 
@@ -239,12 +240,11 @@ export function SessionLauncher() {
   const [adapterModels, setAdapterModels] = useState<Array<{ value: string; label: string }>>([]);
   const [adapterEfforts, setAdapterEfforts] = useState<Array<{ value: string; label: string }>>([]);
 
-  useEffect(() => {
-    let cancelled = false;
+  useAbortableEffect((signal) => {
     if (config.cli === "claude") {
       setAdapterModels(ANTHROPIC_MODELS.map((m) => ({ value: m.id, label: m.id })));
       setAdapterEfforts(ANTHROPIC_EFFORTS.map((e) => ({ value: e.value, label: e.label })));
-      return () => { cancelled = true; };
+      return;
     }
     // Clear synchronously so the validator below can't accept a stale
     // value (e.g. Claude's "max") while the new CLI's options are still
@@ -257,16 +257,15 @@ export function SessionLauncher() {
       { cli: config.cli }
     )
       .then((opts) => {
-        if (cancelled) return;
+        if (signal.aborted) return;
         setAdapterModels(opts.models.map((m) => ({ value: m.id, label: m.displayName || m.id })));
         setAdapterEfforts(opts.effortLevels.map((e) => ({ value: e.id, label: e.displayName || e.id })));
       })
       .catch(() => {
-        if (cancelled) return;
+        if (signal.aborted) return;
         setAdapterModels([]);
         setAdapterEfforts([]);
       });
-    return () => { cancelled = true; };
   }, [config.cli]);
 
   const modelOptions = adapterModels;

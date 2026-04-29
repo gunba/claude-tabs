@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown, { type Components } from "react-markdown";
 import type { CliKind } from "../../types/session";
+import { useAbortableEffect } from "../../hooks/useAbortableEffect";
 import { ModalOverlay } from "../ModalOverlay/ModalOverlay";
 import { IconClose } from "../Icons/Icons";
 import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
@@ -83,8 +84,7 @@ export function ChangelogModal({ request, currentVersions, onClose }: ChangelogM
     request.ranges.codex?.toVersion,
   ]);
 
-  useEffect(() => {
-    let cancelled = false;
+  useAbortableEffect((signal) => {
     setStates({ claude: { status: "loading" }, codex: { status: "loading" } });
     for (const cli of CLI_ORDER) {
       const target = changelogTargets[cli];
@@ -94,15 +94,14 @@ export function ChangelogModal({ request, currentVersions, onClose }: ChangelogM
         toVersion: target.toVersion,
       })
         .then((data) => {
-          if (cancelled) return;
+          if (signal.aborted) return;
           setStates((prev) => ({ ...prev, [cli]: { status: "ready", data } }));
         })
         .catch((err) => {
-          if (cancelled) return;
+          if (signal.aborted) return;
           setStates((prev) => ({ ...prev, [cli]: { status: "error", error: String(err) } }));
         });
     }
-    return () => { cancelled = true; };
   }, [changelogTargets]);
 
   const activeState = states[activeCli];

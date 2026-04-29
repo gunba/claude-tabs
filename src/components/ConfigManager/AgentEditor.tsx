@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { insertTextAtCursor } from "../../lib/domEdit";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
+import { useAbortableEffect } from "../../hooks/useAbortableEffect";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
 import { useFlashStatus } from "./useFlashStatus";
 
@@ -45,7 +46,7 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
   // Bumping seedKey on every transition forces the uncontrolled textarea to
   // remount with a fresh `defaultValue`, preserving the native undo stack
   // mid-edit while still reseeding when selection/load completes.
-  useEffect(() => {
+  useAbortableEffect((signal) => {
     if (!selectedAgent || selectedAgent === "__new__") {
       setContent("");
       setSavedContent("");
@@ -55,23 +56,21 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
     const agent = agents.find((a) => a.name === selectedAgent);
     if (!agent) return;
 
-    let cancelled = false;
     invoke<string>("read_config_file", {
       scope,
       workingDir,
       fileType: `agent:${agent.name}`,
     }).then((result) => {
-      if (cancelled) return;
+      if (signal.aborted) return;
       setContent(result);
       setSavedContent(result);
       setSeedKey((k) => k + 1);
     }).catch(() => {
-      if (cancelled) return;
+      if (signal.aborted) return;
       setContent("");
       setSavedContent("");
       setSeedKey((k) => k + 1);
     });
-    return () => { cancelled = true; };
   }, [selectedAgent, agents, scope, workingDir]);
 
   const handleSave = useCallback(async () => {
