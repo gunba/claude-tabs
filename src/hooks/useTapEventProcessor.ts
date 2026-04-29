@@ -1,24 +1,22 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../store/sessions";
-import { useActivityStore } from "../store/activity";
 import { tapEventBus } from "../lib/tapEventBus";
 import { reduceTapEvent } from "../lib/tapStateReducer";
 import { TapMetadataAccumulator } from "../lib/tapMetadataAccumulator";
 import { TapSubagentTracker } from "../lib/tapSubagentTracker";
-import { normalizePath, canonicalizePath, parseWorktreePath, dirToTabName } from "../lib/paths";
 import { getResumeId, resolveModelFamily } from "../lib/claude";
-import { buildSubagentTabs } from "../lib/contextProjection";
 import { useSettingsStore } from "../store/settings";
 import { dlog } from "../lib/debugLog";
 import { getNoisyEventKinds } from "../lib/noisyEventKinds";
 import { traceSync } from "../lib/perfTrace";
-import { settledStateManager } from "../lib/settledState";
 import type { TapEvent } from "../types/tapEvents";
 import type { SessionState, PermissionMode } from "../types/session";
-import type { ToolInputDiffData, FileChangeKind } from "../types/activity";
-import { parseBashFiles } from "../lib/bashFileParser";
 import { getTapCategoryLabel, getTapCategoryMeta } from "../lib/tapCatalog";
+import { createTapActivityTracker } from "./tapActivityTracker";
+import { createTapCodexNaming } from "./tapCodexNaming";
+import { handleTapPromptCaptureBridge } from "./tapPromptCaptureBridge";
+import { subscribeTapSettledIdleHandler } from "./tapSettledIdleHandler";
+import { createTapWorktreeSync } from "./tapWorktreeSync";
 
 /** Return discriminating fields for key event types (for debug logs). */
 function eventDetail(event: TapEvent): string {
@@ -47,208 +45,6 @@ function eventDetail(event: TapEvent): string {
   }
 }
 
-interface GitChange { path: string; status: string }
-interface PathStatus { path: string; exists: boolean; isDir: boolean }
-
-function gitStatusToKind(status: string): FileChangeKind {
-  if (status === "D") return "deleted";
-  if (status === "A" || status === "?") return "created";
-  return "modified";
-}
-
-// [CP-01] parseApplyPatchFiles: parses '*** (Add|Update|Delete) File: ...' markers from apply_patch input; feeds activityStore.addFileActivity per matched path
-function parseApplyPatchFiles(patch: string, workDir: string): Array<{ path: string; kind: FileChangeKind }> {
-  const files: Array<{ path: string; kind: FileChangeKind }> = [];
-  for (const line of patch.split(/\r?\n/)) {
-    const match = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
-    if (!match) continue;
-    const rawPath = match[2].trim();
-    const absolute =
-      /^[A-Za-z]:[\\/]/.test(rawPath) || rawPath.startsWith("/") || rawPath.startsWith("~");
-    const path = absolute || !workDir ? rawPath : `${workDir.replace(/[\\/]+$/, "")}/${rawPath}`;
-    files.push({
-      path: canonicalizePath(path),
-      kind: match[1] === "Add" ? "created" : match[1] === "Delete" ? "deleted" : "modified",
-    });
-  }
-  return files;
-}
-
-async function runPathExistenceValidation(sid: string): Promise<void> {
-  const activity = useActivityStore.getState().sessions[sid];
-  if (!activity) return;
-  const paths = new Set<string>();
-  for (const f of Object.values(activity.allFiles)) paths.add(f.path);
-  for (const turn of activity.turns) {
-    for (const f of turn.files) paths.add(f.path);
-  }
-  if (paths.size === 0) return;
-  try {
-    const results = await invoke<PathStatus[]>("paths_exist", { paths: [...paths] });
-    useActivityStore.getState().confirmEntries(sid, results);
-  } catch (err) {
-    dlog("tap", sid, `paths_exist failed: ${err}`, "DEBUG");
-  }
-}
-
-async function runGitScanAndValidate(sid: string): Promise<void> {
-  const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-  const workDir = session?.config.workingDir ?? "";
-  const activityStore = useActivityStore.getState();
-
-  if (workDir) {
-    try {
-      const changes = await invoke<GitChange[]>("git_list_changes", { workingDir: workDir });
-      const known = activityStore.sessions[sid]?.visitedPaths ?? new Set<string>();
-      for (const change of changes) {
-        const canonical = canonicalizePath(change.path);
-        if (known.has(canonical)) continue;
-        activityStore.addFileActivity(sid, canonical, gitStatusToKind(change.status), {
-          agentId: null,
-          toolName: "git",
-          isExternal: false,
-        });
-      }
-    } catch (err) {
-      dlog("tap", sid, `git_list_changes failed: ${err}`, "DEBUG");
-    }
-  }
-
-  await runPathExistenceValidation(sid);
-}
-
-function isAbsoluteLikePath(path: string): boolean {
-  return path.startsWith("/")
-    || path.startsWith("~")
-    || /^[A-Za-z]:[\\/]/.test(path);
-}
-
-function resolveActivityPath(rawPath: string, workDir: string): string {
-  if (!rawPath) return "";
-  if (isAbsoluteLikePath(rawPath) || !workDir) return canonicalizePath(rawPath);
-  return canonicalizePath(`${workDir.replace(/[\\/]+$/, "")}/${rawPath}`);
-}
-
-function isExternalActivityPath(path: string, workDir: string): boolean {
-  const normalizedWorkDir = normalizePath(workDir);
-  return normalizedWorkDir ? !normalizePath(path).startsWith(normalizedWorkDir) : false;
-}
-
-function recordContextPath(
-  sid: string,
-  rawPath: string,
-  memoryType: string,
-  loadReason: string,
-  toolName: string,
-  agentId: string | null
-): void {
-  if (!rawPath.trim()) return;
-  const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-  const workDir = session?.config.workingDir ?? "";
-  const ctxPath = resolveActivityPath(rawPath, workDir);
-  const isExternal = isExternalActivityPath(ctxPath, workDir);
-  const activityStore = useActivityStore.getState();
-  activityStore.addContextFile(sid, {
-    path: ctxPath,
-    memoryType,
-    loadReason,
-  });
-  activityStore.addFileActivity(sid, ctxPath, "read", {
-    agentId,
-    toolName,
-    isExternal,
-  });
-}
-
-async function resolveAndRecordSkillFile(
-  sid: string,
-  skillName: string,
-  agentId: string | null,
-  seen: Set<string>
-): Promise<void> {
-  const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-  if (!session) return;
-  const key = `${sid}:skill:${session.config.cli}:${skillName}`;
-  if (seen.has(key)) return;
-  seen.add(key);
-  try {
-    const path = await invoke<string | null>("resolve_skill_file", {
-      cli: session.config.cli,
-      skillName,
-      workingDir: session.config.workingDir,
-    });
-    if (path) {
-      recordContextPath(sid, path, "skill", skillName, "Skill", agentId);
-    }
-  } catch (err) {
-    dlog("tap", sid, `resolve_skill_file failed: ${err}`, "DEBUG");
-  }
-}
-
-async function resolveAndRecordContextFiles(
-  sid: string,
-  contextKind: "mcp" | "plugin" | "config" | "rules",
-  label: string,
-  toolName: string,
-  agentId: string | null,
-  seen: Set<string>
-): Promise<void> {
-  const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-  if (!session) return;
-  const keyLabel = contextKind === "mcp" || contextKind === "config" ? contextKind : label;
-  const key = `${sid}:context:${session.config.cli}:${contextKind}:${keyLabel}`;
-  if (seen.has(key)) return;
-  seen.add(key);
-  try {
-    const paths = await invoke<string[]>("resolve_activity_context_files", {
-      cli: session.config.cli,
-      contextKind,
-      workingDir: session.config.workingDir,
-    });
-    for (const path of paths) {
-      recordContextPath(sid, path, contextKind, label || contextKind, toolName, agentId);
-    }
-  } catch (err) {
-    dlog("tap", sid, `resolve_activity_context_files failed: ${err}`, "DEBUG");
-  }
-}
-
-function deriveCodexPromptTitle(display: string): string | null {
-  const cleaned = display
-    .replace(/<[^>]+>/g, " ")
-    .replace(/[`*_#[\]()>]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned || cleaned.startsWith("/")) return null;
-  const words = cleaned.match(/[A-Za-z0-9][A-Za-z0-9._/-]*/g) ?? [];
-  if (words.length === 0) return null;
-  const title = words.slice(0, 7).join(" ");
-  return title.length > 54 ? `${title.slice(0, 51).trim()}...` : title;
-}
-
-function isAutoNameableCodexName(name: string | null | undefined, defaultName: string): boolean {
-  if (!name) return true;
-  const normalized = name.trim().toLowerCase();
-  return name === defaultName || normalized === "run" || normalized === "codex" || normalized === "new session";
-}
-
-function maybeAutoNameCodexSession(sid: string, display: string, seen: Set<string>): string | null {
-  if (seen.has(sid)) return null;
-  const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-  if (!session || session.config.cli !== "codex") return null;
-  const defaultName = dirToTabName(session.config.launchWorkingDir || session.config.workingDir);
-  if (!isAutoNameableCodexName(session.name, defaultName)) {
-    seen.add(sid);
-    return null;
-  }
-  const title = deriveCodexPromptTitle(display);
-  if (!title || title === session.name) return null;
-  useSessionStore.getState().renameSession(sid, title);
-  useSettingsStore.getState().setSessionName(getResumeId(session), title);
-  seen.add(sid);
-  return title;
-}
-
 // [SI-13] Event priority: runs reduceTapEvent which enforces sticky actionNeeded guard
 // [SI-20] Worktree cwd detection: ConversationMessage/SessionRegistration/WorktreeState -> updateConfig
 // [SI-23] Plan detection: ToolCallStart(ExitPlanMode) handled by reducer, processor dispatches
@@ -265,8 +61,6 @@ export function useTapEventProcessor(
   const updateConfig = useSessionStore((s) => s.updateConfig);
   const addSubagent = useSessionStore((s) => s.addSubagent);
   const updateSubagent = useSessionStore((s) => s.updateSubagent);
-  const removeSubagent = useSessionStore((s) => s.removeSubagent);
-  const addSkillInvocation = useSessionStore((s) => s.addSkillInvocation);
   const addCommandHistory = useSessionStore((s) => s.addCommandHistory);
   const updateProcessHealth = useSessionStore((s) => s.updateProcessHealth);
 
@@ -293,47 +87,11 @@ export function useTapEventProcessor(
     metaAccRef.current = metaAcc;
     subTrackerRef.current = subTracker;
     stateRef.current = "starting";
-    let activityTurnCounter = 0;
-    let activityTurnOpen = false;
-    let lastActivityPromptDisplay: string | null = null;
-    let codexAutoNameTitle: string | null = null;
-    const contextFileHintsSeen = new Set<string>();
-    const codexAutoNamed = new Set<string>();
-    // Tracks Codex sessions that have already had an LLM-upgrade attempt
-    // kicked off, so we never spawn a second `codex exec` for the same tab.
-    const codexLLMUpgraded = new Set<string>();
+    const activityTracker = createTapActivityTracker(sessionId);
+    const worktreeSync = createTapWorktreeSync(sessionId, updateConfig);
+    const codexNaming = createTapCodexNaming(sessionId);
     setClaudeSessionId(null);
     setUserPrompt(null);
-
-    const startActivityTurn = (sid: string, promptDisplay: string | null): void => {
-      if (activityTurnOpen) {
-        if (promptDisplay) lastActivityPromptDisplay = promptDisplay;
-        return;
-      }
-      activityTurnCounter++;
-      useActivityStore.getState().startTurn(sid, `turn-${activityTurnCounter}`);
-      activityTurnOpen = true;
-      lastActivityPromptDisplay = promptDisplay;
-    };
-
-    const updateCwdIfChanged = (cwd: string, opts?: { fromWorktreeEvent?: boolean }) => {
-      const normalized = normalizePath(cwd);
-      const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
-      if (!session || normalized === session.config.workingDir) return;
-      // [SI-20] Anchor runtime cwd drift to launchWorkingDir. ConversationMessage and
-      // SessionRegistration carry a cwd field that, in practice, can drift to a
-      // sub-directory after plan-mode forks, subagent re-serialization, or other
-      // transient states. Only accept drift when (a) it's an explicit worktree event,
-      // (b) the new cwd matches launchWorkingDir, or (c) it parses as a worktree path
-      // (covers user-initiated `claude -w` toggles).
-      const launch = normalizePath(session.config.launchWorkingDir || session.config.workingDir);
-      const isWorktreePath = parseWorktreePath(normalized) !== null;
-      if (!opts?.fromWorktreeEvent && normalized !== launch && !isWorktreePath) {
-        dlog("tap", sessionId, `cwd update rejected: ${normalized} != launch ${launch}`, "DEBUG");
-        return;
-      }
-      updateConfig(sessionId, { workingDir: normalized });
-    };
 
     const handleEvent = (event: TapEvent) => {
       const sid = sessionIdRef.current;
@@ -374,16 +132,10 @@ export function useTapEventProcessor(
         dlog("inspector", sid, `state ${prevState} unchanged by ${event.kind}`, "DEBUG");
       }
 
-      // Read originalCwd BEFORE accumulator clears worktreeInfo
-      let worktreeExitCwd: string | null = null;
-      if (event.kind === "WorktreeCleared") {
-        const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-        worktreeExitCwd = session?.metadata?.worktreeInfo?.originalCwd || null;
-      }
-
+      // Read originalCwd BEFORE accumulator clears worktreeInfo.
+      const worktreeExitCwd = worktreeSync.captureWorktreeExitCwd(event);
       const suppressSubagentWorktreeEvent =
-        (event.kind === "WorktreeState" || event.kind === "WorktreeCleared")
-        && subTracker.isSubagentInFlight();
+        worktreeSync.shouldSuppressSubagentWorktreeEvent(event, subTracker);
 
       // 2. Metadata accumulator
       const metaDiff = suppressSubagentWorktreeEvent ? null : metaAcc.process(event);
@@ -423,243 +175,8 @@ export function useTapEventProcessor(
         }
       }
 
-      // 4. Skill invocations
-      if (event.kind === "SkillInvocation") {
-        dlog("tap", sid, `skill invoked: ${event.skill} (success=${event.success})`, "DEBUG");
-        addSkillInvocation(sid, {
-          id: `skill-${event.ts}-${event.skill}`,
-          skill: event.skill,
-          success: event.success,
-          allowedTools: event.allowedTools,
-          timestamp: event.ts,
-        });
-        void resolveAndRecordSkillFile(sid, event.skill, null, contextFileHintsSeen);
-      }
-
-      // 5. Activity tracking — file change events for the Activity Panel
-      {
-        const activityStore = useActivityStore.getState();
-        const isSidechain = subTracker.isSidechainActive?.() ?? false;
-        const agentId = isSidechain ? (subTracker.getLastActiveAgentId?.() ?? null) : null;
-
-        if ((event.kind === "TurnStart" || event.kind === "CodexTaskStarted") && !isSidechain) {
-          startActivityTurn(sid, null);
-        }
-
-        // endTurn is driven by settled-state (see subscription below), not TurnEnd,
-        // so it only fires when all work is genuinely done (including subagents).
-
-        if (event.kind === "ToolInput") {
-          if (event.toolName.startsWith("mcp__")) {
-            void resolveAndRecordContextFiles(sid, "mcp", event.toolName, "MCP", agentId, contextFileHintsSeen);
-          }
-
-          // Suppress phantom Read events during subagent context re-serialization.
-          // When a subagent is in flight but sidechainActive is false and the last
-          // main-agent tool was Agent, ToolInput(Read) events are re-serialized
-          // conversation context, not genuine tool executions.
-          const isPhantomRead = event.toolName === "Read"
-            && subTracker.isSubagentInFlight()
-            && !isSidechain
-            && subTracker.getLastMainToolCall?.() === "Agent";
-          if (isPhantomRead) {
-            dlog("tap", sid, `phantom Read suppressed: ${event.input.file_path}`, "DEBUG");
-          }
-
-          const rawFilePath = event.input.file_path ?? event.input.notebook_path;
-          if (typeof rawFilePath === "string" && !isPhantomRead) {
-            const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-            const workDir = session?.config.workingDir ?? "";
-            const filePath = resolveActivityPath(rawFilePath, workDir);
-            const isExternal = isExternalActivityPath(filePath, workDir);
-
-            if (event.toolName === "Read") {
-              activityStore.addFileActivity(sid, filePath, "read", {
-                agentId,
-                toolName: "Read",
-                isExternal,
-              });
-            } else if (event.toolName === "Write") {
-              const activity = activityStore.sessions[sid];
-              const isNew = !activity?.visitedPaths.has(filePath);
-              const toolInputData: ToolInputDiffData = {
-                type: "write",
-                content: String(event.input.content ?? ""),
-              };
-              activityStore.addFileActivity(sid, filePath, isNew ? "created" : "modified", {
-                agentId,
-                toolName: "Write",
-                isExternal,
-                toolInputData,
-              });
-            } else if (event.toolName === "Edit") {
-              const toolInputData: ToolInputDiffData = {
-                type: "edit",
-                oldString: String(event.input.old_string ?? ""),
-                newString: String(event.input.new_string ?? ""),
-              };
-              activityStore.addFileActivity(sid, filePath, "modified", {
-                agentId,
-                toolName: "Edit",
-                isExternal,
-                toolInputData,
-              });
-            } else if (event.toolName === "NotebookEdit") {
-              activityStore.addFileActivity(sid, filePath, "modified", {
-                agentId,
-                toolName: "NotebookEdit",
-                isExternal,
-              });
-            }
-          }
-
-          if (event.toolName === "apply_patch") {
-            const patch = typeof event.input.patch === "string" ? event.input.patch : "";
-            if (patch) {
-              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-              const workDir = session?.config.workingDir ?? "";
-              for (const file of parseApplyPatchFiles(patch, workDir)) {
-                const isExternal = isExternalActivityPath(file.path, workDir);
-                activityStore.addFileActivity(sid, file.path, file.kind, {
-                  agentId,
-                  toolName: "apply_patch",
-                  isExternal,
-                });
-              }
-            }
-          }
-
-          // Grep — track searched file or folder
-          if (event.toolName === "Grep") {
-            const rawGrepPath = typeof event.input.path === "string" ? event.input.path : null;
-            if (rawGrepPath) {
-              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-              const workDir = session?.config.workingDir ?? "";
-              const grepPath = resolveActivityPath(rawGrepPath, workDir);
-              const isExternal = isExternalActivityPath(grepPath, workDir);
-              const lastSegment = grepPath.split("/").pop() ?? "";
-              const looksLikeFile = lastSegment.includes(".") && !lastSegment.startsWith(".");
-              activityStore.addFileActivity(sid, grepPath, "searched", {
-                agentId,
-                toolName: "Grep",
-                isExternal,
-                isFolder: !looksLikeFile,
-              });
-            } else {
-              // No path = searching project root
-              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-              const workDir = session?.config.workingDir ?? "";
-              if (workDir) {
-                activityStore.addFileActivity(sid, canonicalizePath(workDir), "searched", {
-                  agentId,
-                  toolName: "Grep",
-                  isFolder: true,
-                });
-              }
-            }
-          }
-
-          // Glob — always targets a folder
-          if (event.toolName === "Glob") {
-            const rawGlobPath = typeof event.input.path === "string" ? event.input.path : null;
-            const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-            const workDir = session?.config.workingDir ?? "";
-            const targetPath = rawGlobPath ? resolveActivityPath(rawGlobPath, workDir) : (workDir ? canonicalizePath(workDir) : null);
-            if (targetPath) {
-              const isExternal = isExternalActivityPath(targetPath, workDir);
-              activityStore.addFileActivity(sid, targetPath, "searched", {
-                agentId,
-                toolName: "Glob",
-                isExternal,
-                isFolder: true,
-              });
-            }
-          }
-
-          // LSP — always targets a file (uses camelCase filePath, not snake_case file_path)
-          if (event.toolName === "LSP") {
-            const rawLspPath = typeof event.input.filePath === "string" ? event.input.filePath : null;
-            if (rawLspPath) {
-              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-              const workDir = session?.config.workingDir ?? "";
-              const lspPath = resolveActivityPath(rawLspPath, workDir);
-              const isExternal = isExternalActivityPath(lspPath, workDir);
-              activityStore.addFileActivity(sid, lspPath, "searched", {
-                agentId,
-                toolName: "LSP",
-                isExternal,
-              });
-            }
-          }
-
-          // [DF-12] Bash — extract file ops by tokenizing the command string with shell-quote
-          // and walking a small registry for mutations plus common read/search commands.
-          // This is heuristic: subshells, var expansion, and globs are not handled. Path
-          // existence is verified by the settled-idle validator before entries are finalized.
-          if (event.toolName === "Bash") {
-            const cmd = typeof event.input.command === "string" ? event.input.command : "";
-            if (cmd) {
-              const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-              const workDir = session?.config.workingDir ?? "";
-              const commandWorkDir = typeof event.input.workdir === "string"
-                ? event.input.workdir
-                : typeof event.input.cwd === "string" ? event.input.cwd : workDir;
-              const ops = parseBashFiles(cmd, commandWorkDir);
-              for (const op of ops) {
-                const isExternal = isExternalActivityPath(op.path, workDir);
-                activityStore.addFileActivity(sid, op.path, op.kind, {
-                  agentId,
-                  toolName: "Bash",
-                  isExternal,
-                  isFolder: op.isFolder ?? false,
-                });
-              }
-            }
-          }
-        }
-
-        if (event.kind === "PermissionRejected") {
-          const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-          const lastAction = session?.metadata.currentAction ?? "";
-          const pathMatch = lastAction.match(/:\s*(.+)/);
-          if (pathMatch) {
-            activityStore.markPermissionDenied(sid, canonicalizePath(pathMatch[1].trim()));
-          }
-        }
-
-        if (event.kind === "InstructionsLoadedEvent") {
-          recordContextPath(
-            sid,
-            event.filePath,
-            event.memoryType,
-            event.loadReason,
-            event.memoryType === "skill" ? "Skill" : "context",
-            agentId,
-          );
-        }
-
-        if (event.kind === "ContextFilesHint") {
-          void resolveAndRecordContextFiles(
-            sid,
-            event.contextKind,
-            event.label,
-            event.contextKind === "mcp" ? "MCP" : "context",
-            agentId,
-            contextFileHintsSeen,
-          );
-        }
-
-        if (event.kind === "ContextBudget" && event.claudeMdSize > 0) {
-          void resolveAndRecordContextFiles(
-            sid,
-            "rules",
-            "Claude rules",
-            "context",
-            agentId,
-            contextFileHintsSeen,
-          );
-        }
-      }
+      // 4. Activity tracking — file changes, skills, and context files.
+      activityTracker.handleEvent(event, subTracker);
 
       // 6. Session-level signals
       // [SS-01] [SS-02] Detect session switches via sid field change (plan-mode fork, /resume, compaction)
@@ -668,10 +185,7 @@ export function useTapEventProcessor(
       if (event.kind === "SessionRegistration") {
         if (!subTracker.isSubagentInFlight()) {
           setClaudeSessionId(event.sessionId);
-          const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-          if (session?.config.cli === "codex" && codexAutoNameTitle && event.sessionId) {
-            useSettingsStore.getState().setSessionName(event.sessionId, codexAutoNameTitle);
-          }
+          codexNaming.persistSessionRegistrationName(event.sessionId);
         } else {
           dlog("tap", sid, `SessionRegistration(${event.sessionId}) suppressed — subagent in flight`, "DEBUG");
         }
@@ -688,44 +202,12 @@ export function useTapEventProcessor(
 
       // [AS-01] markUserMessage on UserInput/SlashCommand (not TurnStart) — response window starts at real user input
       if (event.kind === "UserInput" || event.kind === "SlashCommand") {
-        const duplicateOpenPrompt = activityTurnOpen && lastActivityPromptDisplay === event.display;
-        if (!duplicateOpenPrompt) {
-          useActivityStore.getState().markUserMessage(sid);
-          startActivityTurn(sid, event.display);
+        const acceptedPrompt = activityTracker.markUserMessage(event.display);
+        if (acceptedPrompt) {
           setUserPrompt(event.display.slice(0, 200));
         }
-        if (event.kind === "UserInput" && !duplicateOpenPrompt) {
-          // [SL-23] Codex LLM auto-rename upgrade: heuristic name applied
-          // synchronously by maybeAutoNameCodexSession, then fire-and-forget
-          // `codex exec` upgrade replaces it iff name still equals heuristic
-          // (respects manual mid-flight renames). codexLLMUpgraded gate
-          // prevents duplicate exec spawns. Backend: see CO-06.
-          const heuristicTitle = maybeAutoNameCodexSession(sid, event.display, codexAutoNamed);
-          if (heuristicTitle) {
-            codexAutoNameTitle = heuristicTitle;
-            // Provider-symmetric upgrade path: ask Codex's own model (via
-            // `codex exec`) for a better title. Fire-and-forget; the
-            // heuristic name is already showing, so nothing blocks the UI.
-            const settings = useSettingsStore.getState();
-            if (settings.codexAutoRenameLLMEnabled && !codexLLMUpgraded.has(sid)) {
-              codexLLMUpgraded.add(sid);
-              invoke<string>("generate_codex_session_title", {
-                prompt: event.display,
-                model: settings.codexAutoRenameLLMModel,
-              })
-                .then((llmTitle) => {
-                  if (!llmTitle || llmTitle === heuristicTitle) return;
-                  // Respect manual user renames mid-flight: only upgrade if
-                  // the tab name is still the heuristic we set.
-                  const current = useSessionStore.getState().sessions.find((s) => s.id === sid);
-                  if (!current || current.name !== heuristicTitle) return;
-                  useSessionStore.getState().renameSession(sid, llmTitle);
-                  useSettingsStore.getState().setSessionName(getResumeId(current), llmTitle);
-                  codexAutoNameTitle = llmTitle;
-                })
-                .catch((err) => dlog("tap", sid, `codex auto-rename LLM failed: ${err}`, "DEBUG"));
-            }
-          }
+        if (event.kind === "UserInput" && acceptedPrompt) {
+          codexNaming.handleUserInput(event.display);
         }
       }
 
@@ -736,57 +218,7 @@ export function useTapEventProcessor(
 
       // SystemPromptCapture → collect all unique observed prompts
       if (event.kind === "SystemPromptCapture") {
-        const sessionCli =
-          useSessionStore.getState().sessions.find((s) => s.id === sid)?.config.cli ?? "claude";
-        useSettingsStore.getState().addObservedPrompt(event.text, event.model, sessionCli);
-
-        // Bridge resultText from capturedMessages to TAP-derived subagents.
-        // capturedMessages pair Agent tool_use with tool_result blocks authoritatively,
-        // but TAP subagents never get resultText because SubagentNotification doesn't fire.
-        if (event.messages) {
-          const tabs = buildSubagentTabs(event.messages);
-          const subagents = useSessionStore.getState().subagents.get(sid) || [];
-          for (const tab of tabs) {
-            if (!tab.resultText) continue;
-            const labelPrefix = tab.label.endsWith("\u2026") ? tab.label.slice(0, -1) : tab.label;
-            if (labelPrefix.length < 3) continue;
-            // Match by description prefix + prompt text to avoid ambiguous collisions
-            const candidates = subagents.filter(sub => sub.description.startsWith(labelPrefix));
-            const matched = candidates.length === 1
-              ? candidates[0]
-              : candidates.find(sub => sub.promptText && sub.promptText === tab.promptText) ?? null;
-            if (matched && !matched.resultText) {
-              updateSubagent(sid, matched.id, { resultText: tab.resultText, completed: true });
-            }
-          }
-
-          // Prune phantom subagents that don't correspond to any Agent tool_use
-          // in capturedMessages (e.g. CLI-internal aside_question sidechains).
-          // Match by exact promptText (precise) with description prefix fallback.
-          // Guard: never prune agents that already have resultText — they were
-          // previously validated against capturedMessages and may have been
-          // compacted away since.
-          if (tabs.length > 0 && subagents.length > tabs.length) {
-            const tabPrompts = new Set(tabs.map(t => t.promptText).filter(Boolean));
-            for (const sub of subagents) {
-              // Exact prompt match (precise)
-              if (sub.promptText && tabPrompts.has(sub.promptText)) continue;
-              // Description prefix fallback (for agents without promptText)
-              const matchesByDesc = tabs.some(tab => {
-                const prefix = tab.label.endsWith("\u2026") ? tab.label.slice(0, -1) : tab.label;
-                return prefix.length >= 3 && sub.description.startsWith(prefix);
-              });
-              if (matchesByDesc) continue;
-              // Only prune completed phantoms without resultText.
-              // Agents with resultText were previously validated and are safe
-              // from compaction-induced false positives.
-              if (sub.completed && !sub.resultText) {
-                dlog("inspector", sid, `pruning phantom subagent ${sub.id} desc="${sub.description}"`, "DEBUG");
-                removeSubagent(sid, sub.id);
-              }
-            }
-          }
-        }
+        handleTapPromptCaptureBridge(sid, event);
       }
 
       // ProcessHealth → store (throttled to ~every 5s)
@@ -826,36 +258,12 @@ export function useTapEventProcessor(
         }
       }
 
-      // [SI-20] Worktree cwd detection: SessionRegistration gated behind isSubagentInFlight
-      if (event.kind === "ConversationMessage" && event.cwd && !event.isSidechain) {
-        if (!subTracker.isSubagentInFlight()) {
-          updateCwdIfChanged(event.cwd);
-        } else {
-          dlog("tap", sid, `ConversationMessage cwd(${event.cwd}) suppressed — subagent in flight`, "DEBUG");
-        }
-      }
-      if (event.kind === "SessionRegistration" && event.cwd) {
-        if (!subTracker.isSubagentInFlight()) {
-          updateCwdIfChanged(event.cwd);
-        } else {
-          dlog("tap", sid, `SessionRegistration cwd(${event.cwd}) suppressed — subagent in flight`, "DEBUG");
-        }
-      }
-      if (event.kind === "CodexTurnContext" && event.cwd) {
-        updateCwdIfChanged(event.cwd);
-      }
-      // WorktreeState: authoritative worktree path from CLI
-      if (event.kind === "WorktreeState" && event.worktreePath) {
-        if (!suppressSubagentWorktreeEvent) {
-          updateCwdIfChanged(event.worktreePath, { fromWorktreeEvent: true });
-        }
-      }
-      // WorktreeCleared: restore original working directory
-      if (event.kind === "WorktreeCleared" && worktreeExitCwd) {
-        if (!suppressSubagentWorktreeEvent) {
-          updateCwdIfChanged(worktreeExitCwd, { fromWorktreeEvent: true });
-        }
-      }
+      worktreeSync.handleEvent(
+        event,
+        subTracker,
+        worktreeExitCwd,
+        suppressSubagentWorktreeEvent,
+      );
 
       }, {
         module: "tap",
@@ -871,57 +279,17 @@ export function useTapEventProcessor(
 
     const unsub = tapEventBus.subscribe(sessionId, handleEvent);
 
-    // [AS-03] End activity turns on settled-idle — still needed for
-    // the UI's Response mode boundary and stats recomputation.
-    // After endTurn, scan git for external changes (covers Bash mutations and
-    // out-of-process edits we couldn't see) then validate every path against
-    // the filesystem to drop false positives.
-    const unsubSettled = settledStateManager.subscribe(
-      (settledSid, kind) => {
-        if (settledSid === sessionId && kind === "idle") {
-          useActivityStore.getState().endTurn(sessionId);
-          activityTurnOpen = false;
-          void runGitScanAndValidate(sessionId);
-        }
-      },
-      () => {},
-    );
-
-    // Throttled paths_exist on every activity store change so heuristic
-    // false positives (Bash parser, apply_patch, errored Read inputs) are
-    // dropped within ~1.5s instead of waiting for settled-idle hysteresis.
-    let pendingValidate: ReturnType<typeof setTimeout> | null = null;
-    let lastValidate = 0;
-    const VALIDATE_THROTTLE_MS = 1500;
-    const scheduleValidation = () => {
-      if (pendingValidate) return;
-      const delayMs = Math.max(lastValidate + VALIDATE_THROTTLE_MS - Date.now(), 0);
-      pendingValidate = setTimeout(() => {
-        pendingValidate = null;
-        lastValidate = Date.now();
-        void runPathExistenceValidation(sessionId);
-      }, delayMs);
-    };
-    let prevActivity = useActivityStore.getState().sessions[sessionId];
-    const unsubActivity = useActivityStore.subscribe((state) => {
-      const next = state.sessions[sessionId];
-      if (next !== prevActivity) {
-        prevActivity = next;
-        scheduleValidation();
-      }
-    });
+    const unsubSettledIdle = subscribeTapSettledIdleHandler(sessionId, activityTracker.endTurn);
 
     return () => {
       unsub();
-      unsubSettled();
-      unsubActivity();
-      if (pendingValidate) clearTimeout(pendingValidate);
+      unsubSettledIdle();
       metaAcc.reset();
       subTracker.reset();
       metaAccRef.current = null;
       subTrackerRef.current = null;
     };
-  }, [sessionId, updateState, updateMetadata, updateConfig, addSubagent, updateSubagent, removeSubagent, addSkillInvocation, addCommandHistory, updateProcessHealth]);
+  }, [sessionId, updateState, updateMetadata, updateConfig, addSubagent, updateSubagent, addCommandHistory, updateProcessHealth]);
 
   return { claudeSessionId, userPrompt };
 }

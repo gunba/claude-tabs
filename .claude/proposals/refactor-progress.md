@@ -12,7 +12,7 @@ Updated: 2026-04-29
 ## Active list
 
 - [x] F8-3 SessionLauncher state reducer or equivalent state model
-- [ ] F5-10 split useTapEventProcessor by concern
+- [x] F5-10 split useTapEventProcessor by concern
 - [ ] F7-1 decompose TerminalPanel effects
 - [ ] R9-F13 broader weather country mapping
 - [ ] F2-6 split settings.ts into coherent slices
