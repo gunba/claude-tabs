@@ -90,26 +90,31 @@ export function useKeyboardShortcuts(snapshot: ShortcutSnapshot, actions: Shortc
         }
       }
 
+      // [KB-02] Ctrl+W closes the active tab.
       if (e.ctrlKey && e.key === "w") {
         e.preventDefault();
         if (activeTabId) closeActiveTab(activeTabId);
       }
 
+      // [KB-06] Ctrl+K toggles the command palette.
       if (e.ctrlKey && e.key === "k") {
         e.preventDefault();
         setShowPalette((v) => !v);
       }
 
+      // [KB-03] Ctrl+Shift+R opens the resume picker.
       if (e.ctrlKey && e.shiftKey && e.key === "R") {
         e.preventDefault();
         setShowResumePicker(true);
       }
 
+      // [KB-11] Ctrl+Shift+F opens the cross-session search panel.
       if (e.ctrlKey && e.shiftKey && e.key === "F") {
         e.preventDefault();
         useSettingsStore.getState().setRightPanelTab("search");
       }
 
+      // [KB-07] Ctrl+, toggles the Config Manager.
       if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
         if (showConfigManager) {
@@ -124,6 +129,8 @@ export function useKeyboardShortcuts(snapshot: ShortcutSnapshot, actions: Shortc
         openMainDevtools().catch(() => {});
       }
 
+      // [KB-09] Escape unwinds transient UI in priority order before sending
+      // ESC to the active terminal.
       if (e.key === "Escape") {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (showPalette) return;
@@ -145,12 +152,14 @@ export function useKeyboardShortcuts(snapshot: ShortcutSnapshot, actions: Shortc
         }
       }
 
+      // [KB-04] Ctrl+Tab and Ctrl+Shift+Tab cycle tabs.
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
         const nextId = cycleTabId(sessions, activeTabId, e.shiftKey ? "previous" : "next");
         if (nextId) setActiveTab(nextId);
       }
 
+      // [KB-05] Alt+1-9 jumps to the Nth tab.
       if (e.altKey && e.key >= "1" && e.key <= "9") {
         e.preventDefault();
         const targetId = jumpTabId(sessions, parseInt(e.key, 10));

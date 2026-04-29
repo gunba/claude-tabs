@@ -49,7 +49,10 @@ fn resolves_codex_schema_from_real_binary_or_bundled() {
         .get("properties")
         .and_then(|p| p.as_object())
         .expect("bundled schema has properties");
-    eprintln!("Bundled schema: {} top-level properties", bundled_props.len());
+    eprintln!(
+        "Bundled schema: {} top-level properties",
+        bundled_props.len()
+    );
     assert!(bundled_props.len() >= 20);
 
     let Some(bin) = locate_codex_native() else {
@@ -69,10 +72,18 @@ fn resolves_codex_schema_from_real_binary_or_bundled() {
     eprintln!("Top-level properties: {}", prop_count);
 
     // Either source must yield the four signature keys.
-    for key in &["model_providers", "mcp_servers", "profiles", "shell_environment_policy"] {
+    for key in &[
+        "model_providers",
+        "mcp_servers",
+        "profiles",
+        "shell_environment_policy",
+    ] {
         assert!(props.contains_key(*key), "missing signature key {key}");
     }
-    assert!(prop_count >= 20, "expected >=20 top-level keys, got {prop_count}");
+    assert!(
+        prop_count >= 20,
+        "expected >=20 top-level keys, got {prop_count}"
+    );
     assert!(matches!(result.source, "binary" | "bundled"));
 }
 
@@ -84,7 +95,11 @@ fn mines_real_codex_env_vars_when_binary_present() {
     };
     let vars = discover_codex_env_vars_sync(&bin).expect("mine env vars");
     let names: Vec<&str> = vars.iter().map(|v| v.name.as_str()).collect();
-    eprintln!("Mined {} env vars: first few = {:?}", vars.len(), &names.iter().take(8).collect::<Vec<_>>());
+    eprintln!(
+        "Mined {} env vars: first few = {:?}",
+        vars.len(),
+        &names.iter().take(8).collect::<Vec<_>>()
+    );
 
     // Curated entries must be present.
     assert!(names.contains(&"OPENAI_API_KEY"));

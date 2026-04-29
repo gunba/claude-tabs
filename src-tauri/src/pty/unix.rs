@@ -55,9 +55,9 @@ pub struct UnixPty {
     child: std::sync::Mutex<Option<std::process::Child>>,
 }
 
-/// Resize the PTY by writing TIOCSWINSZ directly to the master fd.
-/// Standalone so callers don't need to hold the UnixPty mutex (which
-/// pty_exitstatus holds for the whole session lifetime via wait()).
+/// [PT-25] Resize the PTY by writing TIOCSWINSZ directly to the master fd.
+/// Standalone so callers never need to lock child process state; exit
+/// watchers wait on the child while resize only touches the master fd.
 pub fn resize_fd(master_fd: RawFd, cols: u16, rows: u16) -> Result<(), String> {
     let ws = libc::winsize {
         ws_row: rows,

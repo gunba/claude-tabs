@@ -13,4 +13,4 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Rust System Command Modules
 
-- [RC-19 L140] prune_worktree: runs git worktree remove --force <path> (always forced -- dialog is the confirmation). Async with spawn_blocking + CREATE_NO_WINDOW. Takes worktree_path and project_root (cwd for git).
+- [RC-19 L171] prune_worktree: runs git worktree remove --force <path> (always forced -- dialog is the confirmation). Async with spawn_blocking + CREATE_NO_WINDOW. Takes worktree_path and project_root (cwd for git).

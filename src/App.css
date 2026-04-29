@@ -429,7 +429,7 @@
   font-size: 9px;
   font-weight: 600;
   color: var(--text-muted);
-  /* Width-invariant L→R gradient: fixed pixel background-size so the
+  /* [CV-06] Width-invariant L→R folder-header gradient: fixed pixel background-size so the
      gradient progresses at the same rate per pixel regardless of how many
      tabs a folder spans. Past the gradient, the solid background-color
      (matching the end stop) extends seamlessly. */

@@ -18,7 +18,7 @@ export function getResumeId(session: Session): string {
 }
 
 /**
- * [RS-09] Auto-resolve a Claude resume id from on-disk JSONLs.
+ * [RS-08] Auto-resolve a Claude resume id from on-disk JSONLs.
  *
  * Long-lived sessions sometimes report a sessionId via TAP that doesn't
  * match the JSONL filename Claude actually wrote — or a session crashed

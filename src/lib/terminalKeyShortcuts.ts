@@ -23,6 +23,8 @@ export function isTerminalModalOpen(root: Pick<Document, "querySelector"> = docu
 
 export function getTerminalKeySequenceOverride(ev: TerminalKeyEventLike): string | null {
   const isEnter = ev.key === "Enter" || ev.code === "Enter" || ev.code === "NumpadEnter";
+  // [TA-12] Shift+Enter is sent as a kitty keyboard protocol sequence so the
+  // CLI can distinguish it from bare Enter.
   if (
     ev.type === "keydown" &&
     isEnter &&
@@ -69,9 +71,11 @@ export function classifyTerminalKey(
       : { kind: "action", action: "pasteClipboard" };
   }
 
+  // [TR-03] Ctrl+Home / Ctrl+End scroll the terminal viewport.
   if (ev.ctrlKey && ev.key === "Home") return { kind: "action", action: "scrollTop" };
   if (ev.ctrlKey && ev.key === "End") return { kind: "action", action: "scrollBottom" };
 
+  // [KB-10] Swallow Alt+digit in xterm; the app-level handler switches tabs.
   if (ev.altKey && ev.key >= "0" && ev.key <= "9") return { kind: "swallow" };
 
   if (

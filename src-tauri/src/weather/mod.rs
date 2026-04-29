@@ -1,4 +1,4 @@
-//! Weather scene driven by Cloudflare-derived country code.
+//! [WX-01] Weather scene driven by Cloudflare-derived country code.
 //!
 //! Anthropic and OpenAI both serve through Cloudflare, so their responses
 //! carry a `cf-ipcountry` header naming the user's edge POP country. The

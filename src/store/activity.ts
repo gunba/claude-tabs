@@ -113,6 +113,8 @@ function mergeFileActivity(
   if (next.kind === "read" && prev.kind !== "read" && prev.kind !== "searched") {
     return null;
   }
+  // [AP-03] Preserve the original creation event when later edits report the
+  // same path as modified.
   if (prev.kind === "created" && next.kind === "modified") {
     return { ...next, kind: "created" };
   }

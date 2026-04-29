@@ -189,7 +189,8 @@ export function ResumePicker({ onClose }: ResumePickerProps) {
     };
   }, [dirFilter]);
 
-  // Dead session map: CLI session ID -> DeadEntry
+  // [DS-05] Dead session map: CLI session ID -> DeadEntry. The picker can
+  // revive an active dead tab by reusing its stored config.
   const deadSessionMap = useMemo(() => {
     const map = new Map<string, DeadEntry>();
     for (const s of storeSessions) {

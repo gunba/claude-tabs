@@ -603,7 +603,7 @@ export const useSettingsStore = create<SettingsState>()(
           });
         }
       },
-      // [PE-02] Per-CLI JSON Schema fetch. Claude pulls schemastore.org via
+      // [PE-02] [CM-10] Per-CLI JSON Schema fetch. Claude pulls schemastore.org via
       // the existing fetch_settings_schema Tauri command (reqwest, avoids
       // CORS). Codex extracts the embedded Draft-07 schema from the
       // installed native binary via discover_codex_settings_schema (Phase 2).
@@ -1064,6 +1064,8 @@ export const useSettingsStore = create<SettingsState>()(
         previousCliVersions: state.previousCliVersions,
         cliCapabilitiesByCli: state.cliCapabilitiesByCli,
         binarySettingsFieldsByCli: state.binarySettingsFieldsByCli,
+        // [CM-10] Persist per-CLI settings schemas in the zustand store so the
+        // settings panes do not have to re-fetch or re-mine on every startup.
         settingsSchemaByCli: state.settingsSchemaByCli,
         knownEnvVarsByCli: state.knownEnvVarsByCli,
         slashCommandsByCli: state.slashCommandsByCli,

@@ -18,7 +18,7 @@ export async function relaunchDeadSession({
 }): Promise<void> {
   if (!canResumeSession(session)) return;
 
-  // [RS-09] Auto-resolve: if the dead tab's stored sessionId lost touch with
+  // [RS-08] Auto-resolve: if the dead tab's stored sessionId lost touch with
   // the actual JSONL on disk, pick the right JSONL by cwd + closest lastActive.
   const pastSessions = useSettingsStore.getState().pastSessions;
   const resolvedId = resolveResumeId(session, pastSessions);

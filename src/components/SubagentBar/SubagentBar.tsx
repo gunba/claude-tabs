@@ -38,6 +38,8 @@ export function SubagentBar({
         const isSelected =
           inspectedSubagent?.subagentId === subagent.id &&
           inspectedSubagent?.sessionId === activeTabId;
+        // [TA-06] Subagent cards share the same event-kind/tool activity
+        // derivation as parent tabs, but render it in the compact status row.
         const activity = getActivityText(
           subagent.currentToolName,
           subagent.currentEventKind,

@@ -892,7 +892,11 @@ fn codex_rollout_path_for_session(app_session_id: &str) -> Option<std::path::Pat
     }
 
     let path = last_path?;
-    if path.exists() { Some(path) } else { None }
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 fn search_codex_rollout_file(
