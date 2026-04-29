@@ -127,6 +127,36 @@ export function reduceTapEvent(state: SessionState, event: TapEvent): SessionSta
 }
 
 /**
+ * Whether an event can safely drive parent-session state while a subagent is active.
+ *
+ * Claude SSE events do not identify sidechain/subagent responses, so ToolCallStart,
+ * TurnStart, TurnEnd, and similar stream events can belong to a subagent. Structured
+ * conversation events carry isSidechain and are reliable when non-sidechain.
+ */
+export function isReliableParentStateEvent(event: TapEvent): boolean {
+  switch (event.kind) {
+    case "UserInput":
+    case "SlashCommand":
+    case "PermissionPromptShown":
+    case "PermissionApproved":
+    case "PermissionRejected":
+    case "UserInterruption":
+    case "IdlePrompt":
+    case "SessionEndEvent":
+      return true;
+    case "ConversationMessage":
+      return !event.isSidechain;
+    default:
+      return false;
+  }
+}
+
+/** Suppress ambiguous stream-driven parent state changes while subagent context is active. */
+export function shouldSuppressParentStateTransition(event: TapEvent, subagentContextActive: boolean): boolean {
+  return subagentContextActive && !isReliableParentStateEvent(event);
+}
+
+/**
  * Batch reducer: fold multiple events, applying priority rules.
  * waitingPermission always wins if any event in the batch triggers it.
  */

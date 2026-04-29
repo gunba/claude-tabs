@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { reduceTapEvent, reduceTapBatch } from "../tapStateReducer";
+import {
+  isReliableParentStateEvent,
+  reduceTapBatch,
+  reduceTapEvent,
+  shouldSuppressParentStateTransition,
+} from "../tapStateReducer";
 import { classifyTapEntry } from "../tapClassifier";
 import type { TapEvent } from "../../types/tapEvents";
 import type { SessionState } from "../../types/session";
@@ -431,6 +436,48 @@ describe("reduceTapBatch", () => {
       { kind: "TurnDuration", ts: 1, durationMs: 10000, messageCount: 5 },
     ];
     expect(reduceTapBatch("toolUse", events)).toBe("waitingPermission");
+  });
+});
+
+describe("parent state transition suppression", () => {
+  it("treats ambiguous stream events as unreliable while subagents are active", () => {
+    const planTool: TapEvent = { kind: "ToolCallStart", ts: 0, index: 0, toolName: "ExitPlanMode", toolId: "t1" };
+    expect(reduceTapEvent("thinking", planTool)).toBe("actionNeeded");
+    expect(isReliableParentStateEvent(planTool)).toBe(false);
+    expect(shouldSuppressParentStateTransition(planTool, true)).toBe(true);
+    expect(shouldSuppressParentStateTransition(planTool, false)).toBe(false);
+  });
+
+  it("also suppresses AskUserQuestion stream starts from active subagents", () => {
+    const askTool: TapEvent = { kind: "ToolCallStart", ts: 0, index: 0, toolName: "AskUserQuestion", toolId: "t1" };
+    expect(reduceTapEvent("thinking", askTool)).toBe("actionNeeded");
+    expect(isReliableParentStateEvent(askTool)).toBe(false);
+    expect(shouldSuppressParentStateTransition(askTool, true)).toBe(true);
+  });
+
+  it("keeps user and permission events reliable even with active subagents", () => {
+    const events: TapEvent[] = [
+      { kind: "UserInput", ts: 0, display: "continue", sessionId: "s1" },
+      { kind: "SlashCommand", ts: 0, command: "/r", display: "/r" },
+      { kind: "PermissionPromptShown", ts: 0, toolName: "Bash" },
+      { kind: "PermissionApproved", ts: 0, toolName: "Bash" },
+      { kind: "PermissionRejected", ts: 0 },
+      { kind: "UserInterruption", ts: 0, forToolUse: false },
+      { kind: "IdlePrompt", ts: 0 },
+    ];
+    for (const event of events) {
+      expect(isReliableParentStateEvent(event), event.kind).toBe(true);
+      expect(shouldSuppressParentStateTransition(event, true), event.kind).toBe(false);
+    }
+  });
+
+  it("uses ConversationMessage sidechain markers for reliability", () => {
+    const main = convMsg({ isSidechain: false, stopReason: "end_turn" });
+    const sidechain = convMsg({ isSidechain: true, agentId: "agent-1", stopReason: "end_turn" });
+    expect(isReliableParentStateEvent(main)).toBe(true);
+    expect(isReliableParentStateEvent(sidechain)).toBe(false);
+    expect(shouldSuppressParentStateTransition(main, true)).toBe(false);
+    expect(shouldSuppressParentStateTransition(sidechain, true)).toBe(true);
   });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../store/sessions";
 import { tapEventBus } from "../lib/tapEventBus";
-import { reduceTapEvent } from "../lib/tapStateReducer";
+import { reduceTapEvent, shouldSuppressParentStateTransition } from "../lib/tapStateReducer";
 import { TapMetadataAccumulator } from "../lib/tapMetadataAccumulator";
 import { TapSubagentTracker } from "../lib/tapSubagentTracker";
 import { getResumeId, resolveModelFamily } from "../lib/claude";
@@ -43,6 +43,22 @@ function eventDetail(event: TapEvent): string {
     default:
       return "";
   }
+}
+
+function stateTransitionData(prevState: SessionState, newState: SessionState, event: TapEvent) {
+  return {
+    event: "tap.state_transition",
+    data: {
+      prevState,
+      newState,
+      kind: event.kind,
+      cat: event.cat ?? null,
+      toolName: "toolName" in event ? event.toolName : null,
+      stopReason: "stopReason" in event ? event.stopReason : null,
+      messageType: "messageType" in event ? event.messageType : null,
+      isSidechain: "isSidechain" in event ? event.isSidechain : null,
+    },
+  };
 }
 
 // [SI-13] Event priority: runs reduceTapEvent which enforces sticky actionNeeded guard
@@ -125,9 +141,22 @@ export function useTapEventProcessor(
       const prevState = stateRef.current;
       const newState = reduceTapEvent(prevState, event);
       if (newState !== prevState) {
-        dlog("inspector", sid, `state ${prevState} → ${newState} (${event.kind})`);
-        stateRef.current = newState;
-        updateState(sid, newState);
+        const transitionData = stateTransitionData(prevState, newState, event);
+        const ambiguousSubagentState = subTracker.isSidechainActive() || subTracker.hasActiveAgents();
+        if (shouldSuppressParentStateTransition(event, ambiguousSubagentState)) {
+          dlog("inspector", sid, `suppressed ${prevState} → ${newState} (subagent context active, event=${event.kind})`, "DEBUG", {
+            ...transitionData,
+            data: {
+              ...transitionData.data,
+              ambiguousSubagentState,
+              suppressReason: "active-subagent-ambiguous-event",
+            },
+          });
+        } else {
+          dlog("inspector", sid, `state ${prevState} → ${newState} (${event.kind})`, "LOG", transitionData);
+          stateRef.current = newState;
+          updateState(sid, newState);
+        }
       } else if (!getNoisyEventKinds(sessionCli).has(event.kind)) {
         dlog("inspector", sid, `state ${prevState} unchanged by ${event.kind}`, "DEBUG");
       }
