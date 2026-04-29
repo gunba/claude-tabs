@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildInitialLauncherConfig } from "../sessionLauncherConfig";
+import {
+  buildInitialLauncherConfig,
+  buildWorkspaceLauncherConfig,
+} from "../sessionLauncherConfig";
 import { DEFAULT_SESSION_CONFIG, type SessionConfig } from "../../types/session";
 
 function config(overrides: Partial<SessionConfig> = {}): SessionConfig {
@@ -170,5 +173,53 @@ describe("buildInitialLauncherConfig", () => {
     expect(result.permissionMode).toBe("planMode");
     expect(result.codexSandboxMode).toBeNull();
     expect(result.codexApprovalPolicy).toBeNull();
+  });
+});
+
+describe("buildWorkspaceLauncherConfig", () => {
+  it("builds a fresh workspace config from saved defaults and matching workspace defaults", () => {
+    const result = buildWorkspaceLauncherConfig({
+      workingDir: "/projects/other",
+      lastConfig: config({ cli: "claude", model: "sonnet" }),
+      savedDefaults: config({
+        workingDir: "/projects/myapp",
+        cli: "claude",
+        model: "opus",
+        effort: "high",
+        resumeSession: "one-shot",
+        runMode: true,
+      }),
+      workspaceDefaults: {
+        "/projects/other": {
+          cli: "codex",
+          model: "gpt-5.5",
+          effort: "medium",
+        },
+      },
+    });
+
+    expect(result.workingDir).toBe("/projects/other");
+    expect(result.cli).toBe("codex");
+    expect(result.model).toBe("gpt-5.5");
+    expect(result.effort).toBe("medium");
+    expect(result.resumeSession).toBeNull();
+    expect(result.runMode).toBe(false);
+  });
+
+  it("falls back to global defaults when the workspace has no defaults", () => {
+    const result = buildWorkspaceLauncherConfig({
+      workingDir: "/projects/other",
+      lastConfig: config({ cli: "claude", model: "sonnet" }),
+      savedDefaults: config({
+        workingDir: "/projects/myapp",
+        cli: "codex",
+        model: "gpt-5",
+      }),
+      workspaceDefaults: {},
+    });
+
+    expect(result.workingDir).toBe("/projects/other");
+    expect(result.cli).toBe("codex");
+    expect(result.model).toBe("gpt-5");
   });
 });

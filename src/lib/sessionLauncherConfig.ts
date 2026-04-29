@@ -74,3 +74,25 @@ export function buildInitialLauncherConfig(params: {
 
   return migrateCodexPerms(merged);
 }
+
+export function buildWorkspaceLauncherConfig(params: {
+  workingDir: string;
+  lastConfig: SessionConfig;
+  savedDefaults: SessionConfig | null;
+  workspaceDefaults: Record<string, Partial<SessionConfig>>;
+}): SessionConfig {
+  const baseline = params.savedDefaults ?? params.lastConfig;
+  return buildInitialLauncherConfig({
+    lastConfig: {
+      ...baseline,
+      workingDir: params.workingDir,
+      resumeSession: null,
+      continueSession: false,
+      sessionId: null,
+      runMode: false,
+      forkSession: false,
+    },
+    savedDefaults: null,
+    workspaceDefaults: params.workspaceDefaults,
+  });
+}

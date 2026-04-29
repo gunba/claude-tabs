@@ -7,13 +7,11 @@ import { dlog } from "../../lib/debugLog";
 import type { CliOption, CliCommand } from "../../store/settings";
 import { dirToTabName, computeHeatLevel, heatClassName } from "../../lib/claude";
 import { normalizePath, parseWorktreePath } from "../../lib/paths";
-import { buildInitialLauncherConfig } from "../../lib/sessionLauncherConfig";
 import {
   type SessionConfig,
   type PermissionMode,
   type CodexSandboxMode,
   type CodexApprovalPolicy,
-  DEFAULT_SESSION_CONFIG,
   ANTHROPIC_EFFORTS,
   ANTHROPIC_MODELS,
   CODEX_SANDBOX_OPTIONS,
@@ -23,6 +21,7 @@ import { IconReturn, IconFolder, IconModelDiamond, IconLock, IconLightning, Icon
 import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import { PillGroup } from "../PillGroup/PillGroup";
 import { Dropdown } from "../Dropdown/Dropdown";
+import { useSessionConfig } from "./useSessionConfig";
 import "./SessionLauncher.css";
 
 // ── Option definitions ──────────────────────────────────────────────
@@ -95,29 +94,32 @@ export function SessionLauncher() {
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
   const setShowConfigManager = useSettingsStore((s) => s.setShowConfigManager);
 
-  // Resume launches use the session-specific config from lastConfig.
-  // Fresh launches can layer workspace defaults over saved/global defaults.
-  const [config, setConfig] = useState<SessionConfig>(() => buildInitialLauncherConfig({
+  const {
+    config,
+    switchWorkspace,
+    updateConfig: dispatchConfigUpdate,
+    validateAdapterOption,
+  } = useSessionConfig({
     lastConfig,
     savedDefaults,
     workspaceDefaults,
-  }));
+  });
   const isUtilityRef = useRef(false);
   const mountedRef = useRef(false);
   const launchingRef = useRef(false);
+  const [launchError, setLaunchError] = useState<string>("");
   const [showCliOptions, setShowCliOptions] = useState(true);
   const [showUtility, setShowUtility] = useState(false);
   const [defaultsSaved, setDefaultsSaved] = useState(false);
   const [selectedPromptId, setSelectedPromptId] = useState<string>("");
   const [promptMode, setPromptMode] = useState<"replace" | "append">("replace");
-  const [launchError, setLaunchError] = useState<string>("");
 
   const updateConfig = useCallback(
     <K extends keyof SessionConfig>(key: K, value: SessionConfig[K]) => {
       if (key === "workingDir") setLaunchError("");
-      setConfig((prev) => ({ ...prev, [key]: value }));
+      dispatchConfigUpdate(key, value);
     },
-    []
+    [dispatchConfigUpdate],
   );
 
   // [DU-01] availableCliKinds gating; selectedCliInstalled error banner; buildFullCommand maps Codex permissionMode -> --sandbox/--ask-for-approval combinations and effort -> -c model_reasoning_effort="..."
@@ -222,40 +224,9 @@ export function SessionLauncher() {
 
   // [SL-21] Load workspace-specific defaults when switching workspace via browse or recent chip
   const applyWorkspaceDefaults = useCallback((dir: string) => {
-    const wt = parseWorktreePath(dir);
-    const wsKey = normalizePath(wt ? wt.projectRoot : dir).toLowerCase();
-    const wsDefaults = wsKey
-      ? useSettingsStore.getState().workspaceDefaults[wsKey]
-      : undefined;
-    if (wsDefaults) {
-      setConfig((prev) => ({
-        ...prev,
-        ...wsDefaults,
-        workingDir: dir,
-        resumeSession: null,
-        continueSession: false,
-        sessionId: null,
-        runMode: false,
-        forkSession: false,
-      }));
-    } else {
-      // No workspace defaults — reset to global baseline so settings from
-      // a previously-selected workspace don't leak into the new one
-      const { savedDefaults: sd, lastConfig: lc } = useSettingsStore.getState();
-      const baseline = sd ?? lc;
-      setConfig({
-        ...DEFAULT_SESSION_CONFIG,
-        ...baseline,
-        workingDir: dir,
-        resumeSession: null,
-        continueSession: false,
-        sessionId: null,
-        runMode: false,
-        forkSession: false,
-      });
-    }
+    switchWorkspace(dir);
     setLaunchError("");
-  }, []);
+  }, [switchWorkspace]);
 
   const handlePermChange = useCallback((value: PermissionMode | null) => {
     updateConfig("permissionMode", value ?? "default");
@@ -324,16 +295,12 @@ export function SessionLauncher() {
   // When switching CLIs, the previously-selected model/effort may not exist
   // on the new CLI. Drop back to "default" instead of leaving an empty box.
   useEffect(() => {
-    if (config.model && adapterModels.length > 0 && !adapterModels.some((m) => m.value === config.model)) {
-      updateConfig("model", null);
-    }
-  }, [adapterModels, config.model, updateConfig]);
+    validateAdapterOption("model", adapterModels);
+  }, [adapterModels, validateAdapterOption]);
 
   useEffect(() => {
-    if (config.effort && adapterEfforts.length > 0 && !adapterEfforts.some((e) => e.value === config.effort)) {
-      updateConfig("effort", null);
-    }
-  }, [adapterEfforts, config.effort, updateConfig]);
+    validateAdapterOption("effort", adapterEfforts);
+  }, [adapterEfforts, validateAdapterOption]);
 
   const handleModelSelect = useCallback((value: string) => {
     updateConfig("model", value || null);
