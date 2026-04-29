@@ -22,7 +22,7 @@ import {
 } from "../../lib/codexSchema";
 import { parseToml, flattenTomlKeys } from "../../lib/tomlParse";
 import { highlightToml } from "../../lib/tomlHighlight";
-import { HighlightedTextFileEditor, useTextFileEditor } from "./TextFileEditor";
+import { HighlightedTextFileEditor, TextFileExternalChangeNotice, useTextFileEditor } from "./TextFileEditor";
 
 // [CM-13] JSON textarea with syntax highlighting overlay (pre behind transparent textarea)
 /** Tokenize JSON text and wrap tokens in colored spans. */
@@ -285,6 +285,7 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
     initialText,
     read,
     write,
+    watch: { scope, workingDir, fileType },
   });
 
   // Parse current text for validation + "already set" tracking. Codex uses
@@ -432,7 +433,8 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
       )}
 
       <div className="pane-footer">
-        {hasValidation && (
+        {editor.externalChanged && <TextFileExternalChangeNotice editor={editor} />}
+        {!editor.externalChanged && hasValidation && (
           <span className="sr-validation">
             {parseError && <span className="sr-validation-error">Invalid {formatLabel}</span>}
             {parseError && unknownLabel && " \u2022 "}
@@ -441,7 +443,7 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
             {mismatchLabel && <span className="sr-validation-error">{mismatchLabel}</span>}
           </span>
         )}
-        {!hasValidation && !parseError && currentKeys.size > 0 && (
+        {!editor.externalChanged && !hasValidation && !parseError && currentKeys.size > 0 && (
           <span className="sr-validation sr-validation-ok">Valid</span>
         )}
         <button className="pane-save-btn" onClick={handleSave} disabled={!editor.dirty}>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
+import { useConfigFileWatcher } from "../../lib/configFileWatcher";
+import type { ConfigFileWatchTarget } from "../../lib/configFileWatcher";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
 
 interface UseTextFileEditorOptions {
@@ -8,6 +10,7 @@ interface UseTextFileEditorOptions {
   initialText: string;
   read: () => Promise<string>;
   write: (value: string) => Promise<void>;
+  watch?: ConfigFileWatchTarget;
 }
 
 export interface TextFileEditorController {
@@ -15,12 +18,13 @@ export interface TextFileEditorController {
   saved: string;
   loading: boolean;
   dirty: boolean;
+  externalChanged: boolean;
   seedKey: number;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   preRef: RefObject<HTMLPreElement | null>;
   setText: (value: string) => void;
   currentValue: () => string;
-  reload: () => Promise<void>;
+  reload: (options?: { showLoading?: boolean }) => Promise<void>;
   reset: (value: string) => void;
   save: () => Promise<string>;
   syncScroll: () => void;
@@ -34,31 +38,41 @@ export function useTextFileEditor({
   initialText,
   read,
   write,
+  watch,
 }: UseTextFileEditorOptions): TextFileEditorController {
   const [text, setText] = useState(initialText);
   const [saved, setSaved] = useState(initialText);
   const [loading, setLoading] = useState(true);
+  const [externalChanged, setExternalChanged] = useState(false);
   const [seedKey, setSeedKey] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const preRef = useRef<HTMLPreElement | null>(null);
   const loadSeqRef = useRef(0);
+  const textRef = useRef(text);
+  const savedRef = useRef(saved);
+  const loadingRef = useRef(loading);
+
+  useEffect(() => { textRef.current = text; }, [text]);
+  useEffect(() => { savedRef.current = saved; }, [saved]);
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
 
   const currentValue = useCallback(
-    () => textareaRef.current?.value ?? text,
-    [text],
+    () => textareaRef.current?.value ?? textRef.current,
+    [],
   );
 
   const reset = useCallback((value: string) => {
     setText(value);
     setSaved(value);
+    setExternalChanged(false);
     setSeedKey((k) => k + 1);
     setLoading(false);
   }, []);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (options?: { showLoading?: boolean }) => {
     const seq = loadSeqRef.current + 1;
     loadSeqRef.current = seq;
-    setLoading(true);
+    if (options?.showLoading !== false) setLoading(true);
     let value = initialText;
     try {
       value = await read();
@@ -76,6 +90,7 @@ export function useTextFileEditor({
     await write(value);
     setText(value);
     setSaved(value);
+    setExternalChanged(false);
     return value;
   }, [currentValue, write]);
 
@@ -92,11 +107,22 @@ export function useTextFileEditor({
     return { title, before: saved, after };
   });
 
+  useConfigFileWatcher(watch, () => {
+    if (loadingRef.current) return;
+    const after = currentValue();
+    if (after === savedRef.current) {
+      void reload({ showLoading: false });
+    } else {
+      setExternalChanged(true);
+    }
+  });
+
   return {
     text,
     saved,
     loading,
     dirty: text !== saved,
+    externalChanged,
     seedKey,
     textareaRef,
     preRef,
@@ -147,6 +173,26 @@ export function TextFileTextarea({
         onKeyDown?.(e);
       }}
     />
+  );
+}
+
+export function TextFileExternalChangeNotice({
+  editor,
+}: {
+  editor: TextFileEditorController;
+}) {
+  if (!editor.externalChanged) return null;
+  return (
+    <span className="text-file-change-notice">
+      <span>File changed on disk</span>
+      <button
+        type="button"
+        className="text-file-reload-btn"
+        onClick={() => { void editor.reload(); }}
+      >
+        Reload
+      </button>
+    </span>
   );
 }
 

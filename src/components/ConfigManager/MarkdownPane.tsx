@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { insertTextAtCursor } from "../../lib/domEdit";
-import { TextFileTextarea, useTextFileEditor } from "./TextFileEditor";
+import { TextFileExternalChangeNotice, TextFileTextarea, useTextFileEditor } from "./TextFileEditor";
 import "./MarkdownPane.css";
 
 // [CM-14] Scope-to-fileType mapping.
@@ -57,6 +57,7 @@ export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponent
     initialText: "",
     read,
     write,
+    watch: { scope, workingDir, fileType },
   });
 
   const handleSave = useCallback(async () => {
@@ -92,7 +93,7 @@ export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponent
     } catch (err) {
       onStatus({ text: `Copy failed: ${err}`, type: "error" });
     }
-  }, [scope, workingDir, peerFileType, peerName, fileType, onStatus]);
+  }, [scope, workingDir, peerFileType, peerName, fileType, editor, onStatus]);
 
   const handleLinkFromPeer = useCallback(async () => {
     try {
@@ -134,6 +135,7 @@ export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponent
         />
       )}
       <div className="pane-footer">
+        <TextFileExternalChangeNotice editor={editor} />
         <button // [CM-23] Preview/Edit toggle with ReactMarkdown rendering
           className={`pane-preview-btn${preview ? " pane-preview-btn-active" : ""}`}
           onClick={() => setPreview(!preview)}

@@ -1132,6 +1132,29 @@
   color: var(--error);
 }
 
+.text-file-change-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-size: 10px;
+  color: var(--warning);
+}
+
+.text-file-reload-btn {
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
+  border-radius: 5px;
+  background: transparent;
+  color: var(--warning);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 7px;
+}
+
+.text-file-reload-btn:hover {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
 /* ── Settings Tab (unified layout) ───────────────── */
 
 .settings-tab {

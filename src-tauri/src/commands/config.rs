@@ -1,8 +1,46 @@
 use super::data::get_data_dir;
 use crate::observability::record_backend_event;
+use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Manager};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+pub struct ConfigFileWatcherState {
+    inner: Mutex<ConfigFileWatcherInner>,
+}
+
+struct ConfigFileWatcherInner {
+    next_id: u64,
+    watchers: HashMap<String, ConfigFileWatcherEntry>,
+}
+
+struct ConfigFileWatcherEntry {
+    _watcher: notify::RecommendedWatcher,
+}
+
+impl Default for ConfigFileWatcherState {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(ConfigFileWatcherInner {
+                next_id: 1,
+                watchers: HashMap::new(),
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigFileChangedPayload {
+    watch_id: String,
+    scope: String,
+    working_dir: String,
+    file_type: String,
+    path: String,
+}
 
 fn log_discovery(app: &AppHandle, event: &str, message: &str, data: serde_json::Value) {
     record_backend_event(app, "LOG", "discovery", None, event, message, data);
@@ -848,6 +886,131 @@ fn resolve_config_path(
     file_type: &str,
 ) -> Result<std::path::PathBuf, String> {
     ConfigKind::parse(file_type)?.resolve(scope, working_dir)
+}
+
+fn resolve_watch_config_path(
+    app: &AppHandle,
+    scope: &str,
+    working_dir: &str,
+    file_type: &str,
+) -> Result<PathBuf, String> {
+    if file_type == "codex-spawn-env" {
+        return codex_spawn_env_file(app, scope, working_dir);
+    }
+    resolve_config_path(scope, working_dir, file_type)
+}
+
+fn is_change_event(kind: &EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::Any
+            | EventKind::Create(_)
+            | EventKind::Modify(_)
+            | EventKind::Remove(_)
+            | EventKind::Other
+    )
+}
+
+#[cfg(windows)]
+fn same_path(left: &Path, right: &Path) -> bool {
+    left == right || left.to_string_lossy().eq_ignore_ascii_case(&right.to_string_lossy())
+}
+
+#[cfg(not(windows))]
+fn same_path(left: &Path, right: &Path) -> bool {
+    left == right
+}
+
+fn event_touches_target(paths: &[PathBuf], target: &Path) -> bool {
+    paths.iter().any(|path| {
+        if same_path(path, target) {
+            return true;
+        }
+        match (std::fs::canonicalize(path), std::fs::canonicalize(target)) {
+            (Ok(left), Ok(right)) => same_path(&left, &right),
+            _ => false,
+        }
+    })
+}
+
+/// Watch one resolved config file and emit `config_file_changed` when it changes.
+///
+/// The watcher attaches to the parent directory so file creation, deletion, and
+/// atomic replace sequences all surface as deterministic filesystem events.
+#[tauri::command]
+pub fn watch_config_file(
+    app: AppHandle,
+    state: State<'_, ConfigFileWatcherState>,
+    scope: String,
+    working_dir: String,
+    file_type: String,
+) -> Result<String, String> {
+    let target = resolve_watch_config_path(&app, &scope, &working_dir, &file_type)?;
+    let watch_dir = target
+        .parent()
+        .ok_or_else(|| format!("Config path has no parent: {}", target.display()))?
+        .to_path_buf();
+    if !watch_dir.is_dir() {
+        return Err(format!("Config directory does not exist: {}", watch_dir.display()));
+    }
+
+    let watch_id = {
+        let mut inner = state
+            .inner
+            .lock()
+            .map_err(|_| "config watcher state poisoned".to_string())?;
+        let id = format!("config-watch-{}", inner.next_id);
+        inner.next_id += 1;
+        id
+    };
+
+    let payload_base = ConfigFileChangedPayload {
+        watch_id: watch_id.clone(),
+        scope: scope.clone(),
+        working_dir: working_dir.clone(),
+        file_type: file_type.clone(),
+        path: target.to_string_lossy().to_string(),
+    };
+    let app_for_event = app.clone();
+    let target_for_event = target.clone();
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else {
+            return;
+        };
+        if !is_change_event(&event.kind) || !event_touches_target(&event.paths, &target_for_event)
+        {
+            return;
+        }
+        let _ = app_for_event.emit("config_file_changed", payload_base.clone());
+    })
+    .map_err(|e| format!("notify watcher: {e}"))?;
+
+    watcher
+        .watch(&watch_dir, RecursiveMode::NonRecursive)
+        .map_err(|e| format!("notify watch {}: {e}", watch_dir.display()))?;
+
+    let mut inner = state
+        .inner
+        .lock()
+        .map_err(|_| "config watcher state poisoned".to_string())?;
+    inner.watchers.insert(
+        watch_id.clone(),
+        ConfigFileWatcherEntry { _watcher: watcher },
+    );
+    Ok(watch_id)
+}
+
+#[tauri::command]
+pub fn stop_watching_config_file(
+    state: State<'_, ConfigFileWatcherState>,
+    watch_id: String,
+) -> Result<(), String> {
+    let mut inner = state
+        .inner
+        .lock()
+        .map_err(|_| "config watcher state poisoned".to_string())?;
+    inner.watchers.remove(&watch_id);
+    Ok(())
 }
 
 // [RC-12] Config files read/write: settings JSON, CLAUDE.md (3 scopes), agent/skill files

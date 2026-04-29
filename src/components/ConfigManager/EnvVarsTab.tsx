@@ -10,7 +10,7 @@ import { highlightJson } from "./SettingsPane";
 import { EnvVarsReference } from "./EnvVarsReference";
 import { replaceTextareaValue } from "../../lib/domEdit";
 import type { StatusMessage } from "../../lib/settingsSchema";
-import { HighlightedTextFileEditor, useTextFileEditor } from "./TextFileEditor";
+import { HighlightedTextFileEditor, TextFileExternalChangeNotice, useTextFileEditor } from "./TextFileEditor";
 
 type Scope = PaneComponentProps["scope"];
 
@@ -181,6 +181,7 @@ function EnvPane({ cli, scope, projectDir, onStatus, onEnvKeysChange, insertRef,
     initialText: "{}",
     read,
     write,
+    watch: { scope, workingDir, fileType: cli === "codex" ? "codex-spawn-env" : "settings" },
   });
 
   const { envKeys, parseError } = useMemo(() => {
@@ -236,12 +237,13 @@ function EnvPane({ cli, scope, projectDir, onStatus, onEnvKeysChange, insertRef,
       />
 
       <div className="pane-footer">
-        {parseError && (
+        {editor.externalChanged && <TextFileExternalChangeNotice editor={editor} />}
+        {!editor.externalChanged && parseError && (
           <span className="sr-validation">
             <span className="sr-validation-error">Invalid JSON</span>
           </span>
         )}
-        {!parseError && envKeys.size > 0 && (
+        {!editor.externalChanged && !parseError && envKeys.size > 0 && (
           <span className="sr-validation sr-validation-ok">Valid</span>
         )}
         <button className="pane-save-btn" onClick={handleSave} disabled={!editor.dirty}>
