@@ -4,6 +4,7 @@ import { formatTokenCount } from "../../lib/claude";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import type { CliKind } from "../../types/session";
 import { Dropdown } from "../Dropdown/Dropdown";
+import { useFlashStatus } from "./useFlashStatus";
 import "./PluginsPane.css";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -99,6 +100,7 @@ function sortPlugins<T extends { pluginId?: string; name?: string; id?: string; 
 // [CM-16] CLI-driven plugin manager: single-pane, installed cards with toggle, marketplace grid
 
 export function PluginsTab({ visible, projectDir, cli, onStatus }: PluginsTabProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const [installed, setInstalled] = useState<InstalledPlugin[]>([]);
   const [available, setAvailable] = useState<AvailablePlugin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,14 +176,13 @@ export function PluginsTab({ visible, projectDir, cli, onStatus }: PluginsTabPro
     setPendingOp(pluginId);
     try {
       await op();
-      onStatus({ text: `${opName} successful`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `${opName} successful`, type: "success" });
       await loadPlugins();
     } catch (err) {
       onStatus({ text: `${opName} failed: ${err}`, type: "error" });
     }
     setPendingOp(null);
-  }, [loadPlugins, onStatus]);
+  }, [loadPlugins, flashStatus, onStatus]);
 
   const handleInstall = useCallback((name: string) => {
     if (cli === "codex") return;

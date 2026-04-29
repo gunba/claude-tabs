@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Dropdown } from "../Dropdown/Dropdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
+import { useFlashStatus } from "./useFlashStatus";
 import "./McpPane.css";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -194,6 +195,7 @@ function isFormValid(form: FormState, servers: Record<string, McpServerEntry>, e
 // ── Component ────────────────────────────────────────────────────────────
 
 export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const [servers, setServers] = useState<Record<string, McpServerEntry>>({});
   const [editing, setEditing] = useState<FlatServer | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -223,13 +225,12 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
         scope, workingDir,
         serversJson: JSON.stringify(updated),
       });
-      onStatus({ text: "MCP servers saved", type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: "MCP servers saved", type: "success" });
       await loadServers();
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [scope, workingDir, cli, loadServers, onStatus]);
+  }, [scope, workingDir, cli, loadServers, flashStatus, onStatus]);
 
   const handleSave = useCallback(async () => {
     if (!isFormValid(form, servers, editing)) return;
@@ -317,15 +318,14 @@ export function McpPane({ scope, projectDir, cli, onStatus }: PaneComponentProps
       }
       await saveServers(updated);
       setServers(updated);
-      onStatus({
+      flashStatus({
         text: `Copied ${copied} MCP server${copied === 1 ? "" : "s"} from ${peerName}${skipped ? ` (${skipped} skipped)` : ""}`,
         type: "success",
       });
-      setTimeout(() => onStatus(null), 2000);
     } catch (err) {
       onStatus({ text: `Copy failed: ${err}`, type: "error" });
     }
-  }, [peerCli, peerName, scope, workingDir, servers, copyMode, cli, saveServers, onStatus]);
+  }, [peerCli, peerName, scope, workingDir, servers, copyMode, cli, saveServers, flashStatus, onStatus]);
 
   const flatServers: FlatServer[] = Object.entries(servers).map(([name, server]) => ({ name, server }));
 

@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { insertTextAtCursor } from "../../lib/domEdit";
 import { TextFileExternalChangeNotice, TextFileTextarea, useTextFileEditor } from "./TextFileEditor";
+import { useFlashStatus } from "./useFlashStatus";
 import "./MarkdownPane.css";
 
 // [CM-14] Scope-to-fileType mapping.
@@ -21,6 +22,7 @@ const CODEX_SCOPE_TO_FILETYPE: Record<string, string> = {
 
 export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
   const [preview, setPreview] = useState(false);
+  const flashStatus = useFlashStatus(onStatus);
 
   const fileType = (cli === "codex" ? CODEX_SCOPE_TO_FILETYPE : CLAUDE_SCOPE_TO_FILETYPE)[scope];
   const docName = cli === "codex" ? "AGENTS.md" : "CLAUDE.md";
@@ -63,12 +65,11 @@ export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponent
   const handleSave = useCallback(async () => {
     try {
       await editor.save();
-      onStatus({ text: `${docName} saved`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `${docName} saved`, type: "success" });
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [editor, docName, onStatus]);
+  }, [editor, docName, flashStatus, onStatus]);
 
   const handleCopyFromPeer = useCallback(async () => {
     try {
@@ -88,12 +89,11 @@ export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponent
         content: result,
       });
       editor.reset(result);
-      onStatus({ text: `Copied instructions from ${peerName}`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `Copied instructions from ${peerName}`, type: "success" });
     } catch (err) {
       onStatus({ text: `Copy failed: ${err}`, type: "error" });
     }
-  }, [scope, workingDir, peerFileType, peerName, fileType, editor, onStatus]);
+  }, [scope, workingDir, peerFileType, peerName, fileType, editor, flashStatus, onStatus]);
 
   const handleLinkFromPeer = useCallback(async () => {
     try {
@@ -105,12 +105,11 @@ export function MarkdownPane({ scope, projectDir, cli, onStatus }: PaneComponent
         overwrite: true,
       });
       await editor.reload();
-      onStatus({ text: `Linked instructions from ${peerName}`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `Linked instructions from ${peerName}`, type: "success" });
     } catch (err) {
       onStatus({ text: `Link failed: ${err}`, type: "error" });
     }
-  }, [scope, workingDir, peerFileType, fileType, peerName, editor, onStatus]);
+  }, [scope, workingDir, peerFileType, fileType, peerName, editor, flashStatus, onStatus]);
 
   if (editor.loading) return <div className="pane-hint">Loading...</div>;
 

@@ -23,6 +23,7 @@ import {
 import { parseToml, flattenTomlKeys } from "../../lib/tomlParse";
 import { highlightToml } from "../../lib/tomlHighlight";
 import { HighlightedTextFileEditor, TextFileExternalChangeNotice, useTextFileEditor } from "./TextFileEditor";
+import { useFlashStatus } from "./useFlashStatus";
 
 // [CM-13] JSON textarea with syntax highlighting overlay (pre behind transparent textarea)
 /** Tokenize JSON text and wrap tokens in colored spans. */
@@ -223,6 +224,7 @@ export interface SettingsPaneExtraProps {
 }
 
 export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, onKeysChange, insertRef, onEditorFocus }: PaneComponentProps & SettingsPaneExtraProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const cliCapabilitiesByCli = useSettingsStore((s) => s.cliCapabilitiesByCli);
   const binarySettingsFieldsByCli = useSettingsStore((s) => s.binarySettingsFieldsByCli);
   const settingsSchemaByCli = useSettingsStore((s) => s.settingsSchemaByCli);
@@ -331,13 +333,12 @@ export function SettingsPane({ scope, projectDir, cli, onStatus, hideReference, 
   const handleSave = useCallback(async () => {
     try {
       await editor.save();
-      onStatus({ text: cli === "codex" ? "Codex config saved" : "Settings saved", type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: cli === "codex" ? "Codex config saved" : "Settings saved", type: "success" });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       onStatus({ text: message.startsWith("Invalid ") ? message : `Save failed: ${message}`, type: "error" });
     }
-  }, [cli, editor, onStatus]);
+  }, [cli, editor, flashStatus, onStatus]);
 
   // Insert reformats the entire JSON / TOML document. We replace the textarea
   // value through the browser's edit history (execCommand) so the change is a

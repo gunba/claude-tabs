@@ -11,6 +11,7 @@ import { EnvVarsReference } from "./EnvVarsReference";
 import { replaceTextareaValue } from "../../lib/domEdit";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import { HighlightedTextFileEditor, TextFileExternalChangeNotice, useTextFileEditor } from "./TextFileEditor";
+import { useFlashStatus } from "./useFlashStatus";
 
 type Scope = PaneComponentProps["scope"];
 
@@ -111,6 +112,7 @@ interface EnvPaneProps {
 }
 
 function EnvPane({ cli, scope, projectDir, onStatus, onEnvKeysChange, insertRef, onEditorFocus }: EnvPaneProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const workingDir = scope === "user" ? "" : projectDir;
   const scopeLabel = scope === "project-local" ? "Project local" : scope === "project" ? "Project" : "User";
 
@@ -218,13 +220,12 @@ function EnvPane({ cli, scope, projectDir, onStatus, onEnvKeysChange, insertRef,
   const handleSave = useCallback(async () => {
     try {
       await editor.save();
-      onStatus({ text: "Env vars saved", type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: "Env vars saved", type: "success" });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       onStatus({ text: message.startsWith("Invalid JSON:") ? message : `Save failed: ${message}`, type: "error" });
     }
-  }, [editor, onStatus]);
+  }, [editor, flashStatus, onStatus]);
 
   if (editor.loading) return <div className="pane-hint">Loading...</div>;
 

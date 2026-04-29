@@ -4,6 +4,7 @@ import { useSessionStore } from "../../store/sessions";
 import { Dropdown } from "../Dropdown/Dropdown";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
+import { useFlashStatus } from "./useFlashStatus";
 import "./HooksPane.css";
 
 // [HM-05] Custom events: includes "Custom event..." option with freeform text input
@@ -113,6 +114,7 @@ function formToDiffText(form: FormState): string {
 // [HM-01] Three scopes: User, Project, Project Local
 // [HM-03] Non-destructive saves: merges hooks into existing settings (preserves other keys)
 export function HooksPane({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const [hooksData, setHooksData] = useState<Record<string, Record<string, MatcherGroup[]>>>({});
   const [editing, setEditing] = useState<FlatHook | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -164,14 +166,13 @@ export function HooksPane({ scope, projectDir, cli, onStatus }: PaneComponentPro
         workingDir,
         hooksJson: JSON.stringify(updatedHooks),
       });
-      onStatus({ text: "Hooks saved", type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: "Hooks saved", type: "success" });
       await loadHooks();
       useSessionStore.getState().bumpHookChange();
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [scope, projectDir, cli, loadHooks, onStatus]);
+  }, [scope, projectDir, cli, loadHooks, flashStatus, onStatus]);
 
   // [HM-04] Edit preserves unknown fields via spread of original entry
   const handleSave = useCallback(() => {

@@ -4,9 +4,11 @@ import { insertTextAtCursor } from "../../lib/domEdit";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
+import { useFlashStatus } from "./useFlashStatus";
 
 // [CM-07] Agent editor: pills + editor, auto-select first, duplicate name validation, Ctrl+S save/create
 export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const [agents, setAgents] = useState<AgentFile[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [content, setContent] = useState("");
@@ -83,12 +85,11 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
         content: value,
       });
       setSavedContent(value);
-      onStatus({ text: "Agent saved", type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: "Agent saved", type: "success" });
     } catch (err) {
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [selectedAgent, scope, workingDir, content, onStatus]);
+  }, [selectedAgent, scope, workingDir, content, flashStatus, onStatus]);
 
   const handleCreate = useCallback(async () => {
     const name = newAgentName.trim().replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -109,12 +110,11 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
       await loadAgents();
       setSelectedAgent(name);
       setSavedContent(value);
-      onStatus({ text: `Agent "${name}" created`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `Agent "${name}" created`, type: "success" });
     } catch (err) {
       onStatus({ text: `Create failed: ${err}`, type: "error" });
     }
-  }, [newAgentName, scope, workingDir, content, agents, loadAgents, onStatus]);
+  }, [newAgentName, scope, workingDir, content, agents, loadAgents, flashStatus, onStatus]);
 
   const handleDelete = useCallback(async () => {
     if (!selectedAgent || selectedAgent === "__new__") return;
@@ -127,12 +127,11 @@ export function AgentEditor({ scope, projectDir, onStatus }: PaneComponentProps)
       });
       setSelectedAgent(null);
       await loadAgents();
-      onStatus({ text: `Agent "${selectedAgent}" deleted`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `Agent "${selectedAgent}" deleted`, type: "success" });
     } catch (err) {
       onStatus({ text: `Delete failed: ${err}`, type: "error" });
     }
-  }, [selectedAgent, scope, workingDir, loadAgents, onStatus]);
+  }, [selectedAgent, scope, workingDir, loadAgents, flashStatus, onStatus]);
 
   const isNew = selectedAgent === "__new__";
   const dirty = isNew ? newAgentName.trim() !== "" && content !== "" : content !== savedContent;

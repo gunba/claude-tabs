@@ -6,6 +6,7 @@ import { insertTextAtCursor } from "../../lib/domEdit";
 import type { AgentFile } from "../../lib/settingsSchema";
 import type { PaneComponentProps } from "./ThreePaneEditor";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
+import { useFlashStatus } from "./useFlashStatus";
 
 type Kind = "command" | "skill";
 
@@ -31,6 +32,7 @@ const NEW_SKILL = "__new_skill__";
 
 // [CM-30] SkillsEditor lists commands (.claude/commands/) and skills (.claude/skills/) merged via list_skills (kind tag)
 export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponentProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const [entries, setEntries] = useState<AgentFile[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState("");
@@ -124,14 +126,13 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
         content: value,
       });
       setSavedContent(value);
-      onStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} saved`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} saved`, type: "success" });
       useSettingsStore.getState().triggerCommandRefresh();
     } catch (err) {
       dlog("config", null, `save ${parsed.kind} failed: ${err}`, "ERR");
       onStatus({ text: `Save failed: ${err}`, type: "error" });
     }
-  }, [selected, isNew, scope, workingDir, cli, content, onStatus]);
+  }, [selected, isNew, scope, workingDir, cli, content, flashStatus, onStatus]);
 
   const handleCreate = useCallback(async () => {
     const name = newName.trim().replace(/\.md$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -152,14 +153,13 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
       await loadEntries();
       setSelected(entryKey(newKind, name));
       setSavedContent(value);
-      onStatus({ text: `${newKind === "skill" ? "Skill" : "Command"} "${name}" created`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `${newKind === "skill" ? "Skill" : "Command"} "${name}" created`, type: "success" });
       useSettingsStore.getState().triggerCommandRefresh();
     } catch (err) {
       dlog("config", null, `create ${newKind} failed: ${err}`, "ERR");
       onStatus({ text: `Create failed: ${err}`, type: "error" });
     }
-  }, [newName, newKind, scope, workingDir, cli, content, entries, loadEntries, onStatus]);
+  }, [newName, newKind, scope, workingDir, cli, content, entries, loadEntries, flashStatus, onStatus]);
 
   const handleDelete = useCallback(async () => {
     if (!selected || isNew) return;
@@ -174,14 +174,13 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
       });
       setSelected(null);
       await loadEntries();
-      onStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} "${parsed.name}" deleted`, type: "success" });
-      setTimeout(() => onStatus(null), 2000);
+      flashStatus({ text: `${parsed.kind === "skill" ? "Skill" : "Command"} "${parsed.name}" deleted`, type: "success" });
       useSettingsStore.getState().triggerCommandRefresh();
     } catch (err) {
       dlog("config", null, `delete failed: ${err}`, "ERR");
       onStatus({ text: `Delete failed: ${err}`, type: "error" });
     }
-  }, [selected, isNew, scope, workingDir, cli, loadEntries, onStatus]);
+  }, [selected, isNew, scope, workingDir, cli, loadEntries, flashStatus, onStatus]);
 
   const handleCopyFromPeer = useCallback(async () => {
     setCopying(true);
@@ -196,17 +195,16 @@ export function SkillsEditor({ scope, projectDir, cli, onStatus }: PaneComponent
       await loadEntries();
       const copied = report.copied.length;
       const skipped = report.skipped.length;
-      onStatus({
+      flashStatus({
         text: `Copied ${copied} skill${copied === 1 ? "" : "s"} from ${peerName}${skipped ? ` (${skipped} skipped)` : ""}`,
         type: "success",
       });
-      setTimeout(() => onStatus(null), 2000);
     } catch (err) {
       onStatus({ text: `Copy failed: ${err}`, type: "error" });
     } finally {
       setCopying(false);
     }
-  }, [scope, workingDir, peerCli, cli, peerName, loadEntries, onStatus]);
+  }, [scope, workingDir, peerCli, cli, peerName, loadEntries, flashStatus, onStatus]);
 
   const dirty = isNew ? newName.trim() !== "" && content !== "" : content !== savedContent;
 

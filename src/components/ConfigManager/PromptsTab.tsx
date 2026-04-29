@@ -9,6 +9,7 @@ import type { GeneratedChangeset } from "../../lib/promptDiff";
 import type { CliKind, SystemPromptRule } from "../../types/session";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import { useUnsavedTextEditor } from "./UnsavedTextEditors";
+import { useFlashStatus } from "./useFlashStatus";
 import "./PromptsTab.css";
 
 interface PromptsTabProps {
@@ -221,6 +222,7 @@ const SUB_TABS: { value: "prompts" | "observed" | "rules"; label: string }[] = [
 ];
 
 export function PromptsTab({ cli, onStatus }: PromptsTabProps) {
+  const flashStatus = useFlashStatus(onStatus);
   const savedPrompts = useSettingsStore((s) => s.savedPrompts);
   const allObservedPrompts = useSettingsStore((s) => s.observedPrompts);
   const addSavedPrompt = useSettingsStore((s) => s.addSavedPrompt);
@@ -400,9 +402,8 @@ export function PromptsTab({ cli, onStatus }: PromptsTabProps) {
     if (!selectedSavedPromptId || !dirty) return;
     updateSavedPrompt(selectedSavedPromptId, { name: editName, text: editText });
     setDirty(false);
-    onStatus({ type: "success", text: "Prompt saved" });
-    setTimeout(() => onStatus(null), 2000);
-  }, [selectedSavedPromptId, dirty, editName, editText, updateSavedPrompt, onStatus]);
+    flashStatus({ type: "success", text: "Prompt saved" });
+  }, [selectedSavedPromptId, dirty, editName, editText, updateSavedPrompt, flashStatus]);
 
   const handleAdd = useCallback(() => {
     addSavedPrompt("New Prompt", "");
@@ -421,9 +422,8 @@ export function PromptsTab({ cli, onStatus }: PromptsTabProps) {
 
   const handleRuleSave = useCallback((id: string, updates: Partial<SystemPromptRule>) => {
     updateSystemPromptRule(id, updates);
-    onStatus({ type: "success", text: "Rule saved" });
-    setTimeout(() => onStatus(null), 2000);
-  }, [updateSystemPromptRule, onStatus]);
+    flashStatus({ type: "success", text: "Rule saved" });
+  }, [updateSystemPromptRule, flashStatus]);
 
   const handleRuleDelete = useCallback((id: string) => {
     removeSystemPromptRule(id);
@@ -444,12 +444,11 @@ export function PromptsTab({ cli, onStatus }: PromptsTabProps) {
     if (!observedEdited) return;
     const changeset = generateRulesAndConflicts(observedRawText, observedEditText, systemPromptRules);
     if (changeset.adds.length === 0 && changeset.deletes.length === 0) {
-      onStatus({ type: "error", text: "No rules could be generated from these changes" });
-      setTimeout(() => onStatus(null), 3000);
+      flashStatus({ type: "error", text: "No rules could be generated from these changes" }, 3000);
       return;
     }
     setPendingRules(changeset);
-  }, [supportsPromptRules, observedEdited, observedRawText, observedEditText, systemPromptRules, onStatus]);
+  }, [supportsPromptRules, observedEdited, observedRawText, observedEditText, systemPromptRules, flashStatus]);
 
   const handleConfirmRules = useCallback(() => {
     if (!pendingRules) return;
@@ -478,9 +477,8 @@ export function PromptsTab({ cli, onStatus }: PromptsTabProps) {
     if (delCount > 0) parts.push(`${delCount} rule${delCount !== 1 ? "s" : ""} removed`);
     setObservedBaseline(observedEditText);
     setPendingRules(null);
-    onStatus({ type: "success", text: parts.join(", ") });
-    setTimeout(() => onStatus(null), 3000);
-  }, [pendingRules, observedEditText, onStatus]);
+    flashStatus({ type: "success", text: parts.join(", ") }, 3000);
+  }, [pendingRules, observedEditText, flashStatus]);
 
   // Ctrl+S for saved prompts only
   useEffect(() => {
