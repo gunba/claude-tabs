@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CLAUDE_THEME } from "../theme";
+import { CLAUDE_THEME, THEME_COLOR_VARIABLES } from "../theme";
 import type { Theme } from "../theme";
 
 describe("CLAUDE_THEME", () => {
@@ -24,11 +24,17 @@ describe("CLAUDE_THEME", () => {
       "cliClaudeBg",
       "cliCodex",
       "cliCodexBg",
+      "cliCodexHover",
       "success",
       "warning",
       "error",
       "info",
       "permission",
+      "modePlan",
+      "modeAuto",
+      "modeAccept",
+      "modeBypass",
+      "modeDontAsk",
       "termBg",
       "termFg",
       "termCursor",
@@ -54,6 +60,10 @@ describe("CLAUDE_THEME", () => {
   it("provider colors are centralized", () => {
     expect(CLAUDE_THEME.colors.cliClaude).toBe("#d4744a");
     expect(CLAUDE_THEME.colors.cliCodex).toBe("#39c5cf");
+  });
+
+  it("maps every theme color to CSS variables", () => {
+    expect(Object.keys(THEME_COLOR_VARIABLES).sort()).toEqual(Object.keys(CLAUDE_THEME.colors).sort());
   });
 
   it("warm dark background (not blue-tinted)", () => {

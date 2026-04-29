@@ -44,6 +44,11 @@ export interface Theme {
     error: string;
     info: string;
     permission: string;      // Permission prompt color
+    modePlan: string;
+    modeAuto: string;
+    modeAccept: string;
+    modeBypass: string;
+    modeDontAsk: string;
 
     // Terminal-specific
     termBg: string;
@@ -93,6 +98,11 @@ export const CLAUDE_THEME: Theme = {
     error: "#d84b4b",           // Cowork danger: hsl(0, 67%, 59.6%)
     info: "#6ea8e0",            // Cowork blue accent
     permission: "#e08b67",      // Warm orange (clay-adjacent)
+    modePlan: "#39c5cf",        // dark cyan
+    modeAuto: "#daa520",        // amber / orangey-yellow
+    modeAccept: "#bc8cff",      // purple (matches --accent-tertiary)
+    modeBypass: "#d84b4b",      // red (matches --error)
+    modeDontAsk: "#6ea8e0",     // soft blue (matches --accent-secondary)
 
     // Tertiary accent (purple/magenta for agent & write tool banners)
     accentTertiary: "#bc8cff",
@@ -109,84 +119,61 @@ export const CLAUDE_THEME: Theme = {
   },
 };
 
+export const THEME_COLOR_VARIABLES: Record<keyof Theme["colors"], readonly string[]> = {
+  bgPrimary: ["--bg-primary"],
+  bgSurface: ["--bg-surface"],
+  bgSurfaceHover: ["--bg-surface-hover", "--bg-hover"],
+  bgSelection: ["--bg-selection"],
+  border: ["--border"],
+  borderSubtle: ["--border-subtle"],
+  textPrimary: ["--text-primary"],
+  textSecondary: ["--text-secondary"],
+  textMuted: ["--text-muted"],
+  textOnAccent: ["--text-on-accent"],
+  accent: ["--accent"],
+  accentHover: ["--accent-hover", "--provider-claude-accent-hover", "--provider-accent-hover"],
+  accentBg: ["--accent-bg"],
+  accentSecondary: ["--accent-secondary"],
+  accentTertiary: ["--accent-tertiary"],
+  cliClaude: ["--cli-claude", "--provider-claude-accent", "--provider-accent"],
+  cliClaudeBg: ["--cli-claude-bg", "--provider-claude-accent-bg", "--provider-accent-bg"],
+  cliCodex: ["--cli-codex", "--provider-codex-accent"],
+  cliCodexBg: ["--cli-codex-bg", "--provider-codex-accent-bg"],
+  cliCodexHover: ["--provider-codex-accent-hover"],
+  success: ["--success"],
+  warning: ["--warning"],
+  error: ["--error"],
+  info: ["--info"],
+  permission: ["--permission"],
+  modePlan: ["--mode-plan"],
+  modeAuto: ["--mode-auto"],
+  modeAccept: ["--mode-accept"],
+  modeBypass: ["--mode-bypass"],
+  modeDontAsk: ["--mode-dont-ask"],
+  termBg: ["--term-bg"],
+  termFg: ["--term-fg"],
+  termCursor: ["--term-cursor"],
+  termSelection: ["--term-selection"],
+  scrollThumb: ["--scroll-thumb"],
+  scrollTrack: ["--scroll-track"],
+};
+
 /** Apply a theme by setting CSS custom properties on :root */
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   const c = theme.colors;
 
-  root.style.setProperty("--bg-primary", c.bgPrimary);
-  root.style.setProperty("--bg-surface", c.bgSurface);
-  root.style.setProperty("--bg-surface-hover", c.bgSurfaceHover);
-  root.style.setProperty("--bg-hover", c.bgSurfaceHover); // Alias for interactive hover states
-  root.style.setProperty("--bg-selection", c.bgSelection);
-
-  root.style.setProperty("--border", c.border);
-  root.style.setProperty("--border-subtle", c.borderSubtle);
-
-  root.style.setProperty("--text-primary", c.textPrimary);
-  root.style.setProperty("--text-secondary", c.textSecondary);
-  root.style.setProperty("--text-muted", c.textMuted);
-  root.style.setProperty("--text-on-accent", c.textOnAccent);
-
-  root.style.setProperty("--accent", c.accent);
-  root.style.setProperty("--accent-hover", c.accentHover);
-  root.style.setProperty("--accent-bg", c.accentBg);
-  root.style.setProperty("--accent-secondary", c.accentSecondary);
-  root.style.setProperty("--accent-tertiary", c.accentTertiary);
-  // [CV-01] CLI identity colors (--cli-claude / --cli-codex) live in the theme so every brand-tinted surface (status chips, active tab indicator, launcher selector) reads from one source.
-  root.style.setProperty("--cli-claude", c.cliClaude);
-  root.style.setProperty("--cli-claude-bg", c.cliClaudeBg);
-  root.style.setProperty("--cli-codex", c.cliCodex);
-  root.style.setProperty("--cli-codex-bg", c.cliCodexBg);
-  // Provider palette: containers set --accent/--accent-bg/--accent-hover to these active-provider values.
-  root.style.setProperty("--provider-claude-accent", c.cliClaude);
-  root.style.setProperty("--provider-claude-accent-bg", c.cliClaudeBg);
-  root.style.setProperty("--provider-claude-accent-hover", c.accentHover);
-  root.style.setProperty("--provider-codex-accent", c.cliCodex);
-  root.style.setProperty("--provider-codex-accent-bg", c.cliCodexBg);
-  root.style.setProperty("--provider-codex-accent-hover", c.cliCodexHover);
-  root.style.setProperty("--provider-accent", c.cliClaude);
-  root.style.setProperty("--provider-accent-bg", c.cliClaudeBg);
-  root.style.setProperty("--provider-accent-hover", c.accentHover);
-
-  root.style.setProperty("--success", c.success);
-  root.style.setProperty("--warning", c.warning);
-  root.style.setProperty("--error", c.error);
-  root.style.setProperty("--info", c.info);
-  root.style.setProperty("--permission", c.permission);
-
-  root.style.setProperty("--term-bg", c.termBg);
-  root.style.setProperty("--term-fg", c.termFg);
-  root.style.setProperty("--term-cursor", c.termCursor);
-  root.style.setProperty("--term-selection", c.termSelection);
-
-  root.style.setProperty("--scroll-thumb", c.scrollThumb);
-  root.style.setProperty("--scroll-track", c.scrollTrack);
+  for (const [key, variables] of Object.entries(THEME_COLOR_VARIABLES) as Array<
+    [keyof Theme["colors"], readonly string[]]
+  >) {
+    for (const variable of variables) {
+      root.style.setProperty(variable, c[key]);
+    }
+  }
 
   // [TH-03] Font system: --font-ui (Inter variable + system fallback) and --font-mono defined in index.html :root block as initial fallback (Cascadia Code + Fira Code + JetBrains Mono). applyTheme() overrides --font-mono at runtime. Inter woff2 bundled in src/assets/fonts/ with @font-face.
   // Font — match main terminal (TERMINAL_FONT_FAMILY in useTerminal.ts)
   root.style.setProperty("--font-mono", "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace");
-
-  // [CB-12] Rarity CSS variables (WoW item quality — fixed cross-theme/provider)
-  root.style.setProperty("--rarity-trash", "#9d9d9d");
-  root.style.setProperty("--rarity-poor", "#9d9d9d");
-  root.style.setProperty("--rarity-common", "#ffffff");
-  root.style.setProperty("--rarity-uncommon", "#1eff00");
-  root.style.setProperty("--rarity-rare", "#0070dd");
-  root.style.setProperty("--rarity-epic", "#a335ee");
-  root.style.setProperty("--rarity-legendary", "#ff8000");
-
-  // Permission-mode pill colors. Picked to mirror Claude Code's TUI hues so
-  // the launcher pill matches what the user will see once the session starts.
-  root.style.setProperty("--mode-plan",     "#39c5cf"); // dark cyan
-  root.style.setProperty("--mode-auto",     "#daa520"); // amber / orangey-yellow
-  root.style.setProperty("--mode-accept",   "#bc8cff"); // purple (matches --accent-tertiary)
-  root.style.setProperty("--mode-bypass",   "#d84b4b"); // red (matches --error)
-  root.style.setProperty("--mode-dont-ask", "#6ea8e0"); // soft blue (matches --accent-secondary)
-
-  // Legacy provider aliases kept for older component CSS.
-  root.style.setProperty("--accent-claude", c.cliClaude);
-  root.style.setProperty("--accent-codex", c.cliCodex);
 }
 
 /** Get terminal theme object from CSS custom properties */

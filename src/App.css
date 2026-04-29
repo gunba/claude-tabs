@@ -83,7 +83,7 @@
   overflow: hidden;
   box-sizing: border-box;
   /* [CV-03] Per-tab provider scope keeps inactive tab metadata colored by its own CLI. */
-  --tab-active-accent: var(--accent-claude);
+  --tab-active-accent: var(--cli-claude);
   --provider-accent: var(--provider-claude-accent);
   --provider-accent-bg: var(--provider-claude-accent-bg);
   --provider-accent-hover: var(--provider-claude-accent-hover);
@@ -93,7 +93,7 @@
 }
 
 .tab.tab-cli-codex {
-  --tab-active-accent: var(--accent-codex);
+  --tab-active-accent: var(--cli-codex);
   --provider-accent: var(--provider-codex-accent);
   --provider-accent-bg: var(--provider-codex-accent-bg);
   --provider-accent-hover: var(--provider-codex-accent-hover);
