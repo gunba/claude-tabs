@@ -228,6 +228,8 @@ pub fn run() {
             }
             metrics::spawn_collector(app.handle().clone());
             // [WX-01] Weather poll loop driven by cf-ipcountry from proxy responses.
+            app.state::<ProxyState>()
+                .register_response_header_observer(weather::observe_response_headers);
             weather::init(app.handle().clone());
             Ok(())
         })

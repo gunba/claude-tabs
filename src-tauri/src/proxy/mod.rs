@@ -35,6 +35,8 @@ use crate::session::types::SystemPromptRule;
 
 // ── Proxy state ──────────────────────────────────────────────────────
 
+type ResponseHeaderObserver = Arc<dyn Fn(&reqwest::header::HeaderMap) + Send + Sync>;
+
 #[derive(Clone, Default)]
 struct CompiledRules {
     rules: Vec<CompiledRule>,
@@ -128,6 +130,7 @@ pub struct ProxyState {
     rules: Arc<RwLock<RuleStore>>,
     traffic_logs: Arc<Mutex<TrafficLogs>>,
     rule_match_counts: Arc<Mutex<HashMap<String, u64>>>,
+    response_header_observers: Arc<RwLock<Vec<ResponseHeaderObserver>>>,
 }
 
 impl ProxyState {
@@ -137,6 +140,7 @@ impl ProxyState {
             rules: Arc::new(RwLock::new(RuleStore::default())),
             traffic_logs: Arc::new(Mutex::new(TrafficLogs::default())),
             rule_match_counts: Arc::new(Mutex::new(HashMap::new())),
+            response_header_observers: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -185,6 +189,28 @@ impl ProxyState {
             *counts.entry(id.clone()).or_insert(0) += 1;
         }
         Some(counts.clone())
+    }
+
+    pub fn register_response_header_observer<F>(&self, observer: F)
+    where
+        F: Fn(&reqwest::header::HeaderMap) + Send + Sync + 'static,
+    {
+        if let Ok(mut observers) = self.response_header_observers.write() {
+            observers.push(Arc::new(observer));
+        }
+    }
+
+    fn response_header_observers(&self) -> Vec<ResponseHeaderObserver> {
+        self.response_header_observers
+            .read()
+            .map(|observers| observers.clone())
+            .unwrap_or_default()
+    }
+
+    fn notify_response_header_observers(&self, headers: &reqwest::header::HeaderMap) {
+        for observer in self.response_header_observers() {
+            observer(headers);
+        }
     }
 }
 
@@ -865,16 +891,7 @@ async fn handle_connection(
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
 
-    // [WX-01] Cloudflare's edge tags every Anthropic / OpenAI response with
-    // `cf-ipcountry`. Forward the value to the weather module for ambient-
-    // viz weather. Fire-and-forget; never blocks the response stream.
-    if let Some(cc) = resp
-        .headers()
-        .get("cf-ipcountry")
-        .and_then(|v| v.to_str().ok())
-    {
-        crate::weather::set_country(cc);
-    }
+    proxy_state.notify_response_header_observers(resp.headers());
 
     let mut resp_hdrs = format!("HTTP/1.1 {status_code} {status_text}\r\n");
     for (k, v) in resp.headers() {
@@ -1328,6 +1345,27 @@ mod tests {
 
     fn compile_rules(rules: Vec<SystemPromptRule>) -> CompiledRules {
         CompiledRules::compile(&rules).unwrap()
+    }
+
+    #[test]
+    fn response_header_observers_receive_headers() {
+        let state = ProxyState::new();
+        let seen = Arc::new(Mutex::new(None::<String>));
+        let seen_for_observer = Arc::clone(&seen);
+
+        state.register_response_header_observer(move |headers| {
+            let value = headers
+                .get("x-test-country")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            *seen_for_observer.lock().unwrap() = value;
+        });
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-test-country", "AU".parse().unwrap());
+        state.notify_response_header_observers(&headers);
+
+        assert_eq!(seen.lock().unwrap().as_deref(), Some("AU"));
     }
 
     #[test]

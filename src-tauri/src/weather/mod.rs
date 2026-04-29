@@ -2,9 +2,9 @@
 //!
 //! Anthropic and OpenAI both serve through Cloudflare, so their responses
 //! carry a `cf-ipcountry` header naming the user's edge POP country. The
-//! proxy (`src-tauri/src/proxy/mod.rs`) hands us each country it sees via
-//! [`set_country`]; we pick coordinates for that country, fetch current
-//! conditions from Open-Meteo every ~30 minutes, persist the latest
+//! app registers [`observe_response_headers`] with the proxy, then we pick
+//! coordinates for that country, fetch current conditions from Open-Meteo
+//! every ~30 minutes, persist the latest
 //! payload to `<appdata>/weather.json`, and emit a `weather-changed`
 //! Tauri event the renderer subscribes to.
 //!
@@ -109,6 +109,15 @@ pub fn set_country(cc: &str) {
             return;
         }
         *guard = Some(upper);
+    }
+}
+
+pub fn observe_response_headers(headers: &reqwest::header::HeaderMap) {
+    if let Some(cc) = headers
+        .get("cf-ipcountry")
+        .and_then(|value| value.to_str().ok())
+    {
+        set_country(cc);
     }
 }
 
@@ -291,5 +300,18 @@ mod tests {
         assert!(current_country().is_none());
         set_country("xx");
         assert!(current_country().is_none());
+    }
+
+    #[test]
+    fn observe_response_headers_reads_cloudflare_country() {
+        if let Ok(mut g) = country_slot().lock() {
+            *g = None;
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("cf-ipcountry", "US".parse().unwrap());
+
+        observe_response_headers(&headers);
+
+        assert_eq!(current_country().as_deref(), Some("US"));
     }
 }
