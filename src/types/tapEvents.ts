@@ -211,6 +211,8 @@ export interface CodexTurnContext extends TapEventBase {
 
 export interface CodexTokenCount extends TapEventBase {
   kind: "CodexTokenCount";
+  rateLimitId: string | null;
+  rateLimitName: string | null;
   totalInputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;

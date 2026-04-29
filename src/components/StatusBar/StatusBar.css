@@ -217,12 +217,3 @@
   transition: color 0.15s ease;
   font-variant-numeric: tabular-nums;
 }
-
-/* Sum-of-all-sessions chip on the far right. UI font to match the surrounding
-   status bar — tabular-nums keeps digits aligned without forcing monospace. */
-.status-overall {
-  font-family: var(--font-ui);
-  font-size: 10px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}

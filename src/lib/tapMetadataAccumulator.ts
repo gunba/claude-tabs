@@ -2,6 +2,42 @@ import { getNoisyEventKinds } from "./noisyEventKinds";
 import type { TapEvent } from "../types/tapEvents";
 import type { CliKind, SessionMetadata, SystemPromptBlock, CapturedMessage } from "../types/session";
 
+type CodexRateLimitSnapshot = {
+  id: string;
+  name: string | null;
+  primaryUsedPercent: number | null;
+  primaryResetsAt: number | null;
+  secondaryUsedPercent: number | null;
+  secondaryResetsAt: number | null;
+};
+
+function codexRateLimitKey(id: string | null, name: string | null): string {
+  const key = id?.trim() || name?.trim();
+  return key || "codex";
+}
+
+function rateLimitUsageScore(snapshot: CodexRateLimitSnapshot): number {
+  return Math.max(snapshot.primaryUsedPercent ?? -1, snapshot.secondaryUsedPercent ?? -1);
+}
+
+function selectCodexRateLimitSnapshot(
+  snapshots: Map<string, CodexRateLimitSnapshot>
+): CodexRateLimitSnapshot | null {
+  const codex = snapshots.get("codex")
+    ?? [...snapshots.values()].find((snapshot) =>
+      snapshot.id.toLowerCase() === "codex" || snapshot.name?.toLowerCase() === "codex"
+    );
+  if (codex) return codex;
+
+  let selected: CodexRateLimitSnapshot | null = null;
+  for (const snapshot of snapshots.values()) {
+    if (!selected || rateLimitUsageScore(snapshot) >= rateLimitUsageScore(selected)) {
+      selected = snapshot;
+    }
+  }
+  return selected;
+}
+
 // [SI-07] Tool actions, user prompts, assistant text captured inline via event processing
 // [IN-11] StatusBar enrichment: model, subscription, region, latency, rate limits, lines changed
 // [SR-02] Counters start from zero on each inspector connection — show only NEW conversation usage
@@ -53,6 +89,7 @@ export class TapMetadataAccumulator {
   private fiveHourResetsAt: number | null = null;
   private sevenDayPercent: number | null = null;
   private sevenDayResetsAt: number | null = null;
+  private codexRateLimits = new Map<string, CodexRateLimitSnapshot>();
   // API latency from dedicated HttpPing (GET /v1/models, bypasses CF cache)
   private apiLatencyMs = 0;
   // EMA-smoothed network RTT (total dur minus server processing time)
@@ -166,10 +203,29 @@ export class TapMetadataAccumulator {
         this.lastCacheRead = event.lastCachedInputTokens;
         this.lastCacheCreation = 0;
         this.contextDebugSource = "codexTokenCount";
-        if (event.primaryUsedPercent != null) this.fiveHourPercent = event.primaryUsedPercent;
-        if (event.primaryResetsAt != null) this.fiveHourResetsAt = event.primaryResetsAt;
-        if (event.secondaryUsedPercent != null) this.sevenDayPercent = event.secondaryUsedPercent;
-        if (event.secondaryResetsAt != null) this.sevenDayResetsAt = event.secondaryResetsAt;
+        if (
+          event.primaryUsedPercent != null
+          || event.primaryResetsAt != null
+          || event.secondaryUsedPercent != null
+          || event.secondaryResetsAt != null
+        ) {
+          const key = codexRateLimitKey(event.rateLimitId, event.rateLimitName);
+          this.codexRateLimits.set(key, {
+            id: key,
+            name: event.rateLimitName,
+            primaryUsedPercent: event.primaryUsedPercent,
+            primaryResetsAt: event.primaryResetsAt,
+            secondaryUsedPercent: event.secondaryUsedPercent,
+            secondaryResetsAt: event.secondaryResetsAt,
+          });
+          const displayLimit = selectCodexRateLimitSnapshot(this.codexRateLimits);
+          if (displayLimit) {
+            this.fiveHourPercent = displayLimit.primaryUsedPercent;
+            this.fiveHourResetsAt = displayLimit.primaryResetsAt;
+            this.sevenDayPercent = displayLimit.secondaryUsedPercent;
+            this.sevenDayResetsAt = displayLimit.secondaryResetsAt;
+          }
+        }
         break;
       }
 
@@ -645,6 +701,7 @@ export class TapMetadataAccumulator {
     this.fiveHourResetsAt = null;
     this.sevenDayPercent = null;
     this.sevenDayResetsAt = null;
+    this.codexRateLimits.clear();
     this.apiLatencyMs = 0;
     this.pingRttMs = 0;
     this.serverTimeMs = 0;

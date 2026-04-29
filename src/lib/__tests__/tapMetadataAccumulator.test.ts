@@ -81,6 +81,8 @@ describe("TapMetadataAccumulator", () => {
     const acc = new TapMetadataAccumulator();
     const diff = acc.process({
       kind: "CodexTokenCount", ts: 0,
+      rateLimitId: "codex",
+      rateLimitName: null,
       totalInputTokens: 1000,
       cachedInputTokens: 700,
       outputTokens: 80,
@@ -109,10 +111,60 @@ describe("TapMetadataAccumulator", () => {
     expect(diff?.sevenDayPercent).toBe(24);
   });
 
+  it("keeps Codex account usage when a model-specific zero limit arrives after it", () => {
+    const acc = new TapMetadataAccumulator("codex");
+    acc.process({
+      kind: "CodexTokenCount", ts: 0,
+      rateLimitId: "codex",
+      rateLimitName: null,
+      totalInputTokens: 1000,
+      cachedInputTokens: 700,
+      outputTokens: 80,
+      reasoningOutputTokens: 20,
+      totalTokens: 1080,
+      lastInputTokens: 300,
+      lastCachedInputTokens: 250,
+      lastOutputTokens: 10,
+      lastReasoningOutputTokens: 5,
+      lastTotalTokens: 310,
+      contextWindow: 258400,
+      primaryUsedPercent: 32,
+      primaryResetsAt: 1777138874,
+      secondaryUsedPercent: 14,
+      secondaryResetsAt: 1777602653,
+    });
+    const diff = acc.process({
+      kind: "CodexTokenCount", ts: 1,
+      rateLimitId: "codex_bengalfox",
+      rateLimitName: "GPT-5.3-Codex-Spark",
+      totalInputTokens: 1001,
+      cachedInputTokens: 700,
+      outputTokens: 80,
+      reasoningOutputTokens: 20,
+      totalTokens: 1081,
+      lastInputTokens: 300,
+      lastCachedInputTokens: 250,
+      lastOutputTokens: 10,
+      lastReasoningOutputTokens: 5,
+      lastTotalTokens: 310,
+      contextWindow: 258400,
+      primaryUsedPercent: 0,
+      primaryResetsAt: 1777139999,
+      secondaryUsedPercent: 0,
+      secondaryResetsAt: 1777609999,
+    });
+    expect(diff?.fiveHourPercent).toBe(32);
+    expect(diff?.fiveHourResetsAt).toBe(1777138874);
+    expect(diff?.sevenDayPercent).toBe(14);
+    expect(diff?.sevenDayResetsAt).toBe(1777602653);
+  });
+
   it("does not surface Codex token counts as current activity for Codex sessions", () => {
     const acc = new TapMetadataAccumulator("codex");
     const diff = acc.process({
       kind: "CodexTokenCount", ts: 0,
+      rateLimitId: null,
+      rateLimitName: null,
       totalInputTokens: 1000,
       cachedInputTokens: 700,
       outputTokens: 80,

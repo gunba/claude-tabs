@@ -398,7 +398,6 @@ export function StatusBar({ onOpenContextViewer, onOpenChangelog }: StatusBarPro
         return sum + inT + outT;
       }, 0);
   }, [aliveSessions]);
-  const overallMetrics = useSessionStore((s) => s.overallMetrics);
   return (
     <div className="status-bar">
       {activeSession ? (
@@ -446,14 +445,6 @@ export function StatusBar({ onOpenContextViewer, onOpenChangelog }: StatusBarPro
 
       {/* Far-right action buttons — always visible */}
       <div className="status-actions">
-        {overallMetrics && overallMetrics.processes > 0 && (
-          <span
-            className="status-item status-overall"
-            title={`All sessions: ${overallMetrics.processes} process${overallMetrics.processes === 1 ? "" : "es"} · CPU ${formatCpu(overallMetrics.cpu)} · Memory ${formatBytes(overallMetrics.memBytes)}`}
-          >
-            Σ {formatCpu(overallMetrics.cpu)} · {formatBytes(overallMetrics.memBytes)}
-          </span>
-        )}
         {activeSession?.metadata.capturedSystemPrompt && onOpenContextViewer && (
           <button
             className="status-item status-hooks-btn"

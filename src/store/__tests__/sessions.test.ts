@@ -44,7 +44,6 @@ function resetStore() {
     trafficRecording: new Map(),
     processHealth: new Map(),
     pidToSessionId: new Map(),
-    overallMetrics: null,
     seenToolNames: new Set(),
     seenEventKinds: new Set(),
   });

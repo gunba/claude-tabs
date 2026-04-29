@@ -1050,6 +1050,8 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
       return {
         kind: "CodexTokenCount",
         ts,
+        rateLimitId: typeof limits?.limit_id === "string" ? limits.limit_id : null,
+        rateLimitName: typeof limits?.limit_name === "string" ? limits.limit_name : null,
         totalInputTokens: numField(total, "input_tokens"),
         cachedInputTokens: numField(total, "cached_input_tokens"),
         outputTokens: numField(total, "output_tokens"),

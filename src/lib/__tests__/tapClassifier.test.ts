@@ -467,6 +467,8 @@ describe("classifyTapEntry — Codex rollout events", () => {
         model_context_window: 258400,
       },
       rateLimits: {
+        limit_id: "codex",
+        limit_name: null,
         primary: { used_percent: 3, resets_at: 1777138874 },
         secondary: { used_percent: 24, resets_at: 1777602653 },
       },
@@ -476,6 +478,8 @@ describe("classifyTapEntry — Codex rollout events", () => {
       totalInputTokens: 1000,
       cachedInputTokens: 700,
       outputTokens: 80,
+      rateLimitId: "codex",
+      rateLimitName: null,
       lastCachedInputTokens: 250,
       contextWindow: 258400,
       primaryUsedPercent: 3,

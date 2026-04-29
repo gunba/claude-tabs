@@ -17,14 +17,8 @@ interface PerProcessPayload {
   }>;
 }
 
-interface OverallPayload {
-  cpu: number;
-  mem: number;
-  processes: number;
-}
-
 /**
- * [PM-06] Frontend pipeline: routes 'process-metrics' events via pidToSessionId; 'process-metrics-overall' sets global chip.
+ * [PM-06] Frontend pipeline: routes 'process-metrics' events via pidToSessionId.
  * Subscribes to the Rust-side process metrics poller (src-tauri/src/metrics.rs).
  * Per-PID events are routed to the right session via the pidToSessionId map
  * populated by ptyProcess.ts on PTY spawn.
@@ -50,18 +44,8 @@ export function useProcessMetrics(): void {
       });
     });
 
-    const unlistenOverall = listen<OverallPayload>("process-metrics-overall", (event) => {
-      const p = event.payload;
-      useSessionStore.getState().setOverallMetrics({
-        cpu: p.cpu,
-        memBytes: p.mem,
-        processes: p.processes,
-      });
-    });
-
     return () => {
       unlistenPer.then((fn) => fn());
-      unlistenOverall.then((fn) => fn());
     };
   }, []);
 }

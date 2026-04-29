@@ -33,7 +33,6 @@ interface SessionsState {
   trafficRecording: Map<string, string>; // sessionId -> file path
   processHealth: Map<string, ProcessHealthEntry>;
   pidToSessionId: Map<number, string>; // OS PID -> sessionId for metrics dispatch
-  overallMetrics: { cpu: number; memBytes: number; processes: number } | null;
   seenToolNames: Set<string>; // [TA-02] all unique tool names observed across sessions
   seenEventKinds: Set<string>; // all unique tap event kinds observed across sessions
 
@@ -62,7 +61,6 @@ interface SessionsState {
   addCommandHistory: (sessionId: string, command: string, ts: number) => void;
   updateProcessHealth: (id: string, data: { rss: number; heapUsed: number; uptime: number }) => void;
   updateProcessTreeMetrics: (id: string, data: ProcessTreeMetrics) => void;
-  setOverallMetrics: (data: { cpu: number; memBytes: number; processes: number } | null) => void;
   registerSessionPid: (sessionId: string, pid: number) => void;
   unregisterSessionPid: (pid: number) => void;
   addSeenToolName: (name: string) => void;
@@ -132,7 +130,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
   trafficRecording: new Map(),
   processHealth: new Map(),
   pidToSessionId: new Map(),
-  overallMetrics: null,
   seenToolNames: new Set(),
   seenEventKinds: new Set(),
 
@@ -577,21 +574,6 @@ export const useSessionStore = create<SessionsState>((set) => ({
       });
       return { processHealth: next };
     });
-  },
-
-  setOverallMetrics: (data) => {
-    const current = useSessionStore.getState().overallMetrics;
-    if (
-      (current === null && data === null)
-      || (current !== null
-        && data !== null
-        && current.cpu === data.cpu
-        && current.memBytes === data.memBytes
-        && current.processes === data.processes)
-    ) {
-      return;
-    }
-    set({ overallMetrics: data });
   },
 
   registerSessionPid: (sessionId, pid) => {
