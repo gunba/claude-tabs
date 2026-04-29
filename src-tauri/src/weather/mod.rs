@@ -27,6 +27,7 @@ const RETRY_JITTER_MAX: Duration = Duration::from_secs(30);
 
 static COUNTRY: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static CACHE: OnceLock<Mutex<Option<WeatherPayload>>> = OnceLock::new();
+static COUNTRY_CAPITALS: OnceLock<Vec<CountryCapital>> = OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeatherPayload {
@@ -44,65 +45,29 @@ pub struct WeatherPayload {
     pub updated_at: u64,
 }
 
-/// (lat, lon, label) for frequent countries. Unknown codes return None
-/// so we do not show weather for the wrong city.
+#[derive(Debug, Deserialize)]
+struct CountryCapital {
+    code: String,
+    label: String,
+    lat: f64,
+    lon: f64,
+}
+
+fn country_capitals() -> &'static [CountryCapital] {
+    COUNTRY_CAPITALS.get_or_init(|| {
+        serde_json::from_str(include_str!("country_capitals.json"))
+            .expect("embedded country_capitals.json must be valid")
+    })
+}
+
+/// (lat, lon, label) for country/territory capital coordinates. Unknown
+/// codes return None so we do not show weather for the wrong city.
 pub fn coords_for(cc: &str) -> Option<(f64, f64, &'static str)> {
-    let coords = match cc {
-        "AU" => (-33.87, 151.21, "Sydney"),
-        "NZ" => (-41.29, 174.78, "Wellington"),
-        "US" => (38.90, -77.04, "Washington D.C."),
-        "CA" => (45.42, -75.69, "Ottawa"),
-        "MX" => (19.43, -99.13, "Mexico City"),
-        "BR" => (-15.79, -47.88, "Brasília"),
-        "AR" => (-34.61, -58.38, "Buenos Aires"),
-        "CL" => (-33.45, -70.67, "Santiago"),
-        "GB" => (51.51, -0.13, "London"),
-        "IE" => (53.35, -6.26, "Dublin"),
-        "FR" => (48.86, 2.35, "Paris"),
-        "DE" => (52.52, 13.41, "Berlin"),
-        "ES" => (40.42, -3.70, "Madrid"),
-        "PT" => (38.72, -9.14, "Lisbon"),
-        "IT" => (41.90, 12.50, "Rome"),
-        "NL" => (52.37, 4.90, "Amsterdam"),
-        "BE" => (50.85, 4.35, "Brussels"),
-        "CH" => (46.95, 7.45, "Bern"),
-        "AT" => (48.21, 16.37, "Vienna"),
-        "SE" => (59.33, 18.07, "Stockholm"),
-        "NO" => (59.91, 10.75, "Oslo"),
-        "DK" => (55.68, 12.57, "Copenhagen"),
-        "FI" => (60.17, 24.94, "Helsinki"),
-        "IS" => (64.15, -21.94, "Reykjavik"),
-        "PL" => (52.23, 21.01, "Warsaw"),
-        "CZ" => (50.08, 14.44, "Prague"),
-        "HU" => (47.50, 19.04, "Budapest"),
-        "RO" => (44.43, 26.10, "Bucharest"),
-        "GR" => (37.98, 23.73, "Athens"),
-        "TR" => (39.93, 32.86, "Ankara"),
-        "RU" => (55.75, 37.62, "Moscow"),
-        "UA" => (50.45, 30.52, "Kyiv"),
-        "IN" => (28.61, 77.21, "New Delhi"),
-        "PK" => (33.69, 73.05, "Islamabad"),
-        "CN" => (39.90, 116.41, "Beijing"),
-        "TW" => (25.03, 121.57, "Taipei"),
-        "HK" => (22.32, 114.17, "Hong Kong"),
-        "JP" => (35.68, 139.69, "Tokyo"),
-        "KR" => (37.57, 126.98, "Seoul"),
-        "SG" => (1.35, 103.82, "Singapore"),
-        "TH" => (13.75, 100.50, "Bangkok"),
-        "VN" => (21.03, 105.85, "Hanoi"),
-        "MY" => (3.14, 101.69, "Kuala Lumpur"),
-        "ID" => (-6.21, 106.85, "Jakarta"),
-        "PH" => (14.60, 120.98, "Manila"),
-        "AE" => (24.45, 54.39, "Abu Dhabi"),
-        "SA" => (24.71, 46.68, "Riyadh"),
-        "IL" => (31.78, 35.22, "Jerusalem"),
-        "EG" => (30.04, 31.24, "Cairo"),
-        "ZA" => (-25.75, 28.19, "Pretoria"),
-        "NG" => (9.08, 7.40, "Abuja"),
-        "KE" => (-1.29, 36.82, "Nairobi"),
-        _ => return None,
-    };
-    Some(coords)
+    let upper = cc.trim().to_ascii_uppercase();
+    let capital = country_capitals()
+        .iter()
+        .find(|capital| capital.code == upper)?;
+    Some((capital.lat, capital.lon, capital.label.as_str()))
 }
 
 fn jitter(max: Duration) -> Duration {
@@ -289,8 +254,16 @@ mod tests {
     #[test]
     fn coords_known_country() {
         let (lat, _, label) = coords_for("AU").unwrap();
-        assert!((lat + 33.87).abs() < 0.1);
-        assert_eq!(label, "Sydney");
+        assert!((lat + 35.27).abs() < 0.1);
+        assert_eq!(label, "Canberra");
+    }
+
+    #[test]
+    fn coords_table_covers_broader_country_set() {
+        assert!(country_capitals().len() >= 190);
+        assert_eq!(coords_for("AF").unwrap().2, "Kabul");
+        assert_eq!(coords_for("cw").unwrap().2, "Willemstad");
+        assert_eq!(coords_for("US").unwrap().2, "Washington, D.C.");
     }
 
     #[test]

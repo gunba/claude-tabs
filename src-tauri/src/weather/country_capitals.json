@@ -1,0 +1,1472 @@
+[
+  {
+    "code": "AD",
+    "label": "Andorra la Vella",
+    "lat": 42.5,
+    "lon": 1.52
+  },
+  {
+    "code": "AE",
+    "label": "Abu Dhabi",
+    "lat": 24.47,
+    "lon": 54.37
+  },
+  {
+    "code": "AF",
+    "label": "Kabul",
+    "lat": 34.52,
+    "lon": 69.18
+  },
+  {
+    "code": "AG",
+    "label": "Saint John's",
+    "lat": 17.12,
+    "lon": -61.85
+  },
+  {
+    "code": "AI",
+    "label": "The Valley",
+    "lat": 18.22,
+    "lon": -63.05
+  },
+  {
+    "code": "AL",
+    "label": "Tirana",
+    "lat": 41.32,
+    "lon": 19.82
+  },
+  {
+    "code": "AM",
+    "label": "Yerevan",
+    "lat": 40.17,
+    "lon": 44.5
+  },
+  {
+    "code": "AO",
+    "label": "Luanda",
+    "lat": -8.83,
+    "lon": 13.22
+  },
+  {
+    "code": "AR",
+    "label": "Buenos Aires",
+    "lat": -34.58,
+    "lon": -58.67
+  },
+  {
+    "code": "AS",
+    "label": "Pago Pago",
+    "lat": -14.27,
+    "lon": -170.7
+  },
+  {
+    "code": "AT",
+    "label": "Vienna",
+    "lat": 48.2,
+    "lon": 16.37
+  },
+  {
+    "code": "AU",
+    "label": "Canberra",
+    "lat": -35.27,
+    "lon": 149.13
+  },
+  {
+    "code": "AW",
+    "label": "Oranjestad",
+    "lat": 12.52,
+    "lon": -70.03
+  },
+  {
+    "code": "AX",
+    "label": "Mariehamn",
+    "lat": 60.12,
+    "lon": 19.9
+  },
+  {
+    "code": "AZ",
+    "label": "Baku",
+    "lat": 40.38,
+    "lon": 49.87
+  },
+  {
+    "code": "BA",
+    "label": "Sarajevo",
+    "lat": 43.87,
+    "lon": 18.42
+  },
+  {
+    "code": "BB",
+    "label": "Bridgetown",
+    "lat": 13.1,
+    "lon": -59.62
+  },
+  {
+    "code": "BD",
+    "label": "Dhaka",
+    "lat": 23.72,
+    "lon": 90.4
+  },
+  {
+    "code": "BE",
+    "label": "Brussels",
+    "lat": 50.83,
+    "lon": 4.33
+  },
+  {
+    "code": "BF",
+    "label": "Ouagadougou",
+    "lat": 12.37,
+    "lon": -1.52
+  },
+  {
+    "code": "BG",
+    "label": "Sofia",
+    "lat": 42.68,
+    "lon": 23.32
+  },
+  {
+    "code": "BH",
+    "label": "Manama",
+    "lat": 26.23,
+    "lon": 50.57
+  },
+  {
+    "code": "BI",
+    "label": "Gitega",
+    "lat": -3.43,
+    "lon": 29.93
+  },
+  {
+    "code": "BJ",
+    "label": "Porto-Novo",
+    "lat": 6.48,
+    "lon": 2.62
+  },
+  {
+    "code": "BL",
+    "label": "Gustavia",
+    "lat": 17.88,
+    "lon": -62.85
+  },
+  {
+    "code": "BM",
+    "label": "Hamilton",
+    "lat": 32.28,
+    "lon": -64.78
+  },
+  {
+    "code": "BN",
+    "label": "Bandar Seri Begawan",
+    "lat": 4.88,
+    "lon": 114.93
+  },
+  {
+    "code": "BO",
+    "label": "Sucre",
+    "lat": -19.02,
+    "lon": -65.26
+  },
+  {
+    "code": "BQ",
+    "label": "Kralendijk",
+    "lat": 12.14,
+    "lon": -68.27
+  },
+  {
+    "code": "BR",
+    "label": "Bras\u00edlia",
+    "lat": -15.79,
+    "lon": -47.88
+  },
+  {
+    "code": "BS",
+    "label": "Nassau",
+    "lat": 25.08,
+    "lon": -77.35
+  },
+  {
+    "code": "BT",
+    "label": "Thimphu",
+    "lat": 27.47,
+    "lon": 89.63
+  },
+  {
+    "code": "BW",
+    "label": "Gaborone",
+    "lat": -24.63,
+    "lon": 25.9
+  },
+  {
+    "code": "BY",
+    "label": "Minsk",
+    "lat": 53.9,
+    "lon": 27.57
+  },
+  {
+    "code": "BZ",
+    "label": "Belmopan",
+    "lat": 17.25,
+    "lon": -88.77
+  },
+  {
+    "code": "CA",
+    "label": "Ottawa",
+    "lat": 45.42,
+    "lon": -75.7
+  },
+  {
+    "code": "CC",
+    "label": "West Island",
+    "lat": -12.17,
+    "lon": 96.83
+  },
+  {
+    "code": "CD",
+    "label": "Kinshasa",
+    "lat": -4.32,
+    "lon": 15.3
+  },
+  {
+    "code": "CF",
+    "label": "Bangui",
+    "lat": 4.37,
+    "lon": 18.58
+  },
+  {
+    "code": "CG",
+    "label": "Brazzaville",
+    "lat": -4.25,
+    "lon": 15.28
+  },
+  {
+    "code": "CH",
+    "label": "Bern",
+    "lat": 46.92,
+    "lon": 7.47
+  },
+  {
+    "code": "CI",
+    "label": "Yamoussoukro",
+    "lat": 6.82,
+    "lon": -5.27
+  },
+  {
+    "code": "CK",
+    "label": "Avarua",
+    "lat": -21.2,
+    "lon": -159.77
+  },
+  {
+    "code": "CL",
+    "label": "Santiago",
+    "lat": -33.45,
+    "lon": -70.67
+  },
+  {
+    "code": "CM",
+    "label": "Yaound\u00e9",
+    "lat": 3.85,
+    "lon": 11.5
+  },
+  {
+    "code": "CN",
+    "label": "Beijing",
+    "lat": 39.92,
+    "lon": 116.38
+  },
+  {
+    "code": "CO",
+    "label": "Bogot\u00e1",
+    "lat": 4.71,
+    "lon": -74.07
+  },
+  {
+    "code": "CR",
+    "label": "San Jos\u00e9",
+    "lat": 9.93,
+    "lon": -84.09
+  },
+  {
+    "code": "CU",
+    "label": "Havana",
+    "lat": 23.12,
+    "lon": -82.35
+  },
+  {
+    "code": "CV",
+    "label": "Praia",
+    "lat": 14.92,
+    "lon": -23.52
+  },
+  {
+    "code": "CW",
+    "label": "Willemstad",
+    "lat": 12.1,
+    "lon": -68.92
+  },
+  {
+    "code": "CX",
+    "label": "Flying Fish Cove",
+    "lat": -10.42,
+    "lon": 105.68
+  },
+  {
+    "code": "CY",
+    "label": "Nicosia",
+    "lat": 35.17,
+    "lon": 33.37
+  },
+  {
+    "code": "CZ",
+    "label": "Prague",
+    "lat": 50.08,
+    "lon": 14.47
+  },
+  {
+    "code": "DE",
+    "label": "Berlin",
+    "lat": 52.52,
+    "lon": 13.4
+  },
+  {
+    "code": "DJ",
+    "label": "Djibouti",
+    "lat": 11.58,
+    "lon": 43.15
+  },
+  {
+    "code": "DK",
+    "label": "Copenhagen",
+    "lat": 55.67,
+    "lon": 12.58
+  },
+  {
+    "code": "DM",
+    "label": "Roseau",
+    "lat": 15.3,
+    "lon": -61.4
+  },
+  {
+    "code": "DO",
+    "label": "Santo Domingo",
+    "lat": 18.47,
+    "lon": -69.9
+  },
+  {
+    "code": "DZ",
+    "label": "Algiers",
+    "lat": 36.75,
+    "lon": 3.05
+  },
+  {
+    "code": "EC",
+    "label": "Quito",
+    "lat": -0.22,
+    "lon": -78.5
+  },
+  {
+    "code": "EE",
+    "label": "Tallinn",
+    "lat": 59.43,
+    "lon": 24.72
+  },
+  {
+    "code": "EG",
+    "label": "Cairo",
+    "lat": 30.05,
+    "lon": 31.25
+  },
+  {
+    "code": "EH",
+    "label": "El Aai\u00fan",
+    "lat": -13.28,
+    "lon": 27.14
+  },
+  {
+    "code": "ER",
+    "label": "Asmara",
+    "lat": 15.33,
+    "lon": 38.93
+  },
+  {
+    "code": "ES",
+    "label": "Madrid",
+    "lat": 40.4,
+    "lon": -3.68
+  },
+  {
+    "code": "ET",
+    "label": "Addis Ababa",
+    "lat": 9.03,
+    "lon": 38.7
+  },
+  {
+    "code": "FI",
+    "label": "Helsinki",
+    "lat": 60.17,
+    "lon": 24.93
+  },
+  {
+    "code": "FJ",
+    "label": "Suva",
+    "lat": -18.13,
+    "lon": 178.42
+  },
+  {
+    "code": "FK",
+    "label": "Stanley",
+    "lat": -51.7,
+    "lon": -57.85
+  },
+  {
+    "code": "FM",
+    "label": "Palikir",
+    "lat": 6.92,
+    "lon": 158.15
+  },
+  {
+    "code": "FO",
+    "label": "T\u00f3rshavn",
+    "lat": 62.01,
+    "lon": -6.77
+  },
+  {
+    "code": "FR",
+    "label": "Paris",
+    "lat": 48.87,
+    "lon": 2.33
+  },
+  {
+    "code": "GA",
+    "label": "Libreville",
+    "lat": 0.38,
+    "lon": 9.45
+  },
+  {
+    "code": "GB",
+    "label": "London",
+    "lat": 51.5,
+    "lon": -0.08
+  },
+  {
+    "code": "GD",
+    "label": "St. George's",
+    "lat": 32.38,
+    "lon": -64.68
+  },
+  {
+    "code": "GE",
+    "label": "Tbilisi",
+    "lat": 41.68,
+    "lon": 44.83
+  },
+  {
+    "code": "GF",
+    "label": "Cayenne",
+    "lat": 4.94,
+    "lon": -52.33
+  },
+  {
+    "code": "GG",
+    "label": "St. Peter Port",
+    "lat": 49.45,
+    "lon": -2.54
+  },
+  {
+    "code": "GH",
+    "label": "Accra",
+    "lat": 5.55,
+    "lon": -0.22
+  },
+  {
+    "code": "GI",
+    "label": "Gibraltar",
+    "lat": 36.13,
+    "lon": -5.35
+  },
+  {
+    "code": "GL",
+    "label": "Nuuk",
+    "lat": 64.18,
+    "lon": -51.75
+  },
+  {
+    "code": "GM",
+    "label": "Banjul",
+    "lat": 13.45,
+    "lon": -16.57
+  },
+  {
+    "code": "GN",
+    "label": "Conakry",
+    "lat": 9.5,
+    "lon": -13.7
+  },
+  {
+    "code": "GP",
+    "label": "Basse-Terre",
+    "lat": 16.03,
+    "lon": -61.73
+  },
+  {
+    "code": "GQ",
+    "label": "Ciudad de la Paz",
+    "lat": 1.35,
+    "lon": 10.49
+  },
+  {
+    "code": "GR",
+    "label": "Athens",
+    "lat": 37.98,
+    "lon": 23.73
+  },
+  {
+    "code": "GS",
+    "label": "King Edward Point",
+    "lat": -54.28,
+    "lon": -36.5
+  },
+  {
+    "code": "GT",
+    "label": "Guatemala City",
+    "lat": 14.62,
+    "lon": -90.52
+  },
+  {
+    "code": "GU",
+    "label": "Hag\u00e5t\u00f1a",
+    "lat": 13.48,
+    "lon": 144.75
+  },
+  {
+    "code": "GW",
+    "label": "Bissau",
+    "lat": 11.85,
+    "lon": -15.58
+  },
+  {
+    "code": "GY",
+    "label": "Georgetown",
+    "lat": 6.8,
+    "lon": -58.15
+  },
+  {
+    "code": "HK",
+    "label": "City of Victoria",
+    "lat": 22.267,
+    "lon": 114.188
+  },
+  {
+    "code": "HN",
+    "label": "Tegucigalpa",
+    "lat": 14.1,
+    "lon": -87.22
+  },
+  {
+    "code": "HR",
+    "label": "Zagreb",
+    "lat": 45.8,
+    "lon": 16
+  },
+  {
+    "code": "HT",
+    "label": "Port-au-Prince",
+    "lat": 18.53,
+    "lon": -72.33
+  },
+  {
+    "code": "HU",
+    "label": "Budapest",
+    "lat": 47.5,
+    "lon": 19.08
+  },
+  {
+    "code": "ID",
+    "label": "Jakarta",
+    "lat": -6.17,
+    "lon": 106.82
+  },
+  {
+    "code": "IE",
+    "label": "Dublin",
+    "lat": 53.32,
+    "lon": -6.23
+  },
+  {
+    "code": "IL",
+    "label": "Jerusalem",
+    "lat": 31.77,
+    "lon": 35.23
+  },
+  {
+    "code": "IM",
+    "label": "Douglas",
+    "lat": 54.15,
+    "lon": -4.48
+  },
+  {
+    "code": "IN",
+    "label": "New Delhi",
+    "lat": 28.6,
+    "lon": 77.2
+  },
+  {
+    "code": "IO",
+    "label": "Diego Garcia",
+    "lat": -7.3,
+    "lon": 72.4
+  },
+  {
+    "code": "IQ",
+    "label": "Baghdad",
+    "lat": 33.33,
+    "lon": 44.4
+  },
+  {
+    "code": "IR",
+    "label": "Tehran",
+    "lat": 35.7,
+    "lon": 51.42
+  },
+  {
+    "code": "IS",
+    "label": "Reykjavik",
+    "lat": 64.15,
+    "lon": -21.95
+  },
+  {
+    "code": "IT",
+    "label": "Rome",
+    "lat": 41.9,
+    "lon": 12.48
+  },
+  {
+    "code": "JE",
+    "label": "Saint Helier",
+    "lat": 49.18,
+    "lon": -2.1
+  },
+  {
+    "code": "JM",
+    "label": "Kingston",
+    "lat": 17.99702,
+    "lon": -76.79358
+  },
+  {
+    "code": "JO",
+    "label": "Amman",
+    "lat": 31.95,
+    "lon": 35.93
+  },
+  {
+    "code": "JP",
+    "label": "Tokyo",
+    "lat": 35.68,
+    "lon": 139.75
+  },
+  {
+    "code": "KE",
+    "label": "Nairobi",
+    "lat": -1.28,
+    "lon": 36.82
+  },
+  {
+    "code": "KG",
+    "label": "Bishkek",
+    "lat": 42.87,
+    "lon": 74.6
+  },
+  {
+    "code": "KH",
+    "label": "Phnom Penh",
+    "lat": 11.55,
+    "lon": 104.92
+  },
+  {
+    "code": "KI",
+    "label": "South Tarawa",
+    "lat": 1.33,
+    "lon": 172.98
+  },
+  {
+    "code": "KM",
+    "label": "Moroni",
+    "lat": -11.7,
+    "lon": 43.23
+  },
+  {
+    "code": "KN",
+    "label": "Basseterre",
+    "lat": 17.3,
+    "lon": -62.72
+  },
+  {
+    "code": "KP",
+    "label": "Pyongyang",
+    "lat": 39.02,
+    "lon": 125.75
+  },
+  {
+    "code": "KR",
+    "label": "Seoul",
+    "lat": 37.55,
+    "lon": 126.98
+  },
+  {
+    "code": "KW",
+    "label": "Kuwait City",
+    "lat": 29.37,
+    "lon": 47.97
+  },
+  {
+    "code": "KY",
+    "label": "George Town",
+    "lat": 19.3,
+    "lon": -81.38
+  },
+  {
+    "code": "KZ",
+    "label": "Astana",
+    "lat": 51.16,
+    "lon": 71.45
+  },
+  {
+    "code": "LA",
+    "label": "Vientiane",
+    "lat": 17.97,
+    "lon": 102.6
+  },
+  {
+    "code": "LB",
+    "label": "Beirut",
+    "lat": 33.87,
+    "lon": 35.5
+  },
+  {
+    "code": "LC",
+    "label": "Castries",
+    "lat": 14,
+    "lon": -61
+  },
+  {
+    "code": "LI",
+    "label": "Vaduz",
+    "lat": 47.13,
+    "lon": 9.52
+  },
+  {
+    "code": "LK",
+    "label": "Sri Jayawardenepura Kotte",
+    "lat": 6.89,
+    "lon": 79.9
+  },
+  {
+    "code": "LR",
+    "label": "Monrovia",
+    "lat": 6.3,
+    "lon": -10.8
+  },
+  {
+    "code": "LS",
+    "label": "Maseru",
+    "lat": -29.32,
+    "lon": 27.48
+  },
+  {
+    "code": "LT",
+    "label": "Vilnius",
+    "lat": 54.68,
+    "lon": 25.32
+  },
+  {
+    "code": "LU",
+    "label": "Luxembourg",
+    "lat": 49.6,
+    "lon": 6.12
+  },
+  {
+    "code": "LV",
+    "label": "Riga",
+    "lat": 56.95,
+    "lon": 24.1
+  },
+  {
+    "code": "LY",
+    "label": "Tripoli",
+    "lat": 32.88,
+    "lon": 13.17
+  },
+  {
+    "code": "MA",
+    "label": "Rabat",
+    "lat": 34.02,
+    "lon": -6.82
+  },
+  {
+    "code": "MC",
+    "label": "Monaco",
+    "lat": 43.73,
+    "lon": 7.42
+  },
+  {
+    "code": "MD",
+    "label": "Chi\u0219in\u0103u",
+    "lat": 47.01,
+    "lon": 28.9
+  },
+  {
+    "code": "ME",
+    "label": "Podgorica",
+    "lat": 42.43,
+    "lon": 19.27
+  },
+  {
+    "code": "MF",
+    "label": "Marigot",
+    "lat": 18.07,
+    "lon": -63.08
+  },
+  {
+    "code": "MG",
+    "label": "Antananarivo",
+    "lat": -18.92,
+    "lon": 47.52
+  },
+  {
+    "code": "MH",
+    "label": "Majuro",
+    "lat": 7.1,
+    "lon": 171.38
+  },
+  {
+    "code": "MK",
+    "label": "Skopje",
+    "lat": 42,
+    "lon": 21.43
+  },
+  {
+    "code": "ML",
+    "label": "Bamako",
+    "lat": 12.65,
+    "lon": -8
+  },
+  {
+    "code": "MM",
+    "label": "Naypyidaw",
+    "lat": 19.76,
+    "lon": 96.07
+  },
+  {
+    "code": "MN",
+    "label": "Ulan Bator",
+    "lat": 47.92,
+    "lon": 106.91
+  },
+  {
+    "code": "MP",
+    "label": "Saipan",
+    "lat": 15.2,
+    "lon": 145.75
+  },
+  {
+    "code": "MQ",
+    "label": "Fort-de-France",
+    "lat": 14.6,
+    "lon": -61.08
+  },
+  {
+    "code": "MR",
+    "label": "Nouakchott",
+    "lat": 18.07,
+    "lon": -15.97
+  },
+  {
+    "code": "MS",
+    "label": "Plymouth",
+    "lat": 16.7,
+    "lon": -62.22
+  },
+  {
+    "code": "MT",
+    "label": "Valletta",
+    "lat": 35.88,
+    "lon": 14.5
+  },
+  {
+    "code": "MU",
+    "label": "Port Louis",
+    "lat": -20.15,
+    "lon": 57.48
+  },
+  {
+    "code": "MV",
+    "label": "Mal\u00e9",
+    "lat": 4.17,
+    "lon": 73.51
+  },
+  {
+    "code": "MW",
+    "label": "Lilongwe",
+    "lat": -13.97,
+    "lon": 33.78
+  },
+  {
+    "code": "MX",
+    "label": "Mexico City",
+    "lat": 19.43,
+    "lon": -99.13
+  },
+  {
+    "code": "MY",
+    "label": "Kuala Lumpur",
+    "lat": 3.17,
+    "lon": 101.7
+  },
+  {
+    "code": "MZ",
+    "label": "Maputo",
+    "lat": -25.95,
+    "lon": 32.58
+  },
+  {
+    "code": "NA",
+    "label": "Windhoek",
+    "lat": -22.57,
+    "lon": 17.08
+  },
+  {
+    "code": "NC",
+    "label": "Noum\u00e9a",
+    "lat": -22.27,
+    "lon": 166.45
+  },
+  {
+    "code": "NE",
+    "label": "Niamey",
+    "lat": 13.52,
+    "lon": 2.12
+  },
+  {
+    "code": "NF",
+    "label": "Kingston",
+    "lat": -29.05,
+    "lon": 167.97
+  },
+  {
+    "code": "NG",
+    "label": "Abuja",
+    "lat": 9.08,
+    "lon": 7.53
+  },
+  {
+    "code": "NI",
+    "label": "Managua",
+    "lat": 12.13,
+    "lon": -86.25
+  },
+  {
+    "code": "NL",
+    "label": "Amsterdam",
+    "lat": 52.35,
+    "lon": 4.92
+  },
+  {
+    "code": "NO",
+    "label": "Oslo",
+    "lat": 59.92,
+    "lon": 10.75
+  },
+  {
+    "code": "NP",
+    "label": "Kathmandu",
+    "lat": 27.72,
+    "lon": 85.32
+  },
+  {
+    "code": "NR",
+    "label": "Yaren",
+    "lat": -0.55,
+    "lon": 166.92
+  },
+  {
+    "code": "NU",
+    "label": "Alofi",
+    "lat": -19.02,
+    "lon": -169.92
+  },
+  {
+    "code": "NZ",
+    "label": "Wellington",
+    "lat": -41.3,
+    "lon": 174.78
+  },
+  {
+    "code": "OM",
+    "label": "Muscat",
+    "lat": 23.62,
+    "lon": 58.58
+  },
+  {
+    "code": "PA",
+    "label": "Panama City",
+    "lat": 8.97,
+    "lon": -79.53
+  },
+  {
+    "code": "PE",
+    "label": "Lima",
+    "lat": -12.05,
+    "lon": -77.05
+  },
+  {
+    "code": "PF",
+    "label": "Papeet\u0113",
+    "lat": -17.53,
+    "lon": -149.56
+  },
+  {
+    "code": "PG",
+    "label": "Port Moresby",
+    "lat": -9.45,
+    "lon": 147.18
+  },
+  {
+    "code": "PH",
+    "label": "Manila",
+    "lat": 14.6,
+    "lon": 120.97
+  },
+  {
+    "code": "PK",
+    "label": "Islamabad",
+    "lat": 33.68,
+    "lon": 73.05
+  },
+  {
+    "code": "PL",
+    "label": "Warsaw",
+    "lat": 52.25,
+    "lon": 21
+  },
+  {
+    "code": "PM",
+    "label": "Saint-Pierre",
+    "lat": 46.77,
+    "lon": -56.18
+  },
+  {
+    "code": "PN",
+    "label": "Adamstown",
+    "lat": -25.07,
+    "lon": -130.08
+  },
+  {
+    "code": "PR",
+    "label": "San Juan",
+    "lat": 18.47,
+    "lon": -66.12
+  },
+  {
+    "code": "PS",
+    "label": "Ramallah",
+    "lat": 31.9,
+    "lon": 35.2
+  },
+  {
+    "code": "PT",
+    "label": "Lisbon",
+    "lat": 38.72,
+    "lon": -9.13
+  },
+  {
+    "code": "PW",
+    "label": "Ngerulmud",
+    "lat": 7.5,
+    "lon": 134.62
+  },
+  {
+    "code": "PY",
+    "label": "Asunci\u00f3n",
+    "lat": -25.28,
+    "lon": -57.57
+  },
+  {
+    "code": "QA",
+    "label": "Doha",
+    "lat": 25.28,
+    "lon": 51.53
+  },
+  {
+    "code": "RE",
+    "label": "Saint-Denis",
+    "lat": -20.88,
+    "lon": 55.45
+  },
+  {
+    "code": "RO",
+    "label": "Bucharest",
+    "lat": 44.43,
+    "lon": 26.1
+  },
+  {
+    "code": "RS",
+    "label": "Belgrade",
+    "lat": 44.83,
+    "lon": 20.5
+  },
+  {
+    "code": "RU",
+    "label": "Moscow",
+    "lat": 55.75,
+    "lon": 37.6
+  },
+  {
+    "code": "RW",
+    "label": "Kigali",
+    "lat": -1.95,
+    "lon": 30.05
+  },
+  {
+    "code": "SA",
+    "label": "Riyadh",
+    "lat": 24.65,
+    "lon": 46.7
+  },
+  {
+    "code": "SB",
+    "label": "Honiara",
+    "lat": -9.43,
+    "lon": 159.95
+  },
+  {
+    "code": "SC",
+    "label": "Victoria",
+    "lat": -4.62,
+    "lon": 55.45
+  },
+  {
+    "code": "SD",
+    "label": "Khartoum",
+    "lat": 15.6,
+    "lon": 32.53
+  },
+  {
+    "code": "SE",
+    "label": "Stockholm",
+    "lat": 59.33,
+    "lon": 18.05
+  },
+  {
+    "code": "SG",
+    "label": "Singapore",
+    "lat": 1.28,
+    "lon": 103.85
+  },
+  {
+    "code": "SH",
+    "label": "Jamestown",
+    "lat": -15.93,
+    "lon": -5.72
+  },
+  {
+    "code": "SI",
+    "label": "Ljubljana",
+    "lat": 46.05,
+    "lon": 14.52
+  },
+  {
+    "code": "SJ",
+    "label": "Longyearbyen",
+    "lat": 78.22,
+    "lon": 15.63
+  },
+  {
+    "code": "SK",
+    "label": "Bratislava",
+    "lat": 48.15,
+    "lon": 17.12
+  },
+  {
+    "code": "SL",
+    "label": "Freetown",
+    "lat": 8.48,
+    "lon": -13.23
+  },
+  {
+    "code": "SM",
+    "label": "City of San Marino",
+    "lat": 43.94,
+    "lon": 12.45
+  },
+  {
+    "code": "SN",
+    "label": "Dakar",
+    "lat": 14.73,
+    "lon": -17.63
+  },
+  {
+    "code": "SO",
+    "label": "Mogadishu",
+    "lat": 2.07,
+    "lon": 45.33
+  },
+  {
+    "code": "SR",
+    "label": "Paramaribo",
+    "lat": 5.83,
+    "lon": -55.17
+  },
+  {
+    "code": "SS",
+    "label": "Juba",
+    "lat": 4.85,
+    "lon": 31.62
+  },
+  {
+    "code": "ST",
+    "label": "S\u00e3o Tom\u00e9",
+    "lat": 0.34,
+    "lon": 6.73
+  },
+  {
+    "code": "SV",
+    "label": "San Salvador",
+    "lat": 13.7,
+    "lon": -89.2
+  },
+  {
+    "code": "SX",
+    "label": "Philipsburg",
+    "lat": 18.02,
+    "lon": -63.03
+  },
+  {
+    "code": "SY",
+    "label": "Damascus",
+    "lat": 33.5,
+    "lon": 36.3
+  },
+  {
+    "code": "SZ",
+    "label": "Mbabane",
+    "lat": -26.32,
+    "lon": 31.13
+  },
+  {
+    "code": "TC",
+    "label": "Cockburn Town",
+    "lat": 21.46,
+    "lon": -71.14
+  },
+  {
+    "code": "TD",
+    "label": "N'Djamena",
+    "lat": 12.1,
+    "lon": 15.03
+  },
+  {
+    "code": "TF",
+    "label": "Port-aux-Fran\u00e7ais",
+    "lat": 48.81,
+    "lon": -1.4
+  },
+  {
+    "code": "TG",
+    "label": "Lom\u00e9",
+    "lat": 6.14,
+    "lon": 1.21
+  },
+  {
+    "code": "TH",
+    "label": "Bangkok",
+    "lat": 13.75,
+    "lon": 100.52
+  },
+  {
+    "code": "TJ",
+    "label": "Dushanbe",
+    "lat": 38.55,
+    "lon": 68.77
+  },
+  {
+    "code": "TK",
+    "label": "Fakaofo",
+    "lat": -9.38,
+    "lon": -171.22
+  },
+  {
+    "code": "TL",
+    "label": "Dili",
+    "lat": -8.58,
+    "lon": 125.6
+  },
+  {
+    "code": "TM",
+    "label": "Ashgabat",
+    "lat": 37.95,
+    "lon": 58.38
+  },
+  {
+    "code": "TN",
+    "label": "Tunis",
+    "lat": 36.8,
+    "lon": 10.18
+  },
+  {
+    "code": "TO",
+    "label": "Nuku'alofa",
+    "lat": -21.13,
+    "lon": -175.2
+  },
+  {
+    "code": "TR",
+    "label": "Ankara",
+    "lat": 39.93,
+    "lon": 32.87
+  },
+  {
+    "code": "TT",
+    "label": "Port of Spain",
+    "lat": 10.65,
+    "lon": -61.52
+  },
+  {
+    "code": "TV",
+    "label": "Funafuti",
+    "lat": -8.52,
+    "lon": 179.22
+  },
+  {
+    "code": "TW",
+    "label": "Taipei",
+    "lat": 25.03,
+    "lon": 121.52
+  },
+  {
+    "code": "TZ",
+    "label": "Dodoma",
+    "lat": -6.16,
+    "lon": 35.75
+  },
+  {
+    "code": "UA",
+    "label": "Kyiv",
+    "lat": 50.43,
+    "lon": 30.52
+  },
+  {
+    "code": "UG",
+    "label": "Kampala",
+    "lat": 0.32,
+    "lon": 32.55
+  },
+  {
+    "code": "US",
+    "label": "Washington, D.C.",
+    "lat": 38.89,
+    "lon": -77.05
+  },
+  {
+    "code": "UY",
+    "label": "Montevideo",
+    "lat": -34.85,
+    "lon": -56.17
+  },
+  {
+    "code": "UZ",
+    "label": "Tashkent",
+    "lat": 41.32,
+    "lon": 69.25
+  },
+  {
+    "code": "VA",
+    "label": "Vatican City",
+    "lat": 41.9,
+    "lon": 12.45
+  },
+  {
+    "code": "VC",
+    "label": "Kingstown",
+    "lat": 13.13,
+    "lon": -61.22
+  },
+  {
+    "code": "VE",
+    "label": "Caracas",
+    "lat": 10.48,
+    "lon": -66.87
+  },
+  {
+    "code": "VG",
+    "label": "Road Town",
+    "lat": 18.42,
+    "lon": -64.62
+  },
+  {
+    "code": "VI",
+    "label": "Charlotte Amalie",
+    "lat": 18.35,
+    "lon": -64.93
+  },
+  {
+    "code": "VN",
+    "label": "Hanoi",
+    "lat": 21.03,
+    "lon": 105.85
+  },
+  {
+    "code": "VU",
+    "label": "Port Vila",
+    "lat": -17.73,
+    "lon": 168.32
+  },
+  {
+    "code": "WF",
+    "label": "Mata-Utu",
+    "lat": -13.95,
+    "lon": -171.93
+  },
+  {
+    "code": "WS",
+    "label": "Apia",
+    "lat": -13.82,
+    "lon": -171.77
+  },
+  {
+    "code": "XK",
+    "label": "Pristina",
+    "lat": 42.67,
+    "lon": 21.17
+  },
+  {
+    "code": "YE",
+    "label": "Sana'a",
+    "lat": 15.37,
+    "lon": 44.19
+  },
+  {
+    "code": "YT",
+    "label": "Mamoudzou",
+    "lat": -12.78,
+    "lon": 45.22
+  },
+  {
+    "code": "ZA",
+    "label": "Pretoria",
+    "lat": -25.7,
+    "lon": 28.22
+  },
+  {
+    "code": "ZM",
+    "label": "Lusaka",
+    "lat": -15.42,
+    "lon": 28.28
+  },
+  {
+    "code": "ZW",
+    "label": "Harare",
+    "lat": -17.82,
+    "lon": 31.03
+  }
+]
