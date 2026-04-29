@@ -1,5 +1,6 @@
 // [DF-03] [PT-16] Append-only chunk queue with O(1) head pointer + adaptive compaction; merges adjacent same-type chunks (text or bytes) into batches up to 256KB / 256K chars for a single term.write call.
 export type TerminalWriteChunk = string | Uint8Array;
+export type TerminalWriteChunkKind = "text" | "bytes";
 
 export interface TerminalWriteBatch {
   data: TerminalWriteChunk;
@@ -12,8 +13,20 @@ export interface TerminalWriteQueue {
   head: number;
 }
 
+export interface TerminalWriteChunkPreview {
+  kind: TerminalWriteChunkKind;
+  size: number;
+  text: string;
+  preview: string;
+  containsEscape: boolean;
+  containsCR: boolean;
+  containsLF: boolean;
+}
+
 export const TERMINAL_WRITE_BATCH_MAX_BYTES = 256 * 1024;
 export const TERMINAL_WRITE_BATCH_MAX_STRING_CHARS = 256 * 1024;
+
+const terminalWriteDecoder = new TextDecoder();
 
 export function createTerminalWriteQueue(): TerminalWriteQueue {
   return { chunks: [], head: 0 };
@@ -30,6 +43,94 @@ export function resetTerminalWriteQueue(queue: TerminalWriteQueue): void {
 
 export function enqueueTerminalWrite(queue: TerminalWriteQueue, chunk: TerminalWriteChunk): void {
   queue.chunks.push(chunk);
+}
+
+function escapeTerminalWritePreview(text: string): string {
+  return text
+    .replace(/\x1b/g, "\\x1b")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t")
+    .slice(0, 240);
+}
+
+export function previewTerminalWriteChunk(chunk: TerminalWriteChunk): TerminalWriteChunkPreview {
+  const kind: TerminalWriteChunkKind = typeof chunk === "string" ? "text" : "bytes";
+  const text = typeof chunk === "string" ? chunk : terminalWriteDecoder.decode(chunk);
+  return {
+    kind,
+    size: typeof chunk === "string" ? chunk.length : chunk.byteLength,
+    text,
+    preview: escapeTerminalWritePreview(text),
+    containsEscape: text.includes("\x1b"),
+    containsCR: text.includes("\r"),
+    containsLF: text.includes("\n"),
+  };
+}
+
+function terminalWriteSizePayload(preview: TerminalWriteChunkPreview): { length: number } | { byteLength: number } {
+  return preview.kind === "bytes" ? { byteLength: preview.size } : { length: preview.size };
+}
+
+function terminalWriteByteDiagnosticPayload(preview: TerminalWriteChunkPreview) {
+  return {
+    containsEscape: preview.containsEscape,
+    containsCR: preview.containsCR,
+    containsLF: preview.containsLF,
+  };
+}
+
+export function terminalWriteMetricPayload(preview: TerminalWriteChunkPreview) {
+  return {
+    ...terminalWriteSizePayload(preview),
+    preview: preview.preview,
+  };
+}
+
+export function terminalWriteQueuedPayload(preview: TerminalWriteChunkPreview, queueDepth: number) {
+  return preview.kind === "bytes"
+    ? {
+        ...terminalWriteSizePayload(preview),
+        ...terminalWriteByteDiagnosticPayload(preview),
+        text: preview.text,
+        preview: preview.preview,
+        queueDepth,
+      }
+    : {
+        ...terminalWriteSizePayload(preview),
+        preview: preview.preview,
+        queueDepth,
+      };
+}
+
+export function terminalWriteBatchPayload(
+  preview: TerminalWriteChunkPreview,
+  chunkCount: number,
+  queueDepth: number
+) {
+  return preview.kind === "bytes"
+    ? {
+        chunkCount,
+        queueDepth,
+        ...terminalWriteSizePayload(preview),
+        ...terminalWriteByteDiagnosticPayload(preview),
+        text: preview.text,
+        preview: preview.preview,
+      }
+    : {
+        chunkCount,
+        queueDepth,
+        ...terminalWriteSizePayload(preview),
+        text: preview.text,
+        preview: preview.preview,
+      };
+}
+
+export function terminalWriteAppliedPayload(preview: TerminalWriteChunkPreview, chunkCount: number) {
+  return {
+    chunkCount,
+    ...terminalWriteSizePayload(preview),
+  };
 }
 
 function compactTerminalWriteQueue(queue: TerminalWriteQueue): void {

@@ -3,8 +3,11 @@ import {
   createTerminalWriteQueue,
   enqueueTerminalWrite,
   getTerminalWriteQueueDepth,
+  previewTerminalWriteChunk,
   resetTerminalWriteQueue,
   takeTerminalWriteBatch,
+  terminalWriteBatchPayload,
+  terminalWriteQueuedPayload,
 } from "../terminalWriteQueue";
 
 describe("terminalWriteQueue", () => {
@@ -77,6 +80,53 @@ describe("terminalWriteQueue", () => {
       data: "def",
       chunkCount: 1,
       size: 3,
+    });
+  });
+
+  it("builds text preview payloads", () => {
+    const preview = previewTerminalWriteChunk("a\tb\n");
+
+    expect(preview).toMatchObject({
+      kind: "text",
+      size: 4,
+      text: "a\tb\n",
+      preview: "a\\tb\\n",
+      containsLF: true,
+    });
+    expect(terminalWriteQueuedPayload(preview, 2)).toEqual({
+      length: 4,
+      preview: "a\\tb\\n",
+      queueDepth: 2,
+    });
+    expect(terminalWriteBatchPayload(preview, 3, 4)).toEqual({
+      chunkCount: 3,
+      queueDepth: 4,
+      length: 4,
+      text: "a\tb\n",
+      preview: "a\\tb\\n",
+    });
+  });
+
+  it("builds byte preview payloads", () => {
+    const preview = previewTerminalWriteChunk(new Uint8Array([0x1b, 0x0d, 0x0a]));
+
+    expect(preview).toMatchObject({
+      kind: "bytes",
+      size: 3,
+      text: "\x1b\r\n",
+      preview: "\\x1b\\r\\n",
+      containsEscape: true,
+      containsCR: true,
+      containsLF: true,
+    });
+    expect(terminalWriteQueuedPayload(preview, 1)).toEqual({
+      byteLength: 3,
+      containsEscape: true,
+      containsCR: true,
+      containsLF: true,
+      text: "\x1b\r\n",
+      preview: "\\x1b\\r\\n",
+      queueDepth: 1,
     });
   });
 });

@@ -20,7 +20,7 @@ Updated: 2026-04-29
 - [x] F10 useAbortableEffect
 - [x] R10-F8 configurable diff context radius
 - [x] R5-F12 move weather forwarding out of proxy hot path
-- [ ] F4-05 unify terminal write/writeBytes paths
+- [x] F4-05 unify terminal write/writeBytes paths
 - [ ] F4-09 theme variable ownership refactor
 - [ ] F6-7 split claude.ts
 - [ ] F6-8 delete or inline usePty.ts
