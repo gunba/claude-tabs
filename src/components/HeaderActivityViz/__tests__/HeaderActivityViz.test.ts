@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  BEACH_GLYPHS,
-  beachGlyph,
-  clampCol,
-  hash32,
-  makeSlotInit,
-  withAlpha,
-} from "../HeaderActivityViz";
+import { clampPx, hash32, makeSlotInit, withAlpha } from "../HeaderActivityViz";
 
 describe("hash32", () => {
   it("is deterministic for the same input", () => {
@@ -29,24 +22,34 @@ describe("hash32", () => {
 });
 
 describe("makeSlotInit", () => {
-  it("is deterministic for the same id", () => {
-    const a = makeSlotInit("session-x");
-    const b = makeSlotInit("session-x");
+  it("is deterministic for the same id and beachW", () => {
+    const a = makeSlotInit("session-x", 110);
+    const b = makeSlotInit("session-x", 110);
     expect(a).toEqual(b);
   });
 
   it("produces values inside the documented ranges", () => {
+    const beachW = 110;
     for (const id of ["a", "session-1", "session::sub", "x".repeat(64)]) {
-      const init = makeSlotInit(id);
-      expect(init.homeCol).toBeGreaterThanOrEqual(1);
-      expect(init.homeCol).toBeLessThan(7); // 1 + r1 * (BEACH_COLS-2) where BEACH_COLS=8
-      expect(init.homeRow).toBeGreaterThanOrEqual(0);
-      expect(init.homeRow).toBeLessThan(1);
-      expect(init.speed).toBeGreaterThanOrEqual(5);
-      expect(init.speed).toBeLessThan(9);
+      const init = makeSlotInit(id, beachW);
+      // homeXPx sits within the padded beach band (padding = 4px each side).
+      expect(init.homeXPx).toBeGreaterThanOrEqual(4);
+      expect(init.homeXPx).toBeLessThanOrEqual(beachW - 4);
+      expect(init.homeRow01).toBeGreaterThanOrEqual(0);
+      expect(init.homeRow01).toBeLessThan(1);
+      // speed in 28..50 px/s
+      expect(init.speedPxPerS).toBeGreaterThanOrEqual(28);
+      expect(init.speedPxPerS).toBeLessThan(50);
       expect(init.jitterSeed).toBeGreaterThanOrEqual(0);
       expect(init.jitterSeed).toBeLessThan(Math.PI * 2);
     }
+  });
+
+  it("scales home position with beachW", () => {
+    const small = makeSlotInit("same-id", 40);
+    const large = makeSlotInit("same-id", 200);
+    // Same hash → same r1 fraction → wider beach gives a wider home.
+    expect(large.homeXPx).toBeGreaterThan(small.homeXPx);
   });
 });
 
@@ -69,41 +72,16 @@ describe("withAlpha", () => {
   });
 });
 
-describe("beachGlyph", () => {
-  it("returns one of the registered glyphs", () => {
-    const valid = new Set(BEACH_GLYPHS.map((g) => g.ch));
-    for (let col = 0; col < 8; col++) {
-      for (let row = 0; row < 6; row++) {
-        const g = beachGlyph(col, row);
-        expect(valid.has(g.ch)).toBe(true);
-        expect(typeof g.light).toBe("boolean");
-      }
-    }
+describe("clampPx", () => {
+  it("clamps to [0, max]", () => {
+    expect(clampPx(-5, 100)).toBe(0);
+    expect(clampPx(150, 100)).toBe(100);
+    expect(clampPx(50, 100)).toBe(50);
   });
 
-  it("is deterministic for the same (col, row)", () => {
-    expect(beachGlyph(2, 4)).toEqual(beachGlyph(2, 4));
-    expect(beachGlyph(0, 0)).toEqual(beachGlyph(0, 0));
-  });
-
-  it("varies across positions", () => {
-    const seen = new Set<string>();
-    for (let col = 0; col < 8; col++) {
-      for (let row = 0; row < 6; row++) seen.add(beachGlyph(col, row).ch);
-    }
-    expect(seen.size).toBeGreaterThan(1);
-  });
-});
-
-describe("clampCol", () => {
-  it("floors fractional cols", () => {
-    expect(clampCol(3.9, 10)).toBe(3);
-    expect(clampCol(0.1, 10)).toBe(0);
-  });
-
-  it("clamps to [0, cols-1]", () => {
-    expect(clampCol(-5, 10)).toBe(0);
-    expect(clampCol(99, 10)).toBe(9);
-    expect(clampCol(10, 10)).toBe(9);
+  it("returns the value when in range", () => {
+    expect(clampPx(0, 100)).toBe(0);
+    expect(clampPx(100, 100)).toBe(100);
+    expect(clampPx(0.5, 100)).toBe(0.5);
   });
 });
