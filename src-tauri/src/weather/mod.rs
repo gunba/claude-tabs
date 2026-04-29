@@ -1,16 +1,25 @@
-//! [WX-01] Weather scene driven by Cloudflare-derived country code.
+//! [WX-01] Weather scene with two-tier location resolution.
 //!
-//! Anthropic and OpenAI both serve through Cloudflare, so their responses
-//! carry a `cf-ipcountry` header naming the user's edge POP country. The
-//! app registers [`observe_response_headers`] with the proxy, then we pick
-//! coordinates for that country, fetch current conditions from Open-Meteo
-//! every ~30 minutes, persist the latest
-//! payload to `<appdata>/weather.json`, and emit a `weather-changed`
-//! Tauri event the renderer subscribes to.
+//! Primary: the user's IANA timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`)
+//! sent from the frontend at startup via [`set_user_timezone`]. The
+//! embedded `timezone_coords.json` (generated from tzdb's zone1970.tab,
+//! ~310 zones) maps that to a city centroid — e.g. `Australia/Perth` →
+//! `(-31.95, 115.85)` rather than the country capital. This needs no
+//! network call and handles every populated IANA zone.
+//!
+//! Fallback: when timezone is unknown or not yet set, the proxy fills in
+//! `cf-ipcountry` via [`observe_response_headers`] and we resolve to the
+//! country capital. Useful before the frontend has booted, or for users
+//! whose timezone resolves to an entry we don't have coords for.
+//!
+//! Either way, we fetch current conditions from Open-Meteo every ~30
+//! minutes, persist the latest payload to `<appdata>/weather.json`, and
+//! emit a `weather-changed` Tauri event the renderer subscribes to.
 //!
 //! No API key is required: Open-Meteo is open and free for non-commercial
 //! use. A failed fetch retries after one minute; success holds for 30 min.
 
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -26,8 +35,11 @@ const SUCCESS_JITTER_MAX: Duration = Duration::from_secs(60);
 const RETRY_JITTER_MAX: Duration = Duration::from_secs(30);
 
 static COUNTRY: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static TIMEZONE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static CACHE: OnceLock<Mutex<Option<WeatherPayload>>> = OnceLock::new();
 static COUNTRY_CAPITALS: OnceLock<Vec<CountryCapital>> = OnceLock::new();
+static TIMEZONE_COORDS: OnceLock<HashMap<String, ZoneCoord>> = OnceLock::new();
+static LOCATION_CHANGED: OnceLock<tokio::sync::Notify> = OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeatherPayload {
@@ -53,11 +65,29 @@ struct CountryCapital {
     lon: f64,
 }
 
+#[derive(Debug, Deserialize)]
+struct ZoneCoord {
+    lat: f64,
+    lon: f64,
+    label: String,
+}
+
 fn country_capitals() -> &'static [CountryCapital] {
     COUNTRY_CAPITALS.get_or_init(|| {
         serde_json::from_str(include_str!("country_capitals.json"))
             .expect("embedded country_capitals.json must be valid")
     })
+}
+
+fn timezone_coords() -> &'static HashMap<String, ZoneCoord> {
+    TIMEZONE_COORDS.get_or_init(|| {
+        serde_json::from_str(include_str!("timezone_coords.json"))
+            .expect("embedded timezone_coords.json must be valid")
+    })
+}
+
+fn location_changed() -> &'static tokio::sync::Notify {
+    LOCATION_CHANGED.get_or_init(tokio::sync::Notify::new)
 }
 
 /// (lat, lon, label) for country/territory capital coordinates. Unknown
@@ -68,6 +98,14 @@ pub fn coords_for(cc: &str) -> Option<(f64, f64, &'static str)> {
         .iter()
         .find(|capital| capital.code == upper)?;
     Some((capital.lat, capital.lon, capital.label.as_str()))
+}
+
+/// (lat, lon, label) for an IANA timezone name. Returns None when the zone
+/// is missing from the embedded table — caller falls back to country code.
+pub fn coords_for_timezone(tz: &str) -> Option<(f64, f64, &'static str)> {
+    let trimmed = tz.trim();
+    let zone = timezone_coords().get(trimmed)?;
+    Some((zone.lat, zone.lon, zone.label.as_str()))
 }
 
 fn jitter(max: Duration) -> Duration {
@@ -90,6 +128,10 @@ fn country_slot() -> &'static Mutex<Option<String>> {
     COUNTRY.get_or_init(|| Mutex::new(None))
 }
 
+fn timezone_slot() -> &'static Mutex<Option<String>> {
+    TIMEZONE.get_or_init(|| Mutex::new(None))
+}
+
 fn cache_slot() -> &'static Mutex<Option<WeatherPayload>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
@@ -104,11 +146,35 @@ pub fn set_country(cc: &str) {
     if upper == "XX" {
         return;
     }
+    let mut changed = false;
     if let Ok(mut guard) = country_slot().lock() {
-        if guard.as_deref() == Some(upper.as_str()) {
-            return;
+        if guard.as_deref() != Some(upper.as_str()) {
+            *guard = Some(upper);
+            changed = true;
         }
-        *guard = Some(upper);
+    }
+    if changed {
+        location_changed().notify_one();
+    }
+}
+
+/// Set the IANA timezone reported by the frontend. Only updates when the
+/// value actually changes to avoid restarting an in-flight fetch. The
+/// poll loop wakes up so a known-zone change is reflected immediately.
+pub fn set_timezone(tz: &str) {
+    let trimmed = tz.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let mut changed = false;
+    if let Ok(mut guard) = timezone_slot().lock() {
+        if guard.as_deref() != Some(trimmed) {
+            *guard = Some(trimmed.to_string());
+            changed = true;
+        }
+    }
+    if changed {
+        location_changed().notify_one();
     }
 }
 
@@ -123,6 +189,28 @@ pub fn observe_response_headers(headers: &reqwest::header::HeaderMap) {
 
 fn current_country() -> Option<String> {
     country_slot().lock().ok().and_then(|g| g.clone())
+}
+
+fn current_timezone() -> Option<String> {
+    timezone_slot().lock().ok().and_then(|g| g.clone())
+}
+
+/// Resolve the best location we currently know: timezone first, country
+/// second. Returns (lat, lon, label, location_id) where location_id is
+/// the IANA zone or country code, suitable for the payload's `country`
+/// field for backwards-compat.
+fn current_location() -> Option<(f64, f64, String, String)> {
+    if let Some(tz) = current_timezone() {
+        if let Some((lat, lon, label)) = coords_for_timezone(&tz) {
+            return Some((lat, lon, label.to_string(), tz));
+        }
+    }
+    if let Some(cc) = current_country() {
+        if let Some((lat, lon, label)) = coords_for(&cc) {
+            return Some((lat, lon, label.to_string(), cc));
+        }
+    }
+    None
 }
 
 #[derive(Deserialize)]
@@ -214,17 +302,14 @@ pub fn init(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut retries = 0u32;
         loop {
-            if let Some(cc) = current_country() {
-                let Some((lat, lon, label)) = coords_for(&cc) else {
-                    tokio::time::sleep(RETRY_INTERVAL + jitter(RETRY_JITTER_MAX)).await;
-                    continue;
-                };
+            // Prefer timezone over country code; either path lands here.
+            if let Some((lat, lon, label, location_id)) = current_location() {
                 match fetch_open_meteo(lat, lon).await {
                     Ok((code, temp, wind, precip)) => {
                         retries = 0;
                         let payload = WeatherPayload {
-                            country: cc,
-                            label: label.to_string(),
+                            country: location_id,
+                            label,
                             weather_code: code,
                             temp_c: temp,
                             wind_kph: wind,
@@ -236,19 +321,44 @@ pub fn init(app: AppHandle) {
                         }
                         save_cached(&app, &payload);
                         let _ = app.emit("weather-changed", &payload);
-                        tokio::time::sleep(POLL_INTERVAL + jitter(SUCCESS_JITTER_MAX)).await;
+                        // Sleep for the success interval, but wake early if
+                        // the user's location changes (e.g. timezone arrives
+                        // after the first fetch).
+                        let success_sleep = POLL_INTERVAL + jitter(SUCCESS_JITTER_MAX);
+                        tokio::select! {
+                            _ = tokio::time::sleep(success_sleep) => {}
+                            _ = location_changed().notified() => {}
+                        }
                         continue;
                     }
                     Err(_) => {
-                        tokio::time::sleep(retry_delay(retries)).await;
+                        let retry_sleep = retry_delay(retries);
                         retries = retries.saturating_add(1);
+                        tokio::select! {
+                            _ = tokio::time::sleep(retry_sleep) => {}
+                            _ = location_changed().notified() => { retries = 0; }
+                        }
                         continue;
                     }
                 }
             }
-            tokio::time::sleep(RETRY_INTERVAL + jitter(RETRY_JITTER_MAX)).await;
+            // No location yet — wait briefly, but wake immediately when one
+            // arrives via either set_country or set_timezone.
+            let idle_sleep = RETRY_INTERVAL + jitter(RETRY_JITTER_MAX);
+            tokio::select! {
+                _ = tokio::time::sleep(idle_sleep) => {}
+                _ = location_changed().notified() => {}
+            }
         }
     });
+}
+
+/// Tauri command invoked once at frontend startup with the user's IANA
+/// timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`). Triggers
+/// an immediate weather refetch when the zone is known.
+#[tauri::command]
+pub fn set_user_timezone(tz: String) {
+    set_timezone(&tz);
 }
 
 #[tauri::command]
@@ -313,5 +423,88 @@ mod tests {
         observe_response_headers(&headers);
 
         assert_eq!(current_country().as_deref(), Some("US"));
+    }
+
+    #[test]
+    fn timezone_table_resolves_perth_directly_not_canberra() {
+        let (lat, _lon, label) = coords_for_timezone("Australia/Perth").unwrap();
+        // Perth is on the west coast (~-31.95) — well clear of Canberra
+        // (-35.27) which is what AU country-code resolution would give.
+        assert!((lat + 31.95).abs() < 0.5, "lat {lat} not near Perth");
+        assert_eq!(label, "Perth");
+    }
+
+    #[test]
+    fn timezone_table_covers_major_zones() {
+        // Sanity check: handful of major IANA zones the user is likely
+        // to be in. Lat/lon precision is tighter than country capital.
+        for tz in [
+            "Australia/Sydney",
+            "Australia/Melbourne",
+            "America/New_York",
+            "America/Los_Angeles",
+            "Europe/London",
+            "Asia/Tokyo",
+            "Asia/Singapore",
+        ] {
+            assert!(
+                coords_for_timezone(tz).is_some(),
+                "missing timezone in embedded table: {tz}"
+            );
+        }
+    }
+
+    #[test]
+    fn timezone_unknown_zone_returns_none() {
+        assert!(coords_for_timezone("Mars/Olympus_Mons").is_none());
+        assert!(coords_for_timezone("").is_none());
+        assert!(coords_for_timezone("    ").is_none());
+    }
+
+    #[test]
+    fn set_timezone_stores_and_normalises_whitespace() {
+        if let Ok(mut g) = timezone_slot().lock() {
+            *g = None;
+        }
+        set_timezone("  Australia/Perth  ");
+        assert_eq!(current_timezone().as_deref(), Some("Australia/Perth"));
+    }
+
+    #[test]
+    fn set_timezone_ignores_empty_input() {
+        if let Ok(mut g) = timezone_slot().lock() {
+            *g = Some("Asia/Tokyo".to_string());
+        }
+        set_timezone("");
+        // unchanged
+        assert_eq!(current_timezone().as_deref(), Some("Asia/Tokyo"));
+    }
+
+    #[test]
+    fn current_location_prefers_timezone_over_country() {
+        if let Ok(mut g) = timezone_slot().lock() {
+            *g = Some("Australia/Perth".to_string());
+        }
+        if let Ok(mut g) = country_slot().lock() {
+            *g = Some("AU".to_string());
+        }
+        let (lat, _lon, label, id) = current_location().expect("location available");
+        // Perth, not Canberra.
+        assert!((lat + 31.95).abs() < 0.5);
+        assert_eq!(label, "Perth");
+        assert_eq!(id, "Australia/Perth");
+    }
+
+    #[test]
+    fn current_location_falls_back_to_country_when_timezone_unknown() {
+        if let Ok(mut g) = timezone_slot().lock() {
+            *g = Some("Mars/Olympus_Mons".to_string());
+        }
+        if let Ok(mut g) = country_slot().lock() {
+            *g = Some("AU".to_string());
+        }
+        let (_lat, _lon, label, id) = current_location().expect("country fallback");
+        assert_eq!(label, "Canberra");
+        assert_eq!(id, "AU");
     }
 }

@@ -35,6 +35,14 @@ export function useStartupBootstrap({
       version.checkForAppUpdate();
       version.checkLatestCliVersion();
       // [WX-01] Hydrate ambient-viz weather from cache + subscribe to updates.
+      // Send the user's IANA timezone so the backend resolves to a city
+      // (e.g. Australia/Perth → Perth) rather than the country capital.
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) invoke("set_user_timezone", { tz }).catch(() => {});
+      } catch {
+        // Old runtime without Intl support; backend falls back to country code.
+      }
       void useWeatherStore.getState().init();
     })();
   }, [init, loadRuntimeInfo]);

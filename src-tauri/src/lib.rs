@@ -326,6 +326,7 @@ pub fn run() {
             commands::update_cli,
             commands::update_codex_cli,
             weather::get_current_weather,
+            weather::set_user_timezone,
             observability::append_observability_data,
             observability::get_observability_info,
             observability::open_observability_log,
