@@ -9,7 +9,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Config Schema and Providers
 
-- [CM-17 L484] StatusBar hooks button opens config manager directly to Hooks tab. Store: showConfigManager is string|false (tab name or closed).
+- [CM-17 L475] StatusBar hooks button opens config manager directly to Hooks tab. Store: showConfigManager is string|false (tab name or closed).
 
 ## Hooks Manager
 
