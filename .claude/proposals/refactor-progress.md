@@ -15,7 +15,7 @@ Updated: 2026-04-29
 - [x] F5-10 split useTapEventProcessor by concern
 - [x] F7-1 decompose TerminalPanel effects
 - [x] R9-F13 broader weather country mapping
-- [ ] F2-6 split settings.ts into coherent slices
+- [x] F2-6 split settings.ts into coherent slices
 - [ ] F4-01 full useTerminal decomposition
 - [ ] F10 useAbortableEffect
 - [ ] R10-F8 configurable diff context radius
