@@ -90,6 +90,15 @@ interface Drop {
   length: number;
 }
 
+interface Seagull {
+  xPx: number;
+  baseY: number;
+  speedPxPerS: number;
+  dir: 1 | -1;
+  flapPhase: number;
+  swaySeed: number;
+}
+
 interface ThemeProps {
   bgSurface: string;
   textMuted: string;
@@ -335,19 +344,31 @@ function computeWaveCrests(
   }
 }
 
-// Day/night phase from local clock. Returns:
+// Day/night phase from the user's local clock, ideally aligned with the
+// real sunrise/sunset for their actual location (Open-Meteo daily). Falls
+// back to a fixed 6 / 18 curve when those aren't available.
+//
+// Returns:
 //   light    — 0 (night) … 1 (peak day)
 //   twilight — 0..1 amount of dawn/dusk warm tint
 //   isNight  — true when the moon should be drawn instead of the sun
-function celestialPhase(date = new Date()): { light: number; twilight: number; isNight: boolean } {
+export function celestialPhase(
+  sunriseHour?: number | null,
+  sunsetHour?: number | null,
+  date: Date = new Date(),
+): { light: number; twilight: number; isNight: boolean } {
   const h = date.getHours() + date.getMinutes() / 60;
-  // Smooth daylight curve peaking at solar noon (12:00).
-  const daylight = Math.max(0, Math.sin(((h - 6) / 12) * Math.PI));
-  // Twilight bumps at ~5:30am and ~6:30pm — narrow Gaussian-ish peaks.
-  const dawn = Math.exp(-Math.pow((h - 5.5) / 0.9, 2));
-  const dusk = Math.exp(-Math.pow((h - 18.5) / 0.9, 2));
+  const sr = sunriseHour ?? 6;
+  const ss = sunsetHour ?? 18;
+  const dayLen = Math.max(0.5, ss - sr);
+  // Smooth daylight curve: 0 at sunrise, peak at solar noon, 0 at sunset.
+  const phaseT = (h - sr) / dayLen;
+  const daylight = phaseT >= 0 && phaseT <= 1 ? Math.sin(phaseT * Math.PI) : 0;
+  // Twilight bumps centred on actual sunrise/sunset times. Narrow Gaussian.
+  const dawn = Math.exp(-Math.pow((h - sr) / 0.9, 2));
+  const dusk = Math.exp(-Math.pow((h - ss) / 0.9, 2));
   const twilight = Math.max(dawn, dusk);
-  const isNight = h < 6 || h >= 19;
+  const isNight = h < sr || h >= ss;
   return { light: daylight, twilight, isNight };
 }
 
@@ -1167,6 +1188,55 @@ function drawSnow(
   }
 }
 
+function drawSeagulls(
+  ctx: CanvasRenderingContext2D,
+  list: Seagull[],
+  w: number,
+  dtSec: number,
+  t: number,
+  alpha: number,
+): void {
+  if (alpha <= 0) return;
+  for (const g of list) {
+    g.xPx += g.dir * g.speedPxPerS * dtSec;
+    if (g.dir > 0 && g.xPx > w + 8) g.xPx = -8;
+    else if (g.dir < 0 && g.xPx < -8) g.xPx = w + 8;
+    const y = Math.round(g.baseY + Math.sin(t * 0.6 + g.swaySeed) * 1.5);
+    const frame = Math.floor((t + g.flapPhase) * 3) % 2;
+    drawSeagull(ctx, Math.round(g.xPx), y, frame, alpha, g.dir);
+  }
+}
+
+function drawSeagull(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  frame: number,
+  alpha: number,
+  dir: 1 | -1,
+): void {
+  // 5-px-wide silhouette. Two frames: V (wings up) and flat (wings down).
+  // dir flips the asymmetric body offset so the bird "leads" with its head.
+  const a = alpha.toFixed(3);
+  ctx.fillStyle = `rgba(45, 50, 65, ${a})`;
+  if (frame === 0) {
+    // Wing tips raised, body 1 px down.
+    ctx.fillRect(x, y, 1, 1);
+    ctx.fillRect(x + 4, y, 1, 1);
+    ctx.fillRect(x + 1, y + 1, 1, 1);
+    ctx.fillRect(x + 3, y + 1, 1, 1);
+    ctx.fillRect(x + 2, y + 1, 1, 1);
+    // Tiny head dot leading the direction of travel.
+    ctx.fillStyle = `rgba(45, 50, 65, ${(alpha * 0.8).toFixed(3)})`;
+    ctx.fillRect(x + (dir > 0 ? 3 : 1), y + 2, 1, 1);
+  } else {
+    // Wings horizontal — a single 5-px row.
+    ctx.fillRect(x, y + 1, 5, 1);
+    ctx.fillStyle = `rgba(45, 50, 65, ${(alpha * 0.7).toFixed(3)})`;
+    ctx.fillRect(x + 2, y + 2, 1, 1);
+  }
+}
+
 function drawFog(ctx: CanvasRenderingContext2D, w: number, h: number, t: number): void {
   // Three drifting horizontal fog bands using soft alpha gradients.
   const bands = [
@@ -1238,6 +1308,7 @@ export function HeaderActivityViz() {
   const cloudsRef = useRef<Cloud[] | null>(null);
   const flakesRef = useRef<Flake[] | null>(null);
   const dropsRef = useRef<Drop[] | null>(null);
+  const seagullsRef = useRef<Seagull[] | null>(null);
   const intensityRef = useRef(BASE_INTENSITY);
   const themeRef = useRef<ThemeProps | null>(null);
   const sceneRef = useRef<WeatherScene>("clear");
@@ -1250,6 +1321,12 @@ export function HeaderActivityViz() {
   const sessions = useSessionStore((s) => s.sessions);
   const subagents = useSessionStore((s) => s.subagents);
   const weatherCode = useWeatherStore((s) => s.weatherCode);
+  const sunriseHour = useWeatherStore((s) => s.sunriseHour);
+  const sunsetHour = useWeatherStore((s) => s.sunsetHour);
+  const sunRef = useRef<{ sr: number | null; ss: number | null }>({ sr: null, ss: null });
+  useEffect(() => {
+    sunRef.current = { sr: sunriseHour, ss: sunsetHour };
+  }, [sunriseHour, sunsetHour]);
 
   const slots = useMemo<SlotData[]>(() => {
     const out: SlotData[] = [];
@@ -1285,6 +1362,9 @@ export function HeaderActivityViz() {
     cloudsRef.current = null;
     flakesRef.current = null;
     dropsRef.current = null;
+    // Birds avoid weather they wouldn't actually fly in (storm/snow); reset
+    // here so the scene change doesn't leave a stale flock floating around.
+    seagullsRef.current = null;
   }, [weatherCode]);
 
   useEffect(() => {
@@ -1461,6 +1541,25 @@ export function HeaderActivityViz() {
         }
         flakesRef.current = flakes;
       }
+      const wantsSeagulls =
+        scene !== "storm" && scene !== "snow" && scene !== "fog";
+      if (wantsSeagulls && !seagullsRef.current) {
+        const list: Seagull[] = [];
+        const count = 2;
+        const yMax = Math.max(6, Math.floor(h * 0.45));
+        for (let i = 0; i < count; i++) {
+          list.push({
+            xPx: ((i * w) / count + 30) % w,
+            baseY: 4 + ((i * 11) % Math.max(4, yMax - 4)),
+            speedPxPerS: 9 + i * 5,
+            dir: i % 2 === 0 ? 1 : -1,
+            flapPhase: i * 1.7,
+            swaySeed: i * 2.3,
+          });
+        }
+        seagullsRef.current = list;
+      }
+      if (!wantsSeagulls) seagullsRef.current = null;
     };
 
     const render = (timeMs: number) => {
@@ -1496,7 +1595,7 @@ export function HeaderActivityViz() {
       const crests = waveCrests.current;
 
       // 1. Sky (gradient + horizon glow + day/night tint).
-      const phase = celestialPhase();
+      const phase = celestialPhase(sunRef.current.sr, sunRef.current.ss);
       drawSky(ctx, scene, w, h, theme, phase);
 
       // 2. Stars at night (only when sky isn't fully blanketed by storm clouds).
@@ -1515,6 +1614,12 @@ export function HeaderActivityViz() {
       }
       if (scene === "fog") {
         drawFog(ctx, w, h, t);
+      }
+
+      // 3b. Seagulls drift across the sky on the daylight side. Skipped in
+      // storm/snow/fog above; faded out at night with daylight alpha.
+      if (seagullsRef.current && phase.light > 0.05) {
+        drawSeagulls(ctx, seagullsRef.current, w, dtSec, t, 0.55 * phase.light);
       }
 
       // 4. Sea + waves + foam crest (darkened at night).
@@ -1568,9 +1673,27 @@ export function HeaderActivityViz() {
       rafId = requestAnimationFrame(render);
     };
 
-    rafId = requestAnimationFrame(render);
-    return () => {
+    const start = () => {
+      if (rafId !== 0) return;
+      // Reset frame timing so dt doesn't snap to a huge value when resuming
+      // from a long pause; otherwise the wave/intensity decay would jump.
+      prevMs = 0;
+      rafId = requestAnimationFrame(render);
+    };
+    const stop = () => {
+      if (rafId === 0) return;
       cancelAnimationFrame(rafId);
+      rafId = 0;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    if (document.visibilityState === "visible") start();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
       ro.disconnect();
     };
   }, []);
@@ -1672,7 +1795,11 @@ function drawSlots(
       tilt = Math.max(-0.35, Math.min(0.35, (right - left) / 14));
       if (isActive) {
         const bob = Math.sin(t * 4 + slot.jitterSeed) * MASCOT_HOVER_PX;
-        cy = crestY - sizePx / 2 - 2 + bob;
+        // Paddle wobble: small extra tilt + 1-px vertical kick at ~3 Hz so
+        // the mascot reads as actively riding rather than statically planted.
+        const paddle = Math.sin(t * 6 + slot.jitterSeed * 1.7);
+        tilt += paddle * 0.05 * slot.dir;
+        cy = crestY - sizePx / 2 - 2 + bob + Math.abs(paddle) * 0.6;
       } else {
         // Diving: descend below crest with diveT, fade out.
         cy = crestY + sizePx / 2 + slot.diveT * 8;
@@ -1701,6 +1828,7 @@ function drawSlots(
     // Subagents and idle/errored mascots don't get one.
     if (isActive && !slot.isSubagent) {
       drawSurfboard(ctx, cx, cy + sizePx / 2 - 1, slot.cli);
+      drawPaddleSplash(ctx, cx, cy + sizePx / 2, slot.dir, t, slot.jitterSeed);
     }
     if (slot.isSubagent && atlas) {
       const key = subagentKeyFor(slot.subagentType);
@@ -1724,6 +1852,34 @@ function drawSlots(
       ctx.fillRect(xDraw, yDraw, sizePx, sizePx);
     }
     ctx.restore();
+  }
+}
+
+function drawPaddleSplash(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  dir: 1 | -1,
+  t: number,
+  seed: number,
+): void {
+  // Splash dots alternate sides at ~6 Hz to read as paddling. Trailing edge
+  // (opposite the direction of travel) gets a slightly bigger plume — that's
+  // where the wake would actually be.
+  const phase = (Math.floor((t + seed) * 6) % 2) === 0 ? 1 : -1;
+  const wakeX = Math.round(cx - dir * 14);
+  const oppX = Math.round(cx + dir * 11);
+  const wakeY = Math.round(cy + 1);
+  // Wake side (behind the mascot in travel direction).
+  ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.fillRect(wakeX, wakeY, 2, 1);
+  ctx.fillStyle = "rgba(220, 240, 250, 0.55)";
+  ctx.fillRect(wakeX - 1, wakeY - 1, 1, 1);
+  ctx.fillRect(wakeX + 2, wakeY + 1, 1, 1);
+  // Forward splash side, smaller and only on alternating frames.
+  if (phase > 0) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.fillRect(oppX, wakeY, 1, 1);
   }
 }
 

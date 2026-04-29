@@ -15,6 +15,8 @@ export interface WeatherPayload {
   windKph: number;
   precipMm: number;
   updatedAt: number;
+  sunriseHour?: number | null;
+  sunsetHour?: number | null;
 }
 
 interface WeatherState {
@@ -25,6 +27,8 @@ interface WeatherState {
   windKph: number | null;
   precipMm: number | null;
   updatedAt: number | null;
+  sunriseHour: number | null;
+  sunsetHour: number | null;
   initialized: boolean;
   init: () => Promise<void>;
 }
@@ -37,6 +41,8 @@ export const useWeatherStore = create<WeatherState>((set, get) => ({
   windKph: null,
   precipMm: null,
   updatedAt: null,
+  sunriseHour: null,
+  sunsetHour: null,
   initialized: false,
   init: async () => {
     if (get().initialized) return;
@@ -53,6 +59,8 @@ export const useWeatherStore = create<WeatherState>((set, get) => ({
           windKph: cached.windKph,
           precipMm: cached.precipMm,
           updatedAt: cached.updatedAt,
+          sunriseHour: cached.sunriseHour ?? null,
+          sunsetHour: cached.sunsetHour ?? null,
         });
       }
     } catch {
@@ -69,6 +77,8 @@ export const useWeatherStore = create<WeatherState>((set, get) => ({
         windKph: p.windKph,
         precipMm: p.precipMm,
         updatedAt: p.updatedAt,
+        sunriseHour: p.sunriseHour ?? null,
+        sunsetHour: p.sunsetHour ?? null,
         initialized: true,
       });
     }).catch(() => {

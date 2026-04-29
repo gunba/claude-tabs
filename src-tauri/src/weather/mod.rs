@@ -55,6 +55,12 @@ pub struct WeatherPayload {
     pub precip_mm: f64,
     #[serde(rename = "updatedAt")]
     pub updated_at: u64,
+    /// Hour-of-day (0..24) of today's sunrise in the location's local time.
+    /// None when the upstream response didn't include it.
+    #[serde(rename = "sunriseHour", skip_serializing_if = "Option::is_none", default)]
+    pub sunrise_hour: Option<f64>,
+    #[serde(rename = "sunsetHour", skip_serializing_if = "Option::is_none", default)]
+    pub sunset_hour: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +222,7 @@ fn current_location() -> Option<(f64, f64, String, String)> {
 #[derive(Deserialize)]
 struct OpenMeteoResp {
     current: Option<OpenMeteoCurrent>,
+    daily: Option<OpenMeteoDaily>,
 }
 
 #[derive(Deserialize)]
@@ -226,14 +233,46 @@ struct OpenMeteoCurrent {
     precipitation: Option<f64>,
 }
 
-async fn fetch_open_meteo(lat: f64, lon: f64) -> Result<(i32, f64, f64, f64), String> {
+#[derive(Deserialize)]
+struct OpenMeteoDaily {
+    sunrise: Option<Vec<String>>,
+    sunset: Option<Vec<String>>,
+}
+
+/// Parse Open-Meteo's local-time string ("YYYY-MM-DDTHH:MM") into hour of
+/// day (0..24). Returns None if the format doesn't match.
+pub(crate) fn parse_local_hour(s: &str) -> Option<f64> {
+    let time_part = s.split('T').nth(1).unwrap_or(s);
+    let mut parts = time_part.split(':');
+    let h: u32 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    if h > 23 || m > 59 {
+        return None;
+    }
+    Some(h as f64 + m as f64 / 60.0)
+}
+
+struct OpenMeteoCurrentReading {
+    code: i32,
+    temp: f64,
+    wind: f64,
+    precip: f64,
+    sunrise_hour: Option<f64>,
+    sunset_hour: Option<f64>,
+}
+
+async fn fetch_open_meteo(lat: f64, lon: f64) -> Result<OpenMeteoCurrentReading, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .user_agent("code-tabs")
         .build()
         .map_err(|e| e.to_string())?;
+    // `timezone=auto` returns sunrise/sunset in the location's local time
+    // (no Z suffix), which is what celestialPhase wants.
     let url = format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,wind_speed_10m,precipitation"
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
+         &current=temperature_2m,weather_code,wind_speed_10m,precipitation\
+         &daily=sunrise,sunset&timezone=auto"
     );
     let resp = client
         .get(&url)
@@ -246,12 +285,26 @@ async fn fetch_open_meteo(lat: f64, lon: f64) -> Result<(i32, f64, f64, f64), St
     let cur = body
         .current
         .ok_or_else(|| "missing current block".to_string())?;
-    Ok((
-        cur.weather_code.unwrap_or(0),
-        cur.temperature_2m.unwrap_or(0.0),
-        cur.wind_speed_10m.unwrap_or(0.0),
-        cur.precipitation.unwrap_or(0.0),
-    ))
+    let sunrise_hour = body
+        .daily
+        .as_ref()
+        .and_then(|d| d.sunrise.as_ref())
+        .and_then(|v| v.first())
+        .and_then(|s| parse_local_hour(s));
+    let sunset_hour = body
+        .daily
+        .as_ref()
+        .and_then(|d| d.sunset.as_ref())
+        .and_then(|v| v.first())
+        .and_then(|s| parse_local_hour(s));
+    Ok(OpenMeteoCurrentReading {
+        code: cur.weather_code.unwrap_or(0),
+        temp: cur.temperature_2m.unwrap_or(0.0),
+        wind: cur.wind_speed_10m.unwrap_or(0.0),
+        precip: cur.precipitation.unwrap_or(0.0),
+        sunrise_hour,
+        sunset_hour,
+    })
 }
 
 fn cache_path(app: &AppHandle) -> Option<std::path::PathBuf> {
@@ -305,16 +358,18 @@ pub fn init(app: AppHandle) {
             // Prefer timezone over country code; either path lands here.
             if let Some((lat, lon, label, location_id)) = current_location() {
                 match fetch_open_meteo(lat, lon).await {
-                    Ok((code, temp, wind, precip)) => {
+                    Ok(reading) => {
                         retries = 0;
                         let payload = WeatherPayload {
                             country: location_id,
                             label,
-                            weather_code: code,
-                            temp_c: temp,
-                            wind_kph: wind,
-                            precip_mm: precip,
+                            weather_code: reading.code,
+                            temp_c: reading.temp,
+                            wind_kph: reading.wind,
+                            precip_mm: reading.precip,
                             updated_at: now_secs(),
+                            sunrise_hour: reading.sunrise_hour,
+                            sunset_hour: reading.sunset_hour,
                         };
                         if let Ok(mut g) = cache_slot().lock() {
                             *g = Some(payload.clone());
@@ -370,6 +425,20 @@ pub fn get_current_weather() -> Option<WeatherPayload> {
 mod tests {
     use super::*;
 
+    // Tests touch shared static slots (COUNTRY, TIMEZONE) so they must run
+    // serially. cargo test runs in parallel by default, which would otherwise
+    // race the location-precedence cases.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn reset_state() {
+        if let Ok(mut g) = country_slot().lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = timezone_slot().lock() {
+            *g = None;
+        }
+    }
+
     #[test]
     fn coords_known_country() {
         let (lat, _, label) = coords_for("AU").unwrap();
@@ -392,18 +461,16 @@ mod tests {
 
     #[test]
     fn set_country_lowercases_and_stores() {
-        if let Ok(mut g) = country_slot().lock() {
-            *g = None;
-        }
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         set_country("au");
         assert_eq!(current_country().as_deref(), Some("AU"));
     }
 
     #[test]
     fn set_country_ignores_xx_and_short() {
-        if let Ok(mut g) = country_slot().lock() {
-            *g = None;
-        }
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         set_country("XX");
         assert!(current_country().is_none());
         set_country("X");
@@ -414,9 +481,8 @@ mod tests {
 
     #[test]
     fn observe_response_headers_reads_cloudflare_country() {
-        if let Ok(mut g) = country_slot().lock() {
-            *g = None;
-        }
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("cf-ipcountry", "US".parse().unwrap());
 
@@ -463,15 +529,16 @@ mod tests {
 
     #[test]
     fn set_timezone_stores_and_normalises_whitespace() {
-        if let Ok(mut g) = timezone_slot().lock() {
-            *g = None;
-        }
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         set_timezone("  Australia/Perth  ");
         assert_eq!(current_timezone().as_deref(), Some("Australia/Perth"));
     }
 
     #[test]
     fn set_timezone_ignores_empty_input() {
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         if let Ok(mut g) = timezone_slot().lock() {
             *g = Some("Asia/Tokyo".to_string());
         }
@@ -482,6 +549,8 @@ mod tests {
 
     #[test]
     fn current_location_prefers_timezone_over_country() {
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         if let Ok(mut g) = timezone_slot().lock() {
             *g = Some("Australia/Perth".to_string());
         }
@@ -496,7 +565,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_local_hour_handles_iso_and_bare_time() {
+        // "YYYY-MM-DDTHH:MM" — what Open-Meteo's timezone=auto returns.
+        let h = parse_local_hour("2026-04-29T06:23").unwrap();
+        assert!((h - (6.0 + 23.0 / 60.0)).abs() < 1e-6, "got {h}");
+        // Plain "HH:MM" also works.
+        let h2 = parse_local_hour("17:46").unwrap();
+        assert!((h2 - (17.0 + 46.0 / 60.0)).abs() < 1e-6);
+        // Garbage rejected.
+        assert!(parse_local_hour("").is_none());
+        assert!(parse_local_hour("nope").is_none());
+        assert!(parse_local_hour("25:00").is_none());
+        assert!(parse_local_hour("12:99").is_none());
+    }
+
+    #[test]
     fn current_location_falls_back_to_country_when_timezone_unknown() {
+        let _g = TEST_LOCK.lock().unwrap();
+        reset_state();
         if let Ok(mut g) = timezone_slot().lock() {
             *g = Some("Mars/Olympus_Mons".to_string());
         }
