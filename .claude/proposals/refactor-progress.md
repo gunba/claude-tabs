@@ -18,7 +18,7 @@ Updated: 2026-04-29
 - [x] F2-6 split settings.ts into coherent slices
 - [x] F4-01 full useTerminal decomposition
 - [x] F10 useAbortableEffect
-- [ ] R10-F8 configurable diff context radius
+- [x] R10-F8 configurable diff context radius
 - [ ] R5-F12 move weather forwarding out of proxy hot path
 - [ ] F4-05 unify terminal write/writeBytes paths
 - [ ] F4-09 theme variable ownership refactor

@@ -5,6 +5,8 @@ use tauri::AppHandle;
 
 const MAX_SNAPSHOT_BYTES: usize = 500 * 1024;
 const MAX_DIFF_BYTES: usize = 500 * 1024;
+const DEFAULT_DIFF_CONTEXT_RADIUS: usize = 3;
+const MAX_DIFF_CONTEXT_RADIUS: usize = 20;
 const DIFF_TRUNCATED_MARKER: &str = "\n\n[diff truncated]\n";
 
 #[derive(serde::Serialize, Debug, Clone)]
@@ -44,10 +46,15 @@ pub async fn paths_exist(paths: Vec<String>) -> Vec<PathStatus> {
 pub async fn compute_file_diff(
     file_path: String,
     before_content: Option<String>,
+    context_radius: Option<usize>,
     app: AppHandle,
 ) -> Result<String, String> {
     let span_start = std::time::Instant::now();
-    let span_data = serde_json::json!({ "filePath": file_path });
+    let context_radius = normalize_diff_context_radius(context_radius);
+    let span_data = serde_json::json!({
+        "filePath": file_path,
+        "contextRadius": context_radius,
+    });
     record_backend_perf_start(
         &app,
         "file_ops",
@@ -65,18 +72,12 @@ pub async fn compute_file_diff(
             return Ok(String::new());
         }
 
-        let diff = similar::TextDiff::from_lines(old, &current);
-        let display_path = file_path.replace('\\', "/");
-        let header_a = format!("a/{display_path}");
-        let header_b = format!("b/{display_path}");
-
-        let diff = diff
-            .unified_diff()
-            .context_radius(3)
-            .header(&header_a, &header_b)
-            .to_string();
-
-        Ok(truncate_diff(diff))
+        Ok(truncate_diff(build_unified_diff(
+            old,
+            &current,
+            &file_path,
+            context_radius,
+        )))
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -172,6 +173,29 @@ pub async fn read_file_for_snapshot(file_path: String, app: AppHandle) -> Result
     }
 }
 
+fn normalize_diff_context_radius(context_radius: Option<usize>) -> usize {
+    context_radius
+        .unwrap_or(DEFAULT_DIFF_CONTEXT_RADIUS)
+        .min(MAX_DIFF_CONTEXT_RADIUS)
+}
+
+fn build_unified_diff(
+    before_content: &str,
+    current_content: &str,
+    file_path: &str,
+    context_radius: usize,
+) -> String {
+    let diff = similar::TextDiff::from_lines(before_content, current_content);
+    let display_path = file_path.replace('\\', "/");
+    let header_a = format!("a/{display_path}");
+    let header_b = format!("b/{display_path}");
+
+    diff.unified_diff()
+        .context_radius(context_radius)
+        .header(&header_a, &header_b)
+        .to_string()
+}
+
 fn truncate_diff(diff: String) -> String {
     if diff.len() <= MAX_DIFF_BYTES {
         return diff;
@@ -191,6 +215,37 @@ fn truncate_diff(diff: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_diff_context_radius_defaults_and_caps() {
+        assert_eq!(
+            normalize_diff_context_radius(None),
+            DEFAULT_DIFF_CONTEXT_RADIUS
+        );
+        assert_eq!(normalize_diff_context_radius(Some(0)), 0);
+        assert_eq!(
+            normalize_diff_context_radius(Some(MAX_DIFF_CONTEXT_RADIUS + 1)),
+            MAX_DIFF_CONTEXT_RADIUS
+        );
+    }
+
+    #[test]
+    fn build_unified_diff_honors_context_radius() {
+        let before = "a\nb\nc\nd\ne\n";
+        let after = "a\nb\nX\nd\ne\n";
+
+        let no_context = build_unified_diff(before, after, "C:\\repo\\file.txt", 0);
+        assert!(no_context.contains("--- a/C:/repo/file.txt"));
+        assert!(no_context.contains("+++ b/C:/repo/file.txt"));
+        assert!(no_context.contains("-c"));
+        assert!(no_context.contains("+X"));
+        assert!(!no_context.contains(" b\n"));
+        assert!(!no_context.contains(" d\n"));
+
+        let one_line_context = build_unified_diff(before, after, "C:\\repo\\file.txt", 1);
+        assert!(one_line_context.contains(" b\n"));
+        assert!(one_line_context.contains(" d\n"));
+    }
 
     #[test]
     fn truncate_diff_caps_at_utf8_boundary() {
