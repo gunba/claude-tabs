@@ -23,9 +23,10 @@ Updated: 2026-04-29
 - [x] F4-05 unify terminal write/writeBytes paths
 - [x] F4-09 theme variable ownership refactor
 - [x] F6-7 split claude.ts
-- [ ] F6-8 delete or inline usePty.ts
+- [x] F6-8 delete or inline usePty.ts
 - [ ] F9 reducer-per-pane/lifted form state decision
 
 ## Decisions
 
 - F9 reducer-per-pane/lifted form state remains pending review. The current evidence still points to the shared editor and unsaved guard abstractions as the correct layer, so this item may close as rejected rather than implemented.
+- F6-8 proposal was partly stale: `ptyRef` was dead and was removed, but `handleRef` is used for resize/cleanup. Kept `usePty` as the PTY lifecycle boundary instead of inlining it into `TerminalPanel`.

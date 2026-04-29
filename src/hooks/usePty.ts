@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { spawnPty, type PtyProcess } from "../lib/ptyProcess";
+import { spawnPty } from "../lib/ptyProcess";
 import { dlog } from "../lib/debugLog";
 
 export interface PtyHandle {
@@ -16,7 +16,6 @@ interface UsePtyOptions {
 }
 
 export function usePty({ sessionId = null, onData, onExit }: UsePtyOptions) {
-  const ptyRef = useRef<PtyProcess | null>(null);
   const handleRef = useRef<PtyHandle | null>(null);
 
   const spawn = useCallback(
@@ -40,8 +39,6 @@ export function usePty({ sessionId = null, onData, onExit }: UsePtyOptions) {
         event: "pty.spawn_success",
         data: { pid: pty.pid, cwd, cols, rows },
       });
-      ptyRef.current = pty;
-
       pty.onData(onData);
       pty.onExit((info) => {
         dlog("pty", sessionId, "PTY onExit callback invoked", "DEBUG", {
@@ -61,7 +58,6 @@ export function usePty({ sessionId = null, onData, onExit }: UsePtyOptions) {
             data: { pid: pty.pid },
           });
           await pty.kill();
-          ptyRef.current = null;
         },
       };
 
