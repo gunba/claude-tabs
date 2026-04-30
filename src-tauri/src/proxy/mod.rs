@@ -736,6 +736,22 @@ async fn handle_connection(
         UpstreamKind::ChatGpt => is_chatgpt_responses_endpoint(path),
     };
 
+    // Emit a user-turn-started event when this POST is a fresh user-initiated
+    // turn (last message is user text, not a tool_result follow-up). The
+    // frontend listens to clear the response activity panel only when the
+    // request is genuinely committed to the wire — UI queue events fire too
+    // early since Claude Code lets the user erase a queued message before send.
+    if let Some(sid) = session_id {
+        if classify_user_turn(path, &body) == UserTurnKind::UserTurn {
+            let _ = app.emit(
+                &format!("user-turn-started-{sid}"),
+                serde_json::json!({
+                    "endpoint": upstream.label(),
+                }),
+            );
+        }
+    }
+
     // Apply prompt rewrite rules to the provider-native prompt field:
     // Claude/Anthropic => `system`, OpenAI / ChatGPT Responses => `instructions`
     // (same wire shape on both endpoints).
@@ -1306,6 +1322,110 @@ fn extract_model(body: &[u8]) -> Option<String> {
     json.get("model")?.as_str().map(|s| s.to_string())
 }
 
+// ── User-turn classification ────────────────────────────────────────
+//
+// Distinguishes a fresh user-initiated turn from a model continuation
+// (tool-result follow-up). The frontend uses this to decide when to
+// clear the response activity panel: queue-time UI events fire too
+// early because Claude Code lets the user erase a queued message
+// before the actual POST leaves the machine.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UserTurnKind {
+    UserTurn,
+    ToolFollowUp,
+    Other,
+}
+
+fn classify_user_turn(path: &str, body: &[u8]) -> UserTurnKind {
+    if path_matches_endpoint(path, "/v1/messages/count_tokens") {
+        return UserTurnKind::Other;
+    }
+    if is_anthropic_endpoint(path) {
+        return classify_anthropic_messages(body);
+    }
+    if is_openai_responses_endpoint(path) || is_chatgpt_responses_endpoint(path) {
+        return classify_openai_responses(body);
+    }
+    UserTurnKind::Other
+}
+
+fn classify_anthropic_messages(body: &[u8]) -> UserTurnKind {
+    let json: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return UserTurnKind::Other,
+    };
+    let messages = match json.get("messages").and_then(|v| v.as_array()) {
+        Some(arr) if !arr.is_empty() => arr,
+        _ => return UserTurnKind::Other,
+    };
+    let last = match messages.last() {
+        Some(m) => m,
+        None => return UserTurnKind::Other,
+    };
+    if last.get("role").and_then(|v| v.as_str()) != Some("user") {
+        return UserTurnKind::Other;
+    }
+    let content = match last.get("content") {
+        Some(c) => c,
+        None => return UserTurnKind::Other,
+    };
+    if content.is_string() {
+        return UserTurnKind::UserTurn;
+    }
+    if let Some(blocks) = content.as_array() {
+        let mut has_tool_result = false;
+        let mut has_user_text = false;
+        for block in blocks {
+            match block.get("type").and_then(|v| v.as_str()) {
+                Some("tool_result") => has_tool_result = true,
+                Some("text") | Some("image") => has_user_text = true,
+                _ => {}
+            }
+        }
+        if has_tool_result {
+            return UserTurnKind::ToolFollowUp;
+        }
+        if has_user_text {
+            return UserTurnKind::UserTurn;
+        }
+    }
+    UserTurnKind::Other
+}
+
+fn classify_openai_responses(body: &[u8]) -> UserTurnKind {
+    let json: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return UserTurnKind::Other,
+    };
+    if let Some(s) = json.get("input").and_then(|v| v.as_str()) {
+        return if s.is_empty() {
+            UserTurnKind::Other
+        } else {
+            UserTurnKind::UserTurn
+        };
+    }
+    let input = match json.get("input").and_then(|v| v.as_array()) {
+        Some(arr) if !arr.is_empty() => arr,
+        _ => return UserTurnKind::Other,
+    };
+    let last = match input.last() {
+        Some(m) => m,
+        None => return UserTurnKind::Other,
+    };
+    match last.get("type").and_then(|v| v.as_str()) {
+        Some("message") => {
+            if last.get("role").and_then(|v| v.as_str()) == Some("user") {
+                UserTurnKind::UserTurn
+            } else {
+                UserTurnKind::Other
+            }
+        }
+        Some("function_call_output") | Some("tool_result") => UserTurnKind::ToolFollowUp,
+        _ => UserTurnKind::Other,
+    }
+}
+
 async fn send_error(stream: &mut tokio::net::TcpStream, status: u16, msg: &str) {
     let body = serde_json::json!({
         "type": "error",
@@ -1637,5 +1757,128 @@ mod tests {
         assert_eq!(entry["model"], "sonnet");
         assert_eq!(entry["status"], 200);
         assert_eq!(entry["resp_len"], 5);
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_string_content_is_user_turn() {
+        let body = br#"{"model":"sonnet","messages":[{"role":"user","content":"hello"}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages", body),
+            UserTurnKind::UserTurn
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_text_block_is_user_turn() {
+        let body = br#"{"model":"sonnet","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages", body),
+            UserTurnKind::UserTurn
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_tool_result_is_follow_up() {
+        let body = br#"{"model":"sonnet","messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"X","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages", body),
+            UserTurnKind::ToolFollowUp
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_assistant_last_is_other() {
+        let body = br#"{"model":"sonnet","messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"sure"}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages", body),
+            UserTurnKind::Other
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_query_string_path_still_classifies() {
+        let body = br#"{"messages":[{"role":"user","content":"hi"}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages?stream=true", body),
+            UserTurnKind::UserTurn
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_count_tokens_is_other() {
+        let body = br#"{"messages":[{"role":"user","content":"hi"}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages/count_tokens", body),
+            UserTurnKind::Other
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_anthropic_empty_messages_is_other() {
+        let body = br#"{"messages":[]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/messages", body),
+            UserTurnKind::Other
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_malformed_body_is_other_no_panic() {
+        let body = b"not json at all";
+        assert_eq!(
+            classify_user_turn("/v1/messages", body),
+            UserTurnKind::Other
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_openai_message_user_is_user_turn() {
+        let body = br#"{"model":"gpt-5","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/responses", body),
+            UserTurnKind::UserTurn
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_openai_function_call_output_is_follow_up() {
+        let body = br#"{"model":"gpt-5","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},{"type":"function_call","call_id":"c1","name":"X","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"done"}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/responses", body),
+            UserTurnKind::ToolFollowUp
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_openai_string_input_is_user_turn() {
+        let body = br#"{"model":"gpt-5","input":"hello"}"#;
+        assert_eq!(
+            classify_user_turn("/v1/responses", body),
+            UserTurnKind::UserTurn
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_chatgpt_codex_responses_function_call_output_is_follow_up() {
+        let body = br#"{"input":[{"type":"function_call_output","call_id":"c1","output":"done"}]}"#;
+        assert_eq!(
+            classify_user_turn("/backend-api/codex/responses", body),
+            UserTurnKind::ToolFollowUp
+        );
+    }
+
+    #[test]
+    fn classify_user_turn_unknown_path_is_other() {
+        let body = br#"{"messages":[{"role":"user","content":"hi"}]}"#;
+        assert_eq!(classify_user_turn("/v1/models", body), UserTurnKind::Other);
+    }
+
+    #[test]
+    fn classify_user_turn_openai_assistant_message_is_other() {
+        let body = br#"{"input":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}"#;
+        assert_eq!(
+            classify_user_turn("/v1/responses", body),
+            UserTurnKind::Other
+        );
     }
 }

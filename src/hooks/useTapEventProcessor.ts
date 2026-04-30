@@ -259,7 +259,11 @@ export function useTapEventProcessor(
         }
       }
 
-      // [AS-01] markUserMessage on UserInput/SlashCommand (not TurnStart) — response window starts at real user input
+      // [AS-01] UserInput/SlashCommand opens an activity turn at queue time but does
+      // not move the response-window boundary. lastUserMessageAt is set by
+      // useUserTurnListener when the proxy observes the actual /v1/messages or
+      // /v1/responses POST leave the machine — Claude Code lets the user erase a
+      // queued message before send, so a queue-time clear is premature.
       if (event.kind === "UserInput" || event.kind === "SlashCommand") {
         const acceptedPrompt = activityTracker.markUserMessage(event.display);
         if (acceptedPrompt) {

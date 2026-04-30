@@ -14,7 +14,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Activity Store Semantics
 
-- [AS-01 L262] markUserMessage() is called by useTapEventProcessor on UserInput and SlashCommand tap events (not on TurnStart). This ensures the Response-mode activity window starts at the actual user input moment, not at the synthetic TurnStart which may fire from subagent turns or internal re-starts that do not represent a real user message.
+- [AS-01 L262] useTapEventProcessor handles UserInput and SlashCommand TAP events at queue time by opening an activity turn (via tapActivityTracker.markUserMessage) and seeding the prompt preview / Codex naming, but it no longer moves the response-window boundary. The boundary (lastUserMessageAt) is set by useUserTurnListener (see AS-05) when the proxy observes the actual /v1/messages or /v1/responses POST leave the machine. Claude Code queues submitted messages (rendered indented) and lets the user erase them before send, so a queue-time clear is premature.
 
 ## State Metadata
 

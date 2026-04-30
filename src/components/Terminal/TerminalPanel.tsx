@@ -7,6 +7,7 @@ import { getResumeId } from "../../lib/claude";
 import { dlog } from "../../lib/debugLog";
 import { useTapPipeline } from "../../hooks/useTapPipeline";
 import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
+import { useUserTurnListener } from "../../hooks/useUserTurnListener";
 import { writeToPty } from "../../lib/ptyRegistry";
 import { useSettingsStore } from "../../store/settings";
 import { useRuntimeStore } from "../../store/runtime";
@@ -95,6 +96,11 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
   const tapProcessor = useTapEventProcessor(
     session.state !== "dead" ? session.id : null
   );
+
+  // [AS-05] Move response-panel boundary on real /v1/messages or /v1/responses
+  // POST, not on queue-time UserInput. The proxy emits user-turn-started-{sid}
+  // when it observes a fresh user-initiated request leave the machine.
+  useUserTurnListener(session.state !== "dead" ? session.id : null);
 
   // Sync Claude's internal session ID into config for persistence (plan-mode forks, compaction)
   const prevClaudeSessionIdRef = useRef<string | null>(null);

@@ -200,7 +200,6 @@ export function createTapActivityTracker(sid: string): TapActivityTracker {
   const markUserMessage = (display: string): boolean => {
     const duplicateOpenPrompt = activityTurnOpen && lastActivityPromptDisplay === display;
     if (duplicateOpenPrompt) return false;
-    useActivityStore.getState().markUserMessage(sid);
     startActivityTurn(display);
     return true;
   };
