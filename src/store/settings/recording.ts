@@ -41,6 +41,8 @@ export const DEFAULT_RECORDING_CONFIG: RecordingConfig = {
       "codex-tool-input": true,
       "codex-tool-call-complete": true,
       "codex-message": true,
+      "codex-subagent-spawned": true,
+      "codex-subagent-status": true,
       "codex-thread-name-updated": true,
       "codex-compacted": true,
       "system-prompt": true,

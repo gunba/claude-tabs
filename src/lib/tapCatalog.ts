@@ -75,6 +75,8 @@ export const TAP_CATEGORY_GROUPS: Array<{
       { key: "codex-tool-input", label: "Codex Tool Inputs", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl tool arguments" },
       { key: "codex-tool-call-complete", label: "Codex Tool Results", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl tool output" },
       { key: "codex-message", label: "Codex Messages", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl messages" },
+      { key: "codex-subagent-spawned", label: "Codex Subagent Spawns", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl collab_agent_spawn_end" },
+      { key: "codex-subagent-status", label: "Codex Subagent Status", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl collab agent status events" },
       { key: "codex-thread-name-updated", label: "Codex Thread Names", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl thread_name_updated" },
       { key: "codex-compacted", label: "Codex Compaction", group: "codex", hookSource: "$CODEX_HOME/sessions/.../rollout-*.jsonl compacted" },
     ],

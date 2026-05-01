@@ -47,6 +47,15 @@ function parseJsonObject(value: unknown): Record<string, unknown> | null {
   }
 }
 
+// [CT-02] Codex exec completions preserve parsed command metadata and collab statuses become typed subagent events.
+function recordArray(value: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(value)) return null;
+  const records = value
+    .map(asRecord)
+    .filter((item): item is Record<string, unknown> => item !== null);
+  return records.length > 0 ? records : null;
+}
+
 function isCodexShellTool(name: string): boolean {
   return name === "shell" || name === "exec_command" || name === "shell_command" || name === "local_shell";
 }
@@ -238,6 +247,18 @@ function codexToolOutputInfo(entry: TapEntry): {
     exitCode,
     error,
   };
+}
+
+function codexStatusInfo(value: unknown): { status: string | null; statusMessage: string | null } {
+  if (typeof value === "string") return { status: value, statusMessage: null };
+  const rec = asRecord(value);
+  if (!rec) return { status: null, statusMessage: null };
+  if (typeof rec.completed === "string" || rec.completed === null) {
+    return { status: "completed", statusMessage: typeof rec.completed === "string" ? rec.completed : null };
+  }
+  if (typeof rec.errored === "string") return { status: "errored", statusMessage: rec.errored };
+  const firstKey = Object.keys(rec)[0];
+  return firstKey ? { status: firstKey, statusMessage: null } : { status: null, statusMessage: null };
 }
 
 // ── Parse (SSE) classifiers ──
@@ -1095,7 +1116,48 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
         kind: "CodexToolCallComplete",
         ts,
         callId: String(entry.callId || ""),
+        toolName: typeof entry.name === "string" ? normalizeCodexToolName(entry.name) : null,
+        command: typeof entry.command === "string" ? entry.command : null,
+        cwd: typeof entry.cwd === "string" ? entry.cwd : null,
+        parsedCmd: recordArray(entry.parsedCmd),
+        status: typeof entry.status === "string" ? entry.status : null,
         ...codexToolOutputInfo(entry),
+      };
+    }
+
+    if (cat === "codex-subagent-spawned") {
+      const status = codexStatusInfo(entry.status);
+      return {
+        kind: "CodexSubagentSpawned",
+        ts,
+        callId: String(entry.callId || ""),
+        parentThreadId: String(entry.parentThreadId || ""),
+        agentId: String(entry.agentId || ""),
+        nickname: typeof entry.nickname === "string" ? entry.nickname : null,
+        role: typeof entry.role === "string" ? entry.role : null,
+        prompt: typeof entry.prompt === "string" ? entry.prompt : "",
+        model: typeof entry.model === "string" ? entry.model : null,
+        reasoningEffort: typeof entry.reasoningEffort === "string" ? entry.reasoningEffort : null,
+        status: status.status,
+        statusMessage: status.statusMessage,
+      };
+    }
+
+    if (cat === "codex-subagent-status") {
+      const status = codexStatusInfo(entry.status);
+      const source = entry.source === "interaction" || entry.source === "wait" || entry.source === "close" || entry.source === "resume"
+        ? entry.source
+        : "interaction";
+      return {
+        kind: "CodexSubagentStatus",
+        ts,
+        callId: String(entry.callId || ""),
+        agentId: String(entry.agentId || ""),
+        nickname: typeof entry.nickname === "string" ? entry.nickname : null,
+        role: typeof entry.role === "string" ? entry.role : null,
+        status: status.status,
+        statusMessage: status.statusMessage,
+        source,
       };
     }
 

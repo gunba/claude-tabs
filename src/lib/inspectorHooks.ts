@@ -1007,6 +1007,7 @@ export type TapCategory =
   | "system-prompt"
   | "codex-session" | "codex-turn-context" | "codex-token-count" | "codex-tool-call-start"
   | "codex-tool-input" | "codex-tool-call-complete" | "codex-message"
+  | "codex-subagent-spawned" | "codex-subagent-status"
   | "codex-thread-name-updated" | "codex-compacted";
 
 /**

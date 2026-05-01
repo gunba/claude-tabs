@@ -87,14 +87,16 @@ describe("reduceTapEvent", () => {
   it("Codex tool completion → thinking", () => {
     expect(reduceTapEvent("toolUse", {
       kind: "CodexToolCallComplete", ts: 0,
-      callId: "call_1", outputSizeBytes: 10, durationMs: 120, exitCode: 0, error: null,
+      callId: "call_1", toolName: "Bash", command: null, cwd: null, parsedCmd: null, status: "completed",
+      outputSizeBytes: 10, durationMs: 120, exitCode: 0, error: null,
     })).toBe("thinking");
   });
 
   it("late Codex tool completion does not reactivate an idle completed task", () => {
     expect(reduceTapEvent("idle", {
       kind: "CodexToolCallComplete", ts: 0,
-      callId: "call_1", outputSizeBytes: 10, durationMs: 120, exitCode: 0, error: null,
+      callId: "call_1", toolName: "Bash", command: null, cwd: null, parsedCmd: null, status: "completed",
+      outputSizeBytes: 10, durationMs: 120, exitCode: 0, error: null,
     })).toBe("idle");
   });
 

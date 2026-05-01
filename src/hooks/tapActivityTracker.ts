@@ -4,6 +4,7 @@ import { useSessionStore } from "../store/sessions";
 import { dlog } from "../lib/debugLog";
 import { canonicalizePath, normalizePath } from "../lib/paths";
 import { parseBashFiles } from "../lib/bashFileParser";
+import { codexParsedCommandActivities } from "../lib/codexParsedCommandActivity";
 import type { TapEvent } from "../types/tapEvents";
 import type { ToolInputDiffData, FileChangeKind } from "../types/activity";
 import type { TapSubagentTracker } from "../lib/tapSubagentTracker";
@@ -399,6 +400,22 @@ export function createTapActivityTracker(sid: string): TapActivityTracker {
             });
           }
         }
+      }
+    }
+
+    // [CP-02] Structured Codex parsed_cmd records add read/search activity from exec_command_end.
+    if (event.kind === "CodexToolCallComplete" && event.parsedCmd) {
+      const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
+      const workDir = session?.config.workingDir ?? "";
+      const commandWorkDir = event.cwd ?? workDir;
+      for (const op of codexParsedCommandActivities(event.parsedCmd, commandWorkDir)) {
+        const isExternal = isExternalActivityPath(op.path, workDir);
+        activityStore.addFileActivity(sid, op.path, op.kind, {
+          agentId,
+          toolName: event.toolName ?? "Bash",
+          isExternal,
+          isFolder: op.isFolder,
+        });
       }
     }
 

@@ -108,6 +108,99 @@ describe("TapSubagentTracker", () => {
     });
   });
 
+  describe("Codex subagents", () => {
+    it("creates a subagent directly from Codex spawn telemetry", () => {
+      const actions = tracker.process({
+        kind: "CodexSubagentSpawned",
+        ts: 10,
+        callId: "call_spawn",
+        parentThreadId: "parent-thread",
+        agentId: "019de357-e3bd-72e3-84af-d7e3f4ba2f85",
+        nickname: "Raman",
+        role: "default",
+        prompt: "test prompt",
+        model: "gpt-5.5",
+        reasoningEffort: "low",
+        status: "pending_init",
+        statusMessage: null,
+      } as TapEvent);
+      const add = actions.find(a => a.type === "add");
+      expect(add!.subagent).toMatchObject({
+        id: "019de357-e3bd-72e3-84af-d7e3f4ba2f85",
+        description: "Raman",
+        subagentType: "default",
+        agentType: "default",
+        model: "gpt-5.5",
+        promptText: "test prompt",
+        state: "starting",
+      });
+      expect(tracker.hasActiveAgents()).toBe(true);
+    });
+
+    it("updates Codex subagent completion from status telemetry", () => {
+      tracker.process({
+        kind: "CodexSubagentSpawned",
+        ts: 10,
+        callId: "call_spawn",
+        parentThreadId: "parent-thread",
+        agentId: "agent-1",
+        nickname: "Raman",
+        role: "default",
+        prompt: "test prompt",
+        model: "gpt-5.5",
+        reasoningEffort: "low",
+        status: "running",
+        statusMessage: null,
+      } as TapEvent);
+      const actions = tracker.process({
+        kind: "CodexSubagentStatus",
+        ts: 20,
+        callId: "call_wait",
+        agentId: "agent-1",
+        nickname: "Raman",
+        role: "default",
+        status: "completed",
+        statusMessage: "finished",
+        source: "wait",
+      } as TapEvent);
+      expect(actions.find(a => a.type === "update")!.updates).toMatchObject({
+        state: "dead",
+        completed: true,
+        resultText: "finished",
+      });
+      expect(tracker.hasActiveAgents()).toBe(false);
+    });
+
+    it("does not keep Codex spawned agents active forever after the parent task completes", () => {
+      tracker.process({
+        kind: "CodexSubagentSpawned",
+        ts: 10,
+        callId: "call_spawn",
+        parentThreadId: "parent-thread",
+        agentId: "agent-1",
+        nickname: null,
+        role: "default",
+        prompt: "test prompt",
+        model: "gpt-5.5",
+        reasoningEffort: "low",
+        status: "pending_init",
+        statusMessage: null,
+      } as TapEvent);
+      const actions = tracker.process({
+        kind: "CodexTaskComplete",
+        ts: 30,
+        turnId: "turn-1",
+        lastAgentMessage: null,
+        durationMs: 1,
+      } as TapEvent);
+      expect(actions.find(a => a.subagentId === "agent-1")!.updates).toMatchObject({
+        state: "idle",
+        currentAction: null,
+      });
+      expect(tracker.hasActiveAgents()).toBe(false);
+    });
+  });
+
   // ── ConversationMessage filtering ──
 
   describe("ConversationMessage filtering", () => {

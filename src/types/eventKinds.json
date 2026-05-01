@@ -13,6 +13,8 @@
   "BunOp",
   "CodexTaskComplete",
   "CodexTaskStarted",
+  "CodexSubagentSpawned",
+  "CodexSubagentStatus",
   "CodexTokenCount",
   "CodexToolCallComplete",
   "CodexTurnContext",

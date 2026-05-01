@@ -260,6 +260,7 @@ pub fn run() {
             commands::search_jsonl_files,
             commands::read_conversation,
             commands::read_codex_session_messages,
+            commands::read_codex_thread_inspector,
             commands::check_cli_version,
             commands::get_cli_help,
             commands::read_ui_config,

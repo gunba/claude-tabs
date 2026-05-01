@@ -26,6 +26,7 @@ export const EVENT_KIND_COLORS: Record<string, string> = {
   // Session lifecycle
   TurnStart: "var(--success)", TurnEnd: "var(--success)", SessionResume: "var(--success)", IdlePrompt: "var(--success)",
   CodexTaskStarted: "var(--accent)", CodexTaskComplete: "var(--success)", CodexTurnContext: "var(--success)",
+  CodexSubagentSpawned: "var(--accent-secondary)", CodexSubagentStatus: "var(--accent-secondary)",
   // Thinking (matches thinking state -> orange/clay)
   ThinkingStart: "var(--accent)",
   // Plan / mode (action-needed signal -> purple)

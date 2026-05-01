@@ -899,6 +899,48 @@ fn codex_rollout_path_for_session(app_session_id: &str) -> Option<std::path::Pat
     }
 }
 
+// [RC-26] Codex subagent inspector resolves a rollout by child thread id, then reuses the rollout conversation parser.
+fn codex_rollout_path_for_thread(thread_id: &str) -> Option<std::path::PathBuf> {
+    if thread_id.trim().is_empty() {
+        return None;
+    }
+    collect_codex_rollout_files()
+        .into_iter()
+        .find(|path| codex_id_from_rollout_filename(path).as_deref() == Some(thread_id))
+}
+
+fn codex_thread_completion(path: &std::path::Path) -> (bool, Option<String>, Option<i64>) {
+    let Ok(file) = std::fs::File::open(path) else {
+        return (false, None, None);
+    };
+    use std::io::BufRead;
+    let reader = std::io::BufReader::new(file);
+    let mut completed = false;
+    let mut last_agent_message = None;
+    let mut duration_ms = None;
+    for line in reader.lines().map_while(Result::ok) {
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        if parsed["type"].as_str() != Some("event_msg") {
+            continue;
+        }
+        let payload = &parsed["payload"];
+        if payload["type"].as_str() != Some("task_complete") {
+            continue;
+        }
+        completed = true;
+        if let Some(text) = payload["last_agent_message"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            last_agent_message = Some(text.to_string());
+        }
+        duration_ms = payload["duration_ms"].as_i64();
+    }
+    (completed, last_agent_message, duration_ms)
+}
+
 fn search_codex_rollout_file(
     path: &std::path::Path,
     app_session_id: &str,
@@ -1347,9 +1389,9 @@ fn search_jsonl_files_sync(
 mod tests {
     use super::{
         codex_compaction_marker, codex_id_from_rollout_filename, codex_response_item_to_message,
-        codex_tool_input, codex_user_event_text, extract_codex_message_text, extract_message_text,
-        extract_user_text, push_search_matches, read_conversation_sync, session_dir_age_time,
-        summarize_codex_rollout, truncate_preview,
+        codex_thread_completion, codex_tool_input, codex_user_event_text,
+        extract_codex_message_text, extract_message_text, extract_user_text, push_search_matches,
+        read_conversation_sync, session_dir_age_time, summarize_codex_rollout, truncate_preview,
     };
     use serde_json::json;
     use std::io::Write;
@@ -1699,6 +1741,44 @@ mod tests {
         assert_eq!(tool_result["type"], "tool_result");
         assert_eq!(tool_result["toolUseId"], "call_123");
         assert_eq!(tool_result["text"], "/home/jordan");
+    }
+
+    #[test]
+    fn codex_thread_completion_reads_last_task_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rollout-complete.jsonl");
+        let mut file = std::fs::File::create(&path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_complete",
+                    "last_agent_message": "first",
+                    "duration_ms": 10
+                }
+            })
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{}",
+            json!({
+                "type": "event_msg",
+                "payload": {
+                    "type": "task_complete",
+                    "last_agent_message": "final",
+                    "duration_ms": 25
+                }
+            })
+        )
+        .unwrap();
+
+        let (completed, last_agent_message, duration_ms) = codex_thread_completion(&path);
+        assert!(completed);
+        assert_eq!(last_agent_message.as_deref(), Some("final"));
+        assert_eq!(duration_ms, Some(25));
     }
 
     #[test]
@@ -2180,6 +2260,27 @@ pub async fn read_codex_session_messages(
             .to_str()
             .ok_or_else(|| "Rollout path is not valid UTF-8".to_string())?;
         read_conversation_sync(s)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn read_codex_thread_inspector(thread_id: String) -> Result<serde_json::Value, String> {
+    tokio::task::spawn_blocking(move || {
+        let path = codex_rollout_path_for_thread(&thread_id)
+            .ok_or_else(|| format!("No Codex rollout file found for thread {thread_id}"))?;
+        let s = path
+            .to_str()
+            .ok_or_else(|| "Rollout path is not valid UTF-8".to_string())?;
+        let messages = read_conversation_sync(s)?;
+        let (completed, last_agent_message, duration_ms) = codex_thread_completion(&path);
+        Ok(serde_json::json!({
+            "messages": messages,
+            "completed": completed,
+            "lastAgentMessage": last_agent_message,
+            "durationMs": duration_ms,
+        }))
     })
     .await
     .map_err(|e| e.to_string())?

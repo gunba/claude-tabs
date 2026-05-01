@@ -32,9 +32,9 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
-use notify::{EventKind, RecursiveMode};
 #[cfg(not(target_os = "windows"))]
 use notify::Watcher as _;
+use notify::{EventKind, RecursiveMode};
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::Emitter;
@@ -792,6 +792,37 @@ fn parsed_str<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.is_empty())
 }
 
+// [CX-04] Codex collab event_msg records become subagent tap events; exec_command_end carries parsedCmd/cwd/status for activity tracking.
+fn emit_codex_subagent_status(
+    app: &tauri::AppHandle,
+    session_id: &str,
+    ts: &str,
+    call_id: Option<&Value>,
+    agent_id: &str,
+    nickname: Option<&Value>,
+    role: Option<&Value>,
+    status: &Value,
+    source: &str,
+) {
+    if agent_id.is_empty() {
+        return;
+    }
+    emit_tap_entry(
+        app,
+        session_id,
+        ts,
+        serde_json::json!({
+            "cat": "codex-subagent-status",
+            "callId": call_id,
+            "agentId": agent_id,
+            "nickname": nickname,
+            "role": role,
+            "status": status,
+            "source": source,
+        }),
+    );
+}
+
 // [CX-01] emit_tap_entry publishes 'tap-entry-{sid}' events with codex-* cats; function_call/custom_tool_call dual-handled; dual emit (tool-call-start + tool-input) for tool calls
 fn emit_tap_entry(app: &tauri::AppHandle, session_id: &str, ts: &str, mut entry: Value) {
     let Some(obj) = entry.as_object_mut() else {
@@ -1290,7 +1321,144 @@ fn emit_event_msg(app: &tauri::AppHandle, session_id: &str, ts: &str, payload: &
                     "output": payload.get("aggregated_output"),
                     "exitCode": payload.get("exit_code"),
                     "duration": payload.get("duration"),
+                    "command": payload.get("command").and_then(|v| v.as_array()).map(|parts| {
+                        parts.iter().filter_map(|part| part.as_str()).collect::<Vec<_>>().join(" ")
+                    }),
+                    "cwd": payload.get("cwd"),
+                    "parsedCmd": payload.get("parsed_cmd"),
+                    "source": payload.get("source"),
+                    "status": payload.get("status"),
                 }),
+            );
+        }
+        "collab_agent_spawn_end" => {
+            if let Some(agent_id) = payload.get("new_thread_id").and_then(|v| v.as_str()) {
+                emit_tap_entry(
+                    app,
+                    session_id,
+                    ts,
+                    serde_json::json!({
+                        "cat": "codex-subagent-spawned",
+                        "callId": payload.get("call_id"),
+                        "parentThreadId": payload.get("sender_thread_id"),
+                        "agentId": agent_id,
+                        "nickname": payload.get("new_agent_nickname"),
+                        "role": payload.get("new_agent_role"),
+                        "prompt": payload.get("prompt"),
+                        "model": payload.get("model"),
+                        "reasoningEffort": payload.get("reasoning_effort"),
+                        "status": payload.get("status"),
+                    }),
+                );
+            }
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.collab_agent_spawn_end",
+                "Codex subagent spawn finished",
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+        }
+        "collab_agent_interaction_end" => {
+            let agent_id = payload
+                .get("receiver_thread_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            emit_codex_subagent_status(
+                app,
+                session_id,
+                ts,
+                payload.get("call_id"),
+                agent_id,
+                payload.get("receiver_agent_nickname"),
+                payload.get("receiver_agent_role"),
+                payload.get("status").unwrap_or(&Value::Null),
+                "interaction",
+            );
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.collab_agent_interaction_end",
+                "Codex subagent interaction finished",
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+        }
+        "collab_waiting_end" => {
+            let mut agent_meta: HashMap<String, (Option<&Value>, Option<&Value>)> = HashMap::new();
+            if let Some(entries) = payload.get("agent_statuses").and_then(|v| v.as_array()) {
+                for entry in entries {
+                    let Some(agent_id) = entry.get("thread_id").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
+                    agent_meta.insert(
+                        agent_id.to_string(),
+                        (entry.get("agent_nickname"), entry.get("agent_role")),
+                    );
+                }
+            }
+            if let Some(statuses) = payload.get("statuses").and_then(|v| v.as_object()) {
+                for (agent_id, status) in statuses {
+                    let (nickname, role) =
+                        agent_meta.get(agent_id).copied().unwrap_or((None, None));
+                    emit_codex_subagent_status(
+                        app,
+                        session_id,
+                        ts,
+                        payload.get("call_id"),
+                        agent_id,
+                        nickname,
+                        role,
+                        status,
+                        "wait",
+                    );
+                }
+            }
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                "codex.collab_waiting_end",
+                "Codex subagent wait finished",
+                serde_json::json!({ "ts": ts, "payload": payload }),
+            );
+        }
+        "collab_close_end" | "collab_resume_end" => {
+            let agent_id = payload
+                .get("receiver_thread_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            emit_codex_subagent_status(
+                app,
+                session_id,
+                ts,
+                payload.get("call_id"),
+                agent_id,
+                payload.get("receiver_agent_nickname"),
+                payload.get("receiver_agent_role"),
+                payload.get("status").unwrap_or(&Value::Null),
+                if kind == "collab_close_end" {
+                    "close"
+                } else {
+                    "resume"
+                },
+            );
+            record_backend_event(
+                app,
+                "LOG",
+                "codex.rollout",
+                Some(session_id),
+                if kind == "collab_close_end" {
+                    "codex.collab_close_end"
+                } else {
+                    "codex.collab_resume_end"
+                },
+                "Codex subagent status changed",
+                serde_json::json!({ "ts": ts, "payload": payload }),
             );
         }
         "mcp_tool_call_begin" => {

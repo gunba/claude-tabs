@@ -1,8 +1,10 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
-import type { Subagent, SubagentMessage } from "../../types/session";
+import type { CapturedMessage, Subagent, SubagentMessage } from "../../types/session";
 import { isSubagentActive } from "../../types/session";
 import { splitFilePath } from "../../lib/paths";
+import { useSessionStore } from "../../store/sessions";
 import "./SubagentInspector.css";
 
 interface SubagentInspectorProps {
@@ -14,6 +16,51 @@ function getToolPreview(text: string): string {
   const firstLine = text.split("\n").find(line => line.trim().length > 0) ?? "";
   const trimmed = firstLine.trim();
   return trimmed;
+}
+
+// [IN-35] Codex child rollouts load on inspector open and render as retained subagent messages.
+interface CodexThreadInspectorPayload {
+  messages: CapturedMessage[];
+  completed: boolean;
+  lastAgentMessage: string | null;
+  durationMs: number | null;
+}
+
+function normalizeCodexToolName(name: string): string {
+  return name === "shell" || name === "exec_command" || name === "shell_command" || name === "local_shell"
+    ? "Bash"
+    : name;
+}
+
+function codexToolInput(name: string, input: unknown): Record<string, unknown> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const parsed = input as Record<string, unknown>;
+  if (normalizeCodexToolName(name) !== "Bash") return parsed;
+  const command = typeof parsed.cmd === "string"
+    ? parsed.cmd
+    : typeof parsed.command === "string" ? parsed.command : "";
+  return { ...parsed, command, description: "Codex command" };
+}
+
+function codexCapturedToSubagentMessages(messages: CapturedMessage[]): SubagentMessage[] {
+  const out: SubagentMessage[] = [];
+  for (const message of messages) {
+    for (const block of message.content) {
+      if (message.role === "assistant" && block.type === "text" && block.text) {
+        out.push({ role: "assistant", text: block.text, timestamp: Date.now() });
+      } else if (message.role === "assistant" && block.type === "tool_use") {
+        const rawName = block.name || "tool";
+        const toolName = normalizeCodexToolName(rawName);
+        const toolInput = codexToolInput(rawName, block.input);
+        const command = toolInput && typeof toolInput.command === "string" ? toolInput.command : null;
+        const text = command || `${rawName}: ${JSON.stringify(block.input ?? {})}`;
+        out.push({ role: "tool", text, toolName, toolInput, timestamp: Date.now() });
+      } else if (message.role === "user" && block.type === "tool_result" && block.text) {
+        out.push({ role: "tool", text: block.text, toolName: "result", timestamp: Date.now() });
+      }
+    }
+  }
+  return out;
 }
 
 // ── Tool-specific renderers ──
@@ -168,25 +215,73 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
   const prevLenRef = useRef(subagent.messages.length);
   const prevResultRef = useRef(subagent.resultText);
   const [promptCollapsed, setPromptCollapsed] = useState(!!subagent.resultText);
+  const [codexPayload, setCodexPayload] = useState<CodexThreadInspectorPayload | null>(null);
+  const updateSubagent = useSessionStore((s) => s.updateSubagent);
 
-  const isActive = isSubagentActive(subagent.state);
+  useEffect(() => {
+    if (!/^019[0-9a-f-]{33}$/i.test(subagent.id)) {
+      setCodexPayload(null);
+      return;
+    }
+    let cancelled = false;
+    invoke<CodexThreadInspectorPayload>("read_codex_thread_inspector", { threadId: subagent.id })
+      .then((payload) => {
+        if (!cancelled) setCodexPayload(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setCodexPayload(null);
+      });
+    return () => { cancelled = true; };
+  }, [subagent.id]);
+
+  const loadedCodexMessages = useMemo(
+    () => codexPayload ? codexCapturedToSubagentMessages(codexPayload.messages) : null,
+    [codexPayload],
+  );
+  const loadedResultText = codexPayload?.lastAgentMessage || subagent.resultText;
+  const lastLoadedMessage = loadedCodexMessages ? loadedCodexMessages[loadedCodexMessages.length - 1] : undefined;
+  const displayMessages = loadedCodexMessages && loadedResultText && lastLoadedMessage?.role === "assistant" && lastLoadedMessage.text === loadedResultText
+    ? loadedCodexMessages.slice(0, -1)
+    : loadedCodexMessages ?? subagent.messages;
+  const displaySubagent: Subagent = codexPayload
+    ? {
+        ...subagent,
+        messages: displayMessages,
+        resultText: loadedResultText,
+        durationMs: codexPayload.durationMs ?? subagent.durationMs,
+        completed: codexPayload.completed || subagent.completed,
+        state: codexPayload.completed ? "dead" : subagent.state,
+      }
+    : subagent;
+
+  useEffect(() => {
+    if (!codexPayload?.completed) return;
+    updateSubagent(subagent.parentSessionId, subagent.id, {
+      state: "dead",
+      completed: true,
+      durationMs: codexPayload.durationMs ?? subagent.durationMs,
+      resultText: loadedResultText || undefined,
+    });
+  }, [codexPayload, loadedResultText, subagent.durationMs, subagent.id, subagent.parentSessionId, updateSubagent]);
+
+  const isActive = isSubagentActive(displaySubagent.state);
 
   // Scroll to bottom on new messages (during active execution)
   useEffect(() => {
-    if (subagent.messages.length > prevLenRef.current && scrollRef.current && isActive) {
+    if (displaySubagent.messages.length > prevLenRef.current && scrollRef.current && isActive) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-    prevLenRef.current = subagent.messages.length;
-  }, [subagent.messages.length, isActive]);
+    prevLenRef.current = displaySubagent.messages.length;
+  }, [displaySubagent.messages.length, isActive]);
 
   // Scroll to result when it first appears
   useEffect(() => {
-    if (subagent.resultText && !prevResultRef.current && resultRef.current) {
+    if (displaySubagent.resultText && !prevResultRef.current && resultRef.current) {
       resultRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
       setPromptCollapsed(true);
     }
-    prevResultRef.current = subagent.resultText;
-  }, [subagent.resultText]);
+    prevResultRef.current = displaySubagent.resultText;
+  }, [displaySubagent.resultText]);
 
   // Scroll to bottom on open
   useEffect(() => {
@@ -204,28 +299,28 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
   }, [onClose]);
 
   const lastToolIndex = isActive
-    ? subagent.messages.reduce((acc, m, idx) => m.role === "tool" ? idx : acc, -1)
+    ? displaySubagent.messages.reduce((acc, m, idx) => m.role === "tool" ? idx : acc, -1)
     : -1;
 
   // Build metadata string
   const metaParts: string[] = [];
-  const typeLabel = subagent.subagentType || subagent.agentType;
+  const typeLabel = displaySubagent.subagentType || displaySubagent.agentType;
   if (typeLabel) metaParts.push(typeLabel);
-  if (subagent.model) metaParts.push(subagent.model.replace(/^claude-/, "").split("-")[0]);
-  if (subagent.totalToolUses != null) metaParts.push(`${subagent.totalToolUses} tools`);
-  if (subagent.durationMs != null) metaParts.push(`${Math.round(subagent.durationMs / 1000)}s`);
-  if (subagent.messages.length > 0) metaParts.push(`${subagent.messages.length} msgs`);
+  if (displaySubagent.model) metaParts.push(displaySubagent.model.replace(/^claude-/, "").split("-")[0]);
+  if (displaySubagent.totalToolUses != null) metaParts.push(`${displaySubagent.totalToolUses} tools`);
+  if (displaySubagent.durationMs != null) metaParts.push(`${Math.round(displaySubagent.durationMs / 1000)}s`);
+  if (displaySubagent.messages.length > 0) metaParts.push(`${displaySubagent.messages.length} msgs`);
 
   return (
     <div className="inspector-overlay" data-modal-overlay>
       <div className="inspector-header">
         <span className="inspector-header-status">
-          {subagent.completed
+          {displaySubagent.completed
             ? <span className="inspector-status-done">{"\u2713"}</span>
-            : <span className={`inspector-status-dot state-${subagent.state}`} />
+            : <span className={`inspector-status-dot state-${displaySubagent.state}`} />
           }
         </span>
-        <span className="inspector-header-desc">{subagent.description}</span>
+        <span className="inspector-header-desc">{displaySubagent.description}</span>
         {metaParts.length > 0 && (
           <span className="inspector-header-meta">{metaParts.join(" \u00b7 ")}</span>
         )}
@@ -235,7 +330,7 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
       <div className="inspector-body" ref={scrollRef}>
         {/* [TA-08] Terminal-style lifecycle viewer: prompt, conversation, result, and pending states. */}
         {/* Prompt section */}
-        {subagent.promptText && (
+        {displaySubagent.promptText && (
           <>
             <div
               className="inspector-section-divider inspector-section-clickable"
@@ -249,35 +344,35 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
             </div>
             {!promptCollapsed && (
               <div className="inspector-prompt">
-                <pre className="inspector-prompt-text">{subagent.promptText}</pre>
+                <pre className="inspector-prompt-text">{displaySubagent.promptText}</pre>
               </div>
             )}
           </>
         )}
 
         {/* Conversation section */}
-        {subagent.messages.length > 0 && (
+        {displaySubagent.messages.length > 0 && (
           <>
             <SectionDivider label="Conversation" />
-            {subagent.messages.map((msg, i) => (
+            {displaySubagent.messages.map((msg, i) => (
               <MessageBlock key={i} msg={msg} defaultExpanded={msg.role === "assistant" || i === lastToolIndex} />
             ))}
           </>
         )}
 
         {/* Result section */}
-        {subagent.resultText ? (
+        {displaySubagent.resultText ? (
           <div ref={resultRef}>
             <SectionDivider label="Result" />
             <div className="inspector-result">
-              <ReactMarkdown>{subagent.resultText}</ReactMarkdown>
+              <ReactMarkdown>{displaySubagent.resultText}</ReactMarkdown>
             </div>
           </div>
         ) : isActive ? (
           <div className="inspector-pending">
             <span className="inspector-pending-dots" />
           </div>
-        ) : subagent.messages.length === 0 ? (
+        ) : displaySubagent.messages.length === 0 ? (
           <div className="inspector-empty">No conversation data captured.</div>
         ) : null}
       </div>

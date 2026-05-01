@@ -508,6 +508,28 @@ describe("classifyTapEntry — Codex rollout events", () => {
     });
   });
 
+  it("preserves Codex exec_command parsed command metadata on completion", () => {
+    const event = classifyTapEntry({
+      ts: 6001,
+      cat: "codex-tool-call-complete",
+      name: "exec_command",
+      callId: "call_1",
+      command: "/usr/bin/zsh -lc sed -n '1,20p' src/App.tsx",
+      cwd: "/repo",
+      parsedCmd: [{ type: "read", cmd: "sed -n '1,20p' src/App.tsx", path: "src/App.tsx" }],
+      output: "ok",
+      status: "completed",
+    });
+    expect(event).toMatchObject({
+      kind: "CodexToolCallComplete",
+      toolName: "Bash",
+      command: "/usr/bin/zsh -lc sed -n '1,20p' src/App.tsx",
+      cwd: "/repo",
+      parsedCmd: [{ type: "read", path: "src/App.tsx" }],
+      status: "completed",
+    });
+  });
+
   it("classifies Codex local_shell calls as Bash tool input", () => {
     const event = classifyTapEntry({
       ts: 6004,
@@ -615,6 +637,48 @@ describe("classifyTapEntry — Codex rollout events", () => {
       kind: "CustomTitle",
       title: "fix activity pane",
       sessionId: "thread-1",
+    });
+  });
+
+  it("classifies Codex subagent spawn events", () => {
+    const event = classifyTapEntry({
+      ts: 6010,
+      cat: "codex-subagent-spawned",
+      callId: "call_spawn",
+      parentThreadId: "parent",
+      agentId: "019de357-e3bd-72e3-84af-d7e3f4ba2f85",
+      nickname: "Raman",
+      role: "default",
+      prompt: "test prompt",
+      model: "gpt-5.5",
+      reasoningEffort: "low",
+      status: "pending_init",
+    });
+    expect(event).toMatchObject({
+      kind: "CodexSubagentSpawned",
+      agentId: "019de357-e3bd-72e3-84af-d7e3f4ba2f85",
+      nickname: "Raman",
+      role: "default",
+      prompt: "test prompt",
+      status: "pending_init",
+    });
+  });
+
+  it("classifies Codex subagent completed statuses with result text", () => {
+    const event = classifyTapEntry({
+      ts: 6010,
+      cat: "codex-subagent-status",
+      callId: "call_wait",
+      agentId: "agent-1",
+      status: { completed: "done" },
+      source: "wait",
+    });
+    expect(event).toMatchObject({
+      kind: "CodexSubagentStatus",
+      agentId: "agent-1",
+      status: "completed",
+      statusMessage: "done",
+      source: "wait",
     });
   });
 

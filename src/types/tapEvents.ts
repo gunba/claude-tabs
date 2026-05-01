@@ -233,10 +233,40 @@ export interface CodexTokenCount extends TapEventBase {
 export interface CodexToolCallComplete extends TapEventBase {
   kind: "CodexToolCallComplete";
   callId: string;
+  toolName: string | null;
+  command: string | null;
+  cwd: string | null;
+  parsedCmd: Array<Record<string, unknown>> | null;
+  status: string | null;
   outputSizeBytes: number;
   durationMs: number | null;
   exitCode: number | null;
   error: string | null;
+}
+
+export interface CodexSubagentSpawned extends TapEventBase {
+  kind: "CodexSubagentSpawned";
+  callId: string;
+  parentThreadId: string;
+  agentId: string;
+  nickname: string | null;
+  role: string | null;
+  prompt: string;
+  model: string | null;
+  reasoningEffort: string | null;
+  status: string | null;
+  statusMessage: string | null;
+}
+
+export interface CodexSubagentStatus extends TapEventBase {
+  kind: "CodexSubagentStatus";
+  callId: string;
+  agentId: string;
+  nickname: string | null;
+  role: string | null;
+  status: string | null;
+  statusMessage: string | null;
+  source: "interaction" | "wait" | "close" | "resume";
 }
 
 export interface CodexTaskStarted extends TapEventBase {
@@ -686,6 +716,8 @@ export type TapEvent =
   | CodexTurnContext
   | CodexTokenCount
   | CodexToolCallComplete
+  | CodexSubagentSpawned
+  | CodexSubagentStatus
   | CodexTaskStarted
   | CodexTaskComplete
   | ContextFilesHintEvent

@@ -6,6 +6,29 @@ import { dlog } from "./debugLog";
 
 const INTERNAL_ASIDE_QUESTION_AGENT_PREFIX = "aside_question";
 
+// [IN-35] CodexSubagentSpawned/Status events create and update retained subagent cards.
+function codexStateFromStatus(status: string | null): SessionState {
+  switch (status) {
+    case "pending_init":
+      return "starting";
+    case "running":
+      return "thinking";
+    case "interrupted":
+      return "interrupted";
+    case "completed":
+    case "errored":
+    case "shutdown":
+    case "not_found":
+      return "dead";
+    default:
+      return "thinking";
+  }
+}
+
+function isCodexCompletedStatus(status: string | null): boolean {
+  return status === "completed";
+}
+
 export interface SubagentAction {
   type: "add" | "update";
   subagentId?: string;
@@ -41,6 +64,7 @@ export class TapSubagentTracker {
   private processedUuids = new Set<string>(); // dedup re-serialized ConversationMessage content
   private lastMainToolCall: string | null = null; // last non-sidechain ToolCallStart tool name
   private lastUnnamedAgentId: string | null = null; // agentId that received "Agent" fallback description
+  private codexSubagentIds = new Set<string>();
 
   constructor(parentSessionId: string) {
     this.parentSessionId = parentSessionId;
@@ -143,6 +167,115 @@ export class TapSubagentTracker {
           model: event.model,
         });
         dlog("inspector", this.parentSessionId, `subagent spawn queued desc="${event.description.slice(0, 60)}"`, "DEBUG");
+        break;
+      }
+
+      case "CodexSubagentSpawned": {
+        if (!event.agentId) break;
+        const state = codexStateFromStatus(event.status);
+        const completed = isCodexCompletedStatus(event.status);
+        const description = event.nickname || event.role || "Codex agent";
+        this.codexSubagentIds.add(event.agentId);
+        this.subagentTokens.set(event.agentId, this.subagentTokens.get(event.agentId) ?? 0);
+        this.subagentMsgs.set(event.agentId, this.subagentMsgs.get(event.agentId) ?? []);
+        this.agentStates.set(event.agentId, state);
+        this.lastActiveAgent = event.agentId;
+        this.lastEventTs.set(event.agentId, event.ts || Date.now());
+
+        if (this.knownIds.has(event.agentId)) {
+          actions.push({
+            type: "update",
+            subagentId: event.agentId,
+            updates: {
+              state,
+              completed,
+              description,
+              subagentType: event.role || undefined,
+              agentType: event.role || undefined,
+              model: event.model || undefined,
+              promptText: event.prompt,
+              resultText: completed ? (event.statusMessage || undefined) : undefined,
+              currentEventKind: "CodexSubagentSpawned",
+            },
+          });
+          break;
+        }
+
+        this.knownIds.add(event.agentId);
+        actions.push({
+          type: "add",
+          subagent: {
+            id: event.agentId,
+            parentSessionId: this.parentSessionId,
+            state,
+            description,
+            subagentType: event.role || undefined,
+            agentType: event.role || undefined,
+            model: event.model || undefined,
+            promptText: event.prompt,
+            tokenCount: 0,
+            currentAction: event.status || null,
+            currentToolName: null,
+            currentEventKind: "CodexSubagentSpawned",
+            messages: [],
+            createdAt: event.ts,
+            resultText: completed ? (event.statusMessage || undefined) : undefined,
+            completed,
+          },
+        });
+        dlog("inspector", this.parentSessionId, `codex subagent ${event.agentId} created desc="${description}" status=${event.status}`, "DEBUG");
+        break;
+      }
+
+      case "CodexSubagentStatus": {
+        if (!event.agentId) break;
+        const state = codexStateFromStatus(event.status);
+        const completed = isCodexCompletedStatus(event.status);
+        this.codexSubagentIds.add(event.agentId);
+        this.agentStates.set(event.agentId, state);
+        this.lastActiveAgent = event.agentId;
+        this.lastEventTs.set(event.agentId, event.ts || Date.now());
+        const description = event.nickname || event.role || "Codex agent";
+        const updates: Partial<Subagent> = {
+          state,
+          completed,
+          currentAction: event.status,
+          currentToolName: null,
+          currentEventKind: "CodexSubagentStatus",
+        };
+        if (event.role) {
+          updates.subagentType = event.role;
+          updates.agentType = event.role;
+        }
+        if (completed && event.statusMessage) updates.resultText = event.statusMessage;
+
+        if (this.knownIds.has(event.agentId)) {
+          actions.push({ type: "update", subagentId: event.agentId, updates });
+        } else {
+          this.knownIds.add(event.agentId);
+          this.subagentTokens.set(event.agentId, 0);
+          this.subagentMsgs.set(event.agentId, []);
+          actions.push({
+            type: "add",
+            subagent: {
+              id: event.agentId,
+              parentSessionId: this.parentSessionId,
+              state,
+              description,
+              subagentType: event.role || undefined,
+              agentType: event.role || undefined,
+              tokenCount: 0,
+              currentAction: event.status,
+              currentToolName: null,
+              currentEventKind: "CodexSubagentStatus",
+              messages: [],
+              createdAt: event.ts,
+              resultText: completed ? (event.statusMessage || undefined) : undefined,
+              completed,
+            },
+          });
+        }
+        dlog("inspector", this.parentSessionId, `codex subagent ${event.agentId} status=${event.status}`, "DEBUG");
         break;
       }
 
@@ -428,6 +561,20 @@ export class TapSubagentTracker {
         }
         break;
 
+      case "CodexTaskComplete":
+        for (const agentId of this.codexSubagentIds) {
+          if (isSubagentActive(this.agentStates.get(agentId) ?? "dead")) {
+            this.agentStates.set(agentId, "idle");
+            actions.push({ type: "update", subagentId: agentId, updates: {
+              state: "idle",
+              currentToolName: null,
+              currentEventKind: null,
+              currentAction: null,
+            } });
+          }
+        }
+        break;
+
       // [IN-26] Route tool activity to active subagent (mirrors parent tab display)
       case "ToolCallStart": {
         // Track main-agent tool calls for phantom ToolInput suppression
@@ -522,5 +669,6 @@ export class TapSubagentTracker {
     this.processedUuids.clear();
     this.lastMainToolCall = null;
     this.lastUnnamedAgentId = null;
+    this.codexSubagentIds.clear();
   }
 }
