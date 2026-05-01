@@ -17,11 +17,11 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Config Implementation
 
-- [CI-02 L166] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
+- [CI-02 L213] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
 
 ## Config Schema and Providers
 
-- [CM-02 L165] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
+- [CM-02 L212] formatScopePath() normalizes backslashes to forward slashes and abbreviates project-scope paths via abbreviatePath(). User-scope paths (~/...) pass through unchanged.
 
 ## Platform
 
@@ -29,4 +29,6 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Data Flow
 
-- [DF-09 L122,139] groupSessionsByDir() and swapWithinGroup() in paths.ts: pure functions for tab grouping by normalized workingDir (Map-based, O(n) single pass, insertion-order groups) and position swapping within group boundaries. TabGroup type exported. parseWorktreePath() detects `.claude/worktrees/<slug>` paths, worktreeAcronym() abbreviates slugs by hyphen initials.
+- [DF-09 L122] groupSessionsByDir() in paths.ts is the pure tab-grouping helper: groups sessions by normalized workingDir using a Map for O(n) single-pass insertion-order grouping; worktrees collapse into project root via parseWorktreePath. TabGroup type exported. Tab-order and drag-reorder data flow lives alongside in the same module under DF-14.
+- [DF-14 L139,148,175] Pure drag-and-drop reorder helpers in src/lib/paths.ts: sideFromMidpoint(clientX, rect) returns 'before' / 'after' from cursor X vs target midpoint (strict <, so the midpoint maps to 'after'). computeTabReorder(order, sourceId, targetId, side, groups) computes the new flat session order for a within-group tab drag and returns null on no-op (cross-group target, missing ids, or already at the resulting position via the adjustedInsert === fromIndex guard). computeGroupReorder(order, sourceKey, targetKey, side, groups) splices the entire source-group session block to before/after the target group's first/last session and returns null on no-op (same group, missing group, empty source, anchor missing, or identity-equal next array). All three are pure and unit-tested in src/lib/__tests__/paths.test.ts.
+  - TabBar.tsx delegates to these helpers in handleTabDragOver/handleTabDrop and handleGroupDragOver/handleGroupDrop; the helpers' null return is the single source of truth for both indicator suppression and drop suppression.

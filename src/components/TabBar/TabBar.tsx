@@ -1,7 +1,12 @@
 import { useRef, useState, type DragEvent } from "react";
 import { HeaderActivityViz } from "../HeaderActivityViz/HeaderActivityViz";
 import { IconFolder, IconGear, IconReturn } from "../Icons/Icons";
-import { swapWithinGroup, type TabGroup } from "../../lib/paths";
+import {
+  computeGroupReorder,
+  computeTabReorder,
+  sideFromMidpoint,
+  type TabGroup,
+} from "../../lib/paths";
 import type { SettledKind } from "../../lib/settledState";
 import type { Session, Subagent } from "../../types/session";
 import { Tab } from "./Tab";
@@ -27,6 +32,12 @@ interface TabBarProps {
   onQuickLaunch: () => void;
 }
 
+type DragSource =
+  | { kind: "tab"; id: string }
+  | { kind: "group"; key: string };
+
+type Side = "before" | "after";
+
 export function TabBar({
   groups,
   regularSessions,
@@ -47,65 +58,102 @@ export function TabBar({
   onOpenLauncher,
   onQuickLaunch,
 }: TabBarProps) {
-  const dragTabRef = useRef<string | null>(null);
-  const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  const dragSourceRef = useRef<DragSource | null>(null);
+  const [tabDropTarget, setTabDropTarget] = useState<{ id: string; side: Side } | null>(null);
+  const [groupDropTarget, setGroupDropTarget] = useState<{ key: string; side: Side } | null>(null);
 
   const clearDragState = () => {
-    dragTabRef.current = null;
-    setDragOverTabId(null);
+    dragSourceRef.current = null;
+    setTabDropTarget(null);
+    setGroupDropTarget(null);
   };
 
-  const handleDragStart = (
-    event: DragEvent<HTMLDivElement>,
-    session: Session,
-    fullName: string,
-  ) => {
-    dragTabRef.current = session.id;
+  const setDragGhost = (event: DragEvent<HTMLDivElement>, label: string) => {
     const ghost = document.createElement("div");
-    ghost.textContent = fullName;
+    ghost.textContent = label;
     ghost.style.cssText = "position:absolute;top:-999px;padding:4px 8px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;border-radius:4px;white-space:nowrap;";
     document.body.appendChild(ghost);
     event.dataTransfer.setDragImage(ghost, 0, 0);
     requestAnimationFrame(() => ghost.remove());
   };
 
-  const groupForSession = (sessionId: string): TabGroup | null =>
-    groups.find((group) => group.sessions.some((s) => s.id === sessionId)) ?? null;
+  const sideFromEvent = (event: DragEvent<HTMLDivElement>): Side =>
+    sideFromMidpoint(event.clientX, event.currentTarget.getBoundingClientRect());
 
-  const handleDragOver = (event: DragEvent<HTMLDivElement>, session: Session) => {
+  // ── Tab drag (within-group reorder) ───────────────────────────
+
+  const handleTabDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    session: Session,
+    fullName: string,
+  ) => {
+    dragSourceRef.current = { kind: "tab", id: session.id };
+    setDragGhost(event, fullName);
+  };
+
+  const handleTabDragOver = (event: DragEvent<HTMLDivElement>, session: Session) => {
     event.preventDefault();
-    const sourceId = dragTabRef.current;
-    const group = groupForSession(session.id);
-    if (sourceId && sourceId !== session.id && group?.sessions.some((s) => s.id === sourceId)) {
-      setDragOverTabId(session.id);
-    }
+    const source = dragSourceRef.current;
+    if (source?.kind !== "tab") return;
+    const side = sideFromEvent(event);
+    const order = regularSessions.map((s) => s.id);
+    if (!computeTabReorder(order, source.id, session.id, side, groups)) return;
+    event.dataTransfer.dropEffect = "move";
+    setTabDropTarget((prev) =>
+      prev?.id === session.id && prev.side === side ? prev : { id: session.id, side },
+    );
   };
 
-  const handleDrop = (session: Session) => {
-    setDragOverTabId(null);
-    const sourceId = dragTabRef.current;
-    const group = groupForSession(session.id);
-    if (sourceId && sourceId !== session.id && group?.sessions.some((s) => s.id === sourceId)) {
-      const order = regularSessions.map((s) => s.id);
-      const fromIndex = order.indexOf(sourceId);
-      const toIndex = order.indexOf(session.id);
-      if (fromIndex >= 0 && toIndex >= 0) {
-        order.splice(fromIndex, 1);
-        order.splice(toIndex, 0, sourceId);
-        onReorderTabs(order);
-      }
-    }
-    dragTabRef.current = null;
-  };
-
-  const moveWithinGroup = (sessionId: string, direction: "left" | "right") => {
-    const order = swapWithinGroup(
-      regularSessions.map((session) => session.id),
-      sessionId,
-      direction,
+  const handleTabDrop = (session: Session) => {
+    const drop = tabDropTarget;
+    const source = dragSourceRef.current;
+    setTabDropTarget(null);
+    dragSourceRef.current = null;
+    if (source?.kind !== "tab" || !drop || drop.id !== session.id) return;
+    const next = computeTabReorder(
+      regularSessions.map((s) => s.id),
+      source.id,
+      session.id,
+      drop.side,
       groups,
     );
-    if (order) onReorderTabs(order);
+    if (next) onReorderTabs(next);
+  };
+
+  // ── Group drag (whole-group reorder) ──────────────────────────
+
+  const handleGroupDragStart = (event: DragEvent<HTMLDivElement>, group: TabGroup) => {
+    dragSourceRef.current = { kind: "group", key: group.key };
+    setDragGhost(event, group.label);
+  };
+
+  const handleGroupDragOver = (event: DragEvent<HTMLDivElement>, group: TabGroup) => {
+    event.preventDefault();
+    const source = dragSourceRef.current;
+    if (source?.kind !== "group") return;
+    const side = sideFromEvent(event);
+    const order = regularSessions.map((s) => s.id);
+    if (!computeGroupReorder(order, source.key, group.key, side, groups)) return;
+    event.dataTransfer.dropEffect = "move";
+    setGroupDropTarget((prev) =>
+      prev?.key === group.key && prev.side === side ? prev : { key: group.key, side },
+    );
+  };
+
+  const handleGroupDrop = (group: TabGroup) => {
+    const drop = groupDropTarget;
+    const source = dragSourceRef.current;
+    setGroupDropTarget(null);
+    dragSourceRef.current = null;
+    if (source?.kind !== "group" || !drop || drop.key !== group.key) return;
+    const next = computeGroupReorder(
+      regularSessions.map((s) => s.id),
+      source.key,
+      group.key,
+      drop.side,
+      groups,
+    );
+    if (next) onReorderTabs(next);
   };
 
   return (
@@ -114,23 +162,26 @@ export function TabBar({
         {groups.flatMap((group) => [
           <div
             key={`hdr-${group.key}`}
-            className="tab-group-header"
+            className={`tab-group-header${groupDropTarget?.key === group.key ? ` tab-group-drop-${groupDropTarget.side}` : ""}`}
             style={{ ["--tab-count" as string]: group.sessions.length }}
             title={group.fullPath}
+            draggable
+            onDragStart={(event) => handleGroupDragStart(event, group)}
+            onDragOver={(event) => handleGroupDragOver(event, group)}
+            onDrop={() => handleGroupDrop(group)}
+            onDragEnd={clearDragState}
           >
             <IconFolder size={10} className="tab-group-header-icon" />
             <span className="tab-group-header-label">{group.label}</span>
           </div>,
-          ...group.sessions.map((session, index) => (
+          ...group.sessions.map((session) => (
             <Tab
               key={session.id}
               session={session}
               subagents={subagentMap.get(session.id) || []}
               activeTabId={activeTabId}
               ctrlHeld={ctrlHeld}
-              groupSize={group.sessions.length}
-              groupIndex={index}
-              dragOver={dragOverTabId === session.id}
+              dropSide={tabDropTarget?.id === session.id ? tabDropTarget.side : null}
               settledKind={settledTabs.get(session.id)}
               inspectorOff={inspectorOffSessions.has(session.id)}
               onActivate={onActivate}
@@ -138,14 +189,10 @@ export function TabBar({
               onRequestKill={onRequestKill}
               onRelaunchWithOptions={onRelaunchWithOptions}
               onOpenContextMenu={onOpenContextMenu}
-              onMoveWithinGroup={moveWithinGroup}
               onClearSettled={onClearSettled}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragLeave={(sessionId) => {
-                if (dragOverTabId === sessionId) setDragOverTabId(null);
-              }}
-              onDrop={handleDrop}
+              onDragStart={handleTabDragStart}
+              onDragOver={handleTabDragOver}
+              onDrop={handleTabDrop}
               onDragEnd={clearDragState}
             />
           )),

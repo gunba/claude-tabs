@@ -136,26 +136,73 @@ export function groupSessionsByDir(sessions: Session[]): TabGroup[] {
   return [...map.values()];
 }
 
-/** [DF-09] Swap a session with its neighbor within its group. Returns new ID order, or null at boundary. */
-export function swapWithinGroup(
-  allIds: string[],
+/** [DF-14] Determine which side of a target a cursor sits on, using its midpoint. */
+export function sideFromMidpoint(
+  clientX: number,
+  rect: { left: number; width: number },
+): "before" | "after" {
+  return clientX < rect.left + rect.width / 2 ? "before" : "after";
+}
+
+/**
+ * [DF-14] Compute the new flat session order after dragging tab `sourceId` onto `targetId`
+ * with the given `side`. Within-group constraint enforced. Returns null on no-op or violation
+ * (source == target, cross-group, missing ids, or already at the resulting position).
+ */
+export function computeTabReorder(
+  order: string[],
+  sourceId: string,
   targetId: string,
-  direction: "left" | "right",
-  groups: TabGroup[]
+  side: "before" | "after",
+  groups: TabGroup[],
 ): string[] | null {
-  const group = groups.find((g) => g.sessions.some((s) => s.id === targetId));
-  if (!group) return null;
-  const idx = group.sessions.findIndex((s) => s.id === targetId);
-  const neighborIdx = direction === "left" ? idx - 1 : idx + 1;
-  if (neighborIdx < 0 || neighborIdx >= group.sessions.length) return null;
-  const neighborId = group.sessions[neighborIdx].id;
-  const result = [...allIds];
-  const a = result.indexOf(targetId);
-  const b = result.indexOf(neighborId);
-  if (a < 0 || b < 0) return null;
-  result[a] = neighborId;
-  result[b] = targetId;
-  return result;
+  if (sourceId === targetId) return null;
+  const sourceGroup = groups.find((g) => g.sessions.some((s) => s.id === sourceId));
+  if (!sourceGroup?.sessions.some((s) => s.id === targetId)) return null;
+  const fromIndex = order.indexOf(sourceId);
+  const toIndex = order.indexOf(targetId);
+  if (fromIndex < 0 || toIndex < 0) return null;
+  const insertAt = side === "before" ? toIndex : toIndex + 1;
+  const adjustedInsert = insertAt > fromIndex ? insertAt - 1 : insertAt;
+  if (adjustedInsert === fromIndex) return null;
+  const next = [...order];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(adjustedInsert, 0, moved);
+  return next;
+}
+
+/**
+ * [DF-14] Compute the new flat session order after dragging the entire session block of group
+ * `sourceKey` onto group `targetKey` with the given `side`. Returns null on no-op or violation
+ * (same group, missing group, empty source, anchor missing, or already at the resulting position).
+ */
+export function computeGroupReorder(
+  order: string[],
+  sourceKey: string,
+  targetKey: string,
+  side: "before" | "after",
+  groups: TabGroup[],
+): string[] | null {
+  if (sourceKey === targetKey) return null;
+  const sourceGroup = groups.find((g) => g.key === sourceKey);
+  const targetGroup = groups.find((g) => g.key === targetKey);
+  if (!sourceGroup || !targetGroup || sourceGroup.sessions.length === 0) return null;
+  const sourceIds = sourceGroup.sessions.map((s) => s.id);
+  const sourceSet = new Set(sourceIds);
+  const remaining = order.filter((id) => !sourceSet.has(id));
+  const anchor = side === "before"
+    ? targetGroup.sessions[0].id
+    : targetGroup.sessions[targetGroup.sessions.length - 1].id;
+  const anchorIdx = remaining.indexOf(anchor);
+  if (anchorIdx < 0) return null;
+  const insertAt = side === "before" ? anchorIdx : anchorIdx + 1;
+  const next = [
+    ...remaining.slice(0, insertAt),
+    ...sourceIds,
+    ...remaining.slice(insertAt),
+  ];
+  if (next.length === order.length && next.every((id, i) => id === order[i])) return null;
+  return next;
 }
 
 /**

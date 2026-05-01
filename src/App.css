@@ -102,9 +102,20 @@
   --accent-hover: var(--provider-accent-hover);
 }
 
-.tab.tab-drag-over {
-  border-left: 2px solid var(--accent);
+.tab.tab-drop-before::before,
+.tab.tab-drop-after::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
 }
+.tab.tab-drop-before::before { left: 0; }
+.tab.tab-drop-after::after { right: 0; }
 
 .tab:hover {
   background: var(--bg-surface-hover);
@@ -424,6 +435,7 @@
 /* ── Tab groups ──────────────────────────────────────────────── */
 
 .tab-group-header {
+  position: relative;
   grid-row: 1;
   grid-column: span var(--tab-count, 1);
   height: var(--tab-group-header-height);
@@ -452,9 +464,28 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: default;
+  cursor: grab;
   user-select: none;
 }
+
+.tab-group-header:active {
+  cursor: grabbing;
+}
+
+.tab-group-header.tab-group-drop-before::before,
+.tab-group-header.tab-group-drop-after::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+.tab-group-header.tab-group-drop-before::before { left: 0; }
+.tab-group-header.tab-group-drop-after::after { right: 0; }
 
 .tab-group-header-icon {
   flex-shrink: 0;
@@ -466,44 +497,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-/* ── Tab reorder arrows ─────────────────────────────────────── */
-
-.tab-reorder-arrows {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.15s;
-  padding: 0 2px;
-  z-index: 1;
-}
-
-.tab:hover .tab-reorder-arrows { opacity: 1; }
-
-.tab-arrow {
-  pointer-events: auto;
-  width: 16px;
-  height: 24px;
-  border: none;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
-  color: var(--text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.tab-arrow:hover {
-  background: var(--bg-selection);
-  color: var(--text-primary);
 }
 
 /* ── Tab context menu ────────────────────────────────────────── */

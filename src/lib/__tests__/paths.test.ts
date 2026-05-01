@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   normalizePath,
   abbreviatePath,
+  computeGroupReorder,
+  computeTabReorder,
   formatScopePath,
   groupSessionsByDir,
-  swapWithinGroup,
   parseWorktreePath,
+  sideFromMidpoint,
   worktreeAcronym,
   dirToTabName,
   parentDir,
@@ -527,9 +529,30 @@ describe("groupSessionsByDir", () => {
   });
 });
 
-// ── swapWithinGroup ────────────────────────────────────────────
+// ── sideFromMidpoint ───────────────────────────────────────────
 
-describe("swapWithinGroup", () => {
+describe("sideFromMidpoint", () => {
+  it("returns 'before' when cursor is left of midpoint", () => {
+    expect(sideFromMidpoint(10, { left: 0, width: 100 })).toBe("before");
+  });
+
+  it("returns 'after' when cursor is right of midpoint", () => {
+    expect(sideFromMidpoint(60, { left: 0, width: 100 })).toBe("after");
+  });
+
+  it("returns 'after' at exact midpoint (strict <)", () => {
+    expect(sideFromMidpoint(50, { left: 0, width: 100 })).toBe("after");
+  });
+
+  it("respects non-zero left offset", () => {
+    expect(sideFromMidpoint(120, { left: 100, width: 100 })).toBe("before");
+    expect(sideFromMidpoint(160, { left: 100, width: 100 })).toBe("after");
+  });
+});
+
+// ── computeTabReorder ──────────────────────────────────────────
+
+describe("computeTabReorder", () => {
   const sessions = [
     mkSession("a1", "C:\\alpha"),
     mkSession("a2", "C:\\alpha"),
@@ -537,75 +560,117 @@ describe("swapWithinGroup", () => {
     mkSession("b1", "C:\\beta"),
   ];
   const groups = groupSessionsByDir(sessions);
-  const allIds = sessions.map((s) => s.id);
+  const order = ["a1", "a2", "a3", "b1"];
 
-  it("swaps right within group", () => {
-    const result = swapWithinGroup(allIds, "a1", "right", groups);
-    expect(result).toEqual(["a2", "a1", "a3", "b1"]);
+  it("moves first to after second", () => {
+    expect(computeTabReorder(order, "a1", "a2", "after", groups))
+      .toEqual(["a2", "a1", "a3", "b1"]);
   });
 
-  it("swaps left within group", () => {
-    const result = swapWithinGroup(allIds, "a2", "left", groups);
-    expect(result).toEqual(["a2", "a1", "a3", "b1"]);
+  it("moves first to before third", () => {
+    expect(computeTabReorder(order, "a1", "a3", "before", groups))
+      .toEqual(["a2", "a1", "a3", "b1"]);
   });
 
-  it("returns null at left boundary", () => {
-    expect(swapWithinGroup(allIds, "a1", "left", groups)).toBeNull();
+  it("moves last (within-group) to before first (within-group)", () => {
+    expect(computeTabReorder(order, "a3", "a1", "before", groups))
+      .toEqual(["a3", "a1", "a2", "b1"]);
   });
 
-  it("returns null at right boundary", () => {
-    expect(swapWithinGroup(allIds, "a3", "right", groups)).toBeNull();
+  it("moves middle tab right", () => {
+    expect(computeTabReorder(order, "a2", "a3", "after", groups))
+      .toEqual(["a1", "a3", "a2", "b1"]);
   });
 
-  it("returns null for single-session group", () => {
-    expect(swapWithinGroup(allIds, "b1", "left", groups)).toBeNull();
-    expect(swapWithinGroup(allIds, "b1", "right", groups)).toBeNull();
+  it("returns null when source equals target", () => {
+    expect(computeTabReorder(order, "a1", "a1", "before", groups)).toBeNull();
   });
 
-  it("returns null for unknown target", () => {
-    expect(swapWithinGroup(allIds, "unknown", "left", groups)).toBeNull();
+  it("returns null when target is in a different group", () => {
+    expect(computeTabReorder(order, "a1", "b1", "before", groups)).toBeNull();
+    expect(computeTabReorder(order, "b1", "a1", "after", groups)).toBeNull();
   });
 
-  it("does not mutate input array", () => {
-    const copy = [...allIds];
-    swapWithinGroup(allIds, "a1", "right", groups);
-    expect(allIds).toEqual(copy);
+  it("returns null on adjacent no-op (already at that position)", () => {
+    expect(computeTabReorder(order, "a1", "a2", "before", groups)).toBeNull();
+    expect(computeTabReorder(order, "a2", "a1", "after", groups)).toBeNull();
   });
 
-  it("swaps middle element right within group", () => {
-    const result = swapWithinGroup(allIds, "a2", "right", groups);
-    expect(result).toEqual(["a1", "a3", "a2", "b1"]);
+  it("returns null when source not in order", () => {
+    expect(computeTabReorder(order, "missing", "a2", "before", groups)).toBeNull();
   });
 
-  it("swaps last element left within group", () => {
-    const result = swapWithinGroup(allIds, "a3", "left", groups);
-    expect(result).toEqual(["a1", "a3", "a2", "b1"]);
+  it("returns null when target not in order", () => {
+    expect(computeTabReorder(order, "a1", "missing", "before", groups)).toBeNull();
   });
 
-  it("returns null when target exists in groups but not in allIds", () => {
-    // Simulates stale allIds missing a session
-    const staleIds = ["a1", "a3", "b1"]; // a2 missing from flat list
-    expect(swapWithinGroup(staleIds, "a2", "right", groups)).toBeNull();
+  it("does not mutate the input order", () => {
+    const copy = [...order];
+    computeTabReorder(order, "a1", "a3", "before", groups);
+    expect(order).toEqual(copy);
+  });
+});
+
+// ── computeGroupReorder ────────────────────────────────────────
+
+describe("computeGroupReorder", () => {
+  const sessions = [
+    mkSession("a1", "C:\\alpha"),
+    mkSession("a2", "C:\\alpha"),
+    mkSession("b1", "C:\\beta"),
+    mkSession("b2", "C:\\beta"),
+    mkSession("c1", "C:\\gamma"),
+  ];
+  const groups = groupSessionsByDir(sessions);
+  const aKey = groups[0].key;
+  const bKey = groups[1].key;
+  const cKey = groups[2].key;
+  const order = ["a1", "a2", "b1", "b2", "c1"];
+
+  it("moves group A to after group B", () => {
+    expect(computeGroupReorder(order, aKey, bKey, "after", groups))
+      .toEqual(["b1", "b2", "a1", "a2", "c1"]);
   });
 
-  it("works with interleaved allIds ordering", () => {
-    // allIds may be ordered differently than group-internal order
-    const interleaved = ["b1", "a3", "a1", "a2"];
-    const result = swapWithinGroup(interleaved, "a1", "right", groups);
-    // a1 swaps with a2: positions in allIds swap
-    expect(result).not.toBeNull();
-    expect(result![result!.indexOf("a2")]).toBe("a2");
-    expect(result![result!.indexOf("a1")]).toBe("a1");
-    // The key invariant: a1 and a2 positions are swapped
-    expect(result![interleaved.indexOf("a1")]).toBe("a2");
-    expect(result![interleaved.indexOf("a2")]).toBe("a1");
+  it("moves group C to before group A", () => {
+    expect(computeGroupReorder(order, cKey, aKey, "before", groups))
+      .toEqual(["c1", "a1", "a2", "b1", "b2"]);
   });
 
-  it("returns null for empty allIds", () => {
-    expect(swapWithinGroup([], "a1", "right", groups)).toBeNull();
+  it("moves group B to after group C", () => {
+    expect(computeGroupReorder(order, bKey, cKey, "after", groups))
+      .toEqual(["a1", "a2", "c1", "b1", "b2"]);
   });
 
-  it("returns null for empty groups array", () => {
-    expect(swapWithinGroup(allIds, "a1", "right", [])).toBeNull();
+  it("moves group C to after group A (between A and B)", () => {
+    expect(computeGroupReorder(order, cKey, aKey, "after", groups))
+      .toEqual(["a1", "a2", "c1", "b1", "b2"]);
+  });
+
+  it("returns null when source equals target", () => {
+    expect(computeGroupReorder(order, aKey, aKey, "before", groups)).toBeNull();
+  });
+
+  it("returns null on adjacent no-op (group already at that position)", () => {
+    // A is immediately before B → 'before B' is no-op for source A
+    expect(computeGroupReorder(order, aKey, bKey, "before", groups)).toBeNull();
+    // B is immediately after A → 'after A' is no-op for source B
+    expect(computeGroupReorder(order, bKey, aKey, "after", groups)).toBeNull();
+    // B is immediately before C → 'before C' is no-op for source B
+    expect(computeGroupReorder(order, bKey, cKey, "before", groups)).toBeNull();
+  });
+
+  it("returns null when source group key is not found", () => {
+    expect(computeGroupReorder(order, "missing", bKey, "before", groups)).toBeNull();
+  });
+
+  it("returns null when target group key is not found", () => {
+    expect(computeGroupReorder(order, aKey, "missing", "before", groups)).toBeNull();
+  });
+
+  it("does not mutate the input order", () => {
+    const copy = [...order];
+    computeGroupReorder(order, aKey, bKey, "after", groups);
+    expect(order).toEqual(copy);
   });
 });

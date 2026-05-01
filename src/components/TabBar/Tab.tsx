@@ -19,9 +19,7 @@ interface TabProps {
   subagents: Subagent[];
   activeTabId: string | null;
   ctrlHeld: boolean;
-  groupSize: number;
-  groupIndex: number;
-  dragOver: boolean;
+  dropSide: "before" | "after" | null;
   settledKind?: SettledKind;
   inspectorOff: boolean;
   onActivate: (sessionId: string) => void;
@@ -29,11 +27,9 @@ interface TabProps {
   onRequestKill: (sessionId: string) => void;
   onRelaunchWithOptions: (session: Session) => void;
   onOpenContextMenu: (menu: { x: number; y: number; sessionId: string }) => void;
-  onMoveWithinGroup: (sessionId: string, direction: "left" | "right") => void;
   onClearSettled: (sessionId: string) => void;
   onDragStart: (event: DragEvent<HTMLDivElement>, session: Session, fullName: string) => void;
   onDragOver: (event: DragEvent<HTMLDivElement>, session: Session) => void;
-  onDragLeave: (sessionId: string) => void;
   onDrop: (session: Session) => void;
   onDragEnd: () => void;
 }
@@ -43,9 +39,7 @@ export function Tab({
   subagents,
   activeTabId,
   ctrlHeld,
-  groupSize,
-  groupIndex,
-  dragOver,
+  dropSide,
   settledKind,
   inspectorOff,
   onActivate,
@@ -53,11 +47,9 @@ export function Tab({
   onRequestKill,
   onRelaunchWithOptions,
   onOpenContextMenu,
-  onMoveWithinGroup,
   onClearSettled,
   onDragStart,
   onDragOver,
-  onDragLeave,
   onDrop,
   onDragEnd,
 }: TabProps) {
@@ -97,13 +89,12 @@ export function Tab({
   return (
     // [CV-01] Per-tab CLI identity: class tab-cli-{cli} plus ProviderLogo in the CLI row.
     <div
-      className={`tab tab-cli-${session.config.cli}${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dragOver ? " tab-drag-over" : ""}${settledKind === "idle" ? " tab-settled-idle" : ""}${settledKind === "actionNeeded" || settledKind === "waitingPermission" ? " tab-settled-action" : ""}`}
+      className={`tab tab-cli-${session.config.cli}${isActive ? " tab-active" : ""}${isDead ? " tab-dead" : ""}${session.config.runMode ? " tab-run" : ""}${dropSide === "before" ? " tab-drop-before" : dropSide === "after" ? " tab-drop-after" : ""}${settledKind === "idle" ? " tab-settled-idle" : ""}${settledKind === "actionNeeded" || settledKind === "waitingPermission" ? " tab-settled-action" : ""}`}
       role="button"
       tabIndex={0}
       draggable
       onDragStart={(event) => onDragStart(event, session, fullName)}
       onDragOver={(event) => onDragOver(event, session)}
-      onDragLeave={() => onDragLeave(session.id)}
       onDrop={() => onDrop(session)}
       onDragEnd={onDragEnd}
       onClick={handleClick}
@@ -141,36 +132,6 @@ export function Tab({
           ))}
         </span>
       </span>
-      {groupSize > 1 && (
-        <span className="tab-reorder-arrows">
-          {groupIndex > 0 ? (
-            <button
-              className="tab-arrow"
-              onClick={(event) => {
-                event.stopPropagation();
-                onMoveWithinGroup(session.id, "left");
-              }}
-              title="Move left"
-              aria-label="Move tab left"
-            >
-              &#x2039;
-            </button>
-          ) : <span />}
-          {groupIndex < groupSize - 1 ? (
-            <button
-              className="tab-arrow"
-              onClick={(event) => {
-                event.stopPropagation();
-                onMoveWithinGroup(session.id, "right");
-              }}
-              title="Move right"
-              aria-label="Move tab right"
-            >
-              &#x203a;
-            </button>
-          ) : <span />}
-        </span>
-      )}
       <span className="tab-actions">
         {session.state !== "dead" && (
           <button
