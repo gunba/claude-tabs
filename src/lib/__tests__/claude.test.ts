@@ -391,6 +391,7 @@ describe("resolveResumeId", () => {
     resumeSession?: string | null;
     lastActive?: string;
     createdAt?: string;
+    cli?: "claude" | "codex";
   }): Session {
     const base = makeSession({
       sessionId: opts.sessionId ?? null,
@@ -398,7 +399,7 @@ describe("resolveResumeId", () => {
     });
     return {
       ...base,
-      config: { ...base.config, workingDir: opts.workingDir },
+      config: { ...base.config, workingDir: opts.workingDir, cli: opts.cli ?? base.config.cli },
       lastActive: opts.lastActive ?? base.lastActive,
       createdAt: opts.createdAt ?? base.createdAt,
     };
@@ -468,6 +469,15 @@ describe("resolveResumeId", () => {
       past({ id: "claude-id",  directory: "C:/dev/code-tabs", lastModified: "2026-04-28T10:00:00Z" }),
     ];
     expect(resolveResumeId(s, ps)).toBe("claude-id");
+  });
+
+  it("returns null for Codex sessions so a dead Codex tab never gets respawned with a Claude UUID", () => {
+    const s = sessionFor({ workingDir: "C:/dev/code-tabs", sessionId: null, cli: "codex" });
+    const ps = [
+      past({ id: "claude-uuid", directory: "C:/dev/code-tabs", lastModified: "2026-04-28T10:00:00Z" }),
+      past({ id: "codex-roll",  directory: "C:/dev/code-tabs", lastModified: "2026-04-28T11:00:00Z", cli: "codex" }),
+    ];
+    expect(resolveResumeId(s, ps)).toBeNull();
   });
 });
 

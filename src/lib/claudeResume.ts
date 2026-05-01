@@ -28,6 +28,8 @@ export function resolveResumeId(
   session: Session,
   pastSessions: PastSession[]
 ): string | null {
+  if (session.config.cli !== "claude") return null;
+
   const cwd = canonicalizePath(session.config.workingDir).toLowerCase();
   if (!cwd) return null;
 
