@@ -393,7 +393,11 @@ function computeWaveCrests(
 // back to a fixed 6 / 18 curve when those aren't available.
 //
 // Returns:
-//   light    — 0 (night) … 1 (peak day)
+//   light    — 0 (night) … 1 (peak day). Flat-topped: stays at 1 across
+//              the bulk of the day, ramps via smoothstep over a 1-hour
+//              window centred on sunrise / sunset. Without the flat top
+//              (i.e. the previous sin-bell curve) the sky read as dusk
+//              for ~70% of the day even though the sun was up.
 //   twilight — 0..1 amount of dawn/dusk warm tint
 //   isNight  — true when the moon should be drawn instead of the sun
 export function celestialPhase(
@@ -404,10 +408,12 @@ export function celestialPhase(
   const h = date.getHours() + date.getMinutes() / 60;
   const sr = sunriseHour ?? 6;
   const ss = sunsetHour ?? 18;
-  const dayLen = Math.max(0.5, ss - sr);
-  // Smooth daylight curve: 0 at sunrise, peak at solar noon, 0 at sunset.
-  const phaseT = (h - sr) / dayLen;
-  const daylight = phaseT >= 0 && phaseT <= 1 ? Math.sin(phaseT * Math.PI) : 0;
+  // Daylight: 1 across the bulk of the day, ramping to 0 over a 1h window
+  // centred on sunrise / sunset. min of the two ramps gives a flat top.
+  const RAMP = 1;
+  const dawnRamp = smoothstep((h - (sr - RAMP / 2)) / RAMP);
+  const duskRamp = smoothstep(((ss + RAMP / 2) - h) / RAMP);
+  const daylight = Math.min(dawnRamp, duskRamp);
   // Twilight bumps centred on actual sunrise/sunset times. Narrow Gaussian.
   const dawn = Math.exp(-Math.pow((h - sr) / 0.9, 2));
   const dusk = Math.exp(-Math.pow((h - ss) / 0.9, 2));

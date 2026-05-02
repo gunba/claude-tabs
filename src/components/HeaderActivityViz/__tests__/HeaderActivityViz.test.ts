@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { clampPx, hash32, makeSlotInit, shoreYAt, withAlpha } from "../HeaderActivityViz";
+import {
+  celestialPhase,
+  clampPx,
+  hash32,
+  makeSlotInit,
+  shoreYAt,
+  withAlpha,
+} from "../HeaderActivityViz";
 
 describe("hash32", () => {
   it("is deterministic for the same input", () => {
@@ -125,5 +132,46 @@ describe("shoreYAt", () => {
       expect(y).toBeGreaterThanOrEqual(prev - 1e-9);
       prev = y;
     }
+  });
+});
+
+describe("celestialPhase", () => {
+  const at = (hour: number) => {
+    const d = new Date(2026, 0, 1, 0, 0, 0, 0);
+    d.setHours(Math.floor(hour), Math.round((hour - Math.floor(hour)) * 60), 0, 0);
+    return d;
+  };
+
+  it("light=1 across the bulk of the day, not just at solar noon", () => {
+    // The sin-bell curve only stayed > 0.85 in a ~3.5h window around noon,
+    // making the sky look dusk-like for most of the day. The flat-topped
+    // ramp should keep light near 1 from mid-morning to mid-afternoon.
+    for (const h of [9, 10, 12, 14, 16]) {
+      const p = celestialPhase(6, 18, at(h));
+      expect(p.light).toBeGreaterThanOrEqual(0.99);
+    }
+  });
+
+  it("light=0 well before sunrise and well after sunset", () => {
+    expect(celestialPhase(6, 18, at(3)).light).toBe(0);
+    expect(celestialPhase(6, 18, at(21)).light).toBe(0);
+  });
+
+  it("light=0.5 at the sunrise / sunset boundary", () => {
+    expect(celestialPhase(6, 18, at(6)).light).toBeCloseTo(0.5, 5);
+    expect(celestialPhase(6, 18, at(18)).light).toBeCloseTo(0.5, 5);
+  });
+
+  it("isNight flips at sunrise and sunset", () => {
+    expect(celestialPhase(6, 18, at(5)).isNight).toBe(true);
+    expect(celestialPhase(6, 18, at(7)).isNight).toBe(false);
+    expect(celestialPhase(6, 18, at(17)).isNight).toBe(false);
+    expect(celestialPhase(6, 18, at(19)).isNight).toBe(true);
+  });
+
+  it("falls back to 6/18 when sunrise/sunset are null", () => {
+    const p = celestialPhase(null, null, at(12));
+    expect(p.light).toBeGreaterThanOrEqual(0.99);
+    expect(p.isNight).toBe(false);
   });
 });
