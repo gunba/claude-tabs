@@ -90,13 +90,15 @@ describe("shoreYAt", () => {
   // Layout shape mirrors what computeLayout returns; only the three fields
   // shoreYAt actually reads (seaMeanY, beachShoreSlope, plus the rest of
   // the Layout contract for type safety).
+  const beachW = 180;
   const layout = {
-    beachW: 180,
+    beachW,
     seaMeanY: 24,
     waveAmpMaxPx: 5,
     beachShoreSlope: 9,
     beachTopYAtZero: 15,
     skyHorizonY: 18,
+    seaStart: Math.round(beachW * 0.55),
   };
 
   it("crosses sea level around tt=0.645", () => {

@@ -295,6 +295,12 @@ interface Layout {
   waveAmpMaxPx: number;
   beachTopYAtZero: number;
   skyHorizonY: number;
+  // Leftmost x where the sea polygon, wave crests, and bright surface
+  // features start. Sits inland of beachW so the sea covers the underwater
+  // bank zone where shoreYAt traces below seaMeanY; without this the gap
+  // would show theme.bgSurface and the crest band / foam line would cut
+  // off abruptly at beachW.
+  seaStart: number;
 }
 
 function computeLayout(w: number, h: number): Layout {
@@ -312,6 +318,7 @@ function computeLayout(w: number, h: number): Layout {
     waveAmpMaxPx,
     beachTopYAtZero: seaMeanY - beachShoreSlope,
     skyHorizonY: Math.round(h * 0.45),
+    seaStart: Math.max(0, Math.round(beachW * 0.55)),
   };
 }
 
@@ -356,23 +363,26 @@ function computeWaveCrests(
   intensity: number,
   out: Float32Array,
 ): void {
-  const { beachW, seaMeanY, waveAmpMaxPx } = layout;
+  const { seaStart, beachW, seaMeanY, waveAmpMaxPx } = layout;
   const period1 = 110;
   const period2 = 47;
   const speed1 = 36;
   const speed2 = 22;
   const amp = waveAmpMaxPx * (0.45 + 0.55 * intensity);
-  // Wave amplitude ramps from 0 at the shore to full amplitude over rampDist
-  // px so the sea joins the beach without a hard step at x === beachW.
-  const rampDist = Math.max(20, Math.round(waveAmpMaxPx * 3));
+  // Wave amplitude ramps from 0 at seaStart to full amplitude past beachW
+  // by waveAmpMaxPx*3 px. Starting the ramp inland of beachW means the
+  // surface in the underwater-bank zone is already gently wavy, so the
+  // bright crest band and foam line painted in drawSea connect smoothly
+  // through to the open sea instead of stepping at x === beachW.
+  const rampDist = (beachW - seaStart) + Math.max(20, Math.round(waveAmpMaxPx * 3));
   for (let x = 0; x < w; x++) {
-    if (x < beachW) {
+    if (x < seaStart) {
       out[x] = seaMeanY;
       continue;
     }
     const phase1 = ((x / period1) - (t * speed1) / period1) * Math.PI * 2;
     const phase2 = ((x / period2) + (t * speed2) / period2) * Math.PI * 2;
-    const ramp = Math.min(1, (x - beachW) / rampDist);
+    const ramp = Math.min(1, (x - seaStart) / rampDist);
     const wave = (Math.sin(phase1) * amp + Math.sin(phase2) * amp * 0.22) * ramp;
     out[x] = seaMeanY + wave;
   }
@@ -882,15 +892,14 @@ function drawSea(
   seaGrad.addColorStop(0.55, darkenForNight(midHex, nightMix));
   seaGrad.addColorStop(1, darkenForNight(botHex, nightMix));
   ctx.fillStyle = seaGrad;
-  // Sea polygon starts inland of beachW so it covers the underwater bank
-  // that shoreYAt now traces below sea level — without this, columns where
-  // the sand surface dips below seaMeanY but isn't yet past beachW would
-  // show only the sky background. crests[x] is seaMeanY for x < beachW
-  // (no waves on the dry side), so the polygon top is a flat line in that
-  // overlap region. The beach polygon (drawn after sea) paints opaque sand
-  // back over the dry portion, leaving water visible only where the sand
-  // surface is below sea level.
-  const seaStart = Math.max(0, Math.round(beachW * 0.55));
+  // Sea polygon and all bright surface features (crest band, sparkles,
+  // foam line) start at layout.seaStart — inland of beachW — so the water
+  // appearance is continuous from the underwater-bank zone (where the sand
+  // dips below seaMeanY) all the way out to the open sea. The beach polygon
+  // (drawn after) re-paints opaque sand over any column where the surface
+  // is above water, so foam/crest pixels only show through where the
+  // sand surface is genuinely submerged.
+  const { seaStart } = layout;
   ctx.beginPath();
   ctx.moveTo(seaStart, h + 1);
   for (let x = seaStart; x < w; x++) {
@@ -902,7 +911,12 @@ function drawSea(
 
   // Bright crest band: 2px just under the wave top.
   ctx.fillStyle = scene === "storm" ? "rgba(70, 130, 150, 0.45)" : "rgba(110, 200, 220, 0.55)";
-  for (let x = beachW; x < w; x++) {
+  for (let x = seaStart; x < w; x++) {
+    // Skip dry-beach columns: where the wave top is at or below the sand
+    // surface, the beach polygon would cover the row anyway, but its
+    // anti-aliased top edge only partially overpaints — leaving a faint
+    // pixel of foam/crest hovering inside the dry sand.
+    if (x < beachW && crests[x] >= shoreYAt(layout, x / beachW)) continue;
     const y = Math.floor(crests[x]) + 1;
     if (y < h) ctx.fillRect(x, y, 1, 2);
   }
@@ -911,7 +925,8 @@ function drawSea(
   if (scene === "clear" || scene === "clouds") {
     const tb = Math.floor(t * 2);
     ctx.fillStyle = "rgba(220, 240, 250, 0.55)";
-    for (let x = beachW + 6; x < w; x += 18) {
+    for (let x = seaStart + 6; x < w; x += 18) {
+      if (x < beachW && crests[x] >= shoreYAt(layout, x / beachW)) continue;
       const seed = ((x * 31 + tb * 17) >>> 0) % 100;
       if (seed < 35) {
         const y = Math.floor(crests[x]) + 4 + (seed % 3);
@@ -924,13 +939,15 @@ function drawSea(
   // slightly irregular foam patches on the leading face of each crest.
   // No isolated dot above the peak — that produced an obvious bead pattern.
   ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-  for (let x = beachW; x < w; x++) {
+  for (let x = seaStart; x < w; x++) {
+    if (x < beachW && crests[x] >= shoreYAt(layout, x / beachW)) continue;
     const y = Math.floor(crests[x]);
     if (y < 0 || y >= h) continue;
     ctx.fillRect(x, y, 1, 1);
   }
   ctx.fillStyle = "rgba(240, 250, 252, 0.55)";
-  for (let x = beachW + 1; x < w; x++) {
+  for (let x = seaStart + 1; x < w; x++) {
+    if (x < beachW && crests[x] >= shoreYAt(layout, x / beachW)) continue;
     const y = Math.floor(crests[x]);
     if (y - 1 < 0 || y - 1 >= h) continue;
     // Foam thickens on the descending (leading) side of a crest, where waves
