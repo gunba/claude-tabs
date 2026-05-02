@@ -132,8 +132,8 @@
   color: var(--text-secondary);
 }
 .panel-header-target.file-tree-kind-searched {
-  background: color-mix(in srgb, var(--info) 16%, transparent);
-  color: var(--info);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-secondary);
 }
 
 .panel-header-detail {
@@ -373,21 +373,21 @@
 .file-tree-kind-modified { color: var(--warning); }
 .file-tree-kind-deleted  { color: var(--error); opacity: 0.7; text-decoration: line-through; }
 .file-tree-kind-read     { color: var(--text-secondary); }
-.file-tree-kind-searched { color: var(--info); }
+.file-tree-kind-searched { color: var(--text-muted); }
 
 /* These rules need to override the base name colors. */
 .file-tree-filename.file-tree-kind-created  { color: var(--success); }
 .file-tree-filename.file-tree-kind-modified { color: var(--warning); }
 .file-tree-filename.file-tree-kind-deleted  { color: var(--error); }
 .file-tree-filename.file-tree-kind-read     { color: var(--text-secondary); }
-.file-tree-filename.file-tree-kind-searched { color: var(--info); }
+.file-tree-filename.file-tree-kind-searched { color: var(--text-muted); }
 
-/* Searched folder: color the icon + name blue */
+/* Searched folders are low-signal activity; keep them neutral so provider and workspace colors stay legible. */
 .file-tree-folder.file-tree-searched .file-tree-foldername {
-  color: var(--info);
+  color: var(--text-muted);
 }
 .file-tree-folder.file-tree-searched .file-tree-icon-slot {
-  color: var(--info);
+  color: var(--text-muted);
 }
 
 /* -- Inline diff card (click-to-expand) -- */
@@ -555,6 +555,10 @@
   align-items: center;
   justify-content: center;
   color: var(--cli-claude);
+}
+
+.agent-mascot-cli-codex .agent-mascot-icon {
+  color: var(--cli-codex);
 }
 
 .agent-mascot-icon > svg {

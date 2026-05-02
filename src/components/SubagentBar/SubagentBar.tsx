@@ -61,7 +61,7 @@ export function SubagentBar({
         return (
           <button
             key={subagent.id}
-            className={`subagent-card${isActive ? " subagent-active" : ""}${isCompleted ? " subagent-completed" : ""}${isDead ? " subagent-dead" : ""}${isIdle ? " subagent-idle" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
+            className={`subagent-card subagent-card-cli-${activeProvider}${isActive ? " subagent-active" : ""}${isCompleted ? " subagent-completed" : ""}${isDead ? " subagent-dead" : ""}${isIdle ? " subagent-idle" : ""}${isInterrupted ? " subagent-interrupted" : ""}${isSelected ? " subagent-selected" : ""}`}
             onClick={() => activeTabId && onInspect(activeTabId, subagent.id)}
             title={subagent.description}
           >

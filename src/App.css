@@ -688,6 +688,11 @@
   color: var(--cli-claude);
 }
 
+.subagent-card-cli-codex .subagent-type,
+.subagent-card-cli-codex .subagent-type-icon {
+  color: var(--cli-codex);
+}
+
 /* Mirrors .tab-status-row, scaled down */
 .subagent-status-row {
   font-size: 10px;

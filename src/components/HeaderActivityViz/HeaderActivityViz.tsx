@@ -113,7 +113,7 @@ interface SpriteAtlas {
   claudeError: HTMLCanvasElement;
   codex: HTMLCanvasElement;
   codexError: HTMLCanvasElement;
-  subagent: Map<SubagentTypeKey, HTMLCanvasElement>;
+  subagent: Record<"claude" | "codex", Map<SubagentTypeKey, HTMLCanvasElement>>;
   ready: boolean;
 }
 
@@ -268,12 +268,18 @@ async function buildAtlas(theme: ThemeProps): Promise<SpriteAtlas> {
   const codex = rasterizeMascot(codexImg, MASCOT_PX);
   const claudeError = tintImage(claude, theme.error, 0.65);
   const codexError = tintImage(codex, theme.error, 0.65);
-  const subagent = new Map<SubagentTypeKey, HTMLCanvasElement>();
+  const subagent: SpriteAtlas["subagent"] = {
+    claude: new Map<SubagentTypeKey, HTMLCanvasElement>(),
+    codex: new Map<SubagentTypeKey, HTMLCanvasElement>(),
+  };
   await Promise.all(
-    SUBAGENT_TYPES.map(async (key) => {
-      const sprite = await buildSubagentSprite(key, theme.cliClaude, SUBAGENT_PX);
-      subagent.set(key, sprite);
-    }),
+    (["claude", "codex"] as const).flatMap((cli) =>
+      SUBAGENT_TYPES.map(async (key) => {
+        const color = cli === "claude" ? theme.cliClaude : theme.cliCodex;
+        const sprite = await buildSubagentSprite(key, color, SUBAGENT_PX);
+        subagent[cli].set(key, sprite);
+      }),
+    ),
   );
   return { claude, claudeError, codex, codexError, subagent, ready: true };
 }
@@ -2088,7 +2094,7 @@ function drawSlots(
     }
     if (slot.isSubagent && atlas) {
       const key = subagentKeyFor(slot.subagentType);
-      const sprite = atlas.subagent.get(key);
+      const sprite = atlas.subagent[slot.cli].get(key);
       if (sprite) {
         ctx.drawImage(sprite, xDraw, yDraw, sizePx, sizePx);
       }
