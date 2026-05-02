@@ -31,7 +31,7 @@ PROOFD_PATH = SCRIPT_DIR / "proofd.py"
 MAX_CONTEXT_CHARS = 12000
 MAX_CONTEXT_PATHS = 20
 PATH_RE = re.compile(r"(?<![\w./~-])(?:\.?\.?/)?[A-Za-z0-9_.@+~-]+(?:/[A-Za-z0-9_.@+~-]+)+(?:\.[A-Za-z0-9_+-]+)?")
-PROOF_PROMPT_RE = re.compile(r"\b(proofd|proof|prove|rules?|tags?|review|janitor)\b|(?<!\S)/(?:rj|r|j)(?!\S)", re.IGNORECASE)
+ROOT_FILE_RE = re.compile(r"(?<![\w./~-])(?:\.?/)?[A-Za-z0-9_.@+~-]+\.[A-Za-z0-9_+-]+(?![\w/~-])")
 
 
 def child_env() -> dict[str, str]:
@@ -85,17 +85,14 @@ def run_proofd(repo_root: pathlib.Path, args: list[str], timeout: int = 20) -> s
     return run_command(repo_root, [sys.executable, str(PROOFD_PATH), "--repo-root", str(repo_root), *args], timeout=timeout)
 
 
-def changed_paths(repo_root: pathlib.Path) -> list[str]:
-    result = run_command(repo_root, ["git", "diff", "HEAD", "--name-only"], timeout=10)
-    if result.returncode != 0:
-        return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()][:MAX_CONTEXT_PATHS]
-
-
 def prompt_paths(repo_root: pathlib.Path, prompt: str) -> list[str]:
     found: list[str] = []
-    for match in PATH_RE.finditer(prompt):
-        candidate = match.group(0).strip("`'\"()[]{}.,:;")
+    matches = sorted(
+        [*PATH_RE.finditer(prompt), *ROOT_FILE_RE.finditer(prompt)],
+        key=lambda match: match.start(),
+    )
+    for match in matches:
+        candidate = match.group(0).strip("`'\"()[]{}").rstrip(".,:;")
         if not candidate or candidate.startswith("http://") or candidate.startswith("https://"):
             continue
         normalized = candidate[2:] if candidate.startswith("./") else candidate
@@ -164,9 +161,6 @@ def session_context(repo_root: pathlib.Path) -> str:
 
 def prompt_context(repo_root: pathlib.Path, prompt: str) -> str | None:
     paths = prompt_paths(repo_root, prompt)
-    proof_related = bool(PROOF_PROMPT_RE.search(prompt))
-    if not paths and proof_related:
-        paths = changed_paths(repo_root)
     if not paths:
         return None
 

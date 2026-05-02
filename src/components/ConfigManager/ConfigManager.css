@@ -151,8 +151,13 @@
   transition: color 0.15s;
 }
 
-.config-close:hover {
+.config-close:hover:not(:disabled) {
   color: var(--text-primary);
+}
+
+.config-close:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ── Project selector (in header) ────────────────────── */
@@ -643,6 +648,14 @@
   font-style: italic;
 }
 
+.config-discard-error {
+  padding: 8px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--error) 35%, var(--border-subtle));
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  color: var(--error);
+  font-size: 12px;
+}
+
 .config-discard-actions {
   display: flex;
   justify-content: flex-end;
@@ -652,11 +665,19 @@
 }
 
 .config-discard-keep,
+.config-discard-save,
 .config-discard-confirm {
   border-radius: 6px;
   padding: 6px 14px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.config-discard-keep:disabled,
+.config-discard-save:disabled,
+.config-discard-confirm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .config-discard-keep {
@@ -665,9 +686,20 @@
   color: var(--text-secondary);
 }
 
-.config-discard-keep:hover {
+.config-discard-keep:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.config-discard-save {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.config-discard-save:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 .config-discard-confirm {
@@ -676,7 +708,7 @@
   color: var(--error);
 }
 
-.config-discard-confirm:hover {
+.config-discard-confirm:hover:not(:disabled) {
   background: var(--error);
   color: var(--text-primary);
 }

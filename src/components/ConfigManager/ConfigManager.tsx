@@ -29,6 +29,7 @@ import {
 } from "./UnsavedTextEditors";
 import { CONFIG_MANAGER_CLOSE_REQUEST_EVENT } from "./events";
 import { visibleConfigTabs, type ConfigManagerTab } from "./configTabs";
+import { canSaveDiscardChanges, saveDiscardChanges, shouldIgnoreDiscardCloseRequest } from "./discardChanges";
 import "./ConfigManager.css";
 
 type Tab = ConfigManagerTab;
@@ -75,11 +76,17 @@ function buildDiffPreview(before: string, after: string): DiffPreviewLine[] {
 
 function DiscardChangesDialog({
   changes,
+  saving,
+  saveError,
   onCancel,
+  onSave,
   onDiscard,
 }: {
   changes: UnsavedTextEditorChange[];
+  saving: boolean;
+  saveError: string | null;
   onCancel: () => void;
+  onSave: () => Promise<void>;
   onDiscard: () => void;
 }) {
   const [activeId, setActiveId] = useState(changes[0]?.id ?? "");
@@ -95,6 +102,7 @@ function DiscardChangesDialog({
     () => activeChange ? buildDiffPreview(activeChange.before, activeChange.after) : [],
     [activeChange],
   );
+  const canSaveChanges = canSaveDiscardChanges(changes);
 
   return (
     <div className="config-discard-layer" role="presentation" onMouseDown={(e) => e.stopPropagation()}>
@@ -108,7 +116,7 @@ function DiscardChangesDialog({
                 : `${changes.length} editors have changes that have not been saved.`}
             </div>
           </div>
-          <button className="config-close" onClick={onCancel} title="Keep editing">
+          <button className="config-close" onClick={onCancel} title="Keep editing" disabled={saving}>
             <IconClose size={14} />
           </button>
         </div>
@@ -161,11 +169,26 @@ function DiscardChangesDialog({
           </div>
         </div>
 
+        {saveError && (
+          <div className="config-discard-error" role="alert">
+            {saveError}
+          </div>
+        )}
+
         <div className="config-discard-actions">
-          <button type="button" className="config-discard-keep" onClick={onCancel} autoFocus>
+          <button type="button" className="config-discard-keep" onClick={onCancel} disabled={saving} autoFocus>
             Keep editing
           </button>
-          <button type="button" className="config-discard-confirm" onClick={onDiscard}>
+          <button
+            type="button"
+            className="config-discard-save"
+            onClick={() => { void onSave(); }}
+            disabled={saving || !canSaveChanges}
+            title={canSaveChanges ? "Save all listed changes" : "Some listed changes cannot be saved from this dialog"}
+          >
+            {saving ? "Saving..." : "Save changes"}
+          </button>
+          <button type="button" className="config-discard-confirm" onClick={onDiscard} disabled={saving}>
             Discard changes
           </button>
         </div>
@@ -206,9 +229,12 @@ export function ConfigManager() {
   const [projectDir, setProjectDir] = useState("");
   const [statusMsg, setStatusMsg] = useState<StatusMessage | null>(null);
   const [pendingDiscardChanges, setPendingDiscardChanges] = useState<UnsavedTextEditorChange[] | null>(null);
+  const [discardSaveError, setDiscardSaveError] = useState<string | null>(null);
+  const [savingDiscardChanges, setSavingDiscardChanges] = useState(false);
   const prevRequestedTabRef = useRef<typeof showConfigManager>(showConfigManager);
   const pendingDiscardActionRef = useRef<(() => void) | null>(null);
   const allowWindowCloseRef = useRef(false);
+  const savingDiscardChangesRef = useRef(savingDiscardChanges);
   const unsavedTextEditorRegistry = useUnsavedTextEditorRegistry();
   const availableCliKinds = useMemo(() => {
     const kinds: CliKind[] = [];
@@ -223,6 +249,10 @@ export function ConfigManager() {
       setConfigCli(availableCliKinds[0]);
     }
   }, [availableCliKinds, configCli]);
+
+  useEffect(() => {
+    savingDiscardChangesRef.current = savingDiscardChanges;
+  }, [savingDiscardChanges]);
 
   const visibleTabs = useMemo(
     () => visibleConfigTabs(TABS, { configCli }),
@@ -276,31 +306,73 @@ export function ConfigManager() {
   }, [projectDir, activeTabId, sessions, projectDirs]);
 
   const closeConfig = useCallback(() => setShowConfigManager(false), [setShowConfigManager]);
+  const setDiscardSaving = useCallback((saving: boolean) => {
+    savingDiscardChangesRef.current = saving;
+    setSavingDiscardChanges(saving);
+  }, []);
   const cancelDiscard = useCallback(() => {
     pendingDiscardActionRef.current = null;
     setPendingDiscardChanges(null);
-  }, []);
+    setDiscardSaveError(null);
+    setDiscardSaving(false);
+  }, [setDiscardSaving]);
   const runWithUnsavedEditorGuard = useCallback((afterDiscard: () => void = closeConfig) => {
     const changes = unsavedTextEditorRegistry.getChanges();
     if (changes.length > 0) {
       pendingDiscardActionRef.current = afterDiscard;
+      setDiscardSaveError(null);
+      setDiscardSaving(false);
       setPendingDiscardChanges(changes);
       return;
     }
     afterDiscard();
   }, [closeConfig, unsavedTextEditorRegistry]);
-  const confirmDiscard = useCallback(() => {
+  const runPendingDiscardAction = useCallback(() => {
     const action = pendingDiscardActionRef.current ?? closeConfig;
     pendingDiscardActionRef.current = null;
     setPendingDiscardChanges(null);
+    setDiscardSaveError(null);
+    setDiscardSaving(false);
     action();
-  }, [closeConfig]);
+  }, [closeConfig, setDiscardSaving]);
+  const confirmDiscard = useCallback(() => {
+    runPendingDiscardAction();
+  }, [runPendingDiscardAction]);
+  const confirmSaveChanges = useCallback(async () => {
+    if (!pendingDiscardChanges || savingDiscardChangesRef.current) return;
+    setDiscardSaving(true);
+    setDiscardSaveError(null);
+    let ranPendingAction = false;
+    try {
+      const result = await saveDiscardChanges(pendingDiscardChanges);
+      if (result.ok) {
+        setStatusMsg({ text: "Changes saved", type: "success" });
+        setDiscardSaving(false);
+        ranPendingAction = true;
+        runPendingDiscardAction();
+        return;
+      }
+      setDiscardSaveError(result.message);
+      setStatusMsg({ text: result.message, type: "error" });
+      const remainingChanges = unsavedTextEditorRegistry.getChanges();
+      if (remainingChanges.length > 0) {
+        setPendingDiscardChanges(remainingChanges);
+      } else {
+        setDiscardSaving(false);
+        ranPendingAction = true;
+        runPendingDiscardAction();
+      }
+    } finally {
+      if (!ranPendingAction) setDiscardSaving(false);
+    }
+  }, [pendingDiscardChanges, runPendingDiscardAction, setDiscardSaving, unsavedTextEditorRegistry]);
   const onClose = useCallback(() => runWithUnsavedEditorGuard(closeConfig), [runWithUnsavedEditorGuard, closeConfig]);
   const codexTwoScopes = configCli === "codex" ? ["user", "project"] as Array<"user" | "project"> : undefined;
 
   useEffect(() => {
     const handler = () => {
       if (pendingDiscardChanges) {
+        if (shouldIgnoreDiscardCloseRequest(true, savingDiscardChangesRef.current)) return;
         cancelDiscard();
         return;
       }
@@ -315,6 +387,10 @@ export function ConfigManager() {
     let unlisten: (() => void) | null = null;
     getCurrentWindow().onCloseRequested((event) => {
       if (allowWindowCloseRef.current) return;
+      if (savingDiscardChangesRef.current) {
+        event.preventDefault();
+        return;
+      }
       const changes = unsavedTextEditorRegistry.getChanges();
       if (changes.length === 0) return;
       event.preventDefault();
@@ -324,6 +400,8 @@ export function ConfigManager() {
           allowWindowCloseRef.current = false;
         });
       };
+      setDiscardSaveError(null);
+      setDiscardSaving(false);
       setPendingDiscardChanges(changes);
     }).then((dispose) => {
       if (disposed) dispose();
@@ -333,7 +411,7 @@ export function ConfigManager() {
       disposed = true;
       unlisten?.();
     };
-  }, [unsavedTextEditorRegistry]);
+  }, [setDiscardSaving, unsavedTextEditorRegistry]);
 
   return (
     <ModalOverlay onClose={onClose} className={`config-modal config-modal-cli-${configCli}`} closeOnBackdropClick={false}>
@@ -449,7 +527,10 @@ export function ConfigManager() {
         {pendingDiscardChanges && (
           <DiscardChangesDialog
             changes={pendingDiscardChanges}
+            saving={savingDiscardChanges}
+            saveError={discardSaveError}
             onCancel={cancelDiscard}
+            onSave={confirmSaveChanges}
             onDiscard={confirmDiscard}
           />
         )}

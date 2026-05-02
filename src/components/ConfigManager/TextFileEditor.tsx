@@ -88,6 +88,8 @@ export function useTextFileEditor({
   const save = useCallback(async () => {
     const value = currentValue();
     await write(value);
+    textRef.current = value;
+    savedRef.current = value;
     setText(value);
     setSaved(value);
     setExternalChanged(false);
@@ -101,11 +103,12 @@ export function useTextFileEditor({
   }, []);
 
   useUnsavedTextEditor(id, () => {
-    if (loading) return null;
+    if (loadingRef.current) return null;
     const after = currentValue();
-    if (after === saved) return null;
-    return { title, before: saved, after };
-  });
+    const before = savedRef.current;
+    if (after === before) return null;
+    return { title, before, after };
+  }, { save });
 
   useConfigFileWatcher(watch, () => {
     if (loadingRef.current) return;

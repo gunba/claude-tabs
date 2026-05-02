@@ -1,43 +1,58 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
-// [UT-01] UnsavedTextEditorRegistry: editors register pre/post-save snapshots; ConfigManager collects pending changes on close/switch and prompts via DiscardChangesDialog with per-editor unified diff preview.
+// [UT-01] UnsavedTextEditorRegistry: editors register pre/post-save snapshots plus optional save callbacks; ConfigManager collects pending changes on close/switch and prompts via DiscardChangesDialog with per-editor unified diff preview.
 export interface UnsavedTextEditorChange {
   id: string;
   title: string;
   before: string;
   after: string;
+  save?: () => Promise<unknown>;
 }
 
-type UnsavedTextEditorSnapshot = Omit<UnsavedTextEditorChange, "id"> | null;
+type UnsavedTextEditorSnapshot = Omit<UnsavedTextEditorChange, "id" | "save"> | null;
+type UnsavedTextEditorSave = () => Promise<unknown>;
+type UnsavedTextEditorEntry = {
+  getChange: () => UnsavedTextEditorSnapshot;
+  getSave?: () => UnsavedTextEditorSave | null;
+};
 
 function normaliseLineEndings(s: string): string {
   return s.replace(/\r\n?/g, "\n");
 }
 
 export interface UnsavedTextEditorRegistry {
-  register: (id: string, getChange: () => UnsavedTextEditorSnapshot) => () => void;
+  register: (
+    id: string,
+    getChange: () => UnsavedTextEditorSnapshot,
+    getSave?: () => UnsavedTextEditorSave | null,
+  ) => () => void;
   getChanges: () => UnsavedTextEditorChange[];
 }
 
 const UnsavedTextEditorContext = createContext<UnsavedTextEditorRegistry | null>(null);
 
-export function useUnsavedTextEditorRegistry(): UnsavedTextEditorRegistry {
-  const entriesRef = useRef(new Map<string, () => UnsavedTextEditorSnapshot>());
+export function createUnsavedTextEditorRegistry(): UnsavedTextEditorRegistry {
+  const entries = new Map<string, UnsavedTextEditorEntry>();
 
-  const register = useCallback((id: string, getChange: () => UnsavedTextEditorSnapshot) => {
-    entriesRef.current.set(id, getChange);
+  const register = (
+    id: string,
+    getChange: () => UnsavedTextEditorSnapshot,
+    getSave?: () => UnsavedTextEditorSave | null,
+  ) => {
+    const entry = { getChange, getSave };
+    entries.set(id, entry);
     return () => {
-      if (entriesRef.current.get(id) === getChange) {
-        entriesRef.current.delete(id);
+      if (entries.get(id) === entry) {
+        entries.delete(id);
       }
     };
-  }, []);
+  };
 
-  const getChanges = useCallback(() => {
+  const getChanges = () => {
     const changes: UnsavedTextEditorChange[] = [];
-    for (const [id, getChange] of entriesRef.current) {
-      const raw = getChange();
+    for (const [id, entry] of entries) {
+      const raw = entry.getChange();
       if (!raw) continue;
       // Browsers normalise textarea \r\n -> \n in .value, but a file read
       // from disk keeps whatever line endings it had. Compare and render
@@ -47,12 +62,19 @@ export function useUnsavedTextEditorRegistry(): UnsavedTextEditorRegistry {
       const before = normaliseLineEndings(raw.before);
       const after = normaliseLineEndings(raw.after);
       if (before === after) continue;
-      changes.push({ id, title: raw.title, before, after });
+      const save = entry.getSave?.() ?? undefined;
+      changes.push({ id, title: raw.title, before, after, save });
     }
     return changes;
-  }, []);
+  };
 
-  return useMemo(() => ({ register, getChanges }), [register, getChanges]);
+  return { register, getChanges };
+}
+
+export function useUnsavedTextEditorRegistry(): UnsavedTextEditorRegistry {
+  const registryRef = useRef<UnsavedTextEditorRegistry | null>(null);
+  if (!registryRef.current) registryRef.current = createUnsavedTextEditorRegistry();
+  return registryRef.current;
 }
 
 export function UnsavedTextEditorProvider({
@@ -69,16 +91,29 @@ export function UnsavedTextEditorProvider({
   );
 }
 
-export function useUnsavedTextEditor(id: string, getChange: () => UnsavedTextEditorSnapshot) {
+export function useUnsavedTextEditor(
+  id: string,
+  getChange: () => UnsavedTextEditorSnapshot,
+  options?: { save?: UnsavedTextEditorSave },
+) {
   const registry = useContext(UnsavedTextEditorContext);
   const getChangeRef = useRef(getChange);
+  const saveRef = useRef(options?.save);
 
   useEffect(() => {
     getChangeRef.current = getChange;
   }, [getChange]);
 
   useEffect(() => {
+    saveRef.current = options?.save;
+  }, [options?.save]);
+
+  useEffect(() => {
     if (!registry) return;
-    return registry.register(id, () => getChangeRef.current());
+    return registry.register(
+      id,
+      () => getChangeRef.current(),
+      () => saveRef.current ?? null,
+    );
   }, [registry, id]);
 }
