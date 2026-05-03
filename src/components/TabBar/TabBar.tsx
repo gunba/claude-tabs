@@ -38,6 +38,8 @@ type DragSource =
 
 type Side = "before" | "after";
 
+const DRAG_MIME = "application/x-code-tabs-drag";
+
 export function TabBar({
   groups,
   regularSessions,
@@ -68,9 +70,14 @@ export function TabBar({
     setGroupDropTarget(null);
   };
 
-  const setDragGhost = (event: DragEvent<HTMLDivElement>, label: string) => {
+  const primeDragTransfer = (event: DragEvent<HTMLDivElement>, kind: DragSource["kind"], label: string) => {
+    const payload = label || kind;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(DRAG_MIME, kind);
+    event.dataTransfer.setData("text/plain", payload);
+
     const ghost = document.createElement("div");
-    ghost.textContent = label;
+    ghost.textContent = payload;
     ghost.style.cssText = "position:absolute;top:-999px;padding:4px 8px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;border-radius:4px;white-space:nowrap;";
     document.body.appendChild(ghost);
     event.dataTransfer.setDragImage(ghost, 0, 0);
@@ -88,7 +95,7 @@ export function TabBar({
     fullName: string,
   ) => {
     dragSourceRef.current = { kind: "tab", id: session.id };
-    setDragGhost(event, fullName);
+    primeDragTransfer(event, "tab", fullName);
   };
 
   const handleTabDragOver = (event: DragEvent<HTMLDivElement>, session: Session) => {
@@ -124,7 +131,7 @@ export function TabBar({
 
   const handleGroupDragStart = (event: DragEvent<HTMLDivElement>, group: TabGroup) => {
     dragSourceRef.current = { kind: "group", key: group.key };
-    setDragGhost(event, group.label);
+    primeDragTransfer(event, "group", group.label);
   };
 
   const handleGroupDragOver = (event: DragEvent<HTMLDivElement>, group: TabGroup) => {
