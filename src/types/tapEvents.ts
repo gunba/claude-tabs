@@ -104,6 +104,7 @@ export interface ApiTelemetry extends TapEventBase {
   ttftMs: number;
   queryChainId: string | null;
   queryDepth: number;
+  querySource?: string | null;
   stopReason: string | null;
 }
 

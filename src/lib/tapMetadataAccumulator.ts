@@ -39,6 +39,15 @@ function selectCodexRateLimitSnapshot(
   return selected;
 }
 
+function isMainThreadQuerySource(querySource: string | null | undefined): boolean {
+  if (!querySource) return true;
+  return querySource === "sdk" || querySource.startsWith("repl_main_thread");
+}
+
+function isMainApiTelemetry(event: Extract<TapEvent, { kind: "ApiTelemetry" }>): boolean {
+  return event.queryDepth === 0 && isMainThreadQuerySource(event.querySource);
+}
+
 // [SI-07] Tool actions, user prompts, assistant text captured inline via event processing
 // [IN-11] StatusBar enrichment: model, subscription, region, latency, rate limits, lines changed
 // [SR-02] Counters start from zero on each inspector connection — show only NEW conversation usage
@@ -156,16 +165,19 @@ export class TapMetadataAccumulator {
         const telKey = `${event.costUSD}:${event.inputTokens}:${event.outputTokens}:${event.cachedInputTokens}`;
         if (telKey === this.lastTelemetryKey) break;
         this.lastTelemetryKey = telKey;
-        // [IN-14] Model bleed fix: only update runtimeModel when queryDepth===0
+        const isMainTelemetry = isMainApiTelemetry(event);
+        // [IN-14] Model bleed fix: only update runtimeModel from main-thread telemetry.
+        // Some Claude Code sidecars (web_search_tool, web_fetch_apply, rename_generate_name)
+        // omit queryDepth, so queryDepth===0 alone is not authoritative.
         // Only accumulate main-agent tokens/cost (subagent tokens tracked by TapSubagentTracker)
-        if (event.queryDepth === 0) {
+        if (isMainTelemetry) {
           this.costUsd += event.costUSD;
           // inputTokens/outputTokens accumulated from TurnEnd (SSE source) to avoid
           // double-counting; ApiTelemetry classification doesn't match current CLI output.
           this.lastTurnCostUsd = event.costUSD;
           this.lastTurnTtftMs = event.ttftMs;
         }
-        if (event.model && event.queryDepth === 0) this.runtimeModel = event.model;
+        if (event.model && isMainTelemetry) this.runtimeModel = event.model;
         break;
       }
 

@@ -113,7 +113,8 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
       snap: JSON.stringify({
         model: "claude-opus-4-6", costUSD: 0.0145, inputTokens: 3, outputTokens: 180,
         cachedInputTokens: 20194, uncachedInputTokens: 32, durationMs: 4232,
-        ttftMs: 1907, queryChainId: "abc-123", queryDepth: 0, stop_reason: "tool_use",
+        ttftMs: 1907, queryChainId: "abc-123", queryDepth: 0,
+        querySource: "repl_main_thread", stop_reason: "tool_use",
       }),
     };
     const event = classifyTapEntry(entry);
@@ -121,6 +122,7 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
     if (event?.kind === "ApiTelemetry") {
       expect(event.costUSD).toBe(0.0145);
       expect(event.ttftMs).toBe(1907);
+      expect(event.querySource).toBe("repl_main_thread");
     }
   });
 

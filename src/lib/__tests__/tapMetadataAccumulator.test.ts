@@ -193,6 +193,24 @@ describe("TapMetadataAccumulator", () => {
     expect(diff?.runtimeModel).toBe("claude-opus-4-6");
   });
 
+  it("does not let sidecar ApiTelemetry overwrite runtimeModel", () => {
+    const acc = new TapMetadataAccumulator();
+    acc.process({
+      kind: "TurnStart", ts: 0, model: "claude-opus-4-7", inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheCreation: 0,
+    });
+    acc.process({
+      kind: "ApiTelemetry", ts: 1, model: "claude-haiku-4-5-20251001", costUSD: 0.02,
+      inputTokens: 1000, outputTokens: 100, cachedInputTokens: 0,
+      uncachedInputTokens: 1000, durationMs: 1000, ttftMs: 500,
+      queryChainId: null, queryDepth: 0, querySource: "web_search_tool", stopReason: "end_turn",
+    });
+    const diff = acc.process({
+      kind: "ToolCallStart", ts: 2, index: 0, toolName: "Read", toolId: "t1",
+    });
+    expect(diff?.runtimeModel).toBe("claude-opus-4-7");
+    expect(diff?.costUsd).toBe(0);
+  });
+
   it("sets currentToolName from ToolCallStart", () => {
     const acc = new TapMetadataAccumulator();
     const diff = acc.process({

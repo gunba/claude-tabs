@@ -375,6 +375,7 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
       ttftMs: parsed.ttftMs || 0,
       queryChainId: parsed.queryChainId || null,
       queryDepth: parsed.queryDepth || 0,
+      querySource: typeof parsed.querySource === "string" ? parsed.querySource : null,
       stopReason: parsed.stop_reason || null,
     };
   }
