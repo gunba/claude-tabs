@@ -16,8 +16,8 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 - [KB-11 L111] Ctrl+Shift+F — Open cross-session terminal search panel (side panel). Escape closes the panel.
 - [KB-07 L117] Ctrl+, — Open Config Manager
 - [KB-09 L132] Escape handling in useKeyboardShortcuts unwinds transient UI before sending ESC to the terminal, in this order: close tab context menu; if the command palette is open, return and let the palette own Escape; close changelog request; close ContextViewer; dispatch CONFIG_MANAGER_CLOSE_REQUEST_EVENT for ConfigManager; close ResumePicker; close SessionLauncher; clear inspectedSubagent; blur any focused non-xterm element and refocus the active terminal on the next animation frame; otherwise write \x1b to the active PTY.
-- [KB-04 L155] Ctrl+Tab / Ctrl+Shift+Tab — Cycle tabs
-- [KB-05 L162] Alt+1-9 — Jump to tab N
+- [KB-04 L157] Ctrl+Tab / Ctrl+Shift+Tab — Cycle tabs
+- [KB-05 L164] Alt+1-9 — Jump to tab N
 
 ## Session Launcher
 
