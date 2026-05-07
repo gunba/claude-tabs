@@ -223,7 +223,7 @@ export function TabBar({
       <button
         className="tab-add"
         onClick={(event) => event.ctrlKey ? onQuickLaunch() : onOpenLauncher()}
-        title={ctrlHeld ? "Quick launch with saved defaults (Ctrl+Shift+T)" : "New session (Ctrl+T)"}
+        title={ctrlHeld ? "Quick launch with saved defaults" : "New session (Ctrl+Shift+N)"}
       >
         +
       </button>

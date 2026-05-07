@@ -99,12 +99,12 @@ export function classifyTerminalKey(
     ev.ctrlKey &&
     !ev.shiftKey &&
     !ev.altKey &&
-    (ev.key === "t" || ev.key === "w" || ev.key === "k" || ev.key === ",")
+    (ev.key === "w" || ev.key === "k" || ev.key === ",")
   ) {
     return { kind: "swallow" };
   }
 
-  if (ev.ctrlKey && ev.shiftKey && ev.key === "T" && !ev.altKey) {
+  if (ev.ctrlKey && ev.shiftKey && (ev.key === "N" || ev.key === "n") && !ev.altKey) {
     return { kind: "swallow" };
   }
 

@@ -1189,14 +1189,7 @@ function classifyTapEntryInner(entry: TapEntry): TapEvent | null {
     }
 
     if (cat === "codex-thread-name-updated") {
-      const title = String(entry.threadName || "").trim();
-      if (!title) return null;
-      return {
-        kind: "CustomTitle",
-        ts,
-        title,
-        sessionId: String(entry.codexSessionId || ""),
-      };
+      return null;
     }
 
     if (cat === "codex-message") {

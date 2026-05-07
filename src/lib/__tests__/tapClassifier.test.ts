@@ -628,18 +628,14 @@ describe("classifyTapEntry — Codex rollout events", () => {
     });
   });
 
-  it("classifies Codex thread names as CustomTitle", () => {
+  it("does not use Codex thread names as tab titles", () => {
     const event = classifyTapEntry({
       ts: 6010,
       cat: "codex-thread-name-updated",
       threadName: "fix activity pane",
       codexSessionId: "thread-1",
     });
-    expect(event).toMatchObject({
-      kind: "CustomTitle",
-      title: "fix activity pane",
-      sessionId: "thread-1",
-    });
+    expect(event).toBeNull();
   });
 
   it("classifies Codex subagent spawn events", () => {

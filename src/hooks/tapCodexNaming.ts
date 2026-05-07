@@ -2,12 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
 import { dlog } from "../lib/debugLog";
-import { getResumeId } from "../lib/claude";
+import type { Session } from "../types/session";
 import {
   codexDefaultTabNameCandidates,
   deriveCodexPromptTitle,
   isAutoNameableCodexName,
 } from "../lib/codexNaming";
+
+function stableCodexNameKey(session: Session): string | null {
+  return session.config.sessionId || session.config.resumeSession || null;
+}
 
 function maybeAutoNameCodexSession(sid: string, display: string, seen: Set<string>): string | null {
   if (seen.has(sid)) return null;
@@ -31,7 +35,10 @@ function maybeAutoNameCodexSession(sid: string, display: string, seen: Set<strin
   const title = deriveCodexPromptTitle(display);
   if (!title || title === session.name) return null;
   useSessionStore.getState().renameSession(sid, title);
-  useSettingsStore.getState().setSessionName(getResumeId(session), title);
+  const nameKey = stableCodexNameKey(session);
+  if (nameKey) {
+    useSettingsStore.getState().setSessionName(nameKey, title);
+  }
   seen.add(sid);
   return title;
 }
@@ -76,7 +83,10 @@ export function createTapCodexNaming(sessionId: string) {
         const current = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
         if (!current || current.name !== heuristicTitle) return;
         useSessionStore.getState().renameSession(sessionId, llmTitle);
-        useSettingsStore.getState().setSessionName(getResumeId(current), llmTitle);
+        const nameKey = stableCodexNameKey(current);
+        if (nameKey) {
+          useSettingsStore.getState().setSessionName(nameKey, llmTitle);
+        }
         codexAutoNameTitle = llmTitle;
       })
       .catch((err) => dlog("tap", sessionId, `codex auto-rename LLM failed: ${err}`, "DEBUG"));

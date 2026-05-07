@@ -175,7 +175,7 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
   });
   terminalRef.current = terminal;
 
-  const { containerRef, setContainer } = useTerminalContainer(terminal);
+  const { setContainer } = useTerminalContainer(terminal);
 
   useTerminalSetup({
     claudePath,
@@ -194,7 +194,6 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
   });
 
   useTerminalPanelEffects({
-    containerRef,
     pty,
     sessionId: session.id,
     sessionState: session.state,

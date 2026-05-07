@@ -42,6 +42,7 @@ import { TabContextMenu, type TabContextMenuRequest } from "./components/TabCont
 import { PruneDialog, type PruneRequest } from "./components/PruneDialog/PruneDialog";
 import { quickLaunchSession } from "./lib/quickLaunch";
 import { relaunchDeadSession } from "./lib/sessionRelaunch";
+import { clearOneShotLauncherFields } from "./lib/sessionLauncherConfig";
 import "./App.css";
 
 const ChangelogModal = lazy(() => import("./components/ChangelogModal/ChangelogModal").then((m) => ({ default: m.ChangelogModal })));
@@ -120,13 +121,20 @@ export default function App() {
 
   const cliVersions = useSettingsStore((s) => s.cliVersions);
 
-  // [SL-02] Quick launch: Ctrl+Click "+" or Ctrl+Shift+T, uses saved defaults or last config
+  const openFreshLauncher = useCallback(() => {
+    const lc = useSettingsStore.getState().lastConfig;
+    const cleanConfig = clearOneShotLauncherFields(lc);
+    if (cleanConfig !== lc) setLastConfig(cleanConfig);
+    setShowLauncher(true);
+  }, [setLastConfig, setShowLauncher]);
+
+  // [SL-02] Quick launch: Ctrl+Click "+", uses saved defaults or last config
   const quickLaunch = useCallback(async () => {
     await quickLaunchSession({
       createSession,
-      openLauncher: () => setShowLauncher(true),
+      openLauncher: openFreshLauncher,
     });
-  }, [createSession, setShowLauncher]);
+  }, [createSession, openFreshLauncher]);
 
   // Activate tab — dead tabs relaunch explicitly, live tabs are focused.
   const handleTabActivate = useCallback(
@@ -186,7 +194,6 @@ export default function App() {
     tabContextMenu,
     devtoolsEnabled,
   }, {
-    quickLaunch: () => void quickLaunch(),
     closeActiveTab: handleCloseSession,
     setActiveTab,
     setLastConfig,
@@ -296,7 +303,7 @@ export default function App() {
         onClearSettled={(sessionId) => settledStateManager.clearSettled(sessionId)}
         onOpenResumePicker={() => setShowResumePicker(true)}
         onOpenConfigManager={() => setShowConfigManager("settings")}
-        onOpenLauncher={() => setShowLauncher(true)}
+        onOpenLauncher={openFreshLauncher}
         onQuickLaunch={() => void quickLaunch()}
       />
 
@@ -335,7 +342,7 @@ export default function App() {
             {/* Empty state — no active terminal visible */}
             {initialized && !regularSessions.some((s) => s.id === activeTabId) && (
               <div className="empty-state">
-                <kbd>Ctrl+T</kbd> new session &middot; <kbd>Ctrl+Shift+R</kbd> resume from history
+                <kbd>Ctrl+Shift+N</kbd> new session &middot; <kbd>Ctrl+Shift+R</kbd> resume from history
               </div>
             )}
           </div>

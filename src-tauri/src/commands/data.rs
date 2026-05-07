@@ -646,6 +646,18 @@ fn codex_raw_entry(
     }
 }
 
+fn keep_newest_codex_entry_by_id(
+    entries_by_id: &mut HashMap<String, PastSessionRawEntry>,
+    entry: PastSessionRawEntry,
+) {
+    match entries_by_id.get(&entry.session_id) {
+        Some(existing) if existing.modified >= entry.modified => {}
+        _ => {
+            entries_by_id.insert(entry.session_id.clone(), entry);
+        }
+    }
+}
+
 fn resolve_session_chains(
     raw_entries: &mut [PastSessionRawEntry],
     uuid_to_session: &HashMap<String, String>,
@@ -714,6 +726,7 @@ fn list_past_sessions_sync() -> Result<Vec<serde_json::Value>, String> {
         }
     }
 
+    let mut codex_entries_by_id: HashMap<String, PastSessionRawEntry> = HashMap::new();
     for fpath in collect_codex_rollout_files() {
         let metadata = match std::fs::metadata(&fpath) {
             Ok(m) => m,
@@ -722,8 +735,10 @@ fn list_past_sessions_sync() -> Result<Vec<serde_json::Value>, String> {
         let Some(summary) = summarize_codex_rollout(&fpath) else {
             continue;
         };
-        raw_entries.push(codex_raw_entry(&fpath, &metadata, summary));
+        let entry = codex_raw_entry(&fpath, &metadata, summary);
+        keep_newest_codex_entry_by_id(&mut codex_entries_by_id, entry);
     }
+    raw_entries.extend(codex_entries_by_id.into_values());
 
     resolve_session_chains(&mut raw_entries, &uuid_to_session);
     raw_entries.sort_by(|a, b| b.modified.cmp(&a.modified));
@@ -1037,6 +1052,18 @@ struct SearchFileEntry {
     cli: SearchCli,
 }
 
+fn keep_newest_search_file_by_id(
+    files_by_id: &mut HashMap<String, SearchFileEntry>,
+    entry: SearchFileEntry,
+) {
+    match files_by_id.get(&entry.session_id) {
+        Some(existing) if existing.modified >= entry.modified => {}
+        _ => {
+            files_by_id.insert(entry.session_id.clone(), entry);
+        }
+    }
+}
+
 fn search_session_content_sync(
     query: &str,
     cancelled: &AtomicBool,
@@ -1111,6 +1138,7 @@ fn search_session_content_sync(
         }
     }
 
+    let mut codex_files_by_id: HashMap<String, SearchFileEntry> = HashMap::new();
     for fpath in collect_codex_rollout_files() {
         if content_search_cancelled(cancelled) {
             return Ok(Vec::new());
@@ -1129,13 +1157,15 @@ fn search_session_content_sync(
         if session_id.is_empty() {
             continue;
         }
-        files.push(SearchFileEntry {
+        let entry = SearchFileEntry {
             path: fpath,
-            session_id,
+            session_id: session_id.clone(),
             modified: metadata.modified().unwrap_or(std::time::UNIX_EPOCH),
             cli: SearchCli::Codex,
-        });
+        };
+        keep_newest_search_file_by_id(&mut codex_files_by_id, entry);
     }
+    files.extend(codex_files_by_id.into_values());
 
     // Sort newest first — recent sessions are most relevant
     files.sort_by(|a, b| b.modified.cmp(&a.modified));
@@ -1391,7 +1421,9 @@ mod tests {
         codex_compaction_marker, codex_id_from_rollout_filename, codex_response_item_to_message,
         codex_thread_completion, codex_tool_input, codex_user_event_text,
         extract_codex_message_text, extract_message_text, extract_user_text, push_search_matches,
-        read_conversation_sync, session_dir_age_time, summarize_codex_rollout, truncate_preview,
+        keep_newest_codex_entry_by_id, keep_newest_search_file_by_id, read_conversation_sync,
+        session_dir_age_time, summarize_codex_rollout, truncate_preview, PastSessionRawEntry,
+        SearchCli, SearchFileEntry,
     };
     use serde_json::json;
     use std::io::Write;
@@ -1589,6 +1621,54 @@ mod tests {
             codex_id_from_rollout_filename(&path).as_deref(),
             Some("019dc7b3-8995-7ec1-b5f8-b8962086a506")
         );
+    }
+
+    #[test]
+    fn codex_resume_entries_keep_newest_rollout_per_thread_id() {
+        let base = std::time::UNIX_EPOCH;
+        let older = PastSessionRawEntry {
+            modified: base + std::time::Duration::from_secs(1),
+            session_id: "thread-1".to_string(),
+            source_tool_uuid: None,
+            json: json!({ "filePath": "older.jsonl" }),
+        };
+        let newer = PastSessionRawEntry {
+            modified: base + std::time::Duration::from_secs(2),
+            session_id: "thread-1".to_string(),
+            source_tool_uuid: None,
+            json: json!({ "filePath": "newer.jsonl" }),
+        };
+
+        let mut entries = std::collections::HashMap::new();
+        keep_newest_codex_entry_by_id(&mut entries, newer);
+        keep_newest_codex_entry_by_id(&mut entries, older);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries["thread-1"].json["filePath"], "newer.jsonl");
+    }
+
+    #[test]
+    fn codex_content_search_keeps_newest_rollout_per_thread_id() {
+        let base = std::time::UNIX_EPOCH;
+        let older = SearchFileEntry {
+            path: std::path::PathBuf::from("older.jsonl"),
+            session_id: "thread-1".to_string(),
+            modified: base + std::time::Duration::from_secs(1),
+            cli: SearchCli::Codex,
+        };
+        let newer = SearchFileEntry {
+            path: std::path::PathBuf::from("newer.jsonl"),
+            session_id: "thread-1".to_string(),
+            modified: base + std::time::Duration::from_secs(2),
+            cli: SearchCli::Codex,
+        };
+
+        let mut entries = std::collections::HashMap::new();
+        keep_newest_search_file_by_id(&mut entries, older);
+        keep_newest_search_file_by_id(&mut entries, newer);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries["thread-1"].path, std::path::PathBuf::from("newer.jsonl"));
     }
 
     #[test]

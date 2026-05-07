@@ -946,7 +946,7 @@ fn current_codex_native_target() -> Option<(&'static str, &'static str, &'static
 
 // ── Session title generation (`codex exec` one-shot) ─────────────────
 //
-// [CO-06] generate_codex_session_title: 'codex exec --model X --ephemeral --output-last-message FILE --color never -c sandbox_mode=read-only -c approval_policy=never' one-shot reusing user's Codex auth; 60s timeout, 64-char output cap, RAII tempfile guard. Provider-symmetric with Claude Code's Haiku CustomTitle — see SL-23 for frontend trigger.
+// [CO-06] generate_codex_session_title: 'codex exec --model X --ephemeral --skip-git-repo-check --output-last-message FILE --color never -c sandbox_mode=read-only -c approval_policy=never' one-shot reusing user's Codex auth; 60s timeout, 64-char output cap, RAII tempfile guard. Provider-symmetric with Claude Code's Haiku CustomTitle — see SL-23 for frontend trigger.
 //
 // Spawns `codex exec` against a small model to generate a 3-5 word tab
 // title from the user's first message. Reuses Codex's own auth (file /
@@ -1009,6 +1009,7 @@ pub async fn generate_codex_session_title(prompt: String, model: String) -> Resu
         .arg("--model")
         .arg(model)
         .arg("--ephemeral")
+        .arg("--skip-git-repo-check")
         .arg("--output-last-message")
         .arg(&tmpfile_path)
         .arg("--color")

@@ -7,6 +7,7 @@ import { focusTerminal, releaseTerminalSynchronizedOutput } from "../lib/termina
 import { cycleTabId, jumpTabId } from "../lib/tabCycle";
 import type { ChangelogRequest } from "../lib/changelog";
 import type { TabContextMenuRequest } from "../components/TabContextMenu/TabContextMenu";
+import { clearOneShotLauncherFields } from "../lib/sessionLauncherConfig";
 
 type ShortcutSnapshot = {
   activeTabId: string | null;
@@ -23,7 +24,6 @@ type ShortcutSnapshot = {
 };
 
 type ShortcutActions = {
-  quickLaunch: () => void;
   closeActiveTab: (id: string) => void;
   setActiveTab: (id: string) => void;
   setLastConfig: (config: SessionConfig) => void;
@@ -59,7 +59,6 @@ export function useKeyboardShortcuts(snapshot: ShortcutSnapshot, actions: Shortc
           devtoolsEnabled,
         },
         actions: {
-          quickLaunch,
           closeActiveTab,
           setActiveTab,
           setLastConfig,
@@ -75,19 +74,13 @@ export function useKeyboardShortcuts(snapshot: ShortcutSnapshot, actions: Shortc
         },
       } = ref.current;
 
-      if (e.ctrlKey && e.key === "t") {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        if (e.shiftKey) {
-          // [SL-02] Ctrl+Shift+T: quick launch without modal.
-          quickLaunch();
-        } else {
-          // [KB-01] [SL-01] Ctrl+T: open new session (clears resume/fork/continue).
-          const lc = useSettingsStore.getState().lastConfig;
-          if (lc.resumeSession || lc.forkSession || lc.continueSession) {
-            setLastConfig({ ...lc, resumeSession: null, forkSession: false, continueSession: false });
-          }
-          setShowLauncher(true);
-        }
+        // [KB-01] [SL-01] Ctrl+Shift+N: open new session (clears resume/fork/continue).
+        const lc = useSettingsStore.getState().lastConfig;
+        const cleanConfig = clearOneShotLauncherFields(lc);
+        if (cleanConfig !== lc) setLastConfig(cleanConfig);
+        setShowLauncher(true);
       }
 
       // [KB-02] Ctrl+W closes the active tab.

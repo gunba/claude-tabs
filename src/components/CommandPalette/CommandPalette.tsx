@@ -3,6 +3,7 @@ import { useSessionStore } from "../../store/sessions";
 import { useSettingsStore } from "../../store/settings";
 import { getSessionTranscript } from "../../lib/terminalRegistry";
 import { useRuntimeStore } from "../../store/runtime";
+import { clearOneShotLauncherFields } from "../../lib/sessionLauncherConfig";
 import "./CommandPalette.css";
 
 interface Command {
@@ -24,7 +25,6 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
   const sessions = useSessionStore((s) => s.sessions);
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const setActiveTab = useSessionStore((s) => s.setActiveTab);
-  const setShowLauncher = useSettingsStore((s) => s.setShowLauncher);
   const devtoolsEnabled = useRuntimeStore((s) => s.observabilityInfo.devtoolsEnabled);
   const openMainDevtools = useRuntimeStore((s) => s.openMainDevtools);
 
@@ -35,7 +35,11 @@ export function CommandPalette({ onClose }: CommandPaletteProps) {
       label: "New Session",
       description: "Open a new CLI session",
       action: () => {
-        setShowLauncher(true);
+        const settings = useSettingsStore.getState();
+        const lc = settings.lastConfig;
+        const cleanConfig = clearOneShotLauncherFields(lc);
+        if (cleanConfig !== lc) settings.setLastConfig(cleanConfig);
+        settings.setShowLauncher(true);
         onClose();
       },
     },

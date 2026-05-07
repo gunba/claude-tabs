@@ -7,6 +7,16 @@ export function workspaceDefaultsKey(workingDir: string): string {
   return normalizePath(wt ? wt.projectRoot : workingDir).toLowerCase();
 }
 
+export function clearOneShotLauncherFields(config: SessionConfig): SessionConfig {
+  if (!config.resumeSession && !config.forkSession && !config.continueSession) return config;
+  return {
+    ...config,
+    resumeSession: null,
+    forkSession: false,
+    continueSession: false,
+  };
+}
+
 /** One-shot migration for Codex sessions saved before the Codex-native
  *  Sandbox + Approval dropdowns existed. Translates the legacy Claude-shaped
  *  permissionMode into the new Codex axes and clears permissionMode so the

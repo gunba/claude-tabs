@@ -29,8 +29,8 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 ## Session Launcher
 
-- [SL-01 L80] SessionLauncher opens for new, resume, or fork launches; Ctrl+T opens a fresh launcher and clears resumeSession, forkSession, and continueSession from lastConfig.
-  - SessionLauncher renders Fork Session/Forking from when config.resumeSession && config.forkSession. The Ctrl+T global shortcut strips all one-shot resume/fork/continue fields before showing the modal.
+- [SL-01 L80] SessionLauncher opens for new, resume, or fork launches; Ctrl+Shift+N opens a fresh launcher and clearOneShotLauncherFields strips resumeSession, forkSession, and continueSession from lastConfig before showing it.
+  - SessionLauncher renders Fork Session/Forking from when config.resumeSession && config.forkSession. The same clearOneShotLauncherFields helper is used by keyboard, App, and CommandPalette fresh-launch paths so one-shot resume/fork/continue state does not leak into a new session.
 - [SL-09 L81] SessionLauncher restores config from savedDefaults or lastConfig with workspace-default layering for fresh launches; resume configs bypass workspace defaults, keep forkSession when set, and clear stale continueSession/sessionId/runMode.
   - buildInitialLauncherConfig() uses lastConfig directly when resumeSession is set, preserving fork intent for fork-with-options flows while clearing continueSession, sessionId, and runMode. Fresh launches use savedDefaults/lastConfig plus workspace defaults and force forkSession false.
 - [SL-21 L244] Workspace-specific launch defaults: setSavedDefaults writes per-workspace entry into workspaceDefaults map (keyed by lowercased project root, worktree paths collapsed); SessionLauncher layers matching workspace defaults on mount and when switching workspace via browse or recent chip; no-entry workspace resets to global savedDefaults/lastConfig baseline; forkSession:false and other transient fields excluded from workspace entry

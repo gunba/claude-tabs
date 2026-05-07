@@ -13,6 +13,7 @@ import { useSessionStore } from "../store/sessions";
 import { useSettingsStore } from "../store/settings";
 import { getResumeId } from "../lib/claude";
 import { IS_WINDOWS, IS_LINUX } from "../lib/paths";
+import type { Session } from "../types/session";
 import { createPathLinkProvider } from "../lib/terminalPathLinks";
 import {
   classifyTerminalKey,
@@ -28,6 +29,21 @@ import {
   TERMINAL_FONT_FAMILY,
   XTVERSION_REPLY,
 } from "./terminalShared";
+
+export function normalizeTerminalTitle(rawTitle: string): string {
+  return rawTitle.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+}
+
+export function shouldApplyTerminalTitle(
+  session: Pick<Session, "config" | "name"> | null,
+  title: string,
+): boolean {
+  if (!session || session.config.cli === "codex") return false;
+  if (!title || title === "Code Tabs" || title.startsWith("Claude Code") || title.toLowerCase() === "claude") {
+    return false;
+  }
+  return title !== session.name;
+}
 
 interface UseXtermLifecycleParams {
   cwdRef: MutableRefObject<string | null>;
@@ -334,18 +350,16 @@ export function useXtermLifecycle({
       // reflect only the Haiku-generated session title.
       lifecycleDisposables.push(
         term.onTitleChange((rawTitle) => {
-          const title = rawTitle.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+          const title = normalizeTerminalTitle(rawTitle);
           const sid = sessionIdRef.current;
+          const session = sid ? useSessionStore.getState().sessions.find((s) => s.id === sid) ?? null : null;
+          if (!sid || !session || !shouldApplyTerminalTitle(session, title)) return;
           dlog("terminal", sid, "terminal title changed", "DEBUG", {
             event: "terminal.title_change",
             data: { rawTitle, title },
           });
-          if (!sid || !title || title === "Code Tabs" || title.startsWith("Claude Code") || title.toLowerCase() === "claude") return;
-          const session = useSessionStore.getState().sessions.find((s) => s.id === sid);
-          if (session && title !== session.name) {
-            useSessionStore.getState().renameSession(sid, title);
-            useSettingsStore.getState().setSessionName(getResumeId(session), title);
-          }
+          useSessionStore.getState().renameSession(sid, title);
+          useSettingsStore.getState().setSessionName(getResumeId(session), title);
         }),
       );
 

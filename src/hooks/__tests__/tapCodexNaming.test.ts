@@ -91,4 +91,34 @@ describe("createTapCodexNaming", () => {
 
     expect(sessionName()).toBe("Manual title");
   });
+
+  it("does not persist a fresh Codex name under the app session id before registration", () => {
+    useSessionStore.setState({
+      sessions: [makeCodexSession({
+        config: {
+          ...DEFAULT_SESSION_CONFIG,
+          cli: "codex",
+          workingDir: "/home/jordan/Desktop/Projects/code_tabs",
+          launchWorkingDir: "/home/jordan/Desktop/Projects/code_tabs",
+          sessionId: null,
+          resumeSession: null,
+        },
+        name: "code_tabs",
+      })],
+      activeTabId: "app-session",
+    });
+    useSettingsStore.setState({ codexAutoRenameLLMEnabled: false, sessionNames: {} });
+
+    const naming = createTapCodexNaming("app-session");
+    naming.handleUserInput("Fix Codex autorename for fresh sessions");
+
+    expect(sessionName()).toBe("Fix Codex autorename for fresh sessions");
+    expect(useSettingsStore.getState().sessionNames["app-session"]).toBeUndefined();
+
+    naming.persistSessionRegistrationName("codex-session-after-registration");
+
+    expect(useSettingsStore.getState().sessionNames["codex-session-after-registration"]).toBe(
+      "Fix Codex autorename for fresh sessions",
+    );
+  });
 });

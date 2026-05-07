@@ -75,10 +75,14 @@ describe("classifyTerminalKey", () => {
 
   it("swallows app-level shortcuts that xterm would otherwise consume", () => {
     expect(classify({ key: "1", altKey: true })).toEqual({ kind: "swallow" });
-    expect(classify({ key: "t", ctrlKey: true })).toEqual({ kind: "swallow" });
+    expect(classify({ key: "N", ctrlKey: true, shiftKey: true })).toEqual({ kind: "swallow" });
     expect(classify({ key: "Tab", ctrlKey: true })).toEqual({ kind: "swallow" });
     expect(classify({ key: "F", ctrlKey: true, shiftKey: true })).toEqual({ kind: "swallow" });
     expect(classify({ key: "Escape" })).toEqual({ kind: "swallow" });
+  });
+
+  it("passes Ctrl+T through to Codex", () => {
+    expect(classify({ key: "t", ctrlKey: true })).toEqual({ kind: "passthrough" });
   });
 });
 

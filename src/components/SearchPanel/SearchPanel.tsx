@@ -4,6 +4,7 @@ import { useSessionStore } from "../../store/sessions";
 import { sessionColor } from "../../lib/claude";
 import { dirToTabName } from "../../lib/paths";
 import { buildTerminalSearchTargets, findSnippetHighlight, validateRegex } from "../../lib/searchBuffers";
+import { buildJsonlSearchSessionTargets, searchableSessionScopeKey } from "../../lib/searchSessionTargets";
 import { scrollTuiToText } from "../../lib/tuiScrollSearch";
 import { focusTerminal } from "../../lib/terminalRegistry";
 import { dlog } from "../../lib/debugLog";
@@ -55,10 +56,7 @@ export function SearchPanel() {
   // Stable searchable-scope key: changes when sessions are added/removed or
   // when their search-backed metadata becomes available.
   const searchableSessionScope = useMemo(
-    () => sessions
-      .filter((s) => !s.isMetaAgent)
-      .map((s) => `${s.id}\0${s.config.cli}\0${s.config.sessionId ?? ""}\0${s.config.workingDir ?? ""}`)
-      .join("\u0001"),
+    () => searchableSessionScopeKey(sessions),
     [sessions]
   );
 
@@ -89,14 +87,7 @@ export function SearchPanel() {
     setRegexError(null);
 
     // Build session list for Rust command
-    const sessionList = sessionsRef.current
-      .filter(s => !s.isMetaAgent && s.state !== "dead" && s.config.sessionId && s.config.workingDir)
-      .map(s => ({
-        appSessionId: s.id,
-        sessionId: s.config.sessionId,
-        workingDir: s.config.workingDir,
-        cli: s.config.cli,
-      }));
+    const sessionList = buildJsonlSearchSessionTargets(sessionsRef.current);
 
     if (!sessionList.length) {
       setResults([]);

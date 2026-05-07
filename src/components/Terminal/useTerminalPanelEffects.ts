@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
+import { useCallback, useEffect } from "react";
 import { dlog } from "../../lib/debugLog";
 import { unregisterInspectorCallbacks, unregisterInspectorPort } from "../../lib/inspectorPort";
 import {
@@ -18,7 +18,6 @@ import type { SessionState } from "../../types/session";
 import type { PtyController, TerminalController } from "./terminalPanelTypes";
 
 interface UseTerminalPanelEffectsParams {
-  containerRef: MutableRefObject<HTMLDivElement | null>;
   pty: PtyController;
   sessionId: string;
   sessionState: SessionState;
@@ -27,7 +26,6 @@ interface UseTerminalPanelEffectsParams {
 }
 
 export function useTerminalPanelEffects({
-  containerRef,
   pty,
   sessionId,
   sessionState,
@@ -88,47 +86,17 @@ export function useTerminalPanelEffects({
     terminal.focus();
   }, [visible, sessionId, terminal.focus, terminal.termGeneration]);
 
-  // Reclaim focus when terminal is visible but loses it to non-interactive elements.
-  // Uses termRef directly instead of terminal (which is a new object every render).
-  useEffect(() => {
-    if (!visible) return;
-
-    let cancelled = false;
-    const overlaySelector = "[data-modal-overlay], .launcher-overlay, .resume-picker-overlay, .modal-overlay, .palette-overlay, .diff-panel";
-    const interactiveSelector = "button, input, textarea, select, [role=button], [role=tab], a[href], [contenteditable=true]";
-
-    const handleFocusOut = () => {
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const active = document.activeElement as HTMLElement | null;
-        if (document.querySelector(overlaySelector)) return;
-        if (active?.closest(".right-panel") && active.matches(interactiveSelector)) return;
-        if (active?.matches("input, textarea, select, [contenteditable=true]")) return;
-        terminal.termRef.current?.focus();
-      });
-    };
-
-    const container = containerRef.current;
-    container?.addEventListener("focusout", handleFocusOut);
-    return () => {
-      cancelled = true;
-      container?.removeEventListener("focusout", handleFocusOut);
-    };
-  }, [visible, sessionId, containerRef, terminal.termRef]);
 }
 
 export function useTerminalContainer(terminal: TerminalController): {
-  containerRef: MutableRefObject<HTMLDivElement | null>;
   setContainer: (el: HTMLDivElement | null) => void;
 } {
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const setContainer = useCallback(
     (el: HTMLDivElement | null) => {
-      containerRef.current = el;
       terminal.attach(el);
     },
     [terminal.attach]
   );
 
-  return { containerRef, setContainer };
+  return { setContainer };
 }

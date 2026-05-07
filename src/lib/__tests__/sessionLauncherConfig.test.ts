@@ -3,6 +3,7 @@ import {
   buildFinalLauncherConfig,
   buildInitialLauncherConfig,
   buildWorkspaceLauncherConfig,
+  clearOneShotLauncherFields,
 } from "../sessionLauncherConfig";
 import { DEFAULT_SESSION_CONFIG, type SessionConfig } from "../../types/session";
 
@@ -13,6 +14,37 @@ function config(overrides: Partial<SessionConfig> = {}): SessionConfig {
     ...overrides,
   };
 }
+
+describe("clearOneShotLauncherFields", () => {
+  it("clears stale resume, fork, and continue state for fresh launcher entry points", () => {
+    const input = config({
+      resumeSession: "stale-resume",
+      forkSession: true,
+      continueSession: true,
+      sessionId: "current-session",
+      runMode: true,
+    });
+
+    const result = clearOneShotLauncherFields(input);
+
+    expect(result).not.toBe(input);
+    expect(result.resumeSession).toBeNull();
+    expect(result.forkSession).toBe(false);
+    expect(result.continueSession).toBe(false);
+    expect(result.sessionId).toBe("current-session");
+    expect(result.runMode).toBe(true);
+  });
+
+  it("preserves object identity when no one-shot launcher fields are present", () => {
+    const input = config({
+      resumeSession: null,
+      forkSession: false,
+      continueSession: false,
+    });
+
+    expect(clearOneShotLauncherFields(input)).toBe(input);
+  });
+});
 
 describe("buildInitialLauncherConfig", () => {
   it("does not apply workspace defaults when opening a resume config", () => {

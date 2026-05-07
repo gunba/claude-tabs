@@ -65,8 +65,7 @@ npm run build:debug      # Debug build (no NSIS installer)
 
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+T | New session |
-| Ctrl+Shift+T | Quick launch (saved defaults) |
+| Ctrl+Shift+N | New session |
 | Ctrl+W | Close active tab |
 | Ctrl+Tab / Ctrl+Shift+Tab | Cycle tabs (skips dead) |
 | Alt+1-9 | Jump to tab N |
