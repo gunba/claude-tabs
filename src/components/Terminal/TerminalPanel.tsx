@@ -1,10 +1,18 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTerminal } from "../../hooks/useTerminal";
 import { usePty } from "../../hooks/usePty";
 import { useSessionStore } from "../../store/sessions";
 import { getResumeId } from "../../lib/claude";
 import { dlog } from "../../lib/debugLog";
+import { IS_WINDOWS } from "../../lib/paths";
 import { useTapPipeline } from "../../hooks/useTapPipeline";
 import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
 import { useUserTurnListener } from "../../hooks/useUserTurnListener";
@@ -17,7 +25,10 @@ import type { TerminalController } from "./terminalPanelTypes";
 import { useDurationTimer } from "./useDurationTimer";
 import { useSessionDeath } from "./useSessionDeath";
 import { useSessionRespawn } from "./useSessionRespawn";
-import { useTerminalContainer, useTerminalPanelEffects } from "./useTerminalPanelEffects";
+import {
+  useTerminalContainer,
+  useTerminalPanelEffects,
+} from "./useTerminalPanelEffects";
 import { useTerminalInspector } from "./useTerminalInspector";
 import { useTerminalSetup } from "./useTerminalSetup";
 import "./TerminalPanel.css";
@@ -31,19 +42,28 @@ interface TerminalPanelProps {
 }
 
 // [TA-13] React.memo with terminalPanelPropsEqual gates rerenders on the subset of session fields the panel actually depends on; tap-event-driven metadata churn no longer rerenders the heavy terminal subtree.
-function terminalPanelPropsEqual(prev: TerminalPanelProps, next: TerminalPanelProps): boolean {
-  return prev.visible === next.visible
-    && prev.session.id === next.session.id
-    && prev.session.state === next.session.state
-    && prev.session.name === next.session.name
-    && prev.session.config === next.session.config
-    && prev.session.metadata.nodeSummary === next.session.metadata.nodeSummary
-    && prev.session.metadata.assistantMessageCount === next.session.metadata.assistantMessageCount;
+function terminalPanelPropsEqual(
+  prev: TerminalPanelProps,
+  next: TerminalPanelProps,
+): boolean {
+  return (
+    prev.visible === next.visible &&
+    prev.session.id === next.session.id &&
+    prev.session.state === next.session.state &&
+    prev.session.name === next.session.name &&
+    prev.session.config === next.session.config &&
+    prev.session.metadata.nodeSummary === next.session.metadata.nodeSummary &&
+    prev.session.metadata.assistantMessageCount ===
+      next.session.metadata.assistantMessageCount
+  );
 }
 
 // ── Terminal Panel ──────────────────────────────────────────────────────
 
-export const TerminalPanel = memo(function TerminalPanel({ session, visible }: TerminalPanelProps) {
+export const TerminalPanel = memo(function TerminalPanel({
+  session,
+  visible,
+}: TerminalPanelProps) {
   const claudePath = useSessionStore((s) => s.claudePath);
   const codexPath = useSessionStore((s) => s.codexPath);
   const initialized = useSessionStore((s) => s.initialized);
@@ -52,12 +72,8 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
   const terminalRef = useRef<TerminalController | null>(null);
   const retryRespawnRef = useRef<() => void>(() => {});
 
-  const {
-    inspector,
-    loading,
-    setInspectorPort,
-    setLoading,
-  } = useTerminalInspector(session);
+  const { inspector, loading, setInspectorPort, setLoading } =
+    useTerminalInspector(session);
 
   useTapPipeline({
     sessionId: session.state !== "dead" ? session.id : null,
@@ -66,10 +82,14 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
   });
 
   // Auto-start traffic logging when recording config enables it
-  const trafficEnabled = useSettingsStore((s) =>
-    (s.recordingConfigsByCli[session.config.cli] ?? s.recordingConfig).traffic.enabled
+  const trafficEnabled = useSettingsStore(
+    (s) =>
+      (s.recordingConfigsByCli[session.config.cli] ?? s.recordingConfig).traffic
+        .enabled,
   );
-  const observabilityEnabled = useRuntimeStore((s) => s.observabilityInfo.observabilityEnabled);
+  const observabilityEnabled = useRuntimeStore(
+    (s) => s.observabilityInfo.observabilityEnabled,
+  );
   const startTrafficLog = useSessionStore((s) => s.startTrafficLog);
   const stopTrafficLog = useSessionStore((s) => s.stopTrafficLog);
   const trafficStartedRef = useRef(false);
@@ -80,21 +100,34 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
     }
     if (observabilityEnabled && trafficEnabled && !trafficStartedRef.current) {
       trafficStartedRef.current = true;
-      traceAsync("traffic.start_auto_log", () => invoke<string>("start_traffic_log", { sessionId: session.id }), {
-        module: "traffic",
-        sessionId: session.id,
-        event: "traffic.start_auto_log",
-        warnAboveMs: 250,
-        data: {},
-      })
+      traceAsync(
+        "traffic.start_auto_log",
+        () => invoke<string>("start_traffic_log", { sessionId: session.id }),
+        {
+          module: "traffic",
+          sessionId: session.id,
+          event: "traffic.start_auto_log",
+          warnAboveMs: 250,
+          data: {},
+        },
+      )
         .then((path) => startTrafficLog(session.id, path))
-        .catch((e) => dlog("traffic", session.id, `auto-start failed: ${e}`, "WARN"));
+        .catch((e) =>
+          dlog("traffic", session.id, `auto-start failed: ${e}`, "WARN"),
+        );
     }
-  }, [inspector.connected, observabilityEnabled, trafficEnabled, session.id, session.state, startTrafficLog]);
+  }, [
+    inspector.connected,
+    observabilityEnabled,
+    trafficEnabled,
+    session.id,
+    session.state,
+    startTrafficLog,
+  ]);
 
   // Tap event processor: sole source of state, metadata, subagent data
   const tapProcessor = useTapEventProcessor(
-    session.state !== "dead" ? session.id : null
+    session.state !== "dead" ? session.id : null,
   );
 
   // [AS-05] Move response-panel boundary on real /v1/messages or /v1/responses
@@ -115,7 +148,12 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
     if (tapProcessor.claudeSessionId !== session.config.sessionId) {
       updateConfig(session.id, { sessionId: tapProcessor.claudeSessionId });
     }
-  }, [tapProcessor.claudeSessionId, session.id, session.config.sessionId, updateConfig]);
+  }, [
+    tapProcessor.claudeSessionId,
+    session.id,
+    session.config.sessionId,
+    updateConfig,
+  ]);
 
   // Duration timer
   useDurationTimer(session.id, session.state, respawnCounter);
@@ -153,14 +191,14 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
       if (session.state === "dead") return; // Resume via tab click, not keyboard
       writeToPty(session.id, data);
     },
-    [session.id, session.state]
+    [session.id, session.state],
   );
 
   const handleResize = useCallback(
     (cols: number, rows: number) => {
       pty.handle.current?.resize(cols, rows);
     },
-    [pty.handle]
+    [pty.handle],
   );
 
   const terminal = useTerminal({
@@ -169,8 +207,12 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
     onResize: handleResize,
     instanceKey: respawnCounter,
     cwd: session.config.workingDir ?? null,
-    scrollback: session.config.cli === "codex" ? CODEX_SCROLLBACK_LINES : CLAUDE_SCROLLBACK_LINES,
+    scrollback:
+      session.config.cli === "codex"
+        ? CODEX_SCROLLBACK_LINES
+        : CLAUDE_SCROLLBACK_LINES,
     enableWebgl: session.config.cli !== "codex",
+    enableMouseTracking: session.config.cli === "claude" || !IS_WINDOWS,
     visible,
   });
   terminalRef.current = terminal;
@@ -231,8 +273,10 @@ export const TerminalPanel = memo(function TerminalPanel({ session, visible }: T
                 onClick={() => {
                   Promise.all(
                     sessionDeath.externalHolder!.map((pid) =>
-                      invoke("force_kill_session_holder", { pid }).catch(() => {})
-                    )
+                      invoke("force_kill_session_holder", { pid }).catch(
+                        () => {},
+                      ),
+                    ),
                   ).then(() => {
                     sessionDeath.setExternalHolder(null);
                     triggerRespawn();

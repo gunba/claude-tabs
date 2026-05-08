@@ -157,6 +157,7 @@ impl CliAdapter for CodexAdapter {
             // strips BUN_INSPECT*/NODE_OPTIONS for both CLIs.
             env_overrides: Vec::new(),
             cwd,
+            codex_proxy_provider_id: None,
         })
     }
 
@@ -187,7 +188,7 @@ impl CliAdapter for CodexAdapter {
 
         if let Some(port) = ctx.proxy_port {
             let auth_mode = crate::commands::codex_cli::read_codex_auth_mode_sync();
-            let proxy_args = super::codex_proxy_config_args(
+            let (proxy_args, provider_id) = super::codex_proxy_config_args(
                 &spec.args,
                 &proxy_env,
                 port,
@@ -195,6 +196,7 @@ impl CliAdapter for CodexAdapter {
                 auth_mode.as_deref(),
             );
             spec.args.extend(proxy_args);
+            spec.codex_proxy_provider_id = provider_id;
         }
         Ok(())
     }

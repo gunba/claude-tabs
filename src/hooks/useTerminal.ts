@@ -11,7 +11,11 @@ import { useTerminalEventHandlers } from "./useTerminalEventHandlers";
 import { useTerminalWriteSink } from "./useTerminalWriteSink";
 import { useXtermLifecycle } from "./useXtermLifecycle";
 
-export { getTerminalKeySequenceOverride, SHIFT_ENTER_SEQUENCE, TERMINAL_FONT_FAMILY };
+export {
+  getTerminalKeySequenceOverride,
+  SHIFT_ENTER_SEQUENCE,
+  TERMINAL_FONT_FAMILY,
+};
 
 interface UseTerminalOptions {
   sessionId?: string | null;
@@ -21,6 +25,7 @@ interface UseTerminalOptions {
   cwd?: string | null;
   scrollback?: number;
   enableWebgl?: boolean;
+  enableMouseTracking?: boolean;
   visible?: boolean;
 }
 
@@ -32,6 +37,7 @@ export function useTerminal({
   cwd = null,
   scrollback = 100_000,
   enableWebgl = true,
+  enableMouseTracking = true,
   visible = true,
 }: UseTerminalOptions = {}) {
   const sessionIdRef = useRef<string | null>(sessionId);
@@ -47,6 +53,7 @@ export function useTerminal({
 
   const xterm = useXtermLifecycle({
     cwdRef,
+    enableMouseTracking,
     enableWebgl,
     instanceKey,
     onDataRef,

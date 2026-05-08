@@ -10,9 +10,10 @@
 //!   `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`
 //!
 //! That file is the structured event source. This module:
-//!   1. Watches the today's-date directory for new rollout files
-//!      created after the session spawn time.
-//!   2. Attributes the first matching file to the session.
+//!   1. Watches the Codex sessions tree for rollout files.
+//!   2. Attributes a rollout only by deterministic identity: the
+//!      expected Codex conversation id for resumes, or the session-scoped
+//!      model provider id injected into this launch.
 //!   3. Tails the file, parsing each line as a `RolloutItem` and
 //!      writing a normalized envelope into `observability.jsonl` via
 //!      `record_backend_event` — the same sink the Claude tap pipeline
@@ -24,13 +25,12 @@
 //!   { "timestamp": "ISO8601", "type": "session_meta" | "response_item"
 //!     | "event_msg" | "compacted" | "turn_context", "payload": {...} }
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::time::SystemTime;
 
 #[cfg(not(target_os = "windows"))]
 use notify::Watcher as _;
@@ -54,6 +54,24 @@ fn tail_semaphore() -> Arc<Semaphore> {
     TAIL_SEMAPHORE
         .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_TAILS)))
         .clone()
+}
+
+#[derive(Clone, Debug, Default)]
+struct RolloutAttributionCriteria {
+    expected_codex_session_id: Option<String>,
+    expected_model_provider: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct RolloutMetadata {
+    codex_session_id: Option<String>,
+    model_provider: Option<String>,
+}
+
+#[derive(Debug)]
+struct ClaimedRollout {
+    path: PathBuf,
+    previous_owner: Option<String>,
 }
 
 /// Build a notify watcher appropriate for the host OS. On Windows we use
@@ -90,7 +108,8 @@ struct RolloutDirWatcher {
 enum RolloutDirWatcherCommand {
     Register {
         id: u64,
-        spawn_time: SystemTime,
+        session_id: String,
+        criteria: RolloutAttributionCriteria,
         reply: tokio::sync::oneshot::Sender<PathBuf>,
     },
     Unregister {
@@ -104,7 +123,7 @@ enum RolloutDirWatcherCommand {
 impl RolloutDirWatcher {
     fn start(
         dir: PathBuf,
-        claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+        claimed_rollouts: Arc<Mutex<HashMap<PathBuf, String>>>,
     ) -> Result<Arc<Self>, String> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RolloutDirWatcherCommand>();
         let tx_for_notify = tx.clone();
@@ -130,7 +149,7 @@ impl RolloutDirWatcher {
         })
         .map_err(|e| format!("notify watcher: {e}"))?;
         watcher
-            .watch(&dir, RecursiveMode::NonRecursive)
+            .watch(&dir, RecursiveMode::Recursive)
             .map_err(|e| format!("notify watch {dir:?}: {e}"))?;
 
         tokio::spawn(run_rollout_dir_watcher(rx, watcher, claimed_rollouts));
@@ -148,18 +167,25 @@ impl RolloutDirWatcher {
 async fn run_rollout_dir_watcher(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<RolloutDirWatcherCommand>,
     _watcher: Box<dyn notify::Watcher + Send>,
-    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: Arc<Mutex<HashMap<PathBuf, String>>>,
 ) {
-    let mut interests: HashMap<u64, (SystemTime, tokio::sync::oneshot::Sender<PathBuf>)> =
-        HashMap::new();
+    let mut interests: HashMap<
+        u64,
+        (
+            RolloutAttributionCriteria,
+            String,
+            tokio::sync::oneshot::Sender<PathBuf>,
+        ),
+    > = HashMap::new();
     while let Some(command) = rx.recv().await {
         match command {
             RolloutDirWatcherCommand::Register {
                 id,
-                spawn_time,
+                session_id,
+                criteria,
                 reply,
             } => {
-                interests.insert(id, (spawn_time, reply));
+                interests.insert(id, (criteria, session_id, reply));
             }
             RolloutDirWatcherCommand::Unregister { id } => {
                 interests.remove(&id);
@@ -167,20 +193,21 @@ async fn run_rollout_dir_watcher(
             RolloutDirWatcherCommand::Notify { paths } => {
                 let ids: Vec<u64> = interests.keys().copied().collect();
                 for id in ids {
-                    let Some((spawn_time, _)) = interests.get(&id) else {
+                    let Some((criteria, session_id, _)) = interests.get(&id) else {
                         continue;
                     };
-                    let Some(path) = claim_unclaimed_rollout_paths(
+                    let Some(claimed) = claim_matching_rollout_paths(
                         paths.clone(),
-                        *spawn_time,
+                        session_id,
+                        criteria,
                         &claimed_rollouts,
                     )
                     .await
                     else {
                         continue;
                     };
-                    if let Some((_, reply)) = interests.remove(&id) {
-                        let _ = reply.send(path);
+                    if let Some((_, _, reply)) = interests.remove(&id) {
+                        let _ = reply.send(claimed.path);
                     }
                 }
             }
@@ -258,15 +285,6 @@ fn codex_home() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".codex"))
 }
 
-/// `$CODEX_HOME/sessions/YYYY/MM/DD` for today (local time). We watch
-/// this directory because that's where the new rollout file will land.
-// [CR-01] Rollout JSONL path: $CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl; CODEX_HOME defaults to ~/.codex
-fn todays_sessions_dir() -> Option<PathBuf> {
-    let home = codex_home()?;
-    let now = chrono::Local::now();
-    Some(home.join(now.format("sessions/%Y/%m/%d").to_string()))
-}
-
 fn sessions_root() -> Option<PathBuf> {
     codex_home().map(|home| home.join("sessions"))
 }
@@ -284,57 +302,91 @@ fn codex_id_from_rollout_filename(path: &Path) -> Option<String> {
         .map(|m| m.as_str().to_string())
 }
 
-/// Pick a rollout file in `dir` whose mtime is ≥ `spawn_time` and
-/// hasn't been claimed yet. Used as the initial-attribution heuristic
-/// when the watcher starts: there may already be a fresh file from a
-/// race between PTY spawn and the watcher's first notify event.
-fn find_unclaimed_rollout(
-    dir: &Path,
-    spawn_time: SystemTime,
-    claimed: &HashSet<PathBuf>,
-) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    let mut best: Option<(PathBuf, SystemTime)> = None;
-    for ent in entries.flatten() {
-        let path = ent.path();
-        if claimed.contains(&path) {
-            continue;
-        }
-        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if !name.starts_with("rollout-") || !name.ends_with(".jsonl") {
-            continue;
-        }
-        // A transient stat failure (file rolling over on a slow FS,
-        // ENOENT mid-iteration) must not abort attribution for the
-        // whole directory — only skip this entry.
-        let mtime = match ent.metadata().and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        if mtime < spawn_time {
-            continue;
-        }
-        match &best {
-            None => best = Some((path, mtime)),
-            Some((_, prev)) if mtime > *prev => best = Some((path, mtime)),
-            _ => {}
-        }
-    }
-    best.map(|(p, _)| p)
+fn is_rollout_path(path: &Path) -> bool {
+    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    name.starts_with("rollout-") && name.ends_with(".jsonl")
 }
 
-fn find_rollout_by_codex_session_id(
-    root: &Path,
-    codex_session_id: &str,
-    claimed: &HashSet<PathBuf>,
-) -> Option<PathBuf> {
-    let requested = codex_session_id.trim();
-    if requested.is_empty() {
+fn read_rollout_metadata(path: &Path) -> Option<RolloutMetadata> {
+    let file = std::fs::File::open(path).ok()?;
+    use std::io::BufRead;
+    let reader = std::io::BufReader::new(file);
+    for line in reader.lines().take(64).map_while(Result::ok) {
+        let parsed = match parse_rollout_line(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if parsed.kind != "session_meta" {
+            continue;
+        }
+        return Some(RolloutMetadata {
+            codex_session_id: parsed
+                .payload
+                .get("id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned),
+            model_provider: parsed
+                .payload
+                .get("model_provider")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned),
+        });
+    }
+    None
+}
+
+fn matches_expected_codex_id(
+    path: &Path,
+    metadata: Option<&RolloutMetadata>,
+    expected: &str,
+) -> bool {
+    codex_id_from_rollout_filename(path)
+        .as_deref()
+        .is_some_and(|id| id.eq_ignore_ascii_case(expected))
+        || metadata
+            .and_then(|m| m.codex_session_id.as_deref())
+            .is_some_and(|id| id.eq_ignore_ascii_case(expected))
+}
+
+fn rollout_match_rank(path: &Path, criteria: &RolloutAttributionCriteria) -> Option<u8> {
+    if !is_rollout_path(path) {
         return None;
     }
+    let metadata = read_rollout_metadata(path);
+    let codex_id_matches = criteria
+        .expected_codex_session_id
+        .as_deref()
+        .is_some_and(|expected| matches_expected_codex_id(path, metadata.as_ref(), expected));
+    let provider_matches = criteria
+        .expected_model_provider
+        .as_deref()
+        .is_some_and(|expected| {
+            metadata
+                .as_ref()
+                .and_then(|m| m.model_provider.as_deref())
+                .is_some_and(|provider| provider == expected)
+        });
 
+    match (
+        criteria.expected_codex_session_id.is_some(),
+        criteria.expected_model_provider.is_some(),
+    ) {
+        (true, true) if codex_id_matches && provider_matches => Some(0),
+        (true, true) if codex_id_matches => Some(1),
+        (true, false) if codex_id_matches => Some(0),
+        (false, true) if provider_matches => Some(0),
+        _ => None,
+    }
+}
+
+fn collect_rollout_files(root: &Path) -> Vec<PathBuf> {
+    if !root.exists() {
+        return Vec::new();
+    }
     let mut stack = vec![root.to_path_buf()];
-    let mut best: Option<(PathBuf, SystemTime)> = None;
+    let mut files = Vec::new();
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -343,144 +395,120 @@ fn find_rollout_by_codex_session_id(
             let path = ent.path();
             if path.is_dir() {
                 stack.push(path);
-                continue;
-            }
-            if claimed.contains(&path) {
-                continue;
-            }
-            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            if !name.starts_with("rollout-") || !name.ends_with(".jsonl") {
-                continue;
-            }
-            let Some(id) = codex_id_from_rollout_filename(&path) else {
-                continue;
-            };
-            if !id.eq_ignore_ascii_case(requested) {
-                continue;
-            }
-            let mtime = match ent.metadata().and_then(|m| m.modified()) {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            match &best {
-                None => best = Some((path, mtime)),
-                Some((_, prev)) if mtime > *prev => best = Some((path, mtime)),
-                _ => {}
+            } else if is_rollout_path(&path) {
+                files.push(path);
             }
         }
     }
-    best.map(|(p, _)| p)
+    files.sort();
+    files
 }
 
-async fn claim_unclaimed_rollout(
-    dir: &Path,
-    spawn_time: SystemTime,
-    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
-) -> Option<PathBuf> {
-    let dir = dir.to_path_buf();
-    let claimed_snapshot = claimed_rollouts.lock().await.clone();
-    let path = tokio::task::spawn_blocking(move || {
-        find_unclaimed_rollout(&dir, spawn_time, &claimed_snapshot)
-    })
-    .await
-    .ok()
-    .flatten()?;
-    let mut claimed = claimed_rollouts.lock().await;
-    if claimed.contains(&path) {
-        return None;
-    }
-    claimed.insert(path.clone());
-    Some(path)
-}
-
-async fn claim_rollout_by_codex_session_id(
+fn find_matching_rollout(
     root: &Path,
-    codex_session_id: &str,
-    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
+    criteria: &RolloutAttributionCriteria,
+    claimed: &HashMap<PathBuf, String>,
 ) -> Option<PathBuf> {
+    collect_rollout_files(root)
+        .into_iter()
+        .filter(|path| !claimed.contains_key(path))
+        .filter_map(|path| rollout_match_rank(&path, criteria).map(|rank| (rank, path)))
+        .min_by(|(rank_a, path_a), (rank_b, path_b)| {
+            rank_a.cmp(rank_b).then_with(|| path_a.cmp(path_b))
+        })
+        .map(|(_, path)| path)
+}
+
+async fn claim_matching_rollout(
+    root: &Path,
+    session_id: &str,
+    criteria: &RolloutAttributionCriteria,
+    claimed_rollouts: &Arc<Mutex<HashMap<PathBuf, String>>>,
+) -> Option<ClaimedRollout> {
     let root = root.to_path_buf();
-    let codex_session_id = codex_session_id.trim().to_string();
-    if codex_session_id.is_empty() {
-        return None;
-    }
-    let claimed_snapshot = claimed_rollouts.lock().await.clone();
+    let criteria = criteria.clone();
+    let mut claimed_snapshot = claimed_rollouts.lock().await.clone();
+    claimed_snapshot.retain(|_, owner| owner != session_id);
     let path = tokio::task::spawn_blocking(move || {
-        find_rollout_by_codex_session_id(&root, &codex_session_id, &claimed_snapshot)
+        find_matching_rollout(&root, &criteria, &claimed_snapshot)
     })
     .await
     .ok()
     .flatten()?;
     let mut claimed = claimed_rollouts.lock().await;
-    if claimed.contains(&path) {
+    if claimed.get(&path).is_some_and(|owner| owner != session_id) {
         return None;
     }
-    claimed.insert(path.clone());
-    Some(path)
+    let previous_owner = claimed.insert(path.clone(), session_id.to_string());
+    Some(ClaimedRollout {
+        path,
+        previous_owner,
+    })
 }
 
-fn find_unclaimed_rollout_in_paths(
+fn find_matching_rollout_in_paths(
     paths: &[PathBuf],
-    spawn_time: SystemTime,
-    claimed: &HashSet<PathBuf>,
+    criteria: &RolloutAttributionCriteria,
+    claimed: &HashMap<PathBuf, String>,
 ) -> Option<PathBuf> {
-    let mut best: Option<(PathBuf, SystemTime)> = None;
+    let mut candidates = Vec::new();
     for path in paths {
-        if claimed.contains(path) {
-            continue;
-        }
-        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if !name.starts_with("rollout-") || !name.ends_with(".jsonl") {
-            continue;
-        }
-        let mtime = match std::fs::metadata(path).and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        if mtime < spawn_time {
-            continue;
-        }
-        match &best {
-            None => best = Some((path.clone(), mtime)),
-            Some((_, prev)) if mtime > *prev => best = Some((path.clone(), mtime)),
-            _ => {}
+        if path.is_dir() {
+            candidates.extend(collect_rollout_files(path));
+        } else if is_rollout_path(path) {
+            candidates.push(path.clone());
         }
     }
-    best.map(|(p, _)| p)
+    candidates.sort();
+    candidates.dedup();
+    candidates
+        .into_iter()
+        .filter(|path| !claimed.contains_key(path))
+        .filter_map(|path| rollout_match_rank(&path, criteria).map(|rank| (rank, path)))
+        .min_by(|(rank_a, path_a), (rank_b, path_b)| {
+            rank_a.cmp(rank_b).then_with(|| path_a.cmp(path_b))
+        })
+        .map(|(_, path)| path)
 }
 
-async fn claim_unclaimed_rollout_paths(
+async fn claim_matching_rollout_paths(
     paths: Vec<PathBuf>,
-    spawn_time: SystemTime,
-    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
-) -> Option<PathBuf> {
+    session_id: &str,
+    criteria: &RolloutAttributionCriteria,
+    claimed_rollouts: &Arc<Mutex<HashMap<PathBuf, String>>>,
+) -> Option<ClaimedRollout> {
     if paths.is_empty() {
         return None;
     }
-    let claimed_snapshot = claimed_rollouts.lock().await.clone();
+    let criteria = criteria.clone();
+    let mut claimed_snapshot = claimed_rollouts.lock().await.clone();
+    claimed_snapshot.retain(|_, owner| owner != session_id);
     let path = tokio::task::spawn_blocking(move || {
-        find_unclaimed_rollout_in_paths(&paths, spawn_time, &claimed_snapshot)
+        find_matching_rollout_in_paths(&paths, &criteria, &claimed_snapshot)
     })
     .await
     .ok()
     .flatten()?;
     let mut claimed = claimed_rollouts.lock().await;
-    if claimed.contains(&path) {
+    if claimed.get(&path).is_some_and(|owner| owner != session_id) {
         return None;
     }
-    claimed.insert(path.clone());
-    Some(path)
+    let previous_owner = claimed.insert(path.clone(), session_id.to_string());
+    Some(ClaimedRollout {
+        path,
+        previous_owner,
+    })
 }
 
 /// Start a watcher that tails the rollout file for `session_id` and
 /// emits normalized events into `observability.jsonl`. Returns a
 /// handle that, when dropped, stops the watcher.
-// [CR-02] notify-based watcher: find_unclaimed_rollout -> wait_for_new_rollout -> tail_rollout; handle inserted before spawn to prevent start/stop race
+// [CR-02] deterministic watcher: match rollout files by expected Codex id/provider id, then tail_rollout; handle inserted before spawn to prevent start/stop race
 fn start_codex_rollout_watcher(
     app: tauri::AppHandle,
     session_id: String,
-    codex_session_id: Option<String>,
-    spawn_time: SystemTime,
-    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    criteria: RolloutAttributionCriteria,
+    claimed_rollouts: Arc<Mutex<HashMap<PathBuf, String>>>,
     dir_watchers: Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
 ) -> CodexRolloutHandle {
     // Build the channel and the handle *before* spawning so the
@@ -495,8 +523,7 @@ fn start_codex_rollout_watcher(
         if let Err(e) = run_watcher(
             app_for_task.clone(),
             session_id_for_task.clone(),
-            codex_session_id,
-            spawn_time,
+            criteria,
             claimed_rollouts,
             dir_watchers,
             stop_rx,
@@ -538,7 +565,7 @@ impl CodexRolloutHandle {
 #[derive(Default)]
 pub struct CodexRolloutState {
     watchers: Mutex<HashMap<String, Arc<CodexRolloutHandle>>>,
-    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: Arc<Mutex<HashMap<PathBuf, String>>>,
     dir_watchers: Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
 }
 
@@ -546,11 +573,25 @@ pub struct CodexRolloutState {
 #[tauri::command]
 pub async fn start_codex_rollout(
     session_id: String,
-    codex_session_id: Option<String>,
+    expected_codex_session_id: Option<String>,
+    expected_model_provider: Option<String>,
     state: tauri::State<'_, CodexRolloutState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let spawn_time = SystemTime::now();
+    let criteria = RolloutAttributionCriteria {
+        expected_codex_session_id: expected_codex_session_id
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        expected_model_provider: expected_model_provider
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+    };
+    if criteria.expected_codex_session_id.is_none() && criteria.expected_model_provider.is_none() {
+        return Err(
+            "codex rollout attribution requires an expected session id or provider id".into(),
+        );
+    }
+
     // Insert the handle into the registry *before* the watcher task
     // gets to run. tokio::spawn doesn't promise that the spawned
     // future is suspended before the calling fn returns; serializing
@@ -559,8 +600,7 @@ pub async fn start_codex_rollout(
     let handle = Arc::new(start_codex_rollout_watcher(
         app.clone(),
         session_id.clone(),
-        codex_session_id,
-        spawn_time,
+        criteria,
         state.claimed_rollouts.clone(),
         state.dir_watchers.clone(),
     ));
@@ -586,21 +626,25 @@ pub async fn stop_codex_rollout(
     if let Some(h) = handle {
         h.stop().await;
     }
+    state
+        .claimed_rollouts
+        .lock()
+        .await
+        .retain(|_, owner| owner != &session_id);
     Ok(())
 }
 
 async fn run_watcher(
     app: tauri::AppHandle,
     session_id: String,
-    codex_session_id: Option<String>,
-    spawn_time: SystemTime,
-    claimed_rollouts: Arc<Mutex<HashSet<PathBuf>>>,
+    criteria: RolloutAttributionCriteria,
+    claimed_rollouts: Arc<Mutex<HashMap<PathBuf, String>>>,
     dir_watchers: Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
     mut stop_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), String> {
-    let dir = todays_sessions_dir().ok_or("could not resolve $CODEX_HOME/sessions/today")?;
-    let dir_existed_before = dir.exists();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create rollout dir: {e}"))?;
+    let root = sessions_root().ok_or("could not resolve $CODEX_HOME/sessions")?;
+    let root_existed_before = root.exists();
+    std::fs::create_dir_all(&root).map_err(|e| format!("create rollout sessions root: {e}"))?;
 
     record_backend_event(
         &app,
@@ -610,66 +654,39 @@ async fn run_watcher(
         "codex.rollout.watcher_armed",
         "Codex rollout watcher armed",
         serde_json::json!({
-            "dir": dir.to_string_lossy(),
+            "root": root.to_string_lossy(),
+            "expectedCodexSessionId": criteria.expected_codex_session_id.as_deref(),
+            "expectedModelProvider": criteria.expected_model_provider.as_deref(),
             "windows": cfg!(target_os = "windows"),
-            "dirExistedBefore": dir_existed_before,
+            "rootExistedBefore": root_existed_before,
         }),
     );
 
-    let direct_resume_rollout = match codex_session_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(target_id) => {
-            let root = sessions_root().ok_or("could not resolve $CODEX_HOME/sessions")?;
-            let root_existed = root.exists();
-            let found = if root_existed {
-                claim_rollout_by_codex_session_id(&root, target_id, &claimed_rollouts).await
-            } else {
-                None
-            };
-            record_backend_event(
-                &app,
-                "DEBUG",
-                "codex.rollout",
-                Some(&session_id),
-                "codex.rollout.resume_lookup",
-                "Looked up Codex rollout file for resumed session",
-                serde_json::json!({
-                    "codexSessionId": target_id,
-                    "root": root.to_string_lossy(),
-                    "rootExisted": root_existed,
-                    "found": found.as_ref().map(|p| p.to_string_lossy().to_string()),
-                }),
-            );
-            found
-        }
-        None => None,
-    };
-
-    // Try to attribute an existing fresh rollout first (handles the
-    // race where Codex creates the file before our watcher arms).
-    let file_path = match direct_resume_rollout {
-        Some(p) => Some(p),
-        None => match claim_unclaimed_rollout(&dir, spawn_time, &claimed_rollouts).await {
-            Some(p) => Some(p),
-            None => {
-                wait_for_new_rollout(
-                    &dir,
-                    spawn_time,
-                    &claimed_rollouts,
-                    &dir_watchers,
-                    &mut stop_rx,
-                )
-                .await?
-            }
-        },
-    };
-    let file_path = match file_path {
-        Some(p) => p,
+    let claimed_rollout =
+        match claim_matching_rollout(&root, &session_id, &criteria, &claimed_rollouts).await {
+            Some(claimed) => Some(claimed),
+            None => wait_for_matching_rollout(
+                &root,
+                &session_id,
+                &criteria,
+                &claimed_rollouts,
+                &dir_watchers,
+                &mut stop_rx,
+            )
+            .await?
+            .map(|path| ClaimedRollout {
+                path,
+                previous_owner: None,
+            }),
+        };
+    let claimed_rollout = match claimed_rollout {
+        Some(claimed) => claimed,
         None => return Ok(()), // stop signaled
     };
+    let ClaimedRollout {
+        path: file_path,
+        previous_owner,
+    } = claimed_rollout;
 
     if let Ok(dir) = crate::commands::data::get_session_data_dir(&session_id) {
         let _ = std::fs::write(
@@ -685,39 +702,47 @@ async fn run_watcher(
         Some(&session_id),
         "codex.rollout.attributed",
         "Attributed Codex rollout file to session",
-        serde_json::json!({ "path": file_path.to_string_lossy() }),
+        serde_json::json!({
+            "path": file_path.to_string_lossy(),
+            "expectedCodexSessionId": criteria.expected_codex_session_id.as_deref(),
+            "expectedModelProvider": criteria.expected_model_provider.as_deref(),
+            "previousOwner": previous_owner,
+        }),
     );
 
     tail_rollout(&app, &session_id, &file_path, &mut stop_rx).await
 }
 
-/// Block until either (a) a new rollout-*.jsonl appears in `dir` with
-/// mtime ≥ spawn_time, or (b) `stop_rx` resolves. Returns Some(path) or
-/// None on stop.
-async fn wait_for_new_rollout(
-    dir: &Path,
-    spawn_time: SystemTime,
-    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
+/// Block until either (a) a matching rollout-*.jsonl appears under
+/// `root`, or stop is signaled. Returns Some(path) or None on stop.
+async fn wait_for_matching_rollout(
+    root: &Path,
+    session_id: &str,
+    criteria: &RolloutAttributionCriteria,
+    claimed_rollouts: &Arc<Mutex<HashMap<PathBuf, String>>>,
     dir_watchers: &Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
     stop_rx: &mut tokio::sync::oneshot::Receiver<()>,
 ) -> Result<Option<PathBuf>, String> {
-    let watcher = rollout_dir_watcher_for(dir, claimed_rollouts, dir_watchers).await?;
+    let watcher = rollout_dir_watcher_for(root, claimed_rollouts, dir_watchers).await?;
     let interest_id = watcher.next_id();
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<PathBuf>();
     watcher
         .tx
         .send(RolloutDirWatcherCommand::Register {
             id: interest_id,
-            spawn_time,
+            session_id: session_id.to_string(),
+            criteria: criteria.clone(),
             reply: reply_tx,
         })
         .map_err(|_| "rollout directory watcher closed".to_string())?;
 
-    if let Some(p) = claim_unclaimed_rollout(dir, spawn_time, claimed_rollouts).await {
+    if let Some(claimed) =
+        claim_matching_rollout(root, session_id, criteria, claimed_rollouts).await
+    {
         let _ = watcher
             .tx
             .send(RolloutDirWatcherCommand::Unregister { id: interest_id });
-        return Ok(Some(p));
+        return Ok(Some(claimed.path));
     }
 
     tokio::select! {
@@ -737,7 +762,7 @@ async fn wait_for_new_rollout(
 
 async fn rollout_dir_watcher_for(
     dir: &Path,
-    claimed_rollouts: &Arc<Mutex<HashSet<PathBuf>>>,
+    claimed_rollouts: &Arc<Mutex<HashMap<PathBuf, String>>>,
     dir_watchers: &Arc<Mutex<HashMap<PathBuf, Arc<RolloutDirWatcher>>>>,
 ) -> Result<Arc<RolloutDirWatcher>, String> {
     let mut watchers = dir_watchers.lock().await;
@@ -1882,31 +1907,90 @@ mod tests {
         );
     }
 
-    #[test]
-    fn find_unclaimed_rollout_picks_newest_after_spawn() {
-        let tmp = std::env::temp_dir().join(format!("ct-rollout-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        // Write a file that *predates* spawn time. Setting mtime via
-        // std::fs::File::set_modified (Rust 1.75+).
-        let old_path = tmp.join("rollout-2025-01-01T00-00-00-old.jsonl");
-        std::fs::write(&old_path, b"").unwrap();
-        let old_time = SystemTime::now() - std::time::Duration::from_secs(3600);
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&old_path)
-            .unwrap();
-        let _ = file.set_modified(old_time);
+    fn write_rollout(path: &Path, codex_id: &str, provider: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let line = serde_json::json!({
+            "timestamp": "2026-05-08T01:02:03.000Z",
+            "type": "session_meta",
+            "payload": {
+                "id": codex_id,
+                "model_provider": provider,
+            },
+        })
+        .to_string();
+        std::fs::write(path, format!("{line}\n")).unwrap();
+    }
 
-        let spawn = SystemTime::now() - std::time::Duration::from_secs(60);
-        std::fs::write(tmp.join("rollout-2025-11-18T09-40-36-new.jsonl"), b"").unwrap();
-        let claimed = std::collections::HashSet::new();
-        let picked = find_unclaimed_rollout(&tmp, spawn, &claimed).expect("should find new file");
-        assert_eq!(
-            picked.file_name().and_then(|s| s.to_str()),
-            Some("rollout-2025-11-18T09-40-36-new.jsonl")
+    #[test]
+    fn rollout_attribution_matches_exact_model_provider() {
+        let tmp = tempfile::tempdir().unwrap();
+        let day_dir = tmp.path().join("2026/05/08");
+        let other_path = day_dir
+            .join("rollout-2026-05-08T01-02-03-000000Z-019a1111-1111-7111-8111-111111111111.jsonl");
+        let target_path = day_dir
+            .join("rollout-2026-05-08T01-02-04-000000Z-019a2222-2222-7222-8222-222222222222.jsonl");
+        write_rollout(&other_path, "019a1111-1111-7111-8111-111111111111", "other");
+        write_rollout(
+            &target_path,
+            "019a2222-2222-7222-8222-222222222222",
+            "code-tabs-proxy-session-spawn",
         );
-        let _ = std::fs::remove_dir_all(&tmp);
+
+        let criteria = RolloutAttributionCriteria {
+            expected_model_provider: Some("code-tabs-proxy-session-spawn".into()),
+            ..Default::default()
+        };
+        let claimed = HashMap::new();
+        assert_eq!(
+            find_matching_rollout(tmp.path(), &criteria, &claimed),
+            Some(target_path)
+        );
+    }
+
+    #[test]
+    fn rollout_attribution_matches_explicit_resume_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target_id = "019a9656-691d-7ff3-890e-3e6678ed46d8";
+        let target_path = tmp.path().join(format!(
+            "2025/11/18/rollout-2025-11-18T09-40-36-766000Z-{target_id}.jsonl"
+        ));
+        write_rollout(&target_path, target_id, "openai");
+
+        let criteria = RolloutAttributionCriteria {
+            expected_codex_session_id: Some(target_id.into()),
+            ..Default::default()
+        };
+        let claimed = HashMap::new();
+        assert_eq!(
+            find_matching_rollout(tmp.path(), &criteria, &claimed),
+            Some(target_path)
+        );
+    }
+
+    #[test]
+    fn rollout_attribution_prefers_provider_when_resume_id_repeats() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target_id = "019a9656-691d-7ff3-890e-3e6678ed46d8";
+        let old_path = tmp.path().join(format!(
+            "2025/11/18/rollout-2025-11-18T09-40-36-766000Z-{target_id}.jsonl"
+        ));
+        let target_path = tmp.path().join(format!(
+            "2026/05/08/rollout-2026-05-08T01-02-04-000000Z-{target_id}.jsonl"
+        ));
+        write_rollout(&old_path, target_id, "previous-provider");
+        write_rollout(&target_path, target_id, "code-tabs-proxy-session-spawn");
+
+        let criteria = RolloutAttributionCriteria {
+            expected_codex_session_id: Some(target_id.into()),
+            expected_model_provider: Some("code-tabs-proxy-session-spawn".into()),
+        };
+        let claimed = HashMap::new();
+        assert_eq!(
+            find_matching_rollout(tmp.path(), &criteria, &claimed),
+            Some(target_path)
+        );
     }
 
     #[test]
@@ -1917,38 +2001,6 @@ mod tests {
         assert_eq!(
             codex_id_from_rollout_filename(path).as_deref(),
             Some("019a9656-691d-7ff3-890e-3e6678ed46d8")
-        );
-    }
-
-    #[test]
-    fn find_rollout_by_codex_session_id_walks_existing_session_tree() {
-        let tmp = tempfile::tempdir().unwrap();
-        let target_id = "019a9656-691d-7ff3-890e-3e6678ed46d8";
-        let day_dir = tmp.path().join("2025/11/18");
-        std::fs::create_dir_all(&day_dir).unwrap();
-        let target_path = day_dir.join(format!(
-            "rollout-2025-11-18T09-40-36-766000Z-{target_id}.jsonl"
-        ));
-        std::fs::write(&target_path, b"").unwrap();
-        std::fs::write(
-            day_dir.join(
-                "rollout-2025-11-18T09-40-37-000000Z-019b1111-1111-7111-8111-111111111111.jsonl",
-            ),
-            b"",
-        )
-        .unwrap();
-
-        let claimed = HashSet::new();
-        assert_eq!(
-            find_rollout_by_codex_session_id(tmp.path(), target_id, &claimed),
-            Some(target_path.clone())
-        );
-
-        let mut claimed = HashSet::new();
-        claimed.insert(target_path);
-        assert_eq!(
-            find_rollout_by_codex_session_id(tmp.path(), target_id, &claimed),
-            None
         );
     }
 }

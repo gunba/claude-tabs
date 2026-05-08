@@ -51,6 +51,7 @@ impl CliAdapter for ClaudeAdapter {
             args,
             env_overrides: Vec::new(),
             cwd,
+            codex_proxy_provider_id: None,
         })
     }
 

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -21,7 +27,10 @@ import {
   isTerminalInterruptKey,
   isTerminalModalOpen,
 } from "../lib/terminalKeyShortcuts";
-import { resetTerminalWriteQueue, type TerminalWriteQueue } from "../lib/terminalWriteQueue";
+import {
+  resetTerminalWriteQueue,
+  type TerminalWriteQueue,
+} from "../lib/terminalWriteQueue";
 import {
   captureBufferState,
   escapePreview,
@@ -39,7 +48,12 @@ export function shouldApplyTerminalTitle(
   title: string,
 ): boolean {
   if (!session || session.config.cli === "codex") return false;
-  if (!title || title === "Code Tabs" || title.startsWith("Claude Code") || title.toLowerCase() === "claude") {
+  if (
+    !title ||
+    title === "Code Tabs" ||
+    title.startsWith("Claude Code") ||
+    title.toLowerCase() === "claude"
+  ) {
     return false;
   }
   return title !== session.name;
@@ -47,6 +61,7 @@ export function shouldApplyTerminalTitle(
 
 interface UseXtermLifecycleParams {
   cwdRef: MutableRefObject<string | null>;
+  enableMouseTracking: boolean;
   enableWebgl: boolean;
   instanceKey: number;
   onDataRef: MutableRefObject<((data: string) => void) | undefined>;
@@ -60,6 +75,7 @@ interface UseXtermLifecycleParams {
 
 export function useXtermLifecycle({
   cwdRef,
+  enableMouseTracking,
   enableWebgl,
   instanceKey,
   onDataRef,
@@ -78,6 +94,8 @@ export function useXtermLifecycle({
   const pasteBlockCleanupRef = useRef<(() => void) | null>(null);
   const [ready, setReady] = useState(false);
   const [termGeneration, setTermGeneration] = useState(0);
+  const enableMouseTrackingRef = useRef(enableMouseTracking);
+  enableMouseTrackingRef.current = enableMouseTracking;
 
   const webglRef = useRef<WebglAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
@@ -86,159 +104,234 @@ export function useXtermLifecycle({
 
   // [DF-10] FitAddon.fit() is called bare (no try/catch) so resize errors propagate to the caller.
   const fit = useCallback(() => {
-    return traceSync("terminal.fit_apply", () => {
-      if (!attachedRef.current) return false;
-      const f = fitRef.current;
-      const term = termRef.current;
-      if (!f || !term) return false;
-      const before = { cols: term.cols, rows: term.rows };
-      f.fit();
-      const after = { cols: term.cols, rows: term.rows };
-      dlog("terminal", sessionIdRef.current, "terminal fit", "DEBUG", {
-        event: "terminal.fit",
-        data: {
-          before,
-          after,
-        },
-      });
-      const isReady = after.cols > 0 && after.rows > 0;
-      setReady(isReady);
-      return isReady;
-    }, {
-      module: "terminal",
-      sessionId: sessionIdRef.current,
-      event: "terminal.fit_perf",
-      warnAboveMs: 8,
-      data: {},
-    });
+    return traceSync(
+      "terminal.fit_apply",
+      () => {
+        if (!attachedRef.current) return false;
+        const f = fitRef.current;
+        const term = termRef.current;
+        if (!f || !term) return false;
+        const before = { cols: term.cols, rows: term.rows };
+        f.fit();
+        const after = { cols: term.cols, rows: term.rows };
+        dlog("terminal", sessionIdRef.current, "terminal fit", "DEBUG", {
+          event: "terminal.fit",
+          data: {
+            before,
+            after,
+          },
+        });
+        const isReady = after.cols > 0 && after.rows > 0;
+        setReady(isReady);
+        return isReady;
+      },
+      {
+        module: "terminal",
+        sessionId: sessionIdRef.current,
+        event: "terminal.fit_perf",
+        warnAboveMs: 8,
+        data: {},
+      },
+    );
   }, [sessionIdRef]);
 
   // Helper: open terminal in a DOM element (called once fonts + element are both ready)
-  const openTerminal = useCallback((term: Terminal, el: HTMLDivElement) => {
-    if (attachedRef.current || !isElementVisible(el)) return false;
+  const openTerminal = useCallback(
+    (term: Terminal, el: HTMLDivElement) => {
+      if (attachedRef.current || !isElementVisible(el)) return false;
 
-    term.open(el);
-    attachedRef.current = true;
-    setReady(false);
-    dlog("terminal", sessionIdRef.current, "terminal opened", "LOG", {
-      event: "terminal.open",
-      data: {
-        ...captureBufferState(term),
-      },
-    });
+      term.open(el);
+      attachedRef.current = true;
+      setReady(false);
+      dlog("terminal", sessionIdRef.current, "terminal opened", "LOG", {
+        event: "terminal.open",
+        data: {
+          ...captureBufferState(term),
+        },
+      });
 
-    if (enableWebgl) {
-      // [DF-06] WebGL renderer - if context is lost, fall back to canvas (no retry)
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          dlog("terminal", sessionIdRef.current, "webgl context lost", "WARN", {
-            event: "terminal.webgl_context_lost",
+      if (enableWebgl) {
+        // [DF-06] WebGL renderer - if context is lost, fall back to canvas (no retry)
+        try {
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => {
+            dlog(
+              "terminal",
+              sessionIdRef.current,
+              "webgl context lost",
+              "WARN",
+              {
+                event: "terminal.webgl_context_lost",
+                data: {},
+              },
+            );
+            webgl.dispose();
+            webglRef.current = null;
+          });
+          term.loadAddon(webgl);
+          webglRef.current = webgl;
+          dlog(
+            "terminal",
+            sessionIdRef.current,
+            "webgl renderer enabled",
+            "DEBUG",
+            {
+              event: "terminal.webgl_enabled",
+              data: {},
+            },
+          );
+        } catch {
+          // WebGL not available - canvas fallback is automatic
+          dlog(
+            "terminal",
+            sessionIdRef.current,
+            "webgl renderer unavailable; using canvas fallback",
+            "DEBUG",
+            {
+              event: "terminal.webgl_unavailable",
+              data: {},
+            },
+          );
+        }
+      } else {
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "webgl renderer disabled",
+          "DEBUG",
+          {
+            event: "terminal.webgl_disabled",
             data: {},
-          });
-          webgl.dispose();
-          webglRef.current = null;
-        });
-        term.loadAddon(webgl);
-        webglRef.current = webgl;
-        dlog("terminal", sessionIdRef.current, "webgl renderer enabled", "DEBUG", {
-          event: "terminal.webgl_enabled",
-          data: {},
-        });
-      } catch {
-        // WebGL not available - canvas fallback is automatic
-        dlog("terminal", sessionIdRef.current, "webgl renderer unavailable; using canvas fallback", "DEBUG", {
-          event: "terminal.webgl_unavailable",
-          data: {},
-        });
+          },
+        );
       }
-    } else {
-      dlog("terminal", sessionIdRef.current, "webgl renderer disabled", "DEBUG", {
-        event: "terminal.webgl_disabled",
-        data: {},
-      });
-    }
 
-    // [DF-11] xterm addons loaded on open: web-links, path links, unicode11 (each in try/catch); unicode11 sets activeVersion="11"
-    try {
-      const webLinks = new WebLinksAddon((event, uri) => {
-        const reveal = event.ctrlKey || event.metaKey;
-        invoke(reveal ? "reveal_in_file_manager" : "shell_open", { path: uri }).catch((e) => {
-          dlog("terminal", sessionIdRef.current, `web link open failed: ${e}`, "WARN", {
-            event: "terminal.web_link_open_failed",
-            data: { uri, reveal, error: String(e) },
+      // [DF-11] xterm addons loaded on open: web-links, path links, unicode11 (each in try/catch); unicode11 sets activeVersion="11"
+      try {
+        const webLinks = new WebLinksAddon((event, uri) => {
+          const reveal = event.ctrlKey || event.metaKey;
+          invoke(reveal ? "reveal_in_file_manager" : "shell_open", {
+            path: uri,
+          }).catch((e) => {
+            dlog(
+              "terminal",
+              sessionIdRef.current,
+              `web link open failed: ${e}`,
+              "WARN",
+              {
+                event: "terminal.web_link_open_failed",
+                data: { uri, reveal, error: String(e) },
+              },
+            );
           });
         });
-      });
-      term.loadAddon(webLinks);
-      webLinksAddonRef.current = webLinks;
-      dlog("terminal", sessionIdRef.current, "web-links addon enabled", "DEBUG", {
-        event: "terminal.web_links_enabled",
-        data: {},
-      });
-    } catch {
-      dlog("terminal", sessionIdRef.current, "web-links addon unavailable", "DEBUG", {
-        event: "terminal.web_links_unavailable",
-        data: {},
-      });
-    }
+        term.loadAddon(webLinks);
+        webLinksAddonRef.current = webLinks;
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "web-links addon enabled",
+          "DEBUG",
+          {
+            event: "terminal.web_links_enabled",
+            data: {},
+          },
+        );
+      } catch {
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "web-links addon unavailable",
+          "DEBUG",
+          {
+            event: "terminal.web_links_unavailable",
+            data: {},
+          },
+        );
+      }
 
-    try {
-      pathLinkDisposableRef.current?.dispose();
-      const { provider } = createPathLinkProvider({
-        term,
-        getCwd: () => cwdRef.current,
-      });
-      pathLinkDisposableRef.current = term.registerLinkProvider(provider);
-      dlog("terminal", sessionIdRef.current, "path link provider enabled", "DEBUG", {
-        event: "terminal.path_link_provider_enabled",
-        data: {},
-      });
-    } catch {
-      dlog("terminal", sessionIdRef.current, "path link provider unavailable", "DEBUG", {
-        event: "terminal.path_link_provider_unavailable",
-        data: {},
-      });
-    }
+      try {
+        pathLinkDisposableRef.current?.dispose();
+        const { provider } = createPathLinkProvider({
+          term,
+          getCwd: () => cwdRef.current,
+        });
+        pathLinkDisposableRef.current = term.registerLinkProvider(provider);
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "path link provider enabled",
+          "DEBUG",
+          {
+            event: "terminal.path_link_provider_enabled",
+            data: {},
+          },
+        );
+      } catch {
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "path link provider unavailable",
+          "DEBUG",
+          {
+            event: "terminal.path_link_provider_unavailable",
+            data: {},
+          },
+        );
+      }
 
-    try {
-      const unicode11 = new Unicode11Addon();
-      term.loadAddon(unicode11);
-      term.unicode.activeVersion = "11";
-      unicode11AddonRef.current = unicode11;
-      dlog("terminal", sessionIdRef.current, "unicode11 addon enabled", "DEBUG", {
-        event: "terminal.unicode11_enabled",
-        data: {},
-      });
-    } catch {
-      dlog("terminal", sessionIdRef.current, "unicode11 addon unavailable", "DEBUG", {
-        event: "terminal.unicode11_unavailable",
-        data: {},
-      });
-    }
+      try {
+        const unicode11 = new Unicode11Addon();
+        term.loadAddon(unicode11);
+        term.unicode.activeVersion = "11";
+        unicode11AddonRef.current = unicode11;
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "unicode11 addon enabled",
+          "DEBUG",
+          {
+            event: "terminal.unicode11_enabled",
+            data: {},
+          },
+        );
+      } catch {
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "unicode11 addon unavailable",
+          "DEBUG",
+          {
+            event: "terminal.unicode11_unavailable",
+            data: {},
+          },
+        );
+      }
 
-    // [KB-12] Platform-gated paste blocker: capture-phase preventDefault on Windows + Linux.
-    // Windows: avoids Tauri permission-dialog double-paste. Linux: ensures Ctrl+V sends ^V to the
-    // PTY cleanly so Claude Code's native image-paste handler (wl-paste/xclip) runs. Linux text
-    // paste uses Ctrl+Shift+V, which reads via Tauri's clipboard plugin and writes via bracketed
-    // paste. macOS left alone - native paste handling works.
-    pasteBlockCleanupRef.current?.();
-    if (IS_WINDOWS || IS_LINUX) {
-      const handlePaste = (e: ClipboardEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-      };
-      el.addEventListener("paste", handlePaste, true); // Capture phase - intercept before xterm.js
-      pasteBlockCleanupRef.current = () => {
-        el.removeEventListener("paste", handlePaste, true);
-      };
-    } else {
-      pasteBlockCleanupRef.current = null;
-    }
+      // [KB-12] Platform-gated paste blocker: capture-phase preventDefault on Windows + Linux.
+      // Windows: avoids Tauri permission-dialog double-paste. Linux: ensures Ctrl+V sends ^V to the
+      // PTY cleanly so Claude Code's native image-paste handler (wl-paste/xclip) runs. Linux text
+      // paste uses Ctrl+Shift+V, which reads via Tauri's clipboard plugin and writes via bracketed
+      // paste. macOS left alone - native paste handling works.
+      pasteBlockCleanupRef.current?.();
+      if (IS_WINDOWS || IS_LINUX) {
+        const handlePaste = (e: ClipboardEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+        };
+        el.addEventListener("paste", handlePaste, true); // Capture phase - intercept before xterm.js
+        pasteBlockCleanupRef.current = () => {
+          el.removeEventListener("paste", handlePaste, true);
+        };
+      } else {
+        pasteBlockCleanupRef.current = null;
+      }
 
-    fit();
-    return true;
-  }, [cwdRef, enableWebgl, fit, sessionIdRef]);
+      fit();
+      return true;
+    },
+    [cwdRef, enableWebgl, fit, sessionIdRef],
+  );
 
   useEffect(() => {
     const term = termRef.current;
@@ -316,6 +409,7 @@ export function useXtermLifecycle({
       // on alt-screen entry and disables on exit.
       lifecycleDisposables.push(
         term.buffer.onBufferChange((buf) => {
+          if (!enableMouseTrackingRef.current) return;
           if (buf.type === "alternate") {
             term!.write("\x1b[?1003h\x1b[?1006h");
           } else {
@@ -324,25 +418,36 @@ export function useXtermLifecycle({
         }),
       );
       lifecycleDisposables.push(
-        term.parser.registerCsiHandler({ prefix: ">", final: "q" }, (params) => {
-          if (params.length !== 1 || params[0] !== 0) return false;
-          dlog("terminal", sessionIdRef.current, "terminal identity query", "DEBUG", {
-            event: "terminal.identity_query",
-            data: {
-              params,
-              reply: XTVERSION_REPLY,
-            },
-          });
-          // ConPTY strips DEC mouse tracking sequences (\e[?1003h etc.) that the
-          // CLI writes during VTUI init. The XTVERSION probe (CSI > 0 q) is the
-          // first deterministic signal that fires AFTER the CLI's VTUI is fully
-          // rendered and ready to consume mouse reports. Enable tracking here
-          // instead of at spawn to avoid SGR motion reports flooding CLI stdin
-          // before the VTUI mouse handler is active.
-          term!.write("\x1b[?1003h\x1b[?1006h");
-          onDataRef.current?.(XTVERSION_REPLY);
-          return true;
-        }),
+        term.parser.registerCsiHandler(
+          { prefix: ">", final: "q" },
+          (params) => {
+            if (params.length !== 1 || params[0] !== 0) return false;
+            dlog(
+              "terminal",
+              sessionIdRef.current,
+              "terminal identity query",
+              "DEBUG",
+              {
+                event: "terminal.identity_query",
+                data: {
+                  params,
+                  reply: XTVERSION_REPLY,
+                },
+              },
+            );
+            // ConPTY strips DEC mouse tracking sequences (\e[?1003h etc.) that the
+            // CLI writes during VTUI init. The XTVERSION probe (CSI > 0 q) is the
+            // first deterministic signal that fires AFTER the CLI's VTUI is fully
+            // rendered and ready to consume mouse reports. Enable tracking here
+            // instead of at spawn to avoid SGR motion reports flooding CLI stdin
+            // before the VTUI mouse handler is active.
+            if (enableMouseTrackingRef.current) {
+              term!.write("\x1b[?1003h\x1b[?1006h");
+            }
+            onDataRef.current?.(XTVERSION_REPLY);
+            return true;
+          },
+        ),
       );
       // [TA-10] OSC 0 auto-rename: Linux/macOS Claude Code subagents emit title via OSC 0;
       // Windows uses process.title and does not fire this path. Strip Claude Code's state-prefix
@@ -352,14 +457,20 @@ export function useXtermLifecycle({
         term.onTitleChange((rawTitle) => {
           const title = normalizeTerminalTitle(rawTitle);
           const sid = sessionIdRef.current;
-          const session = sid ? useSessionStore.getState().sessions.find((s) => s.id === sid) ?? null : null;
-          if (!sid || !session || !shouldApplyTerminalTitle(session, title)) return;
+          const session = sid
+            ? (useSessionStore.getState().sessions.find((s) => s.id === sid) ??
+              null)
+            : null;
+          if (!sid || !session || !shouldApplyTerminalTitle(session, title))
+            return;
           dlog("terminal", sid, "terminal title changed", "DEBUG", {
             event: "terminal.title_change",
             data: { rawTitle, title },
           });
           useSessionStore.getState().renameSession(sid, title);
-          useSettingsStore.getState().setSessionName(getResumeId(session), title);
+          useSettingsStore
+            .getState()
+            .setSessionName(getResumeId(session), title);
         }),
       );
 
@@ -385,15 +496,21 @@ export function useXtermLifecycle({
         if (decision.kind === "swallow") return false;
 
         if (decision.kind === "send") {
-          dlog("terminal", sessionIdRef.current, "terminal key sequence override", "DEBUG", {
-            event: "terminal.key_sequence_override",
-            data: {
-              key: ev.key,
-              code: ev.code,
-              sequence: decision.data,
-              preview: escapePreview(decision.data),
+          dlog(
+            "terminal",
+            sessionIdRef.current,
+            "terminal key sequence override",
+            "DEBUG",
+            {
+              event: "terminal.key_sequence_override",
+              data: {
+                key: ev.key,
+                code: ev.code,
+                sequence: decision.data,
+                preview: escapePreview(decision.data),
+              },
             },
-          });
+          );
           onDataRef.current?.(decision.data);
           return false;
         }
@@ -402,31 +519,51 @@ export function useXtermLifecycle({
           case "copySelection":
             if (term!.hasSelection()) {
               const selection = term!.getSelection();
-              dlog("terminal", sessionIdRef.current, "terminal selection copied", "DEBUG", {
-                event: "terminal.copy_selection",
-                data: { length: selection.length, text: selection },
-              });
+              dlog(
+                "terminal",
+                sessionIdRef.current,
+                "terminal selection copied",
+                "DEBUG",
+                {
+                  event: "terminal.copy_selection",
+                  data: { length: selection.length, text: selection },
+                },
+              );
               navigator.clipboard.writeText(selection);
               term!.clearSelection();
             }
             return false;
 
           case "pasteClipboard":
-            clipboardReadText().then((text) => {
-              dlog("terminal", sessionIdRef.current, "terminal paste requested", "DEBUG", {
-                event: "terminal.paste",
-                data: {
-                  length: text?.length ?? 0,
-                  text,
-                },
+            clipboardReadText()
+              .then((text) => {
+                dlog(
+                  "terminal",
+                  sessionIdRef.current,
+                  "terminal paste requested",
+                  "DEBUG",
+                  {
+                    event: "terminal.paste",
+                    data: {
+                      length: text?.length ?? 0,
+                      text,
+                    },
+                  },
+                );
+                if (text) term!.paste(text);
+              })
+              .catch((err) => {
+                dlog(
+                  "terminal",
+                  sessionIdRef.current,
+                  `clipboard paste failed: ${err}`,
+                  "WARN",
+                  {
+                    event: "terminal.paste_failed",
+                    data: { error: String(err) },
+                  },
+                );
               });
-              if (text) term!.paste(text);
-            }).catch((err) => {
-              dlog("terminal", sessionIdRef.current, `clipboard paste failed: ${err}`, "WARN", {
-                event: "terminal.paste_failed",
-                data: { error: String(err) },
-              });
-            });
             return false;
 
           case "scrollTop":
@@ -487,38 +624,47 @@ export function useXtermLifecycle({
   ]);
 
   // Ref callback to attach terminal to a DOM element
-  const attach = useCallback((el: HTMLDivElement | null) => {
-    pendingElRef.current = el;
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!el) return;
-    dlog("terminal", sessionIdRef.current, "terminal attach requested", "DEBUG", {
-      event: "terminal.attach",
-      data: {
-        alreadyAttached: attachedRef.current,
-        elementWidth: el.clientWidth,
-        elementHeight: el.clientHeight,
-      },
-    });
+  const attach = useCallback(
+    (el: HTMLDivElement | null) => {
+      pendingElRef.current = el;
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      if (!el) return;
+      dlog(
+        "terminal",
+        sessionIdRef.current,
+        "terminal attach requested",
+        "DEBUG",
+        {
+          event: "terminal.attach",
+          data: {
+            alreadyAttached: attachedRef.current,
+            elementWidth: el.clientWidth,
+            elementHeight: el.clientHeight,
+          },
+        },
+      );
 
-    const observer = new ResizeObserver(() => {
+      const observer = new ResizeObserver(() => {
+        const term = termRef.current;
+        if (!term) return;
+        if (!attachedRef.current) {
+          openTerminal(term, el);
+          return;
+        }
+        fit();
+      });
+      observer.observe(el);
+      observerRef.current = observer;
+
       const term = termRef.current;
-      if (!term) return;
-      if (!attachedRef.current) {
+      if (term && !attachedRef.current) {
         openTerminal(term, el);
-        return;
       }
-      fit();
-    });
-    observer.observe(el);
-    observerRef.current = observer;
-
-    const term = termRef.current;
-    if (term && !attachedRef.current) {
-      openTerminal(term, el);
-    }
-    // If term isn't ready yet, openTerminal will be called from the useEffect above
-  }, [fit, openTerminal, sessionIdRef]);
+      // If term isn't ready yet, openTerminal will be called from the useEffect above
+    },
+    [fit, openTerminal, sessionIdRef],
+  );
 
   return {
     attach,

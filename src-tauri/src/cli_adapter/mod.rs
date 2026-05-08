@@ -33,6 +33,8 @@ pub struct SpawnSpec {
     /// sensitive on Windows.
     pub env_overrides: Vec<(String, Option<String>)>,
     pub cwd: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_proxy_provider_id: Option<String>,
 }
 
 /// Detection result. `path` is the resolved binary, `source` describes
@@ -172,7 +174,7 @@ pub async fn build_cli_spawn(
     Ok(spec)
 }
 
-const CODE_TABS_CODEX_PROXY_PROVIDER_ID: &str = "code-tabs-proxy";
+const CODE_TABS_CODEX_PROXY_PROVIDER_PREFIX: &str = "code-tabs-proxy";
 const CODE_TABS_PROXY_DISABLED: &str = "CODE_TABS_PROXY_DISABLED";
 const CODE_TABS_PROXY_PROVIDER_ID_ENV: &str = "CODE_TABS_PROXY_PROVIDER_ID";
 const CODE_TABS_PROXY_HEADERS: &str = "CODE_TABS_PROXY_HEADERS";
@@ -228,11 +230,27 @@ fn valid_bare_toml_key(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
-fn proxy_provider_id(env: &[(String, Option<String>)]) -> String {
-    env_value(env, CODE_TABS_PROXY_PROVIDER_ID_ENV)
+fn sanitize_codex_provider_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn proxy_provider_id(env: &[(String, Option<String>)], session_id: &str, spawn_id: &str) -> String {
+    let prefix = env_value(env, CODE_TABS_PROXY_PROVIDER_ID_ENV)
         .filter(|value| valid_bare_toml_key(value))
-        .unwrap_or(CODE_TABS_CODEX_PROXY_PROVIDER_ID)
-        .to_string()
+        .unwrap_or(CODE_TABS_CODEX_PROXY_PROVIDER_PREFIX);
+    let prefix = sanitize_codex_provider_component(prefix);
+    let session = sanitize_codex_provider_component(session_id);
+    let spawn = sanitize_codex_provider_component(spawn_id);
+    format!("{prefix}-{session}-{spawn}")
 }
 
 fn proxy_headers(env: &[(String, Option<String>)]) -> Vec<(String, String)> {
@@ -269,14 +287,14 @@ fn codex_proxy_config_args(
     port: u16,
     session_id: &str,
     auth_mode: Option<&str>,
-) -> Vec<String> {
+) -> (Vec<String>, Option<String>) {
     if session_id.is_empty()
         || auth_mode.is_none()
         || env_truthy(env, CODE_TABS_PROXY_DISABLED)
         || has_codex_config_override(existing_args, "openai_base_url")
         || has_codex_config_override(existing_args, "model_provider")
     {
-        return Vec::new();
+        return (Vec::new(), None);
     }
 
     let base_path = if codex_auth_mode_uses_chatgpt_backend(auth_mode) {
@@ -285,7 +303,8 @@ fn codex_proxy_config_args(
         "v1"
     };
     let url = format!("http://127.0.0.1:{port}/s/{session_id}/{base_path}");
-    let provider = proxy_provider_id(env);
+    let spawn_id = uuid::Uuid::new_v4().simple().to_string();
+    let provider = proxy_provider_id(env, session_id, &spawn_id);
     let mut args = Vec::new();
 
     push_codex_config(
@@ -321,7 +340,7 @@ fn codex_proxy_config_args(
         "false".into(),
     );
     push_codex_config(&mut args, "model_provider", quote_toml_string(&provider));
-    args
+    (args, Some(provider))
 }
 
 /// Returns true if the Codex argv already pins `<key>=...` via `-c`/`--config`.
@@ -428,54 +447,66 @@ mod tests {
 
     #[test]
     fn codex_proxy_config_uses_chatgpt_backend_and_disables_websockets() {
-        let argv = codex_proxy_config_args(&[], &[], 4567, "sid-1", Some("chatgpt"));
+        let (argv, provider) = codex_proxy_config_args(&[], &[], 4567, "sid-1", Some("chatgpt"));
+        let provider = provider.expect("provider id");
         let joined = argv.join("\n");
 
-        assert!(joined.contains("model_provider=\"code-tabs-proxy\""));
-        assert!(joined.contains("model_providers.code-tabs-proxy.name=\"OpenAI\""));
-        assert!(joined.contains("model_providers.code-tabs-proxy.supports_websockets=false"));
-        assert!(joined.contains("model_providers.code-tabs-proxy.requires_openai_auth=true"));
-        assert!(
-            joined.contains("model_providers.code-tabs-proxy.env_http_headers.OpenAI-Organization")
-        );
+        assert!(provider.starts_with("code-tabs-proxy-sid-1-"));
+        assert!(joined.contains(&format!("model_provider=\"{provider}\"")));
+        assert!(joined.contains(&format!("model_providers.{provider}.name=\"OpenAI\"")));
+        assert!(joined.contains(&format!(
+            "model_providers.{provider}.supports_websockets=false"
+        )));
+        assert!(joined.contains(&format!(
+            "model_providers.{provider}.requires_openai_auth=true"
+        )));
+        assert!(joined.contains(&format!(
+            "model_providers.{provider}.env_http_headers.OpenAI-Organization"
+        )));
         assert!(joined.contains("http://127.0.0.1:4567/s/sid-1/backend-api/codex"));
         assert!(!joined.contains("openai_base_url="));
     }
 
     #[test]
     fn codex_proxy_config_uses_v1_for_api_key_auth() {
-        let argv = codex_proxy_config_args(&[], &[], 4567, "sid-1", Some("apikey"));
+        let (argv, provider) = codex_proxy_config_args(&[], &[], 4567, "sid-1", Some("apikey"));
         let joined = argv.join("\n");
 
+        assert!(provider.is_some());
         assert!(joined.contains("http://127.0.0.1:4567/s/sid-1/v1"));
     }
 
     #[test]
     fn codex_proxy_config_skips_when_auth_mode_is_unknown() {
-        let argv = codex_proxy_config_args(&[], &[], 4567, "sid-1", None);
+        let (argv, provider) = codex_proxy_config_args(&[], &[], 4567, "sid-1", None);
 
+        assert_eq!(provider, None);
         assert!(argv.is_empty());
     }
 
     #[test]
     fn codex_proxy_config_respects_user_provider_overrides() {
         let existing = args(&["-c", "model_provider=\"custom\""]);
-        let argv = codex_proxy_config_args(&existing, &[], 4567, "sid-1", Some("chatgpt"));
+        let (argv, provider) =
+            codex_proxy_config_args(&existing, &[], 4567, "sid-1", Some("chatgpt"));
 
+        assert_eq!(provider, None);
         assert!(argv.is_empty());
     }
 
     #[test]
     fn codex_proxy_config_respects_user_base_url_overrides() {
         let existing = args(&["--config=openai_base_url=http://x"]);
-        let argv = codex_proxy_config_args(&existing, &[], 4567, "sid-1", Some("chatgpt"));
+        let (argv, provider) =
+            codex_proxy_config_args(&existing, &[], 4567, "sid-1", Some("chatgpt"));
 
+        assert_eq!(provider, None);
         assert!(argv.is_empty());
     }
 
     #[test]
     fn codex_proxy_config_can_be_disabled_by_env() {
-        let argv = codex_proxy_config_args(
+        let (argv, provider) = codex_proxy_config_args(
             &[],
             &env(&[("CODE_TABS_PROXY_DISABLED", "1")]),
             4567,
@@ -483,12 +514,13 @@ mod tests {
             Some("chatgpt"),
         );
 
+        assert_eq!(provider, None);
         assert!(argv.is_empty());
     }
 
     #[test]
     fn codex_proxy_config_accepts_provider_and_header_env() {
-        let argv = codex_proxy_config_args(
+        let (argv, provider) = codex_proxy_config_args(
             &[],
             &env(&[
                 ("CODE_TABS_PROXY_PROVIDER_ID", "custom-proxy"),
@@ -498,9 +530,13 @@ mod tests {
             "sid-1",
             Some("chatgpt"),
         );
+        let provider = provider.expect("provider id");
         let joined = argv.join("\n");
 
-        assert!(joined.contains("model_provider=\"custom-proxy\""));
-        assert!(joined.contains("model_providers.custom-proxy.env_http_headers.OpenAI-Beta"));
+        assert!(provider.starts_with("custom-proxy-sid-1-"));
+        assert!(joined.contains(&format!("model_provider=\"{provider}\"")));
+        assert!(joined.contains(&format!(
+            "model_providers.{provider}.env_http_headers.OpenAI-Beta"
+        )));
     }
 }

@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useEffect,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { dlog } from "../../lib/debugLog";
 import {
   allocateInspectorPort,
@@ -55,16 +61,23 @@ export function useTerminalSetup({
   // Sessions wait for missing-CLI detection before showing an install error.
   // Claude still needs the inspector/tap preparation, Codex uses the rollout watcher.
   useEffect(() => {
-    if (spawnedKeyRef.current === respawnCounter || session.state === "dead" || !terminal.ready) return;
+    if (
+      spawnedKeyRef.current === respawnCounter ||
+      session.state === "dead" ||
+      !terminal.ready
+    )
+      return;
 
     const missingCli =
-      (session.config.cli === "claude" && !claudePath)
-      || (session.config.cli === "codex" && !codexPath);
+      (session.config.cli === "claude" && !claudePath) ||
+      (session.config.cli === "codex" && !codexPath);
     if (missingCli) {
       if (!initialized) return;
       spawnedKeyRef.current = respawnCounter;
       updateState(session.id, "error");
-      terminal.write(`\r\n\x1b[31m${session.config.cli === "codex" ? "Codex" : "Claude Code"} is not installed.\x1b[0m\r\n`);
+      terminal.write(
+        `\r\n\x1b[31m${session.config.cli === "codex" ? "Codex" : "Claude Code"} is not installed.\x1b[0m\r\n`,
+      );
       return;
     }
 
@@ -109,7 +122,9 @@ export function useTerminalSetup({
         let tapPort: number | null = null;
         if (session.config.cli === "claude") {
           try {
-            tapPort = await invoke<number>("start_tap_server", { sessionId: session.id });
+            tapPort = await invoke<number>("start_tap_server", {
+              sessionId: session.id,
+            });
             dlog("terminal", session.id, "tap server started", "DEBUG", {
               event: "session.tap_server_started",
               data: { tapPort },
@@ -133,6 +148,7 @@ export function useTerminalSetup({
           args: string[];
           envOverrides: Array<[string, string | null]>;
           cwd: string;
+          codexProxyProviderId?: string | null;
         }>("build_cli_spawn", { config: launchConfig, sessionId: session.id });
         const args = [...spawnSpec.args];
         const program = spawnSpec.program;
@@ -160,67 +176,100 @@ export function useTerminalSetup({
             env[k] = v;
           }
         }
-        dlog("terminal", session.id, `launching ${session.config.cli} session`, "LOG", {
-          event: "session.launch",
-          data: {
-            cli: session.config.cli,
-            program,
-            args,
-            cwd,
-            cols,
-            rows,
-            inspectorPort: inspPort,
-            tapPort,
-            env,
-            resumeSession: session.config.resumeSession,
-            forkSession: session.config.forkSession,
-            continueSession: session.config.continueSession,
-            permissionMode: session.config.permissionMode,
-            model: session.config.model,
+        dlog(
+          "terminal",
+          session.id,
+          `launching ${session.config.cli} session`,
+          "LOG",
+          {
+            event: "session.launch",
+            data: {
+              cli: session.config.cli,
+              program,
+              args,
+              cwd,
+              cols,
+              rows,
+              inspectorPort: inspPort,
+              tapPort,
+              env,
+              resumeSession: session.config.resumeSession,
+              forkSession: session.config.forkSession,
+              continueSession: session.config.continueSession,
+              permissionMode: session.config.permissionMode,
+              model: session.config.model,
+            },
           },
-        });
+        );
 
         // Codex creates its rollout JSONL during startup. Arm the watcher
-        // immediately before PTY spawn so its mtime attribution window cannot
-        // miss a fast-created file.
+        // immediately before PTY spawn using the deterministic provider id
+        // injected into this launch, plus the explicit Codex id for resumes.
         if (session.config.cli === "codex") {
-          if (observabilityEnabled && trafficEnabled && proxyPort && !trafficStartedRef.current) {
+          if (
+            observabilityEnabled &&
+            trafficEnabled &&
+            proxyPort &&
+            !trafficStartedRef.current
+          ) {
             try {
-              const path = await invoke<string>("start_traffic_log", { sessionId: session.id });
+              const path = await invoke<string>("start_traffic_log", {
+                sessionId: session.id,
+              });
               startTrafficLog(session.id, path);
               trafficStartedRef.current = true;
               codexTrafficStarted = true;
             } catch (err) {
-              dlog("traffic", session.id, `codex auto-start failed: ${err}`, "WARN");
+              dlog(
+                "traffic",
+                session.id,
+                `codex auto-start failed: ${err}`,
+                "WARN",
+              );
             }
           }
           try {
-            const codexSessionId =
-              session.config.resumeSession
-              && !session.config.forkSession
-              && !session.config.continueSession
+            const expectedCodexSessionId =
+              session.config.resumeSession &&
+              !session.config.forkSession &&
+              !session.config.continueSession
                 ? session.config.resumeSession
                 : null;
-            await invoke("start_codex_rollout", { sessionId: session.id, codexSessionId });
+            await invoke("start_codex_rollout", {
+              sessionId: session.id,
+              expectedCodexSessionId,
+              expectedModelProvider: spawnSpec.codexProxyProviderId ?? null,
+            });
             codexRolloutStarted = true;
           } catch (err) {
-            dlog("terminal", session.id, `start_codex_rollout failed: ${err}`, "WARN");
+            dlog(
+              "terminal",
+              session.id,
+              `start_codex_rollout failed: ${err}`,
+              "WARN",
+            );
           }
         }
         const handle = await pty.spawn(program, args, cwd, cols, rows, env);
         registerPtyWriter(session.id, handle.write);
         registerPtyKill(session.id, () => handle.kill());
         registerPtyHandleId(session.id, handle.pid);
-        dlog("terminal", session.id, `spawned pid=${handle.pid} port=${inspPort} tapPort=${tapPort} cols=${cols} rows=${rows}`, "LOG", {
-          event: "session.spawned",
-          data: {
-            ptyHandle: handle.pid,
-            inspectorPort: inspPort,
-            tapPort,
-            cols,
-            rows,
+        dlog(
+          "terminal",
+          session.id,
+          `spawned pid=${handle.pid} port=${inspPort} tapPort=${tapPort} cols=${cols} rows=${rows}`,
+          "LOG",
+          {
+            event: "session.spawned",
+            data: {
+              ptyHandle: handle.pid,
+              inspectorPort: inspPort,
+              tapPort,
+              cols,
+              rows,
+            },
           },
-        });
+        );
         updateState(session.id, "idle");
 
         spawnSpan.end({
@@ -232,7 +281,9 @@ export function useTerminalSetup({
         });
       } catch (err) {
         if (codexRolloutStarted) {
-          invoke("stop_codex_rollout", { sessionId: session.id }).catch(() => {});
+          invoke("stop_codex_rollout", { sessionId: session.id }).catch(
+            () => {},
+          );
         }
         if (codexTrafficStarted) {
           invoke("stop_traffic_log", { sessionId: session.id }).catch(() => {});
@@ -243,7 +294,7 @@ export function useTerminalSetup({
         dlog("terminal", session.id, `spawn failed: ${err}`, "ERR");
         updateState(session.id, "error");
         terminal.write(
-          `\r\n\x1b[31mFailed to start ${session.config.cli === "codex" ? "Codex" : "Claude"}: ${err}\x1b[0m\r\n`
+          `\r\n\x1b[31mFailed to start ${session.config.cli === "codex" ? "Codex" : "Claude"}: ${err}\x1b[0m\r\n`,
         );
       }
     };
