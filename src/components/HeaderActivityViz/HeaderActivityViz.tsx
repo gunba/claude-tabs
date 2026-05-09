@@ -20,6 +20,7 @@ const MASCOT_PX = 22;
 const SUBAGENT_PX = 14;
 const MASCOT_HOVER_PX = 1.2;
 const BEACH_PAD_PX = 4;
+const DRY_BEACH_HOME_FOOT_MAX_T = 0.58;
 const BUBBLE_INTERVAL_MS = 320;
 const BUBBLE_LIFE_MS = 1200;
 const STORM_PERIOD_S = 7;
@@ -52,7 +53,6 @@ interface Slot extends SlotData {
   xPx: number;
   dir: 1 | -1;
   homeXPx: number;
-  homeRow01: number;
   speedPxPerS: number;
   jitterSeed: number;
   diveT: number;
@@ -126,15 +126,26 @@ export function hash32(s: string): number {
 export function makeSlotInit(id: string, beachW = 110) {
   const h = hash32(id);
   const r1 = (h % 1000) / 1000;
-  const r2 = ((h >> 10) % 1000) / 1000;
   const r3 = ((h >> 20) % 1000) / 1000;
-  const padded = Math.max(0, beachW - BEACH_PAD_PX * 2);
+  const maxHomeX = dryBeachHomeMaxXPx(beachW);
+  const padded = Math.max(0, maxHomeX - BEACH_PAD_PX);
   return {
     homeXPx: BEACH_PAD_PX + r1 * padded,
-    homeRow01: r2,
     speedPxPerS: 28 + r3 * 22,
     jitterSeed: r1 * Math.PI * 2,
   };
+}
+
+export function dryBeachHomeMaxXPx(beachW: number, spritePx = MASCOT_PX): number {
+  const dryFootXPx = beachW * DRY_BEACH_HOME_FOOT_MAX_T;
+  return Math.max(BEACH_PAD_PX, dryFootXPx - spritePx / 2);
+}
+
+function clampDryHomeXPx(xPx: number, beachW: number, spritePx: number): number {
+  const maxHomeX = dryBeachHomeMaxXPx(beachW, spritePx);
+  if (xPx < BEACH_PAD_PX) return BEACH_PAD_PX;
+  if (xPx > maxHomeX) return maxHomeX;
+  return xPx;
 }
 
 export function withAlpha(color: string, alpha: number): string {
@@ -980,11 +991,7 @@ function drawBeach(
   layout: Layout,
   beachTile: HTMLCanvasElement | null,
   decoTile: HTMLCanvasElement | null,
-  crests: Float32Array,
-  w: number,
   h: number,
-  intensity: number,
-  t: number,
 ): void {
   const { beachW, beachTopYAtZero } = layout;
   if (!beachTile || !decoTile) return;
@@ -1011,28 +1018,13 @@ function drawBeach(
   ctx.drawImage(decoTile, 0, 0);
   ctx.restore();
 
-  // Submerged bank: tint columns where the sand surface dips below the wave
-  // line so the underwater portion of the dune reads as being beneath the
-  // water rather than dry sand sticking into the sea.
-  for (let x = layout.seaStart; x <= beachW; x++) {
-    const sandY = shoreYAt(layout, x / beachW);
-    const waveY = crests[x];
-    if (sandY > waveY + 0.5) {
-      const yTop = Math.floor(waveY);
-      const hPx = Math.min(h - yTop, Math.ceil(sandY - waveY));
-      if (hPx > 0) {
-        ctx.fillStyle = "rgba(28, 95, 110, 0.55)";
-        ctx.fillRect(x, yTop, 1, hPx);
-      }
-    }
-  }
+  // Leave the submerged-bank water pixels from drawSea untouched. Repainting
+  // this strip here creates a separate flat water colour that visibly detaches
+  // from the open ocean.
 
   // Big landmarks (umbrella, foldout chair) drawn ON TOP of the dune
   // curve so they sit as silhouettes against the sky, not embedded inside.
   drawBeachLandmarks(ctx, layout);
-  void w;
-  void intensity;
-  void t;
 }
 
 function makeSandTile(width = 96, height = 56): HTMLCanvasElement {
@@ -1658,7 +1650,6 @@ export function HeaderActivityViz() {
           xPx: init.homeXPx,
           dir: 1,
           homeXPx: init.homeXPx,
-          homeRow01: init.homeRow01,
           speedPxPerS: init.speedPxPerS,
           jitterSeed: init.jitterSeed,
           diveT: 0,
@@ -1909,7 +1900,7 @@ export function HeaderActivityViz() {
       }
 
       // 5. Beach (tiled sand + decorations + shore wash with chop).
-      drawBeach(ctx, layout, beachTileRef.current, decoTileRef.current, crests, w, h, intensity, t);
+      drawBeach(ctx, layout, beachTileRef.current, decoTileRef.current, h);
       drawShoreChop(ctx, layout, w, h, t, intensity);
 
       // 5. Slots (mascots / icons) and their bubble trails.
@@ -2004,6 +1995,7 @@ function updateSlot(
   const targetDive = isErrored ? 1 : 0;
   slot.diveT += (targetDive - slot.diveT) * 0.06;
   if (slot.diveT < 0.001) slot.diveT = 0;
+  const sizePx = slot.isSubagent ? SUBAGENT_PX : MASCOT_PX;
 
   if (isActive) {
     const minX = layout.beachW + 4;
@@ -2020,7 +2012,8 @@ function updateSlot(
       slot.dir = 1;
     }
   } else if (isIdle) {
-    slot.xPx += (slot.homeXPx - slot.xPx) * Math.min(1, dtSec * 5);
+    const homeX = clampDryHomeXPx(slot.homeXPx, layout.beachW, sizePx);
+    slot.xPx += (homeX - slot.xPx) * Math.min(1, dtSec * 5);
   } else {
     slot.bubbleAccumMs += dtSec * 1000;
     if (slot.diveT > 0.4 && slot.bubbleAccumMs >= BUBBLE_INTERVAL_MS) {
@@ -2035,7 +2028,6 @@ function updateSlot(
       });
     }
   }
-  void layout;
 }
 
 function drawSlots(
@@ -2089,11 +2081,14 @@ function drawSlots(
         tilt += slot.diveT * 0.45;
       }
     } else {
-      // Idle mascots stand on the dune surface (curved profile via shoreYAt).
-      const slopeT = clampPx(slot.homeXPx, layout.beachW) / Math.max(1, layout.beachW);
+      // Idle mascots stand on the dry dune surface. Clamp the visual x as well
+      // as the target x so returning surfers never pause on submerged sand.
+      const standXPx = clampDryHomeXPx(slot.xPx, layout.beachW, sizePx);
+      const footXPx = standXPx + sizePx / 2;
+      const slopeT = clampPx(footXPx, layout.beachW) / Math.max(1, layout.beachW);
       const beachY = shoreYAt(layout, slopeT);
       const bob = Math.sin(t * 1.6 + slot.jitterSeed) * 0.6;
-      cx = slot.xPx + sizePx / 2;
+      cx = standXPx + sizePx / 2;
       cy = beachY - sizePx / 2 + bob - 1;
     }
     const xDraw = Math.round(cx - sizePx / 2);

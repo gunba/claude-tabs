@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   celestialPhase,
   clampPx,
+  dryBeachHomeMaxXPx,
   hash32,
   makeSlotInit,
   shoreYAt,
@@ -37,13 +38,12 @@ describe("makeSlotInit", () => {
 
   it("produces values inside the documented ranges", () => {
     const beachW = 110;
+    const maxHomeX = dryBeachHomeMaxXPx(beachW);
     for (const id of ["a", "session-1", "session::sub", "x".repeat(64)]) {
       const init = makeSlotInit(id, beachW);
-      // homeXPx sits within the padded beach band (padding = 4px each side).
+      // homeXPx sits within the padded dry beach band.
       expect(init.homeXPx).toBeGreaterThanOrEqual(4);
-      expect(init.homeXPx).toBeLessThanOrEqual(beachW - 4);
-      expect(init.homeRow01).toBeGreaterThanOrEqual(0);
-      expect(init.homeRow01).toBeLessThan(1);
+      expect(init.homeXPx).toBeLessThanOrEqual(maxHomeX);
       // speed in 28..50 px/s
       expect(init.speedPxPerS).toBeGreaterThanOrEqual(28);
       expect(init.speedPxPerS).toBeLessThan(50);
@@ -57,6 +57,30 @@ describe("makeSlotInit", () => {
     const large = makeSlotInit("same-id", 200);
     // Same hash → same r1 fraction → wider beach gives a wider home.
     expect(large.homeXPx).toBeGreaterThan(small.homeXPx);
+  });
+
+  it("keeps mascot feet inland of the shoreline home limit", () => {
+    for (const beachW of [96, 110, 180]) {
+      const layout = {
+        beachW,
+        seaMeanY: 24,
+        waveAmpMaxPx: 5,
+        beachShoreSlope: 9,
+        beachTopYAtZero: 15,
+        skyHorizonY: 18,
+        seaStart: Math.round(beachW * 0.55),
+      };
+      const maxHomeX = dryBeachHomeMaxXPx(beachW);
+      const mascotFootX = maxHomeX + 11;
+      const footT = mascotFootX / beachW;
+      expect(footT).toBeLessThanOrEqual(0.58);
+      expect(shoreYAt(layout, footT)).toBeLessThan(layout.seaMeanY);
+
+      for (const id of ["a", "session-1", "session::sub", "x".repeat(64)]) {
+        const init = makeSlotInit(id, beachW);
+        expect(init.homeXPx).toBeLessThanOrEqual(maxHomeX);
+      }
+    }
   });
 });
 
