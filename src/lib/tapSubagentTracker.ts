@@ -30,7 +30,7 @@ function isCodexCompletedStatus(status: string | null): boolean {
 }
 
 export interface SubagentAction {
-  type: "add" | "update";
+  type: "add" | "update" | "remove";
   subagentId?: string;
   subagent?: Subagent;
   updates?: Partial<Subagent>;
@@ -563,6 +563,15 @@ export class TapSubagentTracker {
               currentEventKind: null,
               currentAction: null,
             } });
+          }
+        }
+        // Clear completed subagent cards from the UI on prompt boundary so they
+        // don't accumulate across turns. The tracker retains knownIds so any
+        // late sidechain messages for these agents still get dropped by the
+        // late-msg guard above (no zombie re-creation).
+        for (const agentId of this.knownIds) {
+          if (this.agentStates.get(agentId) === "dead") {
+            actions.push({ type: "remove", subagentId: agentId });
           }
         }
         break;

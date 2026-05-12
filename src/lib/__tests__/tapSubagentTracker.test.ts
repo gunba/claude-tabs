@@ -712,13 +712,16 @@ describe("TapSubagentTracker", () => {
       expect(actions.some(a => a.updates?.state === "idle")).toBe(true);
     });
 
-    it("is a no-op when all agents already dead", () => {
+    it("emits only remove actions when all agents already dead", () => {
       spawnAndActivate(tracker, "agent-1");
       tracker.process({ kind: "SubagentNotification", ts: 5, status: "completed", summary: "" } as TapEvent);
       const actions = tracker.process({
         kind: "SlashCommand", ts: 10, command: "/help", display: "/help",
       } as TapEvent);
-      expect(actions).toEqual([]);
+      // No new state transitions, but the already-dead agent is removed so the
+      // UI clears on the new turn boundary.
+      expect(actions.every(a => a.type === "remove")).toBe(true);
+      expect(actions.some(a => a.subagentId === "agent-1")).toBe(true);
     });
   });
 

@@ -125,6 +125,24 @@ describe("TapSubagentTracker stale cleanup", () => {
     expect(tracker.hasActiveAgents()).toBe(false);
     expect(actions.some(a => a.type === "update" && a.updates?.state === "idle")).toBe(true);
   });
+
+  it("emits remove actions for completed subagents on UserInput so the UI clears", () => {
+    const tracker = new TapSubagentTracker("s1");
+    tracker.process({ kind: "SubagentSpawn", ts: 1, description: "test", prompt: "do stuff" } as TapEvent);
+    tracker.process({
+      kind: "ConversationMessage", ts: 2, messageType: "assistant",
+      isSidechain: true, agentId: "agent-1", uuid: null, parentUuid: null, promptId: null,
+      stopReason: "tool_use", toolNames: ["Bash"], toolAction: "Bash: ls",
+      textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
+    } as TapEvent);
+
+    const actions = tracker.process({
+      kind: "UserInput", ts: 3, display: "next prompt", sessionId: "s1",
+    } as TapEvent);
+    const removed = actions.filter(a => a.type === "remove");
+    expect(removed.length).toBeGreaterThan(0);
+    expect(removed.some(a => a.subagentId === "agent-1")).toBe(true);
+  });
 });
 
 // ── SubagentLifecycle "end" marks all active dead ──

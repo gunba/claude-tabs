@@ -79,6 +79,7 @@ export function useTapEventProcessor(
   const updateConfig = useSessionStore((s) => s.updateConfig);
   const addSubagent = useSessionStore((s) => s.addSubagent);
   const updateSubagent = useSessionStore((s) => s.updateSubagent);
+  const removeSubagent = useSessionStore((s) => s.removeSubagent);
   const addCommandHistory = useSessionStore((s) => s.addCommandHistory);
   const updateProcessHealth = useSessionStore((s) => s.updateProcessHealth);
 
@@ -181,6 +182,9 @@ export function useTapEventProcessor(
           addSubagent(sid, action.subagent);
         } else if (action.type === "update" && action.subagentId && action.updates) {
           updateSubagent(sid, action.subagentId, action.updates);
+        } else if (action.type === "remove" && action.subagentId) {
+          dlog("inspector", sid, `subagent removed id=${action.subagentId} (prompt-boundary cleanup)`, "DEBUG");
+          removeSubagent(sid, action.subagentId);
         }
       }
 
@@ -352,7 +356,7 @@ export function useTapEventProcessor(
       metaAccRef.current = null;
       subTrackerRef.current = null;
     };
-  }, [sessionId, updateState, updateMetadata, updateConfig, addSubagent, updateSubagent, addCommandHistory, updateProcessHealth]);
+  }, [sessionId, updateState, updateMetadata, updateConfig, addSubagent, updateSubagent, removeSubagent, addCommandHistory, updateProcessHealth]);
 
   return { claudeSessionId, userPrompt };
 }
