@@ -88,24 +88,29 @@ export function buildInitialLauncherConfig(params: {
 
 export function buildWorkspaceLauncherConfig(params: {
   workingDir: string;
-  lastConfig: SessionConfig;
-  savedDefaults: SessionConfig | null;
+  /** Modal's current in-flight selection; preserved when the workspace has no saved defaults. */
+  currentConfig: SessionConfig;
   workspaceDefaults: Record<string, Partial<SessionConfig>>;
 }): SessionConfig {
-  const baseline = params.savedDefaults ?? params.lastConfig;
-  return buildInitialLauncherConfig({
-    lastConfig: {
-      ...baseline,
-      workingDir: params.workingDir,
-      resumeSession: null,
-      continueSession: false,
-      sessionId: null,
-      runMode: false,
-      forkSession: false,
-    },
-    savedDefaults: null,
-    workspaceDefaults: params.workspaceDefaults,
-  });
+  const wsKey = workspaceDefaultsKey(params.workingDir);
+  const wsDefaults = wsKey ? params.workspaceDefaults[wsKey] : undefined;
+
+  // Preserve the user's in-modal selections (model, cli, effort, permission
+  // settings, etc.) by default. Workspace defaults override only when the user
+  // explicitly saved them for this folder — switching to a folder with no
+  // history must not snap the model dropdown back to a global default.
+  const merged: SessionConfig = {
+    ...params.currentConfig,
+    ...(wsDefaults ?? {}),
+    workingDir: params.workingDir,
+    resumeSession: null,
+    continueSession: false,
+    sessionId: null,
+    runMode: false,
+    forkSession: false,
+  };
+
+  return migrateCodexPerms(merged);
 }
 
 export function buildFinalLauncherConfig(

@@ -4,6 +4,7 @@ import {
   buildInitialLauncherConfig,
   buildWorkspaceLauncherConfig,
   clearOneShotLauncherFields,
+  workspaceDefaultsKey,
 } from "../sessionLauncherConfig";
 import { DEFAULT_SESSION_CONFIG, type SessionConfig } from "../../types/session";
 
@@ -99,7 +100,7 @@ describe("buildInitialLauncherConfig", () => {
       lastConfig: config({ cli: "claude", model: "sonnet", resumeSession: null }),
       savedDefaults: null,
       workspaceDefaults: {
-        "/projects/myapp": {
+        [workspaceDefaultsKey("/projects/myapp")]: {
           cli: "codex",
           model: "gpt-5.5",
           effort: "medium",
@@ -230,12 +231,10 @@ describe("buildInitialLauncherConfig", () => {
 });
 
 describe("buildWorkspaceLauncherConfig", () => {
-  it("builds a fresh workspace config from saved defaults and matching workspace defaults", () => {
+  it("applies workspace defaults over the modal's current selection when present", () => {
     const result = buildWorkspaceLauncherConfig({
       workingDir: "/projects/other",
-      lastConfig: config({ cli: "claude", model: "sonnet" }),
-      savedDefaults: config({
-        workingDir: "/projects/myapp",
+      currentConfig: config({
         cli: "claude",
         model: "opus",
         effort: "high",
@@ -243,7 +242,7 @@ describe("buildWorkspaceLauncherConfig", () => {
         runMode: true,
       }),
       workspaceDefaults: {
-        "/projects/other": {
+        [workspaceDefaultsKey("/projects/other")]: {
           cli: "codex",
           model: "gpt-5.5",
           effort: "medium",
@@ -259,21 +258,44 @@ describe("buildWorkspaceLauncherConfig", () => {
     expect(result.runMode).toBe(false);
   });
 
-  it("falls back to global defaults when the workspace has no defaults", () => {
+  it("preserves the modal's current selection when the workspace has no saved defaults", () => {
     const result = buildWorkspaceLauncherConfig({
       workingDir: "/projects/other",
-      lastConfig: config({ cli: "claude", model: "sonnet" }),
-      savedDefaults: config({
-        workingDir: "/projects/myapp",
-        cli: "codex",
-        model: "gpt-5",
+      currentConfig: config({
+        cli: "claude",
+        model: "opus",
+        effort: "high",
       }),
       workspaceDefaults: {},
     });
 
     expect(result.workingDir).toBe("/projects/other");
-    expect(result.cli).toBe("codex");
-    expect(result.model).toBe("gpt-5");
+    expect(result.cli).toBe("claude");
+    expect(result.model).toBe("opus");
+    expect(result.effort).toBe("high");
+  });
+
+  it("clears one-shot fields and updates workingDir even when preserving in-modal selection", () => {
+    const result = buildWorkspaceLauncherConfig({
+      workingDir: "/projects/other",
+      currentConfig: config({
+        cli: "codex",
+        model: "gpt-5",
+        resumeSession: "stale",
+        continueSession: true,
+        sessionId: "sid",
+        runMode: true,
+        forkSession: true,
+      }),
+      workspaceDefaults: {},
+    });
+
+    expect(result.workingDir).toBe("/projects/other");
+    expect(result.resumeSession).toBeNull();
+    expect(result.continueSession).toBe(false);
+    expect(result.sessionId).toBeNull();
+    expect(result.runMode).toBe(false);
+    expect(result.forkSession).toBe(false);
   });
 });
 

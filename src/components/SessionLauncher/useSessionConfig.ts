@@ -23,8 +23,6 @@ type SessionConfigAction =
   | {
     type: "switchWorkspace";
     workingDir: string;
-    lastConfig: SessionConfig;
-    savedDefaults: SessionConfig | null;
     workspaceDefaults: Record<string, Partial<SessionConfig>>;
   }
   | {
@@ -43,7 +41,11 @@ function sessionConfigReducer(
     case "switchCli":
       return { ...state, cli: action.cli, model: action.model, effort: action.effort };
     case "switchWorkspace":
-      return buildWorkspaceLauncherConfig(action);
+      return buildWorkspaceLauncherConfig({
+        workingDir: action.workingDir,
+        currentConfig: state,
+        workspaceDefaults: action.workspaceDefaults,
+      });
     case "validateAdapterOption": {
       const value = state[action.key];
       if (!value || action.options.length === 0) return state;
@@ -75,11 +77,9 @@ export function useSessionConfig(params: UseSessionConfigParams) {
     dispatch({
       type: "switchWorkspace",
       workingDir,
-      lastConfig: params.lastConfig,
-      savedDefaults: params.savedDefaults,
       workspaceDefaults: params.workspaceDefaults,
     });
-  }, [params.lastConfig, params.savedDefaults, params.workspaceDefaults]);
+  }, [params.workspaceDefaults]);
 
   const validateAdapterOption = useCallback((
     key: "model" | "effort",
