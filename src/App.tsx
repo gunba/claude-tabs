@@ -223,11 +223,17 @@ export default function App() {
   const allSubs = activeTabId ? (subagentMap.get(activeTabId) || []) : [];
 
   const handleRelaunchWithOptions = useCallback((session: Session) => {
+    // Ctrl+Click always lands here. If the session actually has a resume target
+    // (real CLI session id or assistant turns), pre-fill resume. Otherwise the
+    // session never started — fall through with resumeSession cleared so the
+    // launcher opens for a fresh launch with the same config rather than
+    // silently doing nothing.
+    const resumable = canResumeSession(session);
     setLastConfig({
       ...session.config,
       workingDir: getLaunchWorkingDir(session),
       launchWorkingDir: getLaunchWorkingDir(session),
-      resumeSession: getResumeId(session),
+      resumeSession: resumable ? getResumeId(session) : null,
       forkSession: false,
       continueSession: false,
     });

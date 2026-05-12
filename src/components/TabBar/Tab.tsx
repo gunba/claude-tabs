@@ -2,7 +2,6 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { IconClose, IconStop } from "../Icons/Icons";
 import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import {
-  canResumeSession,
   dirToTabName,
   getActivityColor,
   getActivityText,
@@ -72,7 +71,11 @@ export function Tab({
   const statusSpans = buildTabStatusSpans(session, subagents);
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.ctrlKey && canResumeSession(session)) {
+    if (event.ctrlKey) {
+      // Resumable sessions resume; sessions that never sent a message fall
+      // through to handleRelaunchWithOptions which opens the launcher with the
+      // same config but no resume id, so the user gets a fresh start instead
+      // of an unexplained no-op.
       onRelaunchWithOptions(session);
       return;
     }
