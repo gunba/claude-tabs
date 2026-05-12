@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useActivityStore } from "../../store/activity";
 import { useSessionStore } from "../../store/sessions";
@@ -10,6 +11,7 @@ import type { FileActivity, ContextFileEntry, FileChangeKind } from "../../types
 import { buildFileTree, flattenTree, allFolderPaths } from "../../lib/fileTree";
 import type { FileTreeNode } from "../../lib/fileTree";
 import { canonicalizePath, splitFilePath } from "../../lib/paths";
+import { ActivityContextMenu, type ActivityContextMenuRequest } from "./ActivityContextMenu";
 import "./ActivityPanel.css";
 
 const INDENT_STEP = 16;
@@ -211,6 +213,7 @@ function FileTreeRow({
   contextInfo,
   onToggleFileExpand,
   onShellOpen,
+  onContextMenu,
   showMascotInline,
   activeSubagentIds,
   cli,
@@ -226,6 +229,7 @@ function FileTreeRow({
   contextInfo: ContextFileEntry | null;
   onToggleFileExpand: (path: string) => void;
   onShellOpen: (path: string) => void;
+  onContextMenu: (event: MouseEvent<HTMLDivElement>, path: string, isFolder: boolean) => void;
   /** Whether to show the inline mascot (false when floating mascot covers this file). */
   showMascotInline: boolean;
   /** Subagent ids currently tracked for this session (used to suppress stale 'searched' color). */
@@ -268,6 +272,7 @@ function FileTreeRow({
         className={`file-tree-row file-tree-file${activeClass}${expandedClass}`}
         style={rowStyle}
         onClick={() => onToggleFileExpand(node.fullPath)}
+        onContextMenu={(event) => onContextMenu(event, node.fullPath, false)}
         title={tooltip}
         data-path={node.fullPath}
       >
@@ -328,6 +333,7 @@ function FileTreeRow({
       className={folderClasses}
       style={rowStyle}
       onClick={() => onToggleFolder(node.fullPath)}
+      onContextMenu={(event) => onContextMenu(event, node.fullPath, true)}
       title={node.fullPath}
       data-path={node.fullPath}
     >
@@ -444,6 +450,16 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
   const [footprints, setFootprints] = useState<FootprintPosition[]>([]);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(emptySet);
   const [now, setNow] = useState<number>(() => Date.now());
+  const [contextMenu, setContextMenu] = useState<ActivityContextMenuRequest | null>(null);
+
+  const handleContextMenu = useCallback(
+    (event: MouseEvent<HTMLDivElement>, path: string, isFolder: boolean) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu({ x: event.clientX, y: event.clientY, path, isFolder });
+    },
+    [],
+  );
 
   // 1Hz tick for relative-time labels. Cheap; one timer at panel level.
   useEffect(() => {
@@ -872,6 +888,7 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
                     contextInfo={row.node.isFile ? contextFileMap.get(row.node.fullPath) ?? null : null}
                     onToggleFileExpand={toggleFileExpand}
                     onShellOpen={handleShellOpen}
+                    onContextMenu={handleContextMenu}
                     showMascotInline={!isFloatingTarget}
                     activeSubagentIds={activeSubagentIds}
                     cli={cli}
@@ -913,6 +930,9 @@ export function ActivityPanel({ mode }: { mode: "response" | "session" }) {
           </>
         )}
       </div>
+      {contextMenu && (
+        <ActivityContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+      )}
     </div>
   );
 }
