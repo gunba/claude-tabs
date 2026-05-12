@@ -432,13 +432,21 @@ describe("TapSubagentTracker", () => {
   // ── TurnEnd state transition ──
 
   describe("TurnEnd", () => {
-    it("end_turn marks active agent idle", () => {
+    // [IN-26] TurnEnd no longer transitions agents to idle. The old path relied
+    // on sidechainActive to attribute the TurnEnd to the running subagent, but
+    // sidechainActive is stale between a sidechain assistant message and the
+    // parent's next non-sidechain message — a parent SSE TurnEnd in that gap
+    // would mark the working subagent idle and the next ConvMessage promoted
+    // idle → dead+completed.
+    it("end_turn no longer transitions active agent to idle", () => {
       spawnAndActivate(tracker, "agent-1");
       const actions = tracker.process({
         kind: "TurnEnd", ts: 10, stopReason: "end_turn", outputTokens: 100,
       } as TapEvent);
-      expect(actions.find(a => a.type === "update")!.updates!.state).toBe("idle");
-      expect(tracker.hasActiveAgents()).toBe(false);
+      // Falls into default routing; no state change.
+      const stateUpdate = actions.find(a => a.updates?.state !== undefined);
+      expect(stateUpdate).toBeUndefined();
+      expect(tracker.hasActiveAgents()).toBe(true);
     });
 
     it("tool_use does not change agent state", () => {
@@ -446,8 +454,8 @@ describe("TapSubagentTracker", () => {
       const actions = tracker.process({
         kind: "TurnEnd", ts: 10, stopReason: "tool_use", outputTokens: 100,
       } as TapEvent);
-      // No state update emitted for tool_use stop reason
-      expect(actions).toEqual([]);
+      const stateUpdate = actions.find(a => a.updates?.state !== undefined);
+      expect(stateUpdate).toBeUndefined();
       expect(tracker.hasActiveAgents()).toBe(true);
     });
   });
@@ -455,37 +463,20 @@ describe("TapSubagentTracker", () => {
   // ── Sidechain-exit completion ──
 
   describe("sidechain-exit completion", () => {
-    it("non-sidechain message does NOT mark active agents idle", () => {
-      spawnAndActivate(tracker, "agent-1");
+    it("non-sidechain message after sidechain marks all active agents dead+completed", () => {
+      // Establish a sidechain context first via a sidechain assistant message,
+      // then flip out to non-sidechain. The previously-active subagent should
+      // be promoted to dead+completed even though it never transitioned to idle.
+      tracker.process(makeSidechainMsg("agent-1"));
       const actions = tracker.process({
         kind: "ConversationMessage", ts: 20, messageType: "assistant",
         isSidechain: false, agentId: null, uuid: null, parentUuid: null,
         promptId: null, stopReason: "end_turn", toolNames: [], toolAction: null,
         textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
       } as TapEvent);
-      // No subagent state changes for active agents — only idle ones get completed
-      expect(actions.filter(a => a.subagentId === "agent-1")).toEqual([]);
-      expect(tracker.hasActiveAgents()).toBe(true);
-    });
-
-    it("marks idle agents dead+completed on sidechain exit", () => {
-      spawnAndActivate(tracker, "agent-1");
-      // Transition to idle via end_turn
-      tracker.process({
-        kind: "TurnEnd", ts: 5, stopReason: "end_turn", outputTokens: 100,
-      } as TapEvent);
-      expect(tracker.hasActiveAgents()).toBe(false);
-
-      // Non-sidechain message → sidechain exit
-      const actions = tracker.process({
-        kind: "ConversationMessage", ts: 20, messageType: "assistant",
-        isSidechain: false, agentId: null, uuid: null, parentUuid: null,
-        promptId: null, stopReason: "end_turn", toolNames: [], toolAction: null,
-        textSnippet: null, cwd: null, hasToolError: false, toolErrorText: null, toolResultSnippets: null,
-      } as TapEvent);
-      const deadUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "dead");
-      expect(deadUpdate).toBeDefined();
-      expect(deadUpdate!.updates!.completed).toBe(true);
+      const dead = actions.find(a => a.subagentId === "agent-1" && a.updates?.state === "dead");
+      expect(dead).toBeDefined();
+      expect(dead!.updates!.completed).toBe(true);
     });
 
     it("does not mark already-dead agents on sidechain exit", () => {

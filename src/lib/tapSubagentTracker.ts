@@ -283,11 +283,17 @@ export class TapSubagentTracker {
         // Track sidechain state for routing non-ConversationMessage events
         const wasSidechainActive = this.sidechainActive;
         this.sidechainActive = event.isSidechain;
-        // Sidechain-exit completion: parent agent resumed → idle subagents are done
+        // Sidechain-exit completion: parent agent resumed → every still-live
+        // subagent is done. Sweeps all non-dead agents (not just "idle") because
+        // the TurnEnd→idle hop was removed: a parent SSE TurnEnd arriving while
+        // sidechainActive was stale used to mark a still-working subagent idle,
+        // and the next ConvMessage promoted that idle→dead. Subagents now only
+        // terminate via explicit lifecycle signals or this sweep at real exit.
         if (wasSidechainActive && !event.isSidechain) {
           for (const agentId of this.knownIds) {
-            if (this.agentStates.get(agentId) === "idle") {
-              dlog("inspector", this.parentSessionId, `subagent ${agentId} idle → dead+completed (sidechain exit)`, "DEBUG");
+            const state = this.agentStates.get(agentId);
+            if (state && state !== "dead") {
+              dlog("inspector", this.parentSessionId, `subagent ${agentId} ${state} → dead+completed (sidechain exit)`, "DEBUG");
               this.agentStates.set(agentId, "dead");
               actions.push({ type: "update", subagentId: agentId, updates: {
                 state: "dead",
@@ -621,21 +627,12 @@ export class TapSubagentTracker {
         break;
       }
 
-      // [IN-26] TurnEnd(end_turn) transitions active subagent to idle state
-      case "TurnEnd": {
-        if (!this.sidechainActive || !this.lastActiveAgent) break;
-        const tgt = this.lastActiveAgent;
-        if (!isSubagentActive(this.agentStates.get(tgt) ?? "dead")) break;
-        this.lastEventTs.set(tgt, event.ts || Date.now());
-        if (event.stopReason === "end_turn") {
-          this.agentStates.set(tgt, "idle");
-          actions.push({
-            type: "update", subagentId: tgt,
-            updates: { state: "idle" as SessionState, currentToolName: null, currentAction: null, currentEventKind: "TurnEnd" },
-          });
-        }
-        break;
-      }
+      // [IN-26] TurnEnd handling removed: sidechainActive is stale during the
+      // window between a sidechain assistant ConvMessage and the parent's next
+      // non-sidechain ConvMessage, so a parent SSE TurnEnd would mark the
+      // running subagent idle and the next ConvMessage swept idle → dead.
+      // Subagent termination now flows through SubagentLifecycle/Notification
+      // or the sidechain-exit sweep (which now covers all non-dead agents).
 
       default:
         // Route non-noisy event kinds to active subagent for tab-like activity display
