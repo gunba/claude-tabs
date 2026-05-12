@@ -17,6 +17,7 @@ use tauri::ipc::Response;
 use tokio::sync::watch;
 
 use crate::observability::record_backend_event;
+use crate::session::types::CliKind;
 
 #[cfg(windows)]
 pub mod conpty;
@@ -162,6 +163,44 @@ fn pty_spawn_env(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     merged
 }
 
+/// Windows-only workaround for Codex cursor flicker.
+///
+/// Codex's TUI wraps every frame in DECSET 2026 (synchronized output) via
+/// crossterm::SynchronizedUpdate at ~31 fps. The shimmer/elapsed-time animation
+/// rewrites many cells per frame; without atomic rendering, the host terminal
+/// shows intermediate cursor positions and the cursor visibly bounces between
+/// the input prompt and the animated cells.
+///
+/// On Unix the BSU/ESU pair reaches xterm.js intact, which buffers and renders
+/// the frame atomically. Windows ConPTY (at least through conhost 26100.x)
+/// strips DEC private-mode sequences from the host-bound stream — the same
+/// behaviour `useXtermLifecycle.ts` already documents for `\e[?1003h` mouse
+/// tracking. So xterm.js never sees the sync wrapper and the flicker is
+/// constant. OpenAI declines to fix this in Codex (openai/codex#9081, closed
+/// not-planned). To compensate, we wrap each ConPTY read batch in synthetic
+/// BSU/ESU so xterm.js 6.0's synchronized-output handler renders the whole
+/// batch as one frame. Any inner BSU/ESU that does survive ConPTY is
+/// idempotent under xterm.js's boolean+timer implementation.
+fn maybe_wrap_sync_output(data: Vec<u8>, cli_kind: Option<CliKind>) -> Vec<u8> {
+    #[cfg(windows)]
+    {
+        if cli_kind == Some(CliKind::Codex) && !data.is_empty() {
+            const BSU: &[u8] = b"\x1b[?2026h";
+            const ESU: &[u8] = b"\x1b[?2026l";
+            let mut wrapped = Vec::with_capacity(BSU.len() + data.len() + ESU.len());
+            wrapped.extend_from_slice(BSU);
+            wrapped.extend_from_slice(&data);
+            wrapped.extend_from_slice(ESU);
+            return wrapped;
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cli_kind;
+    }
+    data
+}
+
 // ── State ────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -174,6 +213,7 @@ type PtyHandler = u32;
 
 struct Session {
     session_id: Option<String>,
+    cli_kind: Option<CliKind>,
     backend: Arc<dyn PtyBackend>,
     writer: Mutex<Box<dyn Write + Send>>,
     output_rx: Mutex<tokio::sync::mpsc::Receiver<ReaderMessage>>,
@@ -188,6 +228,7 @@ struct Session {
 pub async fn pty_spawn(
     app: tauri::AppHandle,
     session_id: Option<String>,
+    cli_kind: Option<CliKind>,
     file: String,
     args: Vec<String>,
     cols: u16,
@@ -234,6 +275,7 @@ pub async fn pty_spawn(
 
     let session = Arc::new(Session {
         session_id: session_id.clone(),
+        cli_kind,
         backend,
         writer: Mutex::new(Box::new(result.writer)),
         output_rx: Mutex::new(result.output_rx),
@@ -322,6 +364,7 @@ pub async fn pty_read(
             Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
         }
     }
+    let data = maybe_wrap_sync_output(data, session.cli_kind);
     Ok(Response::new(data))
 }
 
@@ -504,5 +547,41 @@ mod tests {
 
         assert_eq!(value["kind"], "sessionNotFound");
         assert_eq!(value["pid"], 42);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wrap_sync_output_brackets_codex_batches_on_windows() {
+        let wrapped = maybe_wrap_sync_output(b"hello".to_vec(), Some(CliKind::Codex));
+        assert_eq!(&wrapped[..8], b"\x1b[?2026h");
+        assert_eq!(&wrapped[8..13], b"hello");
+        assert_eq!(&wrapped[13..], b"\x1b[?2026l");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wrap_sync_output_skips_claude_empty_and_unknown() {
+        assert_eq!(
+            maybe_wrap_sync_output(b"hello".to_vec(), Some(CliKind::Claude)),
+            b"hello".to_vec()
+        );
+        assert_eq!(
+            maybe_wrap_sync_output(b"hello".to_vec(), None),
+            b"hello".to_vec()
+        );
+        assert_eq!(
+            maybe_wrap_sync_output(Vec::new(), Some(CliKind::Codex)),
+            Vec::<u8>::new()
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn wrap_sync_output_is_passthrough_off_windows() {
+        let data = b"hello".to_vec();
+        assert_eq!(
+            maybe_wrap_sync_output(data.clone(), Some(CliKind::Codex)),
+            data
+        );
     }
 }

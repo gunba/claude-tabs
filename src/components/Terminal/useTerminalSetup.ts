@@ -250,7 +250,15 @@ export function useTerminalSetup({
             );
           }
         }
-        const handle = await pty.spawn(program, args, cwd, cols, rows, env);
+        const handle = await pty.spawn(
+          program,
+          args,
+          cwd,
+          cols,
+          rows,
+          env,
+          session.config.cli,
+        );
         registerPtyWriter(session.id, handle.write);
         registerPtyKill(session.id, () => handle.kill());
         registerPtyHandleId(session.id, handle.pid);

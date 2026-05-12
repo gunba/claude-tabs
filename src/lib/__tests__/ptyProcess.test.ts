@@ -109,6 +109,7 @@ describe("spawnPty — spawn args and returned object", () => {
     expect(spawnCall).toBeDefined();
     expect(spawnCall![1]).toEqual({
       sessionId: null,
+      cliKind: null,
       file: "bash",
       args: ["-l"],
       cols: 80,
@@ -130,6 +131,7 @@ describe("spawnPty — spawn args and returned object", () => {
     const spawnCall = mockInvoke.mock.calls.find(([cmd]) => cmd === "pty_spawn");
     expect(spawnCall![1]).toEqual({
       sessionId: null,
+      cliKind: null,
       file: "bash",
       args: [],
       cols: 120,
@@ -137,6 +139,14 @@ describe("spawnPty — spawn args and returned object", () => {
       cwd: "/tmp",
       env: { FOO: "bar" },
     });
+  });
+
+  it("forwards cliKind so the Rust backend can apply CLI-specific PTY workarounds", async () => {
+    createInvokeRouter();
+    await spawnPty("codex", [], { cliKind: "codex" });
+
+    const spawnCall = mockInvoke.mock.calls.find(([cmd]) => cmd === "pty_spawn");
+    expect(spawnCall![1]).toMatchObject({ cliKind: "codex" });
   });
 
   it("returns a PtyProcess with the correct pid", async () => {

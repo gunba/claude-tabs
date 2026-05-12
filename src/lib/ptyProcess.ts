@@ -44,6 +44,8 @@ interface SpawnOptions {
   rows?: number;
   env?: Record<string, string>;
   sessionId?: string | null;
+  /** CLI flavour for backend-side terminal workarounds (e.g. ConPTY DEC 2026 wrapping). */
+  cliKind?: "claude" | "codex";
 }
 
 function escapeDataPreview(data: string): string {
@@ -91,6 +93,7 @@ export async function spawnPty(
   });
   const pid: number = await invoke("pty_spawn", {
     sessionId,
+    cliKind: options.cliKind ?? null,
     file,
     args,
     cols: options.cols ?? 80,

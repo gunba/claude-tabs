@@ -25,7 +25,8 @@ export function usePty({ sessionId = null, onData, onExit }: UsePtyOptions) {
       cwd: string,
       cols: number,
       rows: number,
-      env?: Record<string, string>
+      env?: Record<string, string>,
+      cliKind?: "claude" | "codex",
     ): Promise<PtyHandle> => {
       const pty = await spawnPty(file, args, {
         cwd,
@@ -33,6 +34,7 @@ export function usePty({ sessionId = null, onData, onExit }: UsePtyOptions) {
         rows,
         sessionId,
         ...(env ? { env } : {}),
+        ...(cliKind ? { cliKind } : {}),
       });
 
       dlog("pty", sessionId, `spawn success pid=${pty.pid} cwd=${cwd}`, "LOG", {
