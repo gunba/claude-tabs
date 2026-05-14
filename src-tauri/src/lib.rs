@@ -8,6 +8,7 @@ mod path_utils;
 mod port;
 mod proxy;
 mod pty;
+mod reaper;
 mod session;
 mod tap_server;
 mod weather;
@@ -123,15 +124,21 @@ fn setup_job_object() {
 }
 
 /// On Linux, become a child subreaper so orphaned descendants are reparented
-/// to us instead of init. Combined with ActivePids cleanup on exit, this
-/// prevents zombie processes from accumulating.
+/// to us instead of init, then start the reaper thread that waits on them.
+/// Without the reaper, every helper a PTY's CLI spawned (MCP servers, etc.)
+/// would linger as a zombie once that CLI exits — for the lifetime of the app.
 #[cfg(target_os = "linux")]
 fn setup_child_reaper() {
     let ret = unsafe { libc::prctl(36, 1, 0, 0, 0) }; // PR_SET_CHILD_SUBREAPER
     if ret != 0 {
         log::error!("Failed to set child subreaper (prctl returned {})", ret);
         eprintln!("Failed to set child subreaper (prctl returned {})", ret);
+        return;
     }
+    // Subreaper status only routes orphans to us; it does not reap them.
+    // The signalfd reaper thread is what actually waits on them as they
+    // exit, so they never accumulate as zombies.
+    reaper::start();
 }
 
 pub fn run() {

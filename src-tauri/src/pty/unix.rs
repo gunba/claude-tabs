@@ -103,16 +103,31 @@ impl UnixPty {
     }
 
     // [PT-26] wait() uses stdlib ExitStatusExt: signal N -> 128+N; Mutex<Option<Child>> take() guards double-wait.
+    // [PT-28] On ECHILD the global child-reaper won the waitpid(-1) race and
+    // already reaped this PID; recover its stashed status from the reaper.
     /// Wait for the child to exit (blocking). Returns exit code.
     pub fn wait(&self) -> Result<u32, String> {
+        use std::os::unix::process::ExitStatusExt;
         let mut slot = self.child.lock().unwrap();
         let mut child = slot
             .take()
             .ok_or_else(|| "wait already consumed".to_string())?;
         drop(slot);
-        let status = child.wait().map_err(|e| format!("wait failed: {}", e))?;
+        let status = match child.wait() {
+            Ok(status) => {
+                // We won the race; the reaper need not track this PID.
+                crate::reaper::forget(self.pid);
+                status
+            }
+            Err(e) if e.raw_os_error() == Some(libc::ECHILD) => {
+                let raw = crate::reaper::recover(self.pid).ok_or_else(|| {
+                    "child reaped by reaper but status unavailable".to_string()
+                })?;
+                std::process::ExitStatus::from_raw(raw)
+            }
+            Err(e) => return Err(format!("wait failed: {}", e)),
+        };
         // Preserve the signaled-exit convention used elsewhere: 128 + signal.
-        use std::os::unix::process::ExitStatusExt;
         let code = if let Some(sig) = status.signal() {
             128 + sig as u32
         } else {
@@ -242,12 +257,30 @@ pub fn spawn(
             {
                 return Err(io::Error::last_os_error());
             }
+            // [PT-28] code_tabs blocks SIGCHLD process-wide for its signalfd
+            // child-reaper (see src/reaper.rs). That mask is inherited across
+            // fork+exec, so unblock it here — the spawned CLI and every tool
+            // it spawns need normal SIGCHLD delivery to reap their own
+            // children.
+            #[cfg(target_os = "linux")]
+            {
+                let mut set: libc::sigset_t = std::mem::zeroed();
+                libc::sigemptyset(&mut set);
+                libc::sigaddset(&mut set, libc::SIGCHLD);
+                if libc::sigprocmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut()) < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
             Ok(())
         });
     }
 
     let child = cmd.spawn().map_err(|e| format!("spawn failed: {}", e))?;
     let pid = child.id();
+    // [PT-28] Register with the global child-reaper. If the reaper's
+    // waitpid(-1) wins the race against UnixPty::wait()'s Child::wait(),
+    // the exit status is stashed for recovery instead of being discarded.
+    crate::reaper::expect(pid);
 
     // Transfer master ownership into UnixPty's manual-Drop slot. FdWriter and
     // FdReader carry copies of the int but do not own — UnixPty.Drop is sole
