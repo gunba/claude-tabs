@@ -11,7 +11,7 @@ Tag line: `L<n>`; code usually starts at `L<n+1>`.
 
 - [SL-02 L131] Quick launch: Ctrl+Click + or Ctrl+Shift+T launches without the modal using saved defaults or lastConfig, after clearing resumeSession, forkSession, continueSession, sessionId, and runMode.
   - quickLaunchSession() strips transient one-shot fields before createSession; App.tsx Ctrl+Shift+T delegates to this path.
-- [SL-24 L238] Fork into New Tab is available from resumable live/dead tabs and resume-history rows, and creates a separate session immediately instead of replacing or resuming the current tab.
+- [SL-24 L244] Fork into New Tab is available from resumable live/dead tabs and resume-history rows, and creates a separate session immediately instead of replacing or resuming the current tab.
   - App.tsx tab context-menu handler builds a fork config with buildForkSessionConfig(), loading past sessions first when a live tab lacks a captured session id. ResumePicker right-click Fork into New Tab uses buildForkConfigFromPastSession(). Both add the fork workingDir to recents, createSession with a Fork-suffixed name, and leave ordinary resume/configure paths with forkSession false.
 
 ## Data Flow
@@ -26,4 +26,4 @@ App root, launcher, and config modal carry provider-scoped CSS classes (app-prov
 
 ## Project Conventions
 
-- [LO-01 L288] Main window layout: tab bar, subagent bar, terminal, command bar (slash commands + skill pills + command history), status bar
+- [LO-01 L294] Main window layout: tab bar, subagent bar, terminal, command bar (slash commands + skill pills + command history), status bar
