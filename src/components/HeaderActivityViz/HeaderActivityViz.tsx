@@ -2089,7 +2089,7 @@ function drawSlots(
       const beachY = shoreYAt(layout, slopeT);
       const bob = Math.sin(t * 1.6 + slot.jitterSeed) * 0.6;
       cx = standXPx + sizePx / 2;
-      cy = beachY - sizePx / 2 + bob - 1;
+      cy = beachY - sizePx / 2 + bob;
     }
     const xDraw = Math.round(cx - sizePx / 2);
     const yDraw = Math.round(cy - sizePx / 2);
