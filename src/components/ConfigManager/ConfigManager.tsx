@@ -17,6 +17,7 @@ import { Dropdown } from "../Dropdown/Dropdown";
 import { IconGear, IconDocument, IconHook, IconPuzzle, IconBot, IconSkill, IconBraces, IconClose, IconCircleFilled, IconServer } from "../Icons/Icons";
 import { ProviderLogo } from "../ProviderLogo/ProviderLogo";
 import { RecordingPane } from "./RecordingPane";
+import { AppSettingsPane } from "./AppSettingsPane";
 import { parseWorktreePath } from "../../lib/paths";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import type { CliKind } from "../../types/session";
@@ -208,6 +209,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "prompts", label: "Prompts", icon: <IconDocument size={11} /> },
   { id: "skills", label: "Skills & Commands", icon: <IconSkill size={11} /> },
   { id: "recording", label: "Observability", icon: <IconCircleFilled size={11} /> },
+  { id: "app", label: "App", icon: <IconGear size={11} /> },
 ];
 
 // [DL-01] ConfigManager Claude/Codex switch (only when both installed); visibleTabs filtered per CLI (Codex hides envvars/Claude file-agents); shared panes own their copy/import actions; ThreePaneEditor + PaneComponentProps thread cli; SettingsPane TOML-aware for Codex; SettingsTab hides project-local for Codex; HooksPane CODEX_HOOK_EVENTS + remaps project-local->project on save
@@ -512,6 +514,9 @@ export function ConfigManager() {
           )}
           {tab === "recording" && (
             <RecordingPane cli={configCli} onStatus={setStatusMsg} />
+          )}
+          {tab === "app" && (
+            <AppSettingsPane onStatus={setStatusMsg} />
           )}
         </div>
 
