@@ -67,11 +67,30 @@ let bridgeUnlisten: (() => void) | null = null;
 
 (globalThis as Record<string, unknown>).__debugLogBuffers = buffers;
 
-function bumpGeneration(): void {
-  generation++;
+const scheduleNotify: (cb: () => void) => void =
+  typeof requestAnimationFrame === "function"
+    ? (cb) => { requestAnimationFrame(cb); }
+    : queueMicrotask;
+
+let notifyScheduled = false;
+
+function notifyListeners(): void {
+  notifyScheduled = false;
   for (const listener of [...debugLogListeners]) {
     listener();
   }
+}
+
+// [DR-10] Coalesce listener notifications across a single frame. Without this,
+// a Claude TUI redraw storm during scrolling fires hundreds of synchronous
+// DebugPanel re-renders per second and blocks xterm.js parsing on the main
+// thread. `generation` still bumps synchronously so getDebugLogGeneration()
+// callers see a consistent counter.
+function bumpGeneration(): void {
+  generation++;
+  if (debugLogListeners.size === 0 || notifyScheduled) return;
+  notifyScheduled = true;
+  scheduleNotify(notifyListeners);
 }
 
 function bufferKey(sessionId: string | null): string {
