@@ -188,6 +188,11 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
     if (event?.kind === "SubagentNotification") {
       expect(event.status).toBe("completed");
       expect(event.summary).toContain("Write limericks");
+      expect(event.taskId).toBeNull();
+      expect(event.outputFile).toBeNull();
+      expect(event.result).toBeNull();
+      expect(event.usageTotalTokens).toBeNull();
+      expect(event.worktreePath).toBeNull();
     }
   });
 
@@ -215,6 +220,78 @@ describe("classifyTapEntry — stringify (outgoing)", () => {
     expect(event?.kind).toBe("SubagentNotification");
     if (event?.kind === "SubagentNotification") {
       expect(event.summary).toBe("Line one\nLine two\nLine three");
+    }
+  });
+
+  it("classifies queue-operation failed and stopped → SubagentNotification", () => {
+    for (const status of ["failed", "stopped"] as const) {
+      const entry: TapEntry = {
+        ts: 2011, cat: "stringify", len: 200,
+        snap: JSON.stringify({
+          type: "queue-operation", operation: "enqueue",
+          content: `<task-notification><status>${status}</status><summary>boom</summary></task-notification>`,
+        }),
+      };
+      const event = classifyTapEntry(entry);
+      expect(event?.kind).toBe("SubagentNotification");
+      if (event?.kind === "SubagentNotification") {
+        expect(event.status).toBe(status);
+      }
+    }
+  });
+
+  it("captures full task-notification envelope (LocalAgentTask shape)", () => {
+    const xml = [
+      "<task-notification>",
+      "<task-id>task-abc</task-id>",
+      "<tool-use-id>toolu_01XYZ</tool-use-id>",
+      "<output-file>/tmp/output.txt</output-file>",
+      "<status>completed</status>",
+      "<summary>Agent \"summarise\" completed</summary>",
+      "<result>final assistant text</result>",
+      "<usage><total_tokens>1234</total_tokens><tool_uses>7</tool_uses><duration_ms>5678</duration_ms></usage>",
+      "<worktree><worktreePath>/repo/.claude/worktrees/abc</worktreePath><worktreeBranch>feat/abc</worktreeBranch></worktree>",
+      "</task-notification>",
+    ].join("\n");
+    const entry: TapEntry = {
+      ts: 2012, cat: "stringify", len: 800,
+      snap: JSON.stringify({ type: "queue-operation", operation: "enqueue", content: xml }),
+    };
+    const event = classifyTapEntry(entry);
+    expect(event?.kind).toBe("SubagentNotification");
+    if (event?.kind === "SubagentNotification") {
+      expect(event.status).toBe("completed");
+      expect(event.taskId).toBe("task-abc");
+      expect(event.toolUseId).toBe("toolu_01XYZ");
+      expect(event.outputFile).toBe("/tmp/output.txt");
+      expect(event.result).toBe("final assistant text");
+      expect(event.usageTotalTokens).toBe(1234);
+      expect(event.usageToolUses).toBe(7);
+      expect(event.usageDurationMs).toBe(5678);
+      expect(event.worktreePath).toBe("/repo/.claude/worktrees/abc");
+      expect(event.worktreeBranch).toBe("feat/abc");
+    }
+  });
+
+  it("captures task-type for remote_agent task-notifications", () => {
+    const xml = [
+      "<task-notification>",
+      "<task-id>remote-1</task-id>",
+      "<task-type>remote_agent</task-type>",
+      "<output-file>/tmp/r.txt</output-file>",
+      "<status>completed</status>",
+      "<summary>Remote task \"X\" completed successfully</summary>",
+      "</task-notification>",
+    ].join("\n");
+    const entry: TapEntry = {
+      ts: 2013, cat: "stringify", len: 400,
+      snap: JSON.stringify({ type: "queue-operation", operation: "enqueue", content: xml }),
+    };
+    const event = classifyTapEntry(entry);
+    expect(event?.kind).toBe("SubagentNotification");
+    if (event?.kind === "SubagentNotification") {
+      expect(event.taskType).toBe("remote_agent");
+      expect(event.taskId).toBe("remote-1");
     }
   });
 

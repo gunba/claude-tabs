@@ -118,8 +118,18 @@ export interface SubagentSpawn extends TapEventBase {
 
 export interface SubagentNotification extends TapEventBase {
   kind: "SubagentNotification";
-  status: "completed" | "killed";
+  status: "completed" | "killed" | "failed" | "stopped";
   summary: string;
+  taskId: string | null;
+  toolUseId: string | null;
+  taskType: string | null;
+  outputFile: string | null;
+  result: string | null;
+  usageTotalTokens: number | null;
+  usageToolUses: number | null;
+  usageDurationMs: number | null;
+  worktreePath: string | null;
+  worktreeBranch: string | null;
 }
 
 export interface PermissionPromptShown extends TapEventBase {

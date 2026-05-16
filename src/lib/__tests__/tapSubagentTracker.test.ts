@@ -406,6 +406,29 @@ describe("TapSubagentTracker", () => {
       expect(actions.some(a => a.updates?.state === "dead")).toBe(true);
     });
 
+    it("treats SubagentNotification status=failed and =stopped as non-success terminal", () => {
+      for (const status of ["failed", "stopped"] as const) {
+        const t = new TapSubagentTracker("parent");
+        spawnAndActivate(t, "agent-1");
+        const actions = t.process({
+          kind: "SubagentNotification", ts: 10, status, summary: "",
+        } as TapEvent);
+        expect(actions.every(a => !a.updates?.completed)).toBe(true);
+        expect(actions.some(a => a.updates?.state === "dead")).toBe(true);
+      }
+    });
+
+    it("prefers SubagentNotification.result over .summary for resultText", () => {
+      spawnAndActivate(tracker, "agent-1");
+      const actions = tracker.process({
+        kind: "SubagentNotification", ts: 11, status: "completed",
+        summary: "Agent \"task\" completed",
+        result: "Final assistant message body",
+      } as TapEvent);
+      const resultUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.resultText);
+      expect(resultUpdate?.updates?.resultText).toBe("Final assistant message body");
+    });
+
     it("sets completed on SubagentLifecycle end", () => {
       spawnAndActivate(tracker, "agent-1");
       const actions = tracker.process({

@@ -432,16 +432,41 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
-  // SubagentNotification: type=queue-operation with task-notification XML
+  // SubagentNotification: type=queue-operation with task-notification XML.
+  // The envelope from LocalAgentTask/LocalShellTask/RemoteAgentTask carries
+  // task identity (task-id, tool-use-id, task-type), output-file, an optional
+  // <result> body, <usage> (total_tokens / tool_uses / duration_ms), and
+  // <worktree> (worktreePath / worktreeBranch). Status widened from
+  // completed|killed to also accept failed|stopped.
   if (parsed.type === "queue-operation" && typeof parsed.content === "string") {
     const content = parsed.content as string;
-    const statusMatch = content.match(/<status>(completed|killed)<\/status>/);
-    const summaryMatch = content.match(/<summary>([\s\S]*?)<\/summary>/);
+    const statusMatch = content.match(/<status>(completed|killed|failed|stopped)<\/status>/);
     if (statusMatch) {
+      const summaryMatch = content.match(/<summary>([\s\S]*?)<\/summary>/);
+      const taskIdMatch = content.match(/<task-id>([\s\S]*?)<\/task-id>/);
+      const toolUseIdMatch = content.match(/<tool-use-id>([\s\S]*?)<\/tool-use-id>/);
+      const taskTypeMatch = content.match(/<task-type>([\s\S]*?)<\/task-type>/);
+      const outputFileMatch = content.match(/<output-file>([\s\S]*?)<\/output-file>/);
+      const resultMatch = content.match(/<result>([\s\S]*?)<\/result>/);
+      const totalTokensMatch = content.match(/<total_tokens>(-?\d+)<\/total_tokens>/);
+      const toolUsesMatch = content.match(/<tool_uses>(-?\d+)<\/tool_uses>/);
+      const usageDurationMatch = content.match(/<duration_ms>(-?\d+)<\/duration_ms>/);
+      const worktreePathMatch = content.match(/<worktreePath>([\s\S]*?)<\/worktreePath>/);
+      const worktreeBranchMatch = content.match(/<worktreeBranch>([\s\S]*?)<\/worktreeBranch>/);
       return {
         kind: "SubagentNotification", ts,
-        status: statusMatch[1] as "completed" | "killed",
+        status: statusMatch[1] as "completed" | "killed" | "failed" | "stopped",
         summary: summaryMatch ? summaryMatch[1] : "",
+        taskId: taskIdMatch ? taskIdMatch[1] : null,
+        toolUseId: toolUseIdMatch ? toolUseIdMatch[1] : null,
+        taskType: taskTypeMatch ? taskTypeMatch[1] : null,
+        outputFile: outputFileMatch ? outputFileMatch[1] : null,
+        result: resultMatch ? resultMatch[1] : null,
+        usageTotalTokens: totalTokensMatch ? Number(totalTokensMatch[1]) : null,
+        usageToolUses: toolUsesMatch ? Number(toolUsesMatch[1]) : null,
+        usageDurationMs: usageDurationMatch ? Number(usageDurationMatch[1]) : null,
+        worktreePath: worktreePathMatch ? worktreePathMatch[1] : null,
+        worktreeBranch: worktreeBranchMatch ? worktreeBranchMatch[1] : null,
       };
     }
   }
