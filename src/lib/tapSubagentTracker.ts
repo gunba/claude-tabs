@@ -426,10 +426,9 @@ export class TapSubagentTracker {
           currentAction: event.toolAction,
           messages: allMsgs,
         };
-        // Result messages are an authoritative completion signal
-        if (event.messageType === "result") {
-          updatePayload.completed = true;
-        }
+        // Subagent completion is signaled by SubagentNotification and SubagentLifecycle "end"
+        // only — those paths also clear transient tool state. Do not mark completed here on
+        // messageType "result" or the agent flips done mid-turn while still using tools.
         actions.push({
           type: "update",
           subagentId: agentId,
