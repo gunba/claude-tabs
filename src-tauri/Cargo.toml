@@ -1,6 +1,6 @@
 [package]
 name = "code-tabs"
-version = "0.64.25"
+version = "0.64.26"
 edition = "2021"
 default-run = "code-tabs"
 
