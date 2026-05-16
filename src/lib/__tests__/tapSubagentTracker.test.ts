@@ -286,12 +286,12 @@ describe("TapSubagentTracker", () => {
       expect(actions.find(a => a.type === "update")!.updates!.state).toBe("thinking");
     });
 
-    it("idle + completed for result messageType", () => {
+    it("idle but NOT completed for result messageType (completion is signaled by SubagentNotification/SubagentLifecycle end only)", () => {
       spawnAndActivate(tracker, "agent-1");
       const actions = tracker.process(makeSidechainMsg("agent-1", { messageType: "result" }));
       const update = actions.find(a => a.type === "update")!;
       expect(update.updates!.state).toBe("idle");
-      expect(update.updates!.completed).toBe(true);
+      expect(update.updates!.completed).toBeUndefined();
     });
   });
 
