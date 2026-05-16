@@ -1,10 +1,15 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
-import type { CapturedMessage, Subagent, SubagentMessage } from "../../types/session";
+import type { Subagent, SubagentMessage } from "../../types/session";
 import { isSubagentActive } from "../../types/session";
 import { splitFilePath } from "../../lib/paths";
 import { useSessionStore } from "../../store/sessions";
+import {
+  codexCapturedToSubagentMessages,
+  isCodexThreadId,
+  type CodexThreadInspectorPayload,
+} from "../../lib/codexSubagentMessages";
 import "./SubagentInspector.css";
 
 interface SubagentInspectorProps {
@@ -18,50 +23,10 @@ function getToolPreview(text: string): string {
   return trimmed;
 }
 
-// [IN-35] Codex child rollouts load on inspector open and render as retained subagent messages.
-interface CodexThreadInspectorPayload {
-  messages: CapturedMessage[];
-  completed: boolean;
-  lastAgentMessage: string | null;
-  durationMs: number | null;
-}
-
-function normalizeCodexToolName(name: string): string {
-  return name === "shell" || name === "exec_command" || name === "shell_command" || name === "local_shell"
-    ? "Bash"
-    : name;
-}
-
-function codexToolInput(name: string, input: unknown): Record<string, unknown> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
-  const parsed = input as Record<string, unknown>;
-  if (normalizeCodexToolName(name) !== "Bash") return parsed;
-  const command = typeof parsed.cmd === "string"
-    ? parsed.cmd
-    : typeof parsed.command === "string" ? parsed.command : "";
-  return { ...parsed, command, description: "Codex command" };
-}
-
-function codexCapturedToSubagentMessages(messages: CapturedMessage[]): SubagentMessage[] {
-  const out: SubagentMessage[] = [];
-  for (const message of messages) {
-    for (const block of message.content) {
-      if (message.role === "assistant" && block.type === "text" && block.text) {
-        out.push({ role: "assistant", text: block.text, timestamp: Date.now() });
-      } else if (message.role === "assistant" && block.type === "tool_use") {
-        const rawName = block.name || "tool";
-        const toolName = normalizeCodexToolName(rawName);
-        const toolInput = codexToolInput(rawName, block.input);
-        const command = toolInput && typeof toolInput.command === "string" ? toolInput.command : null;
-        const text = command || `${rawName}: ${JSON.stringify(block.input ?? {})}`;
-        out.push({ role: "tool", text, toolName, toolInput, timestamp: Date.now() });
-      } else if (message.role === "user" && block.type === "tool_result" && block.text) {
-        out.push({ role: "tool", text: block.text, toolName: "result", timestamp: Date.now() });
-      }
-    }
-  }
-  return out;
-}
+// [IN-35] Codex child rollouts also hydrate eagerly into the subagent bar via
+// useTapEventProcessor + tapCodexSubagentHydrator; this inspector path covers the
+// case where the user opens the modal for a thread that completed before the bar
+// hydrator ran (e.g. session resume) and reuses the shared conversion helper.
 
 // ── Tool-specific renderers ──
 
@@ -219,7 +184,7 @@ export function SubagentInspector({ subagent, onClose }: SubagentInspectorProps)
   const updateSubagent = useSessionStore((s) => s.updateSubagent);
 
   useEffect(() => {
-    if (!/^019[0-9a-f-]{33}$/i.test(subagent.id)) {
+    if (!isCodexThreadId(subagent.id)) {
       setCodexPayload(null);
       return;
     }
