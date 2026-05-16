@@ -317,9 +317,7 @@ export const useSessionStore = create<SessionsState>((set) => ({
   updateState: (id, state) => {
     const prev = useSessionStore.getState().sessions.find((x) => x.id === id);
     if (!prev || prev.state === state) return;
-    if (prev && prev.state !== state) {
-      dlog("session", id, `state ${prev.state} → ${state}`, "DEBUG");
-    }
+    dlog("session", id, `state ${prev.state} → ${state}`, "DEBUG");
     set((s) => ({
       sessions: s.sessions.map((x) =>
         x.id === id ? { ...x, state } : x

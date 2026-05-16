@@ -136,11 +136,10 @@ export function useTapEventProcessor(
 
       // No UUID dedup — CLI re-serializes conversation messages for JSONL persistence
       // and hook dispatch (2-3 stringify calls per message), but the state reducer is
-      // idempotent and metadata accumulator overwrites. The only effect of duplicates
-      // is 2-3x subagent messages in the inspector, capped at 200 per agent.
-      // Previous UUID dedup caused actionNeeded to get stuck: the set's 500-entry
-      // eviction could forget UUIDs, letting stale re-serialized messages race with
-      // state transitions and swallow the ConversationMessage(user) that clears it.
+      // idempotent and metadata accumulator overwrites. Previous UUID dedup caused
+      // actionNeeded to get stuck: the set's 500-entry eviction could forget UUIDs,
+      // letting stale re-serialized messages race with state transitions and swallow
+      // the ConversationMessage(user) that clears it.
 
       // 1. State reducer
       const prevState = stateRef.current;

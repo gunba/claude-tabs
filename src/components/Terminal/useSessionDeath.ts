@@ -101,8 +101,12 @@ export function useSessionDeath({
       // the disable sequences that Claude Code sends on exit)
       terminalRef.current?.write("\x1b[?1003l\x1b[?1006l");
       // Stop TCP tap server immediately (before any early-return paths)
-      invoke("stop_tap_server", { sessionId }).catch(() => {});
-      invoke("stop_codex_rollout", { sessionId }).catch(() => {});
+      invoke("stop_tap_server", { sessionId }).catch((err) =>
+        dlog("terminal", sessionId, `stop_tap_server IPC failed: ${err}`, "WARN")
+      );
+      invoke("stop_codex_rollout", { sessionId }).catch((err) =>
+        dlog("terminal", sessionId, `stop_codex_rollout IPC failed: ${err}`, "WARN")
+      );
       // [DS-07] [RS-06] Session-in-use auto-recovery: kill own orphans, retry; show overlay for external
       if (sessionInUseRef.current && !sessionInUseRetried.current) {
         sessionInUseRef.current = false;
