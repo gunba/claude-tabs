@@ -10,7 +10,8 @@ export type ConfigManagerTab =
   | "agents"
   | "prompts"
   | "skills"
-  | "recording";
+  | "recording"
+  | "app";
 
 export interface ConfigTabVisibilityContext {
   configCli: CliKind;

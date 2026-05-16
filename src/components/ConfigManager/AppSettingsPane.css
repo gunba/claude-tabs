@@ -1,0 +1,44 @@
+/* App Settings Pane — CLI-agnostic */
+
+.app-renderer-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.app-renderer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.app-renderer-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 120px;
+}
+
+.app-renderer-options {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.app-renderer-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.app-renderer-option input[type="radio"] {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

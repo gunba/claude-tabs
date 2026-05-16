@@ -73,6 +73,42 @@ describe("recording defaults", () => {
   });
 });
 
+describe("rendererByCli", () => {
+  it("defaults both CLIs to WebGL", () => {
+    const { rendererByCli } = useSettingsStore.getState();
+    expect(rendererByCli).toEqual({ claude: "webgl", codex: "webgl" });
+  });
+
+  it("setRendererForCli updates only the requested CLI", () => {
+    useSettingsStore.setState({ rendererByCli: { claude: "webgl", codex: "webgl" } });
+    useSettingsStore.getState().setRendererForCli("codex", "canvas");
+    expect(useSettingsStore.getState().rendererByCli).toEqual({ claude: "webgl", codex: "canvas" });
+    useSettingsStore.getState().setRendererForCli("claude", "canvas");
+    expect(useSettingsStore.getState().rendererByCli).toEqual({ claude: "canvas", codex: "canvas" });
+  });
+
+  it("migration v27 backfills rendererByCli when absent", () => {
+    const migrated = migrateSettings({}, 26) as { rendererByCli?: unknown };
+    expect(migrated.rendererByCli).toEqual({ claude: "webgl", codex: "webgl" });
+  });
+
+  it("migration v27 keeps existing rendererByCli choices", () => {
+    const migrated = migrateSettings(
+      { rendererByCli: { claude: "canvas", codex: "webgl" } },
+      26,
+    ) as { rendererByCli?: unknown };
+    expect(migrated.rendererByCli).toEqual({ claude: "canvas", codex: "webgl" });
+  });
+
+  it("partialize persists rendererByCli", () => {
+    const partial = partializeSettings({
+      ...useSettingsStore.getState(),
+      rendererByCli: { claude: "canvas", codex: "webgl" },
+    });
+    expect(partial.rendererByCli).toEqual({ claude: "canvas", codex: "webgl" });
+  });
+});
+
 describe("per-CLI discovery state", () => {
   beforeEach(() => {
     useSettingsStore.setState({

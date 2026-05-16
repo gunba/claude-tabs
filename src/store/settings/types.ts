@@ -20,6 +20,9 @@ export interface ObservedPrompt {
   label: string;
 }
 
+export type TerminalRenderer = "webgl" | "canvas";
+export type RendererByCli = Record<CliKind, TerminalRenderer>;
+
 export interface SettingsState {
   recentDirs: string[];
   presets: LaunchPreset[];
@@ -36,6 +39,8 @@ export interface SettingsState {
   codexAutoRenameLLMEnabled: boolean;
   /** Model passed to `codex exec --model` for auto-rename. Free text - Codex accepts any model string. */
   codexAutoRenameLLMModel: string;
+  /** Per-CLI xterm renderer choice. `webgl` uses the WebGL addon (GPU); `canvas` falls back to the DOM renderer (CPU). */
+  rendererByCli: RendererByCli;
   cliVersions: Record<CliKind, string | null>;
   lastOpenedCliVersions: Record<CliKind, string | null>;
   previousCliVersions: Record<CliKind, string | null>;
@@ -79,6 +84,7 @@ export interface SettingsState {
   setNotificationsEnabled: (enabled: boolean) => void;
   setCodexAutoRenameLLMEnabled: (enabled: boolean) => void;
   setCodexAutoRenameLLMModel: (model: string) => void;
+  setRendererForCli: (cli: CliKind, renderer: TerminalRenderer) => void;
   setLastOpenedCliVersion: (cli: CliKind, version: string | null) => void;
   setCliCapabilitiesForCli: (cli: CliKind, version: string | null, capabilities: CliCapabilities) => void;
   recordCommandUsage: (command: string) => void;

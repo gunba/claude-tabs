@@ -12,6 +12,7 @@ export function partializeSettings(state: SettingsState) {
     notificationsEnabled: state.notificationsEnabled,
     codexAutoRenameLLMEnabled: state.codexAutoRenameLLMEnabled,
     codexAutoRenameLLMModel: state.codexAutoRenameLLMModel,
+    rendererByCli: state.rendererByCli,
     cliVersions: state.cliVersions,
     lastOpenedCliVersions: state.lastOpenedCliVersions,
     previousCliVersions: state.previousCliVersions,

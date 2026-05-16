@@ -241,5 +241,10 @@ export function migrateSettings(persisted: unknown, version: number) {
       ];
     });
   }
+  if (version < 27) {
+    if (!state.rendererByCli) {
+      state.rendererByCli = { claude: "webgl", codex: "webgl" };
+    }
+  }
   return state;
 }

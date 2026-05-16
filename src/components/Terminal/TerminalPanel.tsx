@@ -87,6 +87,9 @@ export const TerminalPanel = memo(function TerminalPanel({
       (s.recordingConfigsByCli[session.config.cli] ?? s.recordingConfig).traffic
         .enabled,
   );
+  const rendererChoice = useSettingsStore(
+    (s) => s.rendererByCli[session.config.cli],
+  );
   const observabilityEnabled = useRuntimeStore(
     (s) => s.observabilityInfo.observabilityEnabled,
   );
@@ -211,7 +214,7 @@ export const TerminalPanel = memo(function TerminalPanel({
       session.config.cli === "codex"
         ? CODEX_SCROLLBACK_LINES
         : CLAUDE_SCROLLBACK_LINES,
-    enableWebgl: session.config.cli !== "codex",
+    enableWebgl: rendererChoice === "webgl",
     enableMouseTracking: session.config.cli === "claude" || !IS_WINDOWS,
     visible,
   });

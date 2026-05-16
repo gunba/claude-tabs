@@ -5,7 +5,6 @@ import { useSessionStore } from "../../store/sessions";
 import seedEventKinds from "../../types/eventKinds.json";
 import type { StatusMessage } from "../../lib/settingsSchema";
 import { TAP_CATEGORY_GROUPS } from "../../lib/tapCatalog";
-import { useRuntimeStore } from "../../store/runtime";
 import type { CliKind } from "../../types/session";
 import "./RecordingPane.css";
 
@@ -21,14 +20,7 @@ export function RecordingPane({ cli, onStatus }: RecordingPaneProps) {
   const setRecordingConfigForCli = useSettingsStore((s) => s.setRecordingConfigForCli);
   const toggleNoisyEventKindForCli = useSettingsStore((s) => s.toggleNoisyEventKindForCli);
   const seenEventKinds = useSessionStore((s) => s.seenEventKinds);
-  const observabilityInfo = useRuntimeStore((s) => s.observabilityInfo);
-  const setObservabilityEnabled = useRuntimeStore((s) => s.setObservabilityEnabled);
-  const setDevtoolsEnabled = useRuntimeStore((s) => s.setDevtoolsEnabled);
-  const openMainDevtools = useRuntimeStore((s) => s.openMainDevtools);
-  const globalLogPath = observabilityInfo.globalLogPath;
   const [cleaning, setCleaning] = useState(false);
-  const [updatingObservability, setUpdatingObservability] = useState(false);
-  const [updatingDevtools, setUpdatingDevtools] = useState(false);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevSeenCountRef = useRef(0);
 
@@ -135,153 +127,49 @@ export function RecordingPane({ cli, onStatus }: RecordingPaneProps) {
     }
   }, [onStatus]);
 
-  const openAppLog = useCallback(async () => {
-    try {
-      await invoke("open_observability_log", { sessionId: null });
-    } catch {
-      onStatus({ type: "error", text: "Could not open app observability log" });
-    }
-  }, [onStatus]);
-
-  const toggleObservability = useCallback(async () => {
-    setUpdatingObservability(true);
-    try {
-      await setObservabilityEnabled(!observabilityInfo.observabilityEnabled);
-      onStatus({
-        type: "success",
-        text: !observabilityInfo.observabilityEnabled
-          ? "Observability enabled"
-          : "Observability disabled",
-      });
-    } catch {
-      onStatus({ type: "error", text: "Could not update observability" });
-    } finally {
-      setUpdatingObservability(false);
-    }
-  }, [observabilityInfo.observabilityEnabled, onStatus, setObservabilityEnabled]);
-
-  const toggleDevtools = useCallback(async () => {
-    setUpdatingDevtools(true);
-    try {
-      await setDevtoolsEnabled(!observabilityInfo.devtoolsEnabled);
-      onStatus({
-        type: "success",
-        text: !observabilityInfo.devtoolsEnabled
-          ? "DevTools enabled"
-          : "DevTools disabled",
-      });
-    } catch {
-      onStatus({ type: "error", text: "Could not update DevTools" });
-    } finally {
-      setUpdatingDevtools(false);
-    }
-  }, [observabilityInfo.devtoolsEnabled, onStatus, setDevtoolsEnabled]);
-
-  const openDevtools = useCallback(async () => {
-    try {
-      await openMainDevtools();
-    } catch (e) {
-      onStatus({ type: "error", text: typeof e === "string" ? e : "Could not open DevTools" });
-    }
-  }, [openMainDevtools, onStatus]);
-
   const discoveredCount = allKinds.filter((k) => !seedSet.has(k)).length;
 
   return (
     <div className="recording-pane">
-      {/* [DP-17] App Observability + DevTools master toggles persist to ui-config.json (set_observability_enabled / set_devtools_enabled) and survive across sessions. */}
-      <div className="recording-section">
-        <label className="recording-master-toggle">
-          <input
-            type="checkbox"
-            checked={observabilityInfo.observabilityEnabled}
-            onChange={toggleObservability}
-            disabled={updatingObservability}
-          />
-          <span className="recording-section-title">App Observability</span>
-          <span className="recording-hint">
-            Persist backend and frontend diagnostic events
-          </span>
-        </label>
-        <div className="recording-data-row">
-          <button className="recording-btn" onClick={openAppLog}>
-            Open App Log
-          </button>
-          {globalLogPath && (
-            <span className="recording-hint">{globalLogPath}</span>
-          )}
-        </div>
-        <span className="recording-hint">
-          Level {observabilityInfo.minLevel ?? "DEBUG"} |{" "}
-          {Math.round((observabilityInfo.globalLogSize ?? 0) / 1024)} KiB |{" "}
-          {observabilityInfo.globalRotationCount ?? 0} rotated
-        </span>
-      </div>
+      {/* TAP Recording — Claude only (TAP intercepts Claude Code's JS bundle). */}
+      {cli === "claude" && (
+        <div className="recording-section">
+          <label className="recording-master-toggle">
+            <input
+              type="checkbox"
+              checked={recordingConfig.taps.enabled}
+              onChange={toggleTapEnabled}
+            />
+            <span className="recording-section-title">TAP Recording</span>
+            <span className="recording-hint">Write intercepted events to disk</span>
+          </label>
 
-      <div className="recording-section">
-        <label className="recording-master-toggle">
-          <input
-            type="checkbox"
-            checked={observabilityInfo.devtoolsEnabled}
-            onChange={toggleDevtools}
-            disabled={updatingDevtools}
-          />
-          <span className="recording-section-title">DevTools</span>
-          <span className="recording-hint">
-            Allow opening the WebView inspector for UI debugging
-          </span>
-        </label>
-        <div className="recording-data-row">
-          <button
-            className="recording-btn"
-            onClick={openDevtools}
-            disabled={!observabilityInfo.devtoolsEnabled}
-          >
-            Open DevTools
-          </button>
-          <span className="recording-hint">
-            Or press Ctrl+Shift+I when enabled
-          </span>
-        </div>
-      </div>
-
-      {/* TAP Recording */}
-      <div className="recording-section">
-        <label className="recording-master-toggle">
-          <input
-            type="checkbox"
-            checked={recordingConfig.taps.enabled}
-            onChange={toggleTapEnabled}
-          />
-          <span className="recording-section-title">TAP Recording</span>
-          <span className="recording-hint">Write intercepted events to disk</span>
-        </label>
-
-        {/* [CM-27] TAP categories grouped by subsystem (TAP_CATEGORY_GROUPS); each row shows label + hookSource. The raw cat.key is React key + checkbox lookup, not user-facing. */}
-        <div className={`recording-categories${!recordingConfig.taps.enabled ? " recording-disabled" : ""}`}>
-          {TAP_CATEGORY_GROUPS.map((group) => (
-            <div key={group.label} className="recording-group">
-              <div className="recording-group-label">{group.label}</div>
-              <div className="recording-group-items">
-                {group.categories.map((cat) => (
-                  <label key={cat.key} className="recording-category">
-                    <input
-                      type="checkbox"
-                      checked={cat.locked || !!recordingConfig.taps.categories[cat.key]}
-                      onChange={() => !cat.locked && toggleCategory(cat.key)}
-                      disabled={cat.locked || !recordingConfig.taps.enabled}
-                    />
-                    <span className="recording-category-copy">
-                      <span className="recording-category-label">{cat.label}</span>
-                      <span className="recording-category-source">{cat.hookSource}</span>
-                    </span>
-                  </label>
-                ))}
+          {/* [CM-27] TAP categories grouped by subsystem (TAP_CATEGORY_GROUPS); each row shows label + hookSource. The raw cat.key is React key + checkbox lookup, not user-facing. */}
+          <div className={`recording-categories${!recordingConfig.taps.enabled ? " recording-disabled" : ""}`}>
+            {TAP_CATEGORY_GROUPS.map((group) => (
+              <div key={group.label} className="recording-group">
+                <div className="recording-group-label">{group.label}</div>
+                <div className="recording-group-items">
+                  {group.categories.map((cat) => (
+                    <label key={cat.key} className="recording-category">
+                      <input
+                        type="checkbox"
+                        checked={cat.locked || !!recordingConfig.taps.categories[cat.key]}
+                        onChange={() => !cat.locked && toggleCategory(cat.key)}
+                        disabled={cat.locked || !recordingConfig.taps.enabled}
+                      />
+                      <span className="recording-category-copy">
+                        <span className="recording-category-label">{cat.label}</span>
+                        <span className="recording-category-source">{cat.hookSource}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Event Filtering */}
       <div className="recording-section">

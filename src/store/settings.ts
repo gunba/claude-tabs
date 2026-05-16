@@ -53,6 +53,7 @@ export const useSettingsStore = create<SettingsState>()(
       notificationsEnabled: true,
       codexAutoRenameLLMEnabled: true,
       codexAutoRenameLLMModel: "gpt-5-mini",
+      rendererByCli: { claude: "webgl", codex: "webgl" },
       cliVersions: { claude: null, codex: null },
       lastOpenedCliVersions: { claude: null, codex: null },
       previousCliVersions: { claude: null, codex: null },
@@ -185,6 +186,10 @@ export const useSettingsStore = create<SettingsState>()(
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setCodexAutoRenameLLMEnabled: (enabled) => set({ codexAutoRenameLLMEnabled: enabled }),
       setCodexAutoRenameLLMModel: (model) => set({ codexAutoRenameLLMModel: model }),
+      setRendererForCli: (cli, renderer) =>
+        set((s) => ({
+          rendererByCli: { ...s.rendererByCli, [cli]: renderer },
+        })),
       setLastOpenedCliVersion: (cli, version) =>
         set((s) => ({
           lastOpenedCliVersions: { ...s.lastOpenedCliVersions, [cli]: version },
@@ -626,7 +631,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "code-tabs-settings",
-      version: 26,
+      version: 27,
       storage: createJSONStorage(() => localStorage),
       migrate: migrateSettings,
       // Don't persist transient UI state
