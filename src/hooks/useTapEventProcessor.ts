@@ -19,6 +19,7 @@ import { createTapCodexNaming } from "./tapCodexNaming";
 import { handleTapPromptCaptureBridge } from "./tapPromptCaptureBridge";
 import { subscribeTapSettledIdleHandler } from "./tapSettledIdleHandler";
 import { createTapWorktreeSync } from "./tapWorktreeSync";
+import { hydrateCodexSubagentMessages } from "./tapCodexSubagentHydrator";
 
 /** Return discriminating fields for key event types (for debug logs). */
 function eventDetail(event: TapEvent): string {
@@ -185,6 +186,16 @@ export function useTapEventProcessor(
         } else if (action.type === "remove" && action.subagentId) {
           dlog("inspector", sid, `subagent removed id=${action.subagentId} (prompt-boundary cleanup)`, "DEBUG");
           removeSubagent(sid, action.subagentId);
+        }
+      }
+
+      // [IN-35] Eager-load Codex subagent child rollout into the subagent bar so the
+      // tab populates without waiting for the inspector modal. Fires on every Codex
+      // subagent lifecycle event (status events arrive on running/completed/interaction
+      // transitions). The hydrator no-ops if the agent record isn't in the store yet.
+      if (event.kind === "CodexSubagentSpawned" || event.kind === "CodexSubagentStatus") {
+        if (event.agentId) {
+          hydrateCodexSubagentMessages(sid, event.agentId);
         }
       }
 
