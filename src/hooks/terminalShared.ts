@@ -1,6 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 
-export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace";
+export const TERMINAL_FONT_FAMILY = "'Pragmasevka', 'Roboto Mono', monospace";
 
 // [DF-05] xterm.js 6.0 with DEC 2026 synchronized output - coalesces ink BSU/ESU diff frames so rapid TUI writes don't flash partial buffers.
 export const XTVERSION_REPLY = "\x1bP>|xterm.js(6.0.0)\x1b\\";

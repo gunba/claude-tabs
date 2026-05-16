@@ -9,7 +9,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { readText as clipboardReadText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "@tauri-apps/api/core";
 import { getTerminalTheme } from "../lib/theme";
@@ -21,6 +20,11 @@ import { getResumeId } from "../lib/claude";
 import { IS_WINDOWS, IS_LINUX } from "../lib/paths";
 import type { Session } from "../types/session";
 import { createPathLinkProvider } from "../lib/terminalPathLinks";
+import {
+  activateTerminalUnicodeProvider,
+  serializeTerminalUnicodeError,
+  type TerminalUnicodeAddon,
+} from "../lib/terminalUnicode";
 import {
   classifyTerminalKey,
   END_SYNCHRONIZED_OUTPUT_SEQUENCE,
@@ -95,7 +99,7 @@ export function useXtermLifecycle({
 
   const webglRef = useRef<WebglAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
-  const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
+  const unicodeAddonRef = useRef<TerminalUnicodeAddon | null>(null);
   const pathLinkDisposableRef = useRef<{ dispose(): void } | null>(null);
 
   // [DF-10] FitAddon.fit() is called bare (no try/catch) so resize errors propagate to the caller.
@@ -202,7 +206,7 @@ export function useXtermLifecycle({
         );
       }
 
-      // [DF-11] xterm addons loaded on open: web-links, path links, unicode11 (each in try/catch); unicode11 sets activeVersion="11"
+      // [DF-11] xterm addons loaded on open: web-links and path links (each in try/catch).
       try {
         const webLinks = new WebLinksAddon((event, uri) => {
           const reveal = event.ctrlKey || event.metaKey;
@@ -276,34 +280,6 @@ export function useXtermLifecycle({
         );
       }
 
-      try {
-        const unicode11 = new Unicode11Addon();
-        term.loadAddon(unicode11);
-        term.unicode.activeVersion = "11";
-        unicode11AddonRef.current = unicode11;
-        dlog(
-          "terminal",
-          sessionIdRef.current,
-          "unicode11 addon enabled",
-          "DEBUG",
-          {
-            event: "terminal.unicode11_enabled",
-            data: {},
-          },
-        );
-      } catch {
-        dlog(
-          "terminal",
-          sessionIdRef.current,
-          "unicode11 addon unavailable",
-          "DEBUG",
-          {
-            event: "terminal.unicode11_unavailable",
-            data: {},
-          },
-        );
-      }
-
       // [KB-12] Platform-gated paste blocker: capture-phase preventDefault on Windows + Linux.
       // Windows: avoids Tauri permission-dialog double-paste. Linux: ensures Ctrl+V sends ^V to the
       // PTY cleanly so Claude Code's native image-paste handler (wl-paste/xclip) runs. Linux text
@@ -358,6 +334,32 @@ export function useXtermLifecycle({
         theme: getTerminalTheme(),
         scrollback,
       });
+
+      try {
+        const { addon, diagnostics } = activateTerminalUnicodeProvider(term);
+        unicodeAddonRef.current = addon;
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "unicode provider enabled",
+          "DEBUG",
+          {
+            event: "terminal.unicode11_enabled",
+            data: diagnostics,
+          },
+        );
+      } catch (error) {
+        dlog(
+          "terminal",
+          sessionIdRef.current,
+          "unicode provider unavailable",
+          "WARN",
+          {
+            event: "terminal.unicode11_unavailable",
+            data: serializeTerminalUnicodeError(error),
+          },
+        );
+      }
 
       lifecycleDisposables.push(
         term.onRender((range) => {
@@ -598,8 +600,8 @@ export function useXtermLifecycle({
       webLinksAddonRef.current = null;
       pathLinkDisposableRef.current?.dispose();
       pathLinkDisposableRef.current = null;
-      unicode11AddonRef.current?.dispose();
-      unicode11AddonRef.current = null;
+      unicodeAddonRef.current?.dispose();
+      unicodeAddonRef.current = null;
       term?.dispose();
       if (termRef.current === term) termRef.current = null;
       if (fitAddon && fitRef.current === fitAddon) fitRef.current = null;

@@ -32,7 +32,7 @@ import { getTerminalKeySequenceOverride, SHIFT_ENTER_SEQUENCE, TERMINAL_FONT_FAM
 
 describe("TERMINAL_FONT_FAMILY", () => {
   it("is the default monospace stack", () => {
-    expect(TERMINAL_FONT_FAMILY).toBe("'Pragmasevka', 'Roboto Mono', 'ClaudeEmoji', monospace");
+    expect(TERMINAL_FONT_FAMILY).toBe("'Pragmasevka', 'Roboto Mono', monospace");
   });
 });
 
