@@ -61,7 +61,6 @@ export function shouldApplyTerminalTitle(
 
 interface UseXtermLifecycleParams {
   cwdRef: MutableRefObject<string | null>;
-  enableMouseTracking: boolean;
   enableWebgl: boolean;
   instanceKey: number;
   onDataRef: MutableRefObject<((data: string) => void) | undefined>;
@@ -75,7 +74,6 @@ interface UseXtermLifecycleParams {
 
 export function useXtermLifecycle({
   cwdRef,
-  enableMouseTracking,
   enableWebgl,
   instanceKey,
   onDataRef,
@@ -94,8 +92,6 @@ export function useXtermLifecycle({
   const pasteBlockCleanupRef = useRef<(() => void) | null>(null);
   const [ready, setReady] = useState(false);
   const [termGeneration, setTermGeneration] = useState(0);
-  const enableMouseTrackingRef = useRef(enableMouseTracking);
-  enableMouseTrackingRef.current = enableMouseTracking;
 
   const webglRef = useRef<WebglAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
@@ -409,7 +405,6 @@ export function useXtermLifecycle({
       // on alt-screen entry and disables on exit.
       lifecycleDisposables.push(
         term.buffer.onBufferChange((buf) => {
-          if (!enableMouseTrackingRef.current) return;
           if (buf.type === "alternate") {
             term!.write("\x1b[?1003h\x1b[?1006h");
           } else {
@@ -441,9 +436,7 @@ export function useXtermLifecycle({
             // rendered and ready to consume mouse reports. Enable tracking here
             // instead of at spawn to avoid SGR motion reports flooding CLI stdin
             // before the VTUI mouse handler is active.
-            if (enableMouseTrackingRef.current) {
-              term!.write("\x1b[?1003h\x1b[?1006h");
-            }
+            term!.write("\x1b[?1003h\x1b[?1006h");
             onDataRef.current?.(XTVERSION_REPLY);
             return true;
           },
