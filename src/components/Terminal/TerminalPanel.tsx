@@ -12,7 +12,6 @@ import { usePty } from "../../hooks/usePty";
 import { useSessionStore } from "../../store/sessions";
 import { getResumeId } from "../../lib/claude";
 import { dlog } from "../../lib/debugLog";
-import { IS_WINDOWS } from "../../lib/paths";
 import { useTapPipeline } from "../../hooks/useTapPipeline";
 import { useTapEventProcessor } from "../../hooks/useTapEventProcessor";
 import { useUserTurnListener } from "../../hooks/useUserTurnListener";
@@ -215,7 +214,6 @@ export const TerminalPanel = memo(function TerminalPanel({
         ? CODEX_SCROLLBACK_LINES
         : CLAUDE_SCROLLBACK_LINES,
     enableWebgl: rendererChoice === "webgl",
-    enableMouseTracking: session.config.cli === "claude" || !IS_WINDOWS,
     visible,
   });
   terminalRef.current = terminal;

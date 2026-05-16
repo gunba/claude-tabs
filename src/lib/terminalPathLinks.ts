@@ -14,8 +14,16 @@ interface ResolvedPath {
 //   (c) bare filenames with extension: package.json, useTerminal.ts
 // Optional :line[:col] suffix. Lookbehind rejects mid-token matches (URL
 // tails, filename fragments inside other identifiers).
+// Internal segments (between two slashes) may contain ONE space-separated
+// word so paths like "src/My Folder/file.tsx" or "~/My Documents/config.json"
+// are detected. Allowing multiple words per segment would let the regex
+// bridge two adjacent paths (e.g. "a/b.ts and a/b.ts" collapses into one
+// match). Trailing segments stay space-free so we don't bleed into prose.
+// The trailing lookahead excludes [\w.\\/-] but NOT ":", because in real
+// terminal output paths are frequently followed by ": description" --
+// rejecting on ":" would miss every "src/App.tsx: explanation" form.
 const PATH_RE =
-  /(?<![\w\/\\:.])(?:(?:[A-Za-z]:|~|\.{1,2})?[\/\\](?:[\w.\-]+[\/\\])*[\w.\-]+|[\w.\-]+(?:[\/\\][\w.\-]+)+|[\w\-]+\.[\w\-]{1,10})(?::\d+(?::\d+)?)?(?![\w.\/\\:-])/g;
+  /(?<![\w\/\\:.])(?:(?:[A-Za-z]:|~|\.{1,2})?[\/\\](?:[\w.\-]+(?:[ ][\w.\-]+)?[\/\\])*[\w.\-]+|[\w.\-]+(?:[\/\\][\w.\-]+(?:[ ][\w.\-]+)?)*[\/\\][\w.\-]+|[\w\-]+\.[\w\-]{1,10})(?::\d+(?::\d+)?)?(?![\w.\/\\-])/g;
 
 // Wrapper characters commonly stripped from path tokens found in prose.
 const LEADING_PUNCT_RE = /^[("'`<{\[]+/;

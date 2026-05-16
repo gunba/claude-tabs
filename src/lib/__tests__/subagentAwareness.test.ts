@@ -126,7 +126,7 @@ describe("TapSubagentTracker stale cleanup", () => {
     expect(actions.some(a => a.type === "update" && a.updates?.state === "idle")).toBe(true);
   });
 
-  it("emits remove actions for completed subagents on UserInput so the UI clears", () => {
+  it("retains completed subagents on UserInput (no remove action under cap)", () => {
     const tracker = new TapSubagentTracker("s1");
     tracker.process({ kind: "SubagentSpawn", ts: 1, description: "test", prompt: "do stuff" } as TapEvent);
     tracker.process({
@@ -139,9 +139,11 @@ describe("TapSubagentTracker stale cleanup", () => {
     const actions = tracker.process({
       kind: "UserInput", ts: 3, display: "next prompt", sessionId: "s1",
     } as TapEvent);
+    // Completed cards are retained (up to the FIFO cap) so the user can review them.
     const removed = actions.filter(a => a.type === "remove");
-    expect(removed.length).toBeGreaterThan(0);
-    expect(removed.some(a => a.subagentId === "agent-1")).toBe(true);
+    expect(removed.length).toBe(0);
+    // Agent should be marked dead+completed though
+    expect(actions.some(a => a.subagentId === "agent-1" && a.updates?.state === "dead")).toBe(true);
   });
 });
 

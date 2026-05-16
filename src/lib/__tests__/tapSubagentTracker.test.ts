@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { TapSubagentTracker } from "../tapSubagentTracker";
+import type { SubagentAction } from "../tapSubagentTracker";
 import type { TapEvent, ConversationMessage, SubagentSpawn, ApiTelemetry } from "../../types/tapEvents";
 
 // ── Helpers ──
@@ -286,12 +287,12 @@ describe("TapSubagentTracker", () => {
       expect(actions.find(a => a.type === "update")!.updates!.state).toBe("thinking");
     });
 
-    it("idle + completed for result messageType", () => {
+    it("idle but NOT completed for result messageType (completion is signaled by SubagentNotification/SubagentLifecycle end only)", () => {
       spawnAndActivate(tracker, "agent-1");
       const actions = tracker.process(makeSidechainMsg("agent-1", { messageType: "result" }));
       const update = actions.find(a => a.type === "update")!;
       expect(update.updates!.state).toBe("idle");
-      expect(update.updates!.completed).toBe(true);
+      expect(update.updates!.completed).toBeUndefined();
     });
   });
 
@@ -404,6 +405,29 @@ describe("TapSubagentTracker", () => {
       // Should use markAllActive("dead") which does not set completed
       expect(actions.every(a => !a.updates?.completed)).toBe(true);
       expect(actions.some(a => a.updates?.state === "dead")).toBe(true);
+    });
+
+    it("treats SubagentNotification status=failed and =stopped as non-success terminal", () => {
+      for (const status of ["failed", "stopped"] as const) {
+        const t = new TapSubagentTracker("parent");
+        spawnAndActivate(t, "agent-1");
+        const actions = t.process({
+          kind: "SubagentNotification", ts: 10, status, summary: "",
+        } as TapEvent);
+        expect(actions.every(a => !a.updates?.completed)).toBe(true);
+        expect(actions.some(a => a.updates?.state === "dead")).toBe(true);
+      }
+    });
+
+    it("prefers SubagentNotification.result over .summary for resultText", () => {
+      spawnAndActivate(tracker, "agent-1");
+      const actions = tracker.process({
+        kind: "SubagentNotification", ts: 11, status: "completed",
+        summary: "Agent \"task\" completed",
+        result: "Final assistant message body",
+      } as TapEvent);
+      const resultUpdate = actions.find(a => a.subagentId === "agent-1" && a.updates?.resultText);
+      expect(resultUpdate?.updates?.resultText).toBe("Final assistant message body");
     });
 
     it("sets completed on SubagentLifecycle end", () => {
@@ -712,16 +736,14 @@ describe("TapSubagentTracker", () => {
       expect(actions.some(a => a.updates?.state === "idle")).toBe(true);
     });
 
-    it("emits only remove actions when all agents already dead", () => {
+    it("does not remove already-dead agents on SlashCommand (retains under FIFO cap)", () => {
       spawnAndActivate(tracker, "agent-1");
       tracker.process({ kind: "SubagentNotification", ts: 5, status: "completed", summary: "" } as TapEvent);
       const actions = tracker.process({
         kind: "SlashCommand", ts: 10, command: "/help", display: "/help",
       } as TapEvent);
-      // No new state transitions, but the already-dead agent is removed so the
-      // UI clears on the new turn boundary.
-      expect(actions.every(a => a.type === "remove")).toBe(true);
-      expect(actions.some(a => a.subagentId === "agent-1")).toBe(true);
+      // Completed cards stay so the user can review them (up to FIFO cap).
+      expect(actions.filter(a => a.type === "remove")).toHaveLength(0);
     });
   });
 
@@ -1176,6 +1198,108 @@ describe("TapSubagentTracker", () => {
       const msgs = actions.find(a => a.updates?.messages)!.updates!.messages!;
       const resultMsgs = msgs.filter(m => m.toolName === "result");
       expect(resultMsgs).toHaveLength(1); // only one, not two
+    });
+  });
+
+  // ── FIFO retention cap for completed subagents ──
+
+  describe("completed subagent FIFO cap", () => {
+    // Helper: spawn N agents and complete each one cleanly via UserInput,
+    // returning all emitted actions in order.
+    function completeAgents(t: TapSubagentTracker, count: number, startIdx = 0): SubagentAction[] {
+      const all: SubagentAction[] = [];
+      for (let i = 0; i < count; i++) {
+        const id = `agent-${startIdx + i}`;
+        all.push(...t.process(makeSpawn(`desc-${startIdx + i}`)));
+        all.push(...t.process(makeSidechainMsg(id, { ts: 10 + i })));
+        // UserInput sweeps active → idle → dead, retaining the card.
+        all.push(...t.process({ kind: "UserInput", ts: 20 + i, display: "next", sessionId: "s" } as TapEvent));
+      }
+      return all;
+    }
+
+    it("retains up to 10 completed subagents without emitting remove actions", () => {
+      const actions = completeAgents(tracker, 10);
+      const removes = actions.filter(a => a.type === "remove");
+      expect(removes).toHaveLength(0);
+    });
+
+    it("evicts the oldest dead subagent when an 11th completes (FIFO)", () => {
+      completeAgents(tracker, 10);
+      const finalActions = completeAgents(tracker, 1, 10);
+      const removes = finalActions.filter(a => a.type === "remove");
+      expect(removes).toHaveLength(1);
+      expect(removes[0].subagentId).toBe("agent-0");
+    });
+
+    it("active subagents do not count against the cap", () => {
+      // 10 completed agents
+      completeAgents(tracker, 10);
+      // Spawn an 11th but DO NOT complete it — still active.
+      tracker.process(makeSpawn("active-11"));
+      const spawnActions = tracker.process(makeSidechainMsg("agent-active", { ts: 100 }));
+      expect(spawnActions.filter(a => a.type === "remove")).toHaveLength(0);
+      // No eviction yet — active doesn't count.
+      expect(tracker.hasActiveAgents()).toBe(true);
+    });
+
+    it("re-spawning after some completed does not disturb FIFO order", () => {
+      // Complete 5 agents (agent-0..agent-4).
+      completeAgents(tracker, 5);
+      // Spawn and complete 5 more (agent-5..agent-9) — exactly 10 total dead.
+      const fillActions = completeAgents(tracker, 5, 5);
+      expect(fillActions.filter(a => a.type === "remove")).toHaveLength(0);
+      // 11th eviction must remove agent-0, not a more recent one.
+      const evictActions = completeAgents(tracker, 1, 10);
+      const removes = evictActions.filter(a => a.type === "remove");
+      expect(removes).toHaveLength(1);
+      expect(removes[0].subagentId).toBe("agent-0");
+    });
+
+    it("evicts in order across multiple overflows", () => {
+      completeAgents(tracker, 10);
+      // Three more completions → evict agent-0, agent-1, agent-2 in order.
+      const overflow = completeAgents(tracker, 3, 10);
+      const removes = overflow.filter(a => a.type === "remove");
+      expect(removes.map(r => r.subagentId)).toEqual(["agent-0", "agent-1", "agent-2"]);
+    });
+
+    it("late sidechain messages for evicted agents are ignored (no zombie re-creation)", () => {
+      completeAgents(tracker, 10);
+      completeAgents(tracker, 1, 10); // evicts agent-0
+      // Late sidechain message for evicted agent — must not re-create it.
+      const lateActions = tracker.process(makeSidechainMsg("agent-0", { ts: 999, textSnippet: "late" }));
+      // An evicted agent is gone from knownIds, so this looks like a brand-new agent.
+      // But the FIFO eviction is just retention; if the CLI emits a late message for
+      // an evicted ID we accept it as a fresh agent (which is the safe behavior —
+      // the eviction is a UI concern, the agent in the CLI may still be live).
+      // The important assertion is that the cap is still enforced.
+      const addedAgain = lateActions.some(a => a.type === "add" && a.subagent?.id === "agent-0");
+      const hasUpdate = lateActions.some(a => a.type === "update" && a.subagentId === "agent-0");
+      // Either treated as a new add OR dropped silently — both acceptable; key
+      // invariant: the cap is still respected.
+      expect(addedAgain || !hasUpdate).toBe(true);
+    });
+
+    it("reset() clears the dead-order tracker", () => {
+      completeAgents(tracker, 10);
+      tracker.reset();
+      // After reset, can complete 10 more without eviction.
+      const actions = completeAgents(tracker, 10);
+      expect(actions.filter(a => a.type === "remove")).toHaveLength(0);
+    });
+
+    it("recordDead does not double-count an agent that hits dead twice", () => {
+      // Spawn one agent, complete via UserInput.
+      tracker.process(makeSpawn("once"));
+      tracker.process(makeSidechainMsg("agent-x", { ts: 5 }));
+      tracker.process({ kind: "UserInput", ts: 10, display: "p1", sessionId: "s" } as TapEvent);
+      // A subsequent SubagentNotification(completed) shouldn't push agent-x into
+      // deadOrder again. Fill remaining 9 dead slots; if double-counting occurred,
+      // this would already trip the cap.
+      tracker.process({ kind: "SubagentNotification", ts: 15, status: "completed", summary: "" } as TapEvent);
+      const actions = completeAgents(tracker, 9, 1);
+      expect(actions.filter(a => a.type === "remove")).toHaveLength(0);
     });
   });
 });

@@ -405,4 +405,24 @@ mod tests {
         let out = resolve_sync(None, &[missing.to_str().unwrap()]);
         assert!(out[0].abs_path.is_none());
     }
+
+    #[test]
+    fn path_with_spaces_in_component_resolves() {
+        let tmp = tempdir().unwrap();
+        let target = touch(tmp.path(), "My Folder/file.tsx");
+        let out = resolve_sync(
+            Some(tmp.path().to_str().unwrap()),
+            &["My Folder/file.tsx"],
+        );
+        assert!(same_path(out[0].abs_path.as_deref().unwrap(), &target));
+    }
+
+    #[test]
+    fn anchored_path_with_spaces_resolves() {
+        let tmp = tempdir().unwrap();
+        let target = touch(tmp.path(), "deep/My Folder/file.tsx");
+        let abs = target.to_string_lossy().into_owned();
+        let out = resolve_sync(None, &[&abs]);
+        assert!(same_path(out[0].abs_path.as_deref().unwrap(), &target));
+    }
 }

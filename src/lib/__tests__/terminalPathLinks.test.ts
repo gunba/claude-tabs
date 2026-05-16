@@ -47,6 +47,54 @@ describe("findPathLinkCandidates", () => {
     expect(findPathLinkCandidates("ratio 100/200/300 is not a path")).toEqual([]);
     expect(findPathLinkCandidates("https://example.com/file.json")).toEqual([]);
   });
+
+  it("matches paths followed by ': description' prose (Codex output)", () => {
+    // Real Codex output: `  - src/App.tsx: main React app wiring Zustand stores...`
+    // The trailing `:` followed by non-digit text used to break detection because
+    // the negative lookahead rejected matches before a colon.
+    const matches = findPathLinkCandidates(
+      "  - src/App.tsx: main React app wiring Zustand stores",
+    );
+    expect(matches.map((m) => m.raw)).toEqual(["src/App.tsx"]);
+
+    expect(findPathLinkCandidates("src/App.tsx,")[0]?.raw).toBe("src/App.tsx");
+    expect(findPathLinkCandidates("src/App.tsx:")[0]?.raw).toBe("src/App.tsx");
+    expect(
+      findPathLinkCandidates("src/App.tsx: see also x.ts").map((m) => m.raw),
+    ).toEqual(["src/App.tsx", "x.ts"]);
+  });
+
+  it("preserves :line[:col] suffix only for numeric segments", () => {
+    expect(findPathLinkCandidates("the file src/foo.ts:42")[0]?.raw).toBe("src/foo.ts:42");
+    expect(findPathLinkCandidates("the file src/foo.ts:42:5")[0]?.raw).toBe("src/foo.ts:42:5");
+    expect(findPathLinkCandidates("src/foo.ts:abc")[0]?.raw).toBe("src/foo.ts");
+  });
+
+  it("supports paths with single-space-separated segments when anchored or rooted", () => {
+    expect(findPathLinkCandidates("~/My Documents/config.json")[0]?.raw).toBe(
+      "~/My Documents/config.json",
+    );
+    expect(findPathLinkCandidates("./My Folder/file.tsx")[0]?.raw).toBe(
+      "./My Folder/file.tsx",
+    );
+    expect(findPathLinkCandidates("/home/me/My Folder/file.tsx")[0]?.raw).toBe(
+      "/home/me/My Folder/file.tsx",
+    );
+    expect(
+      findPathLinkCandidates("C:\\Users\\Me\\My Folder\\file.tsx")[0]?.raw,
+    ).toBe("C:\\Users\\Me\\My Folder\\file.tsx");
+    expect(findPathLinkCandidates("src/My Folder/file.tsx")[0]?.raw).toBe(
+      "src/My Folder/file.tsx",
+    );
+    // Trailing prose stays outside the match even though spaces are allowed mid-path.
+    const matches = findPathLinkCandidates("edit ~/My Documents/config.json today");
+    expect(matches[0]?.raw).toBe("~/My Documents/config.json");
+  });
+
+  it("does not match bare prose with spaces around a slash", () => {
+    expect(findPathLinkCandidates("let me see what")).toEqual([]);
+    expect(findPathLinkCandidates("ratio 100/200/300 is not")).toEqual([]);
+  });
 });
 
 describe("createPathLinkProvider", () => {

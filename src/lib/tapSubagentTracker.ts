@@ -48,6 +48,10 @@ export interface SubagentAction {
  */
 type PendingSpawn = { description: string; prompt?: string; subagentType?: string; model?: string };
 
+// FIFO cap for retained completed subagent cards per parent session.
+// When the count exceeds this, the oldest is evicted from the UI.
+const COMPLETED_SUBAGENT_CAP = 10;
+
 export class TapSubagentTracker {
   private parentSessionId: string;
   private pendingSpawns: PendingSpawn[] = [];
@@ -65,6 +69,9 @@ export class TapSubagentTracker {
   private lastMainToolCall: string | null = null; // last non-sidechain ToolCallStart tool name
   private lastUnnamedAgentId: string | null = null; // agentId that received "Agent" fallback description
   private codexSubagentIds = new Set<string>();
+  // FIFO of agentIds in the order they first transitioned to dead. Drives eviction
+  // when retained completed cards exceed COMPLETED_SUBAGENT_CAP.
+  private deadOrder: string[] = [];
 
   constructor(parentSessionId: string) {
     this.parentSessionId = parentSessionId;
@@ -114,9 +121,54 @@ export class TapSubagentTracker {
           currentEventKind: null,
           currentAction: null,
         } });
+        if (targetState === "dead") {
+          this.recordDead(agentId, actions);
+        }
       }
     }
     return actions;
+  }
+
+  /** Track a subagent's first transition to dead in FIFO order. When more than
+   *  COMPLETED_SUBAGENT_CAP cards have accumulated, push a remove action for
+   *  the oldest dead agent and drop it from internal tracking. */
+  private recordDead(agentId: string, actions: SubagentAction[]): void {
+    if (this.deadOrder.includes(agentId)) return;
+    this.deadOrder.push(agentId);
+    while (this.deadOrder.length > COMPLETED_SUBAGENT_CAP) {
+      const evict = this.deadOrder.shift()!;
+      this.knownIds.delete(evict);
+      this.agentStates.delete(evict);
+      this.subagentTokens.delete(evict);
+      this.subagentCost.delete(evict);
+      this.subagentMsgs.delete(evict);
+      this.lastEventTs.delete(evict);
+      this.codexSubagentIds.delete(evict);
+      if (this.lastActiveAgent === evict) this.lastActiveAgent = null;
+      if (this.lastUnnamedAgentId === evict) this.lastUnnamedAgentId = null;
+      actions.push({ type: "remove", subagentId: evict });
+      dlog("inspector", this.parentSessionId, `subagent ${evict} evicted (FIFO cap=${COMPLETED_SUBAGENT_CAP})`, "DEBUG");
+    }
+  }
+
+  /** Sweep every non-dead known subagent to dead+completed, emitting update +
+   *  FIFO-eviction actions. Used by every clean-completion code path. */
+  private sweepNonDeadToDead(actions: SubagentAction[], reason: string): void {
+    for (const agentId of this.knownIds) {
+      const currentState = this.agentStates.get(agentId);
+      if (currentState && currentState !== "dead") {
+        dlog("inspector", this.parentSessionId, `subagent ${agentId} ${currentState} → dead+completed (${reason})`, "DEBUG");
+        this.agentStates.set(agentId, "dead");
+        actions.push({ type: "update", subagentId: agentId, updates: {
+          state: "dead",
+          completed: true,
+          currentToolName: null,
+          currentEventKind: null,
+          currentAction: null,
+        } });
+        this.recordDead(agentId, actions);
+      }
+    }
   }
 
   /** Process an event. Returns actions to apply to the store, or empty array. */
@@ -198,6 +250,7 @@ export class TapSubagentTracker {
               currentEventKind: "CodexSubagentSpawned",
             },
           });
+          if (state === "dead") this.recordDead(event.agentId, actions);
           break;
         }
 
@@ -223,6 +276,7 @@ export class TapSubagentTracker {
             completed,
           },
         });
+        if (state === "dead") this.recordDead(event.agentId, actions);
         dlog("inspector", this.parentSessionId, `codex subagent ${event.agentId} created desc="${description}" status=${event.status}`, "DEBUG");
         break;
       }
@@ -275,6 +329,7 @@ export class TapSubagentTracker {
             },
           });
         }
+        if (state === "dead") this.recordDead(event.agentId, actions);
         dlog("inspector", this.parentSessionId, `codex subagent ${event.agentId} status=${event.status}`, "DEBUG");
         break;
       }
@@ -290,20 +345,7 @@ export class TapSubagentTracker {
         // and the next ConvMessage promoted that idle→dead. Subagents now only
         // terminate via explicit lifecycle signals or this sweep at real exit.
         if (wasSidechainActive && !event.isSidechain) {
-          for (const agentId of this.knownIds) {
-            const state = this.agentStates.get(agentId);
-            if (state && state !== "dead") {
-              dlog("inspector", this.parentSessionId, `subagent ${agentId} ${state} → dead+completed (sidechain exit)`, "DEBUG");
-              this.agentStates.set(agentId, "dead");
-              actions.push({ type: "update", subagentId: agentId, updates: {
-                state: "dead",
-                completed: true,
-                currentToolName: null,
-                currentEventKind: null,
-                currentAction: null,
-              } });
-            }
-          }
+          this.sweepNonDeadToDead(actions, "sidechain exit");
         }
         // [IN-04] Subagent messages: isSidechain + agentId routing, late msg gating
         if (!event.isSidechain || !event.agentId) break;
@@ -426,10 +468,9 @@ export class TapSubagentTracker {
           currentAction: event.toolAction,
           messages: allMsgs,
         };
-        // Result messages are an authoritative completion signal
-        if (event.messageType === "result") {
-          updatePayload.completed = true;
-        }
+        // Subagent completion is signaled by SubagentNotification and SubagentLifecycle "end"
+        // only — those paths also clear transient tool state. Do not mark completed here on
+        // messageType "result" or the agent flips done mid-turn while still using tools.
         actions.push({
           type: "update",
           subagentId: agentId,
@@ -455,36 +496,29 @@ export class TapSubagentTracker {
         break;
 
       // [IN-30] Capture prompt/result/completed metadata for retained subagent cards + inspector.
-      case "SubagentNotification":
+      case "SubagentNotification": {
         dlog("inspector", this.parentSessionId, `SubagentNotification(${event.status}) → marking all active dead`, "DEBUG");
-        if (event.status === "completed" && event.summary && this.lastActiveAgent) {
-          // Capture result text on the last active agent before marking all dead
+        const resultText = event.result || event.summary;
+        if (event.status === "completed" && resultText && this.lastActiveAgent) {
+          // Capture result text on the last active agent before marking all dead.
+          // Prefer the <result> tag body (LocalAgentTask emits the final assistant
+          // message there); fall back to <summary>.
           actions.push({
             type: "update", subagentId: this.lastActiveAgent,
-            updates: { resultText: event.summary, completed: true },
+            updates: { resultText, completed: true },
           });
         }
-        // Mark non-dead agents as completed+dead for clean completions, dead-only for killed.
+        // Mark non-dead agents as completed+dead for clean completions, dead-only for
+        // any non-success terminal state (killed | failed | stopped).
         // Uses !== "dead" rather than isSubagentActive() so that agents swept idle by the
         // stale-agent timer still receive the authoritative completion signal.
         if (event.status === "completed") {
-          for (const agentId of this.knownIds) {
-            const currentState = this.agentStates.get(agentId);
-            if (currentState && currentState !== "dead") {
-              this.agentStates.set(agentId, "dead");
-              actions.push({ type: "update", subagentId: agentId, updates: {
-                state: "dead",
-                completed: true,
-                currentToolName: null,
-                currentEventKind: null,
-                currentAction: null,
-              } });
-            }
-          }
+          this.sweepNonDeadToDead(actions, "SubagentNotification(completed)");
         } else {
           actions.push(...this.markAllActive("dead"));
         }
         break;
+      }
 
       case "UserInterruption":
         this.pendingSpawns = [];
@@ -520,19 +554,7 @@ export class TapSubagentTracker {
           // Mark ALL non-dead subagents as completed+dead — lifecycle "end" means the agent turn is done.
           // Targeting all non-dead handles parallel agents where lastActiveAgent may be wrong,
           // and swept-idle agents that should still receive the real completion signal.
-          for (const agentId of this.knownIds) {
-            const currentState = this.agentStates.get(agentId);
-            if (currentState && currentState !== "dead") {
-              this.agentStates.set(agentId, "dead");
-              actions.push({ type: "update", subagentId: agentId, updates: {
-                state: "dead",
-                completed: true,
-                currentToolName: null,
-                currentEventKind: null,
-                currentAction: null,
-              } });
-            }
-          }
+          this.sweepNonDeadToDead(actions, "SubagentLifecycle(end)");
         } else if (event.variant === "killed") {
           dlog("inspector", this.parentSessionId, `subagent lifecycle killed → marking all active dead`, "DEBUG");
           actions.push(...this.markAllActive("dead"));
@@ -551,7 +573,8 @@ export class TapSubagentTracker {
         // New user prompt → previous turn's agents are done; mark stale active agents idle
         actions.push(...this.markAllActive("idle"));
         // Sweep idle agents to dead+completed — a new user prompt is an authoritative
-        // signal that all previous subagent work is finished.
+        // signal that all previous subagent work is finished. Completed cards are
+        // retained (up to COMPLETED_SUBAGENT_CAP, FIFO) so the user can review them.
         for (const agentId of this.knownIds) {
           if (this.agentStates.get(agentId) === "idle") {
             dlog("inspector", this.parentSessionId, `subagent ${agentId} idle → dead+completed (new user prompt)`, "DEBUG");
@@ -563,15 +586,7 @@ export class TapSubagentTracker {
               currentEventKind: null,
               currentAction: null,
             } });
-          }
-        }
-        // Clear completed subagent cards from the UI on prompt boundary so they
-        // don't accumulate across turns. The tracker retains knownIds so any
-        // late sidechain messages for these agents still get dropped by the
-        // late-msg guard above (no zombie re-creation).
-        for (const agentId of this.knownIds) {
-          if (this.agentStates.get(agentId) === "dead") {
-            actions.push({ type: "remove", subagentId: agentId });
+            this.recordDead(agentId, actions);
           }
         }
         break;
@@ -676,5 +691,6 @@ export class TapSubagentTracker {
     this.lastMainToolCall = null;
     this.lastUnnamedAgentId = null;
     this.codexSubagentIds.clear();
+    this.deadOrder = [];
   }
 }

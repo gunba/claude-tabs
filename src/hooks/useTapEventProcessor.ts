@@ -19,6 +19,7 @@ import { createTapCodexNaming } from "./tapCodexNaming";
 import { handleTapPromptCaptureBridge } from "./tapPromptCaptureBridge";
 import { subscribeTapSettledIdleHandler } from "./tapSettledIdleHandler";
 import { createTapWorktreeSync } from "./tapWorktreeSync";
+import { hydrateCodexSubagentMessages } from "./tapCodexSubagentHydrator";
 
 /** Return discriminating fields for key event types (for debug logs). */
 function eventDetail(event: TapEvent): string {
@@ -136,11 +137,10 @@ export function useTapEventProcessor(
 
       // No UUID dedup — CLI re-serializes conversation messages for JSONL persistence
       // and hook dispatch (2-3 stringify calls per message), but the state reducer is
-      // idempotent and metadata accumulator overwrites. The only effect of duplicates
-      // is 2-3x subagent messages in the inspector, capped at 200 per agent.
-      // Previous UUID dedup caused actionNeeded to get stuck: the set's 500-entry
-      // eviction could forget UUIDs, letting stale re-serialized messages race with
-      // state transitions and swallow the ConversationMessage(user) that clears it.
+      // idempotent and metadata accumulator overwrites. Previous UUID dedup caused
+      // actionNeeded to get stuck: the set's 500-entry eviction could forget UUIDs,
+      // letting stale re-serialized messages race with state transitions and swallow
+      // the ConversationMessage(user) that clears it.
 
       // 1. State reducer
       const prevState = stateRef.current;
@@ -185,6 +185,16 @@ export function useTapEventProcessor(
         } else if (action.type === "remove" && action.subagentId) {
           dlog("inspector", sid, `subagent removed id=${action.subagentId} (prompt-boundary cleanup)`, "DEBUG");
           removeSubagent(sid, action.subagentId);
+        }
+      }
+
+      // [IN-35] Eager-load Codex subagent child rollout into the subagent bar so the
+      // tab populates without waiting for the inspector modal. Fires on every Codex
+      // subagent lifecycle event (status events arrive on running/completed/interaction
+      // transitions). The hydrator no-ops if the agent record isn't in the store yet.
+      if (event.kind === "CodexSubagentSpawned" || event.kind === "CodexSubagentStatus") {
+        if (event.agentId) {
+          hydrateCodexSubagentMessages(sid, event.agentId);
         }
       }
 

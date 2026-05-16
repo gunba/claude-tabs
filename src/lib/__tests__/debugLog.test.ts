@@ -179,23 +179,42 @@ describe("debugLog", () => {
     expect(getDebugLogGeneration()).toBe(g0 + 2);
   });
 
-  it("notifies subscribers when the buffer generation changes", () => {
+  it("notifies subscribers when the buffer generation changes", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const listener = vi.fn();
     const unsubscribe = subscribeDebugLog(listener);
 
     dlog("m", "a", "x");
+    await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(1);
 
     removeDebugLogSession("a");
+    await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(2);
 
     clearDebugLog();
+    await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(3);
 
     unsubscribe();
     dlog("m", "b", "y");
+    await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(3);
+  });
+
+  it("coalesces multiple bumps in the same frame into one notification", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const listener = vi.fn();
+    const unsubscribe = subscribeDebugLog(listener);
+
+    dlog("m", "a", "x");
+    dlog("m", "a", "y");
+    dlog("m", "a", "z");
+    expect(listener).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
   });
 
   // --- Debug capture toggle ---
