@@ -432,7 +432,7 @@ function classifyStringify(ts: number, parsed: any): TapEvent | null {
     };
   }
 
-  // SubagentNotification: type=queue-operation with task-notification XML.
+  // [CT-03] SubagentNotification: type=queue-operation with task-notification XML.
   // The envelope from LocalAgentTask/LocalShellTask/RemoteAgentTask carries
   // task identity (task-id, tool-use-id, task-type), output-file, an optional
   // <result> body, <usage> (total_tokens / tool_uses / duration_ms), and

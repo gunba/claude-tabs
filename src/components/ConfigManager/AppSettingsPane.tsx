@@ -8,6 +8,9 @@ import type { StatusMessage } from "../../lib/settingsSchema";
 import "./RecordingPane.css";
 import "./AppSettingsPane.css";
 
+// [CM-36] App config tab: CLI-agnostic, hosts per-CLI Terminal Renderer choice,
+// auto-rename Codex tabs preference, and the App Observability + DevTools
+// master toggles (previously surfaced per-CLI in the Observability tab).
 interface AppSettingsPaneProps {
   onStatus: (msg: StatusMessage | null) => void;
 }

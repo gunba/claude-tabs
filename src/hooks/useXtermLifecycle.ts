@@ -400,9 +400,11 @@ export function useXtermLifecycle({
           });
         }),
       );
-      // ConPTY passes through alt-screen switch (\e[?1049h) but not mouse
-      // tracking modes. Tie mouse tracking to buffer lifecycle so it enables
-      // on alt-screen entry and disables on exit.
+      // [PT-28] Mouse-tracking SGR enable on alt-screen lifecycle. ConPTY passes
+      // through alt-screen switch (\e[?1049h) but not mouse tracking modes, so
+      // we tie tracking to the buffer-type change. Written unconditionally —
+      // Codex ignores mouse events, so the enable is a no-op for Codex; for
+      // Claude the SGR is required so wheel and motion reports reach the TUI.
       lifecycleDisposables.push(
         term.buffer.onBufferChange((buf) => {
           if (buf.type === "alternate") {

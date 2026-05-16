@@ -81,7 +81,7 @@ function notifyListeners(): void {
   }
 }
 
-// [DR-10] Coalesce listener notifications across a single frame. Without this,
+// [DP-18] Coalesce listener notifications across a single frame. Without this,
 // a Claude TUI redraw storm during scrolling fires hundreds of synchronous
 // DebugPanel re-renders per second and blocks xterm.js parsing on the main
 // thread. `generation` still bumps synchronously so getDebugLogGeneration()

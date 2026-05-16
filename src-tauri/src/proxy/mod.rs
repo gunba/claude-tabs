@@ -695,7 +695,7 @@ async fn handle_connection(
         }
     };
 
-    // [SP-08] Decompress the request body up front so prompt-rewrite rules,
+    // [SP-03] Decompress the request body up front so prompt-rewrite rules,
     // model extraction, and user-turn classification operate on plain JSON.
     // Codex sends `Content-Encoding: zstd` for /backend-api/codex/responses
     // when authenticated via ChatGPT auth, which previously caused rewrites to
@@ -842,7 +842,7 @@ async fn handle_connection(
         if lower == "host" || lower == "content-length" || lower == "accept-encoding" {
             continue;
         }
-        // [SP-08] Drop the request Content-Encoding header once the body has
+        // [SP-03] Drop the request Content-Encoding header once the body has
         // been decompressed; otherwise upstream tries to re-decode plain JSON.
         if request_was_decoded && lower == "content-encoding" {
             continue;
@@ -1037,7 +1037,7 @@ fn decompress_zstd(bytes: &[u8]) -> Option<Vec<u8>> {
     zstd::stream::decode_all(bytes).ok()
 }
 
-// [SP-08] Codex CLI compresses /backend-api/codex/responses request bodies with
+// [SP-03] Codex CLI compresses /backend-api/codex/responses request bodies with
 // zstd when authenticated via the ChatGPT backend. Decompress incoming request
 // bodies before applying prompt-rewrite rules; otherwise rules silently miss
 // because serde_json::from_slice fails on the compressed bytes and the body is
