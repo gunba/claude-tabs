@@ -63,6 +63,10 @@ open = { version = "5", features = ["shellexecute-on-windows"] }
 reqwest = { version = "0.12", features = ["blocking", "stream", "socks", "json"] }
 glob-match = "0.2"
 flate2 = "1"
+# zstd request decoding: Codex CLI compresses /backend-api/codex/responses
+# request bodies with zstd when authenticated via ChatGPT backend; the proxy
+# must decode them to apply prompt-rewrite rules before forwarding.
+zstd = "0.13"
 # .tar archive support for the Port-content pane backup tarballs.
 tar = "0.4"
 # TOML parser for .codex/config.toml ↔ .claude/settings.json round-trips.
