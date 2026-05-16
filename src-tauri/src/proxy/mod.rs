@@ -695,6 +695,42 @@ async fn handle_connection(
         }
     };
 
+    // [SP-08] Decompress the request body up front so prompt-rewrite rules,
+    // model extraction, and user-turn classification operate on plain JSON.
+    // Codex sends `Content-Encoding: zstd` for /backend-api/codex/responses
+    // when authenticated via ChatGPT auth, which previously caused rewrites to
+    // silently no-op. We strip the encoding header on the forwarded request so
+    // the upstream receives the decompressed JSON.
+    let request_content_encoding = headers.iter().find_map(|(k, v)| {
+        if k.eq_ignore_ascii_case("content-encoding") {
+            Some(v.clone())
+        } else {
+            None
+        }
+    });
+    let (body, request_was_decoded) = match request_content_encoding.as_deref() {
+        Some(enc) => match decompress_request_body(Some(enc), &body) {
+            Some(decoded) => (decoded, true),
+            None => {
+                record_backend_event(
+                    &app,
+                    "WARN",
+                    "proxy",
+                    None,
+                    "proxy.request_decode_failed",
+                    "Failed to decode compressed request body",
+                    serde_json::json!({
+                        "rawPath": raw_path.as_str(),
+                        "contentEncoding": enc,
+                        "byteLength": body.len(),
+                    }),
+                );
+                (body, false)
+            }
+        },
+        None => (body, false),
+    };
+
     // /s/{id}/... session-scoped prefix is stripped for the upstream call
     // but kept around for traffic-log lookup.
     let (session_id, path) = extract_session_id(&raw_path);
@@ -804,6 +840,11 @@ async fn handle_connection(
     for (k, v) in &headers {
         let lower = k.to_lowercase();
         if lower == "host" || lower == "content-length" || lower == "accept-encoding" {
+            continue;
+        }
+        // [SP-08] Drop the request Content-Encoding header once the body has
+        // been decompressed; otherwise upstream tries to re-decode plain JSON.
+        if request_was_decoded && lower == "content-encoding" {
             continue;
         }
         req = req.header(k.as_str(), v.as_str());
@@ -992,6 +1033,35 @@ fn decompress_deflate(bytes: &[u8]) -> Option<Vec<u8>> {
         .or_else(|| read_all(flate2::read::DeflateDecoder::new(bytes)))
 }
 
+fn decompress_zstd(bytes: &[u8]) -> Option<Vec<u8>> {
+    zstd::stream::decode_all(bytes).ok()
+}
+
+// [SP-08] Codex CLI compresses /backend-api/codex/responses request bodies with
+// zstd when authenticated via the ChatGPT backend. Decompress incoming request
+// bodies before applying prompt-rewrite rules; otherwise rules silently miss
+// because serde_json::from_slice fails on the compressed bytes and the body is
+// returned unchanged.
+fn decompress_request_body(content_encoding: Option<&str>, bytes: &[u8]) -> Option<Vec<u8>> {
+    let encoding = content_encoding.map(str::trim).filter(|s| !s.is_empty())?;
+    let mut decoded = bytes.to_vec();
+    for enc in encoding.split(',').map(str::trim).rev() {
+        if enc.is_empty() || enc.eq_ignore_ascii_case("identity") {
+            continue;
+        }
+        decoded = if enc.eq_ignore_ascii_case("zstd") || enc.eq_ignore_ascii_case("zstandard") {
+            decompress_zstd(&decoded)?
+        } else if enc.eq_ignore_ascii_case("gzip") || enc.eq_ignore_ascii_case("x-gzip") {
+            decompress_gzip(&decoded)?
+        } else if enc.eq_ignore_ascii_case("deflate") {
+            decompress_deflate(&decoded)?
+        } else {
+            return None;
+        };
+    }
+    Some(decoded)
+}
+
 fn decompress_response(content_encoding: Option<&str>, bytes: &[u8]) -> String {
     let Some(content_encoding) = content_encoding
         .map(str::trim)
@@ -1025,10 +1095,18 @@ fn decompress_response(content_encoding: Option<&str>, bytes: &[u8]) -> String {
                 );
             };
             decoded = next;
+        } else if encoding.eq_ignore_ascii_case("zstd")
+            || encoding.eq_ignore_ascii_case("zstandard")
+        {
+            let Some(next) = decompress_zstd(&decoded) else {
+                return format!(
+                    "(zstd body, failed to decode; {} encoded bytes)",
+                    bytes.len()
+                );
+            };
+            decoded = next;
         } else if encoding.eq_ignore_ascii_case("br")
             || encoding.eq_ignore_ascii_case("brotli")
-            || encoding.eq_ignore_ascii_case("zstd")
-            || encoding.eq_ignore_ascii_case("zstandard")
         {
             return format!(
                 "({encoding} body, not decoded; {} encoded bytes)",
@@ -1938,6 +2016,39 @@ mod tests {
         let decoded = decompress_response(Some("br"), b"encoded");
         assert!(decoded.contains("not decoded"));
         assert!(decoded.contains("encoded bytes"));
+    }
+
+    #[test]
+    fn test_decompress_response_zstd_by_header() {
+        let encoded = zstd::stream::encode_all(b"{\"ok\":true}".as_ref(), 3).unwrap();
+        assert_eq!(
+            decompress_response(Some("zstd"), &encoded),
+            "{\"ok\":true}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_decompress_request_body_zstd() {
+        let plain = br#"{"instructions":"hello world","input":[]}"#;
+        let encoded = zstd::stream::encode_all(plain.as_ref(), 3).unwrap();
+        let decoded = decompress_request_body(Some("zstd"), &encoded).unwrap();
+        assert_eq!(decoded, plain.to_vec());
+    }
+
+    #[test]
+    fn test_decompress_request_body_no_encoding_passes_through() {
+        assert!(decompress_request_body(None, b"plain").is_none());
+        assert!(decompress_request_body(Some(""), b"plain").is_none());
+    }
+
+    #[test]
+    fn test_decompress_request_body_invalid_zstd_returns_none() {
+        assert!(decompress_request_body(Some("zstd"), b"not-zstd-bytes").is_none());
+    }
+
+    #[test]
+    fn test_decompress_request_body_unknown_encoding_returns_none() {
+        assert!(decompress_request_body(Some("brotli"), b"x").is_none());
     }
 
     #[test]
