@@ -496,16 +496,20 @@ export class TapSubagentTracker {
         break;
 
       // [IN-30] Capture prompt/result/completed metadata for retained subagent cards + inspector.
-      case "SubagentNotification":
+      case "SubagentNotification": {
         dlog("inspector", this.parentSessionId, `SubagentNotification(${event.status}) → marking all active dead`, "DEBUG");
-        if (event.status === "completed" && event.summary && this.lastActiveAgent) {
-          // Capture result text on the last active agent before marking all dead
+        const resultText = event.result || event.summary;
+        if (event.status === "completed" && resultText && this.lastActiveAgent) {
+          // Capture result text on the last active agent before marking all dead.
+          // Prefer the <result> tag body (LocalAgentTask emits the final assistant
+          // message there); fall back to <summary>.
           actions.push({
             type: "update", subagentId: this.lastActiveAgent,
-            updates: { resultText: event.summary, completed: true },
+            updates: { resultText, completed: true },
           });
         }
-        // Mark non-dead agents as completed+dead for clean completions, dead-only for killed.
+        // Mark non-dead agents as completed+dead for clean completions, dead-only for
+        // any non-success terminal state (killed | failed | stopped).
         // Uses !== "dead" rather than isSubagentActive() so that agents swept idle by the
         // stale-agent timer still receive the authoritative completion signal.
         if (event.status === "completed") {
@@ -514,6 +518,7 @@ export class TapSubagentTracker {
           actions.push(...this.markAllActive("dead"));
         }
         break;
+      }
 
       case "UserInterruption":
         this.pendingSpawns = [];
